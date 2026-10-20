@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"os/signal"
+	"slices"
 	"sync"
 	"syscall"
 
 	"github.com/opstruss/opstruss/internal/engine"
+	"github.com/opstruss/opstruss/internal/expr"
 	"github.com/spf13/cobra"
 )
 
@@ -67,7 +70,7 @@ func (a *app) engineOptions(units []string) (engine.Options, error) {
 	if err != nil {
 		return engine.Options{}, err
 	}
-	return engine.Options{Dir: dir, Stack: a.stackName(), Inputs: given, LookupEnv: a.lookupEnv, Environ: a.environ,
+	return engine.Options{Dir: dir, Cwd: a.cwd, Stack: a.stackName(), Inputs: given, LookupEnv: a.lookupEnv, Environ: a.environ,
 		Units: units, Emit: a.render()}, nil
 }
 
@@ -87,11 +90,19 @@ func (a *app) render() func(engine.Event) {
 		if ev.Level == "error" || ev.Level == "warn" {
 			w = a.stderr
 		}
+		who := ev.Address
+		if who == "" {
+			who = ev.Task
+		}
 		switch {
 		case ev.Type == "log":
-			fmt.Fprintf(w, "%s | %s\n", ev.Address, ev.Message)
-		case ev.Address != "":
-			fmt.Fprintf(w, "%s: %s\n", ev.Address, ev.Message)
+			fmt.Fprintf(w, "%s | %s\n", who, ev.Message)
+		case ev.Type == "run" && ev.Task != "":
+			for _, k := range slices.Sorted(maps.Keys(ev.Outputs)) {
+				fmt.Fprintf(w, "  %s: %s\n", k, expr.Text(ev.Outputs[k]))
+			}
+		case who != "":
+			fmt.Fprintf(w, "%s: %s\n", who, ev.Message)
 		default:
 			fmt.Fprintln(w, ev.Message)
 		}

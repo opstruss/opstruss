@@ -195,6 +195,16 @@ type Scope struct {
 	Dir  string
 }
 
+// With returns a copy of s in which name holds v.
+func (s *Scope) With(name string, v any) *Scope {
+	vars := make(map[string]any, len(s.Vars)+1)
+	for k, x := range s.Vars {
+		vars[k] = x
+	}
+	vars[name] = v
+	return &Scope{Vars: vars, Dir: s.Dir}
+}
+
 func (s *Scope) activation() map[string]any {
 	a := make(map[string]any, len(Namespaces))
 	for _, n := range Namespaces {

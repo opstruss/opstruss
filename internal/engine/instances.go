@@ -82,11 +82,11 @@ type selection struct {
 func (e *engine) selectUnits(down bool) error {
 	s := &selection{units: map[string]bool{}, keys: map[string][]string{}, named: map[string]bool{}}
 	e.sel = s
-	if len(e.opts.Units) == 0 {
+	if len(e.pass.units) == 0 {
 		s.all = true
 		return nil
 	}
-	for _, pat := range e.opts.Units {
+	for _, pat := range e.pass.units {
 		name, key, hasKey := strings.Cut(strings.TrimSuffix(pat, "]"), "[")
 		found := false
 		for _, u := range slices.Sorted(maps.Keys(e.p.Units)) {
@@ -103,7 +103,7 @@ func (e *engine) selectUnits(down bool) error {
 			return fmt.Errorf("no unit matches %s", pat)
 		}
 	}
-	if e.opts.NoDeps {
+	if e.pass.noDeps {
 		return nil
 	}
 	next := e.p.Deps
@@ -243,26 +243,59 @@ func (e *engine) scope(inst *instance, dir string) *expr.Scope {
 }
 
 // unitsView is units.<name>: the outputs of this run for the units it ran,
-// and the stored ones for the others; a unit with for_each is a map of its
-// instances.
+// and the stored ones for the others, with outcome, changed, and plan
+// once a pass of this run reached them; a unit with for_each is a map of
+// its instances.
 func (e *engine) unitsView() map[string]any {
 	e.mu.Lock()
-	defer e.mu.Unlock()
-	view := map[string]any{}
-	for name, insts := range e.byUnit {
+	byUnit := maps.Clone(e.byUnit)
+	views := map[string]map[string]any{}
+	for name, insts := range byUnit {
 		byKey := map[string]any{}
 		for _, inst := range insts {
-			out := inst.outputs
-			if out == nil && inst.record != nil && inst.record.Tombstone == nil {
-				out = inst.record.Outputs
+			v := map[string]any{"outputs": inst.outputsNow()}
+			if inst.outcome != "" {
+				v["outcome"], v["changed"] = inst.outcome, inst.changed
 			}
-			if out == nil {
-				out = map[string]any{}
+			if inst.plan.digest != "" || inst.plan.waitFor != "" {
+				v["plan"] = inst.plan.view(inst.plan.err == nil && inst.plan.waitFor == "" && inst.plan.locked == "")
 			}
-			byKey[inst.key] = map[string]any{"outputs": out}
+			byKey[inst.key] = v
 		}
+		views[name] = byKey
+	}
+	e.mu.Unlock()
+	// Units that no pass of this run expanded read their records.
+	for name := range e.p.Units {
+		if views[name] != nil {
+			continue
+		}
+		byKey := map[string]any{}
+		addrs, _ := e.store.Inventory()
+		for _, a := range addrs {
+			id := strings.TrimPrefix(a, e.p.StackName+"/")
+			unit, key, _ := strings.Cut(strings.TrimSuffix(id, "]"), "[")
+			if unit != name {
+				continue
+			}
+			if rec, _, err := e.store.Get(a); err == nil && rec != nil && rec.Tombstone == nil {
+				out := rec.Outputs
+				if out == nil {
+					out = map[string]any{}
+				}
+				byKey[key] = map[string]any{"outputs": out}
+			}
+		}
+		views[name] = byKey
+	}
+	view := map[string]any{}
+	for name, byKey := range views {
 		if e.p.Units[name].ForEach == nil {
-			view[name] = byKey[""]
+			if v, ok := byKey[""]; ok {
+				view[name] = v
+			} else {
+				view[name] = map[string]any{"outputs": map[string]any{}}
+			}
 		} else {
 			view[name] = byKey
 		}

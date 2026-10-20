@@ -33,14 +33,9 @@ type leftover struct {
 	outcome string
 }
 
-// Down takes the selected units down, units that depend on others first,
-// each with the down contract in its record.
-func Down(ctx context.Context, opts Options) (*Result, error) {
-	e, err := open(opts)
-	if err != nil {
-		return nil, err
-	}
-	defer e.close()
+// downPass takes the selected units down, units that depend on others
+// first, each with the down contract in its record.
+func (e *engine) downPass(ctx context.Context) ([]*leftover, error) {
 	if err := e.selectUnits(true); err != nil {
 		return nil, err
 	}
@@ -77,7 +72,7 @@ func Down(ctx context.Context, opts Options) (*Result, error) {
 	if !protected {
 		e.downAll(ctx, items)
 	}
-	return e.result(), nil
+	return items, nil
 }
 
 // records reads every record of the stack, tombstones left out.
@@ -268,7 +263,7 @@ func (e *engine) downOne(ctx context.Context, l *leftover) string {
 	if rec.Down != nil {
 		contracts = append(contracts, &state.Attempt{Inputs: rec.Inputs, Outputs: rec.Outputs, Down: rec.Down})
 	}
-	if !e.opts.Force {
+	if !e.pass.force {
 		for _, c := range contracts {
 			if names := e.passDiffers(c.Down); len(names) > 0 {
 				return fail(fmt.Errorf("pass values differ from those of the record: %s; down --force runs with the values now", strings.Join(names, ", ")))
@@ -280,12 +275,12 @@ func (e *engine) downOne(ctx context.Context, l *leftover) string {
 		approval = cmp.Or(l.def.Approval, approval)
 	}
 	if approval != "auto" {
-		if !e.opts.Yes {
-			e.say("approval", addr, "will go down (%s); needs approval, stopped at plan", l.reason)
+		if why := e.approves(addr, ""); why != "" {
+			e.say("approval", addr, "will go down (%s); %s, stopped at plan", l.reason, why)
 			e.stopAtPlan()
 			return skipped
 		}
-		approval = "--yes"
+		approval = e.pass.source
 	}
 	rec.Pending = &state.Attempt{Op: "down", Run: e.runID, Holder: e.holder, Approval: approval}
 	if etag, err = e.store.Put(addr, rec, etag); err != nil {

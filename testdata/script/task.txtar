@@ -1,0 +1,145 @@
+# A task is a command: its inputs are flags, its program gets them as
+# INPUT_*, its steps hand results on, and its outcome sets the exit code.
+
+env HOME=$WORK/home
+
+# inputs become flags with types; outputs come back at the end
+exec opstruss greet --who Ana --times 3 --tag a --tag b --loud
+stdout '^greet \| hello Ana x3 \["a","b"\] true$'
+stdout '^  msg: hi Ana$'
+exec opstruss run greet --no-loud
+stdout '^greet \| hello world x1 null false$'
+! exec opstruss greet --times three
+stderr '--times: "three" is not an integer'
+
+# what comes after -- fills the input with args: true
+exec opstruss test -- -run TestFoo
+stdout '^test \| go test -run TestFoo$'
+
+# steps: failed_when, changed_when, retry until, block with rescue and
+# always, for_each in order, a task called with with:, and outputs from
+# value: as far as they can be computed
+exec opstruss deploy
+stdout '^deploy: check \| port 5432$'
+stdout '^deploy: .* \| rescued$'
+stdout '^deploy: .* \| always$'
+stdout '^deploy: loop\[a\] \| item a$'
+stdout '^deploy: loop\[b\] \| item b$'
+stdout '^  block: failure$'
+stdout '^  changed: false$'
+stdout '^  greeting: hi 5432$'
+stdout '^  tries: 3$'
+# needs runs lint once per run; a task: step is always a call of its own
+grep -count=2 . lint.count
+
+# a step that fails skips the rest, and the exit code is 1
+! exec opstruss broken
+stdout '^broken: .* failed$'
+! stdout never
+stdout '^  after: skipped$'
+
+# a task with approval: ask stops without --yes and exits with 2; a unit
+# that stops for approval fails the task: step that calls it
+! exec opstruss guarded
+stdout 'task guarded needs approval; stopped'
+exec opstruss guarded --yes
+! exec opstruss release
+stdout '^default/web: will run: new; needs approval, stopped at plan$'
+exec opstruss release-yes
+stdout '^default/web: up: done$'
+
+# the task of units runs in each unit that has it
+exec opstruss backup
+stdout '^default/db \| backup default/db$'
+exec opstruss backup db
+stdout 'backup default/db'
+
+-- opstruss.yaml --
+name: shop
+units:
+  db:
+    run: echo "port=5432" >> "$OPSTRUSS_OUTPUT"
+    outputs:
+      port: {type: integer}
+    approval: auto
+    tasks:
+      backup:
+        run: echo "backup $OPSTRUSS_ADDRESS"
+  web:
+    run: echo web
+tasks:
+  greet:
+    inputs:
+      who: {type: string, default: world}
+      times: {type: integer, default: 1}
+      tag: {type: array, items: {type: string}}
+      loud: {type: boolean}
+    run: [sh, -c, 'echo "hello $INPUT_WHO x$INPUT_TIMES ${INPUT_TAG:-null} ${INPUT_LOUD:-false}"; echo "msg=hi $INPUT_WHO" >> "$OPSTRUSS_OUTPUT"']
+    outputs:
+      msg: {}
+  test:
+    inputs:
+      args: {type: array, items: {type: string}, args: true}
+    run: [sh, -c, 'echo "go test $(echo "$INPUT_ARGS" | tr "," " " | tr -d "[]\"")"']
+  lint:
+    run: echo x >> lint.count
+  deploy:
+    needs: [lint]
+    steps:
+      - task: up
+        units: [db]
+      - id: check
+        run: [sh, -c, 'echo "port $PORT"; exit 1']
+        env:
+          PORT: ${{ units.db.outputs.port }}
+        failed_when: outputs.exit_code > 1
+        changed_when: false
+      - id: flaky
+        run: echo x >> tries; echo "n=$(wc -l < tries | tr -d ' ')" >> "$OPSTRUSS_OUTPUT"
+        outputs:
+          n: {type: integer}
+        retry: {attempts: 5, delay: 1ms, until: outputs.n >= 3}
+      - id: rel
+        block:
+          - run: exit 3
+        rescue:
+          - run: echo rescued
+        always:
+          - run: echo always
+      - id: loop
+        for_each: [a, b]
+        run: [echo, "item ${{ each.key }}"]
+      - id: hello
+        task: greet
+        with:
+          who: ${{ string(units.db.outputs.port) }}
+      - task: lint
+    outputs:
+      block:
+        value: ${{ steps.rel.outcome }}
+      changed:
+        value: ${{ steps.check.changed }}
+      greeting:
+        value: ${{ steps.hello.outputs.msg }}
+      tries:
+        value: ${{ steps.flaky.outputs.n }}
+  broken:
+    steps:
+      - run: exit 4
+      - id: never
+        run: echo never
+    outputs:
+      after:
+        value: ${{ steps.never.outcome }}
+  guarded:
+    approval: ask
+    run: echo guarded
+  release:
+    steps:
+      - task: up
+        units: [web]
+  release-yes:
+    steps:
+      - task: up
+        units: [web]
+        yes: true

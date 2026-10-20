@@ -12,6 +12,18 @@ import (
 // zombie is SZOMB in sys/proc.h: a process that ended and is not reaped.
 const zombie = 5
 
+// Command returns the name of the program that pid runs.
+func Command(pid int) (string, error) {
+	p, err := unix.SysctlKinfoProc("kern.proc.pid", pid)
+	if err != nil {
+		return "", err
+	}
+	if p.Proc.P_pid != int32(pid) {
+		return "", os.ErrNotExist
+	}
+	return unix.ByteSliceToString(p.Proc.P_comm[:]), nil
+}
+
 // find lists this user's processes with sysctl kern.proc.uid and reads
 // each one's environment with kern.procargs2.
 func find(entry []byte) ([]Process, error) {

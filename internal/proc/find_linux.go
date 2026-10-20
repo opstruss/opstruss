@@ -7,6 +7,12 @@ import (
 	"syscall"
 )
 
+// Command returns the name of the program that pid runs.
+func Command(pid int) (string, error) {
+	comm, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/comm")
+	return string(bytes.TrimSpace(comm)), err
+}
+
 // find reads /proc/<pid>/environ of each process that this user owns. A
 // zombie has an empty environment there, so it is not found.
 func find(entry []byte) ([]Process, error) {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/opstruss/opstruss/internal/cli"
 	"github.com/opstruss/opstruss/internal/failpoint"
@@ -24,5 +25,17 @@ func TestScripts(t *testing.T) {
 			return failpoint.Enabled, nil
 		}
 		return false, fmt.Errorf("unknown condition %s", cond)
+	}, Cmds: map[string]func(*testscript.TestScript, bool, []string){
+		// waitfile waits up to 10 seconds for a file that a command in the
+		// background makes, so a script acts after it, not after a guess.
+		"waitfile": func(ts *testscript.TestScript, _ bool, args []string) {
+			p := ts.MkAbs(args[0])
+			for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+				if _, err := os.Stat(p); err == nil {
+					return
+				}
+			}
+			ts.Fatalf("%s did not appear", args[0])
+		},
 	}})
 }

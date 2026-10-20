@@ -78,6 +78,33 @@ minor release can change what a project, a component, or a plugin relies on.
   it reaches has `protect: true`. Instances that leave `if` or `for_each`
   go down at `up`; units that leave the files stay as orphans until
   `removed:` takes them down or forgets them, which leaves a tombstone.
+- Every task of the project that is not `internal`, and every task of its
+  units, is a command: `opstruss <task>`, also `opstruss run <task>`. Its
+  inputs are flags with types (`--name value`, `--name` and `--no-name` for
+  a boolean, a repeated flag for an array, JSON or `@file` for an object),
+  and what comes after `--` fills the input with `args: true`. The program
+  of a task gets its inputs as `INPUT_<NAME>` and in `$OPSTRUSS_INPUTS`, and
+  its outputs are printed at the end.
+- `steps:` run in order: `run`, `task:` (`plan`, `up`, or `down` of
+  `units:`, a project task with `with:`, or the task of each unit that has
+  it), and `block:` with `rescue:` and `always:`. `if`, `for_each`, `retry`,
+  `timeout`, `failed_when`, `changed_when`, and `continue_on_error` apply to
+  steps; `steps.<id>` holds `outputs` (with `stdout`, `stderr`, and
+  `exit_code` for `run`), `changed`, and `outcome`, and `value:` gives the
+  outputs of a task with steps, also when it failed, as far as they can be
+  computed.
+- `needs` runs each task it names once per run; `for_each` on a task runs
+  its instances in parallel, at most `max_parallel` at once. A task with
+  `approval: ask` stops without `--yes`, and `yes: true` on a `task:` step
+  approves that call, but only plans this run read as exact, with the same
+  digest.
+- `concurrency` keeps one call of a task at a time in a stack and checkout,
+  through a lock file in `.opstruss/tasks/<stack>/`: `queue` waits, `skip`
+  leaves the call out, `cancel` stops the run that holds it when that run
+  started with the same task, `parallel` takes no lock, and `group` gives
+  one lock per value.
+- The exit code of a task follows the outcome of the task called: 0, 1
+  when it failed, and 2 when it stopped at plan for approval.
 - Programs of units and tasks start from a clean environment (`PATH`,
   `HOME`, `USER`, the locale, `TZ`, `TMPDIR`, `TERM`, proxies,
   `SSL_CERT_*`, `SSH_AUTH_SOCK`) plus the variables that `pass:` names and

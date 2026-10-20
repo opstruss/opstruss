@@ -1,0 +1,60 @@
+# concurrency holds one lock per task in a stack and checkout: queue waits
+# for the call that holds it, skip does not, cancel stops it first, and a
+# group gives one lock per value.
+
+env HOME=$WORK/home
+
+# skip leaves the task out while another call holds it
+exec opstruss hold-skip &
+waitfile started-skip
+exec opstruss hold-skip
+stdout 'skipped: a run of hold-skip is going on, and concurrency is skip'
+wait
+
+# queue waits until the call that holds it ends
+exec opstruss hold-queue &
+waitfile started-queue
+exec opstruss hold-queue
+wait
+cmp queue.log queue.want
+
+# cancel stops the run that holds it, whose root task is the same task
+! exec opstruss hold-cancel &
+waitfile started-cancel
+exec opstruss hold-cancel
+wait
+cmp cancel.log cancel.want
+
+# a group gives one lock per value, so other values run at once
+exec opstruss review --pr one &
+waitfile started-one
+exec opstruss review --pr two
+! exists done-one
+wait
+exists done-one
+
+-- opstruss.yaml --
+name: shop
+tasks:
+  hold-skip:
+    concurrency: skip
+    run: touch started-skip; sleep 1
+  hold-queue:
+    run: echo start >> queue.log; touch started-queue; sleep 1; echo end >> queue.log
+  hold-cancel:
+    concurrency: cancel
+    run: touch started-cancel; sleep 5; echo finished >> cancel.log
+    stop: {signal: SIGTERM, grace: 1s}
+  review:
+    inputs:
+      pr: {type: string, required: true}
+    concurrency:
+      group: ${{ inputs.pr }}
+    run: [sh, -c, 'touch "started-$1"; if [ "$1" = one ]; then sleep 3; fi; touch "done-$1"', review, "${{ inputs.pr }}"]
+-- queue.want --
+start
+end
+start
+end
+-- cancel.want --
+finished

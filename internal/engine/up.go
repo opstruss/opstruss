@@ -25,44 +25,25 @@ import (
 const MaxRecord = 2 << 20
 
 // Plan previews the selected units: what up would run, and why.
-func Plan(opts Options) (*Result, error) {
-	e, err := open(opts)
-	if err != nil {
-		return nil, err
-	}
-	defer e.close()
-	if err := e.selectUnits(false); err != nil {
-		return nil, err
-	}
-	e.previewMoves()
-	e.previewAll()
-	e.previewLeftovers()
-	if len(e.insts) == 0 && len(e.p.Units) == 0 {
-		e.say("run", "", "no units")
-	}
-	return e.result(), nil
-}
+func Plan(opts Options) (*Result, error) { return runCommand(context.Background(), opts, "plan") }
 
 // Up runs the turn of each selected unit in graph order, units that do not
 // depend on each other in parallel, then takes down what left the files.
-func Up(ctx context.Context, opts Options) (*Result, error) {
+func Up(ctx context.Context, opts Options) (*Result, error) { return runCommand(ctx, opts, "up") }
+
+// Down takes the selected units down, units that depend on others first,
+// each with the down contract in its record.
+func Down(ctx context.Context, opts Options) (*Result, error) { return runCommand(ctx, opts, "down") }
+
+func runCommand(ctx context.Context, opts Options, op string) (*Result, error) {
 	e, err := open(opts)
 	if err != nil {
 		return nil, err
 	}
 	defer e.close()
-	if err := e.selectUnits(false); err != nil {
+	if _, err := e.unitPass(ctx, op, pass{units: opts.Units, yes: opts.Yes, force: opts.Force, noDeps: opts.NoDeps, source: "--yes"}); err != nil {
 		return nil, err
 	}
-	e.previewMoves()
-	e.previewAll()
-	leftovers := e.previewLeftovers()
-	if len(e.p.Units) == 0 {
-		e.say("run", "", "no units")
-	}
-	e.applyMoves(ctx)
-	e.turns(ctx)
-	e.settle(ctx, leftovers)
 	return e.result(), nil
 }
 
@@ -192,7 +173,7 @@ func (e *engine) decide(inst *instance, r *resolved, rec *state.Record) plan {
 }
 
 func (e *engine) forced(inst *instance) bool {
-	return e.opts.Force && (e.sel.all || e.sel.named[inst.unit])
+	return e.pass.force && (e.sel.all || e.sel.named[inst.unit])
 }
 
 // changedPass names the pass variables whose values differ from those
@@ -334,13 +315,13 @@ func (e *engine) turn(ctx context.Context, inst *instance) {
 	}
 	approval := cmp.Or(inst.def.Approval, e.stackApproval(), "ask")
 	if approval != "auto" {
-		if !e.opts.Yes {
+		if why := e.approves(addr, p.digest); why != "" {
 			e.finish(inst, skipped, false, nil)
-			e.say("approval", addr, "%s; needs approval, stopped at plan", p.summary())
+			e.say("approval", addr, "%s; %s, stopped at plan", p.summary(), why)
 			e.stopAtPlan()
 			return
 		}
-		approval = "--yes"
+		approval = e.pass.source
 	}
 	if !p.run {
 		// Only old attempts are left to tear down; the approval covered them.

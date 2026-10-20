@@ -31,6 +31,8 @@ type app struct {
 	environ        []string
 	env            map[string]string
 
+	cwd        string // where OpsTruss started, before -C
+	loadErr    error  // why the project's tasks are not commands
 	dir        string
 	stack      string
 	inputs     []string
@@ -46,6 +48,7 @@ func (e *exitError) Error() string { return fmt.Sprintf("exit %d", e.code) }
 // run runs the command line with args in the operator's environment.
 func run(args []string, stdout, stderr io.Writer, environ []string) int {
 	a := &app{stdout: stdout, stderr: stderr, environ: environ, env: map[string]string{}}
+	a.cwd, _ = os.Getwd()
 	for _, kv := range environ {
 		if k, v, ok := strings.Cut(kv, "="); ok {
 			a.env[k] = v
@@ -61,6 +64,10 @@ func run(args []string, stdout, stderr io.Writer, environ []string) int {
 	}
 	var exit *exitError
 	var probs model.Problems
+	// An unknown command may be a task of a project that does not load.
+	if err != nil && strings.HasPrefix(err.Error(), "unknown command") && a.loadErr != nil {
+		err = a.loadErr
+	}
 	switch {
 	case err == nil:
 		return 0
@@ -94,6 +101,13 @@ func (a *app) takeDir(args []string) ([]string, error) {
 		case strings.HasPrefix(arg, "-C"):
 			a.dir = joinDir(a.dir, strings.TrimPrefix(arg, "-C"))
 		default:
+			// The commands of tasks come from the project of the stack, so
+			// --stack is read before the flags are.
+			if arg == "--stack" && i+1 < len(args) {
+				a.stack = args[i+1]
+			} else if v, ok := strings.CutPrefix(arg, "--stack="); ok {
+				a.stack = v
+			}
 			out = append(out, arg)
 		}
 	}
@@ -147,6 +161,7 @@ func (a *app) root() *cobra.Command {
 	root.Flags().StringVar(&a.completion, "completion", "", "print a completion script for bash, zsh, or fish")
 	root.AddCommand(a.versionCommand(), a.validateCommand(), a.explainCommand(), a.stateCommand())
 	root.AddCommand(a.unitCommands()...)
+	a.taskCommands(root)
 	return root
 }
 

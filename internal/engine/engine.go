@@ -24,6 +24,7 @@ import (
 // Options says what a run does.
 type Options struct {
 	Dir       string            // the project directory
+	Cwd       string            // where OpsTruss started, before -C: opstruss.cwd
 	Stack     string            // empty chooses the only stack
 	Inputs    map[string]string // --input
 	LookupEnv func(string) (string, bool)
@@ -35,14 +36,17 @@ type Options struct {
 	Emit      func(Event)
 }
 
-// Event is one thing that happened in a run.
+// Event is one thing that happened in a run. The last event of a task's
+// run carries its outcome and outputs.
 type Event struct {
-	Type    string `json:"type"`
-	Level   string `json:"level"`
-	Address string `json:"address,omitempty"`
-	Task    string `json:"task,omitempty"`
-	Stream  string `json:"stream,omitempty"`
-	Message string `json:"message"`
+	Type    string         `json:"type"`
+	Level   string         `json:"level"`
+	Address string         `json:"address,omitempty"`
+	Task    string         `json:"task,omitempty"`
+	Stream  string         `json:"stream,omitempty"`
+	Message string         `json:"message"`
+	Outcome string         `json:"outcome,omitempty"`
+	Outputs map[string]any `json:"outputs,omitempty"`
 }
 
 // Result is how a run ended.
@@ -84,6 +88,13 @@ type engine struct {
 	run      *plugin.Run
 	parallel int
 	sel      *selection
+	pass     pass
+	passMu   sync.Mutex
+	read     map[string]string // digests of the exact plans read in this run, by address; empty when not exact
+
+	rootTask string
+	needed   map[string]*taskOnce               // tasks of needs, which run once per run
+	holders  map[string]context.CancelCauseFunc // concurrency locks this process holds
 
 	insts  []*instance // in graph order
 	byUnit map[string][]*instance
@@ -114,7 +125,8 @@ func open(opts Options) (*engine, error) {
 		return nil, err
 	}
 	e := &engine{opts: opts, p: p, inputs: inputs, locals: locals, root: filepath.Join(p.Dir, ".opstruss"),
-		runID: state.NewRunID(), started: time.Now().UTC(), parallel: DefaultParallel, byUnit: map[string][]*instance{}}
+		runID: state.NewRunID(), started: time.Now().UTC(), parallel: DefaultParallel, byUnit: map[string][]*instance{},
+		read: map[string]string{}, needed: map[string]*taskOnce{}, holders: map[string]context.CancelCauseFunc{}}
 	if s, ok := opts.LookupEnv("OPSTRUSS_PARALLEL"); ok {
 		if e.parallel, err = strconv.Atoi(s); err != nil || e.parallel < 1 {
 			return nil, fmt.Errorf("OPSTRUSS_PARALLEL is %q, not a number above 0", s)
