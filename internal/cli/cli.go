@@ -246,7 +246,15 @@ func (a *app) explainCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			out, err := explain(p, inputs, names)
+			values := map[string]any{}
+			for k, v := range inputs {
+				values[k] = v.Value
+			}
+			locals, err := p.EvalLocals(values)
+			if err != nil {
+				return err
+			}
+			out, err := explain(p, inputs, locals, names)
 			if err != nil {
 				return err
 			}
@@ -264,9 +272,10 @@ func (a *app) explainCommand() *cobra.Command {
 }
 
 // explain builds the document that explain prints: the stack's project as
-// written, with each input's value and where it came from.
-func explain(p *model.Project, inputs map[string]model.InputValue, names []string) (map[string]any, error) {
-	out := map[string]any{"project": p.Name, "stack": p.StackName, "inputs": inputs}
+// written, each input's value and where it came from, the locals, and the
+// order of the units. Names pick units and tasks, with what they depend on.
+func explain(p *model.Project, inputs map[string]model.InputValue, locals map[string]any, names []string) (map[string]any, error) {
+	out := map[string]any{"project": p.Name, "stack": p.StackName, "inputs": inputs, "order": p.Order}
 	for k, v := range p.Doc() {
 		switch k {
 		case "name", "description", "opstruss", "inputs":
@@ -274,26 +283,55 @@ func explain(p *model.Project, inputs map[string]model.InputValue, names []strin
 			out[k] = v
 		}
 	}
+	if len(locals) > 0 {
+		out["locals"] = locals
+	}
 	if len(names) == 0 {
 		return out, nil
 	}
 	units, _ := out["units"].(map[string]any)
 	tasks, _ := out["tasks"].(map[string]any)
 	pickedUnits, pickedTasks := map[string]any{}, map[string]any{}
+	var addUnit func(string)
+	addUnit = func(n string) {
+		if _, done := pickedUnits[n]; done {
+			return
+		}
+		pickedUnits[n] = units[n]
+		for _, d := range p.Deps[n] {
+			addUnit(d)
+		}
+	}
+	var addTask func(string)
+	addTask = func(n string) {
+		if _, done := pickedTasks[n]; done {
+			return
+		}
+		pickedTasks[n] = tasks[n]
+		for _, d := range p.Tasks[n].Needs {
+			addTask(d)
+		}
+	}
 	for _, n := range names {
-		u, isUnit := units[n]
-		t, isTask := tasks[n]
+		_, isUnit := units[n]
+		_, isTask := tasks[n]
 		if !isUnit && !isTask {
 			return nil, fmt.Errorf("the project has no unit or task %s; it has %s", n,
 				strings.Join(slices.Sorted(slices.Values(append(slices.Collect(maps.Keys(units)), slices.Collect(maps.Keys(tasks))...))), ", "))
 		}
 		if isUnit {
-			pickedUnits[n] = u
+			addUnit(n)
 		}
 		if isTask {
-			pickedTasks[n] = t
+			addTask(n)
 		}
 	}
 	out["units"], out["tasks"] = pickedUnits, pickedTasks
+	out["order"] = slices.DeleteFunc(slices.Clone(p.Order), func(u string) bool { return !hasUnit(pickedUnits, u) })
 	return out, nil
+}
+
+func hasUnit(m map[string]any, k string) bool {
+	_, ok := m[k]
+	return ok
 }

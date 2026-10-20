@@ -24,12 +24,21 @@ exec opstruss explain --stack dev --input replicas=5 --json
 stdout '"replicas": \{\n      "value": 5,\n      "from": "--input"'
 stdout '"debug": \{\n      "value": true,\n      "from": "env"'
 
-# names pick units and tasks
+# locals are computed, and units come in the order of their dependencies
+exec opstruss explain --stack prod
+stdout '^locals:\n  host: app-prod.example.com$'
+stdout '^order:\n  - backup\n  - db\n  - site$'
+
+# names pick units and tasks, with the units they read and the tasks they need
 exec opstruss explain --stack prod release
 stdout '^  release:$'
+stdout '^  notes:$'
 ! stdout 'site:'
+exec opstruss explain --stack prod site
+stdout '^order:\n  - db\n  - site$'
+! stdout 'backup:'
 ! exec opstruss explain --stack prod nope
-stderr 'the project has no unit or task nope; it has backup, release, site'
+stderr 'the project has no unit or task nope; it has backup, db, notes, release, site'
 
 ! exec opstruss explain --stack dev --input replicas=many
 stderr '--input replicas: "many" is not an integer'
@@ -58,12 +67,23 @@ stacks:
     runtime:
       listen: 127.0.0.1:7879
     include: [prod/*.yaml]
+locals:
+  host: ${{ opstruss.project }}-${{ stack }}.${{ inputs.domain }}
 units:
+  db:
+    run: [./db.sh]
+    outputs:
+      url: {from: stdout}
   site:
     run: [npm, run, build]
+    env:
+      DATABASE_URL: ${{ units.db.outputs.url }}
 -- tasks/release.yaml --
 tasks:
+  notes:
+    run: [./notes.sh]
   release:
+    needs: [notes]
     run: [./release.sh]
 -- prod/backup.yaml --
 units:

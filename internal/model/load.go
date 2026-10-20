@@ -32,6 +32,11 @@ type Project struct {
 	StackName string
 	Stack     *Stack
 
+	// Order is the units in an order where each comes after the units it
+	// reads or needs, and Deps those units for each.
+	Order []string
+	Deps  map[string][]string
+
 	// doc is the merged document, for explain; origins says which file
 	// and path wrote each entry, for messages.
 	doc     map[string]any

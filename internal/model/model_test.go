@@ -363,3 +363,93 @@ stacks:
 		t.Fatal("want an unknown input error")
 	}
 }
+
+func TestReferences(t *testing.T) {
+	tests := []struct{ yaml, want string }{
+		{"name: app\nunits:\n  a:\n    run: [x, \"${{ units.b.outputs.u }}\"]\n", "there is no unit b"},
+		{"name: app\nunits:\n  b:\n    run: [y]\n    outputs: {u: {from: stdout}}\n  a:\n    run: [x, \"${{ units.b.outputs.nope }}\"]\n", "unit b has no output nope"},
+		{"name: app\nunits:\n  a:\n    run: [x, \"${{ units.b.outputs.u }}\"]\n  b:\n    run: [y, \"${{ units.a.outputs.u }}\"]\n    outputs: {u: {}}\n", "units a → b → a form a cycle"},
+		{"name: app\nunits:\n  a:\n    run: [x, \"${{ event.body }}\"]\n", "a unit cannot read event"},
+		{"name: app\nunits:\n  a:\n    run: [x, \"${{ opstruss.cwd }}\"]\n", "a unit cannot read opstruss.cwd"},
+		{"name: app\nunits:\n  a:\n    run: [x]\n    if: opstruss.time > timestamp('2026-01-01T00:00:00Z')\n", "read only facts known at plan"},
+		{"name: app\nunits:\n  a:\n    run: [x, \"${{ each.key }}\"]\n", "each is only in something with for_each"},
+		{"name: app\ntasks:\n  t:\n    steps:\n      - run: [x, \"${{ steps.b.outputs.stdout }}\"]\n      - id: b\n        run: [y]\n", "there is no step b before this one"},
+		{"name: app\ntasks:\n  n:\n    run: [y]\n  t:\n    run: [x, \"${{ tasks.n.outputs.stdout }}\"]\n", "tasks.n is read through needs"},
+		{"name: app\ntasks:\n  t:\n    run: [x]\n    if: outputs.exit_code == 0\n", "a task cannot read outputs"},
+		{"name: app\ntasks:\n  t:\n    run: [x, \"${{ kv('k') }}\"]\n", "kv() is not supported yet"},
+		{"name: app\nlocals:\n  l1: ${{ locals.l2 }}\n  l2: ${{ locals.l1 }}\n", "locals l1 → l2 → l1 form a cycle"},
+		{"name: app\ntasks:\n  t:\n    steps: [{task: u}]\n  u:\n    run: [x]\n    needs: [t]\n", "tasks t → u → t form a cycle"},
+		{"name: app\ntasks:\n  t:\n    steps: [{task: nope}]\n", "there is no task nope"},
+		{"name: app\nunits:\n  a:\n    run: [x, \"${{ inputs.nope }}\"]\n", "there is no input nope"},
+		{"name: app\nunits:\n  a:\n    run: [x, \"${{ inputs. }}\"]\n", "Syntax error"},
+		// What may be read, where.
+		{"name: app\ninputs:\n  targets: {type: array, default: [docker, lxc]}\nunits:\n  b:\n    run: [y]\n    outputs: {u: {from: stdout}}\n  a:\n    run: [x, \"${{ each.value }}\", \"${{ units.b.outputs.u }}\"]\n    for_each: ${{ inputs.targets }}\n    if: each.key != 'vm' && opstruss.os == 'linux'\n", ""},
+		{"name: app\ntasks:\n  n:\n    run: [y]\n  t:\n    needs: [n]\n    steps:\n      - id: a\n        run: [x, \"${{ tasks.n.outputs.stdout }}\"]\n        failed_when: outputs.exit_code > 1\n      - run: [x, \"${{ steps.a.outputs.stdout }}\", \"${{ event.time }}\"]\n", ""},
+	}
+	for _, tt := range tests {
+		dir := write(t, map[string]string{"opstruss.yaml": tt.yaml})
+		got := problems(t, dir, "")
+		if tt.want == "" {
+			if len(got) > 0 {
+				t.Errorf("%q: unexpected problems:\n%s", tt.yaml, strings.Join(got, "\n"))
+			}
+			continue
+		}
+		if !slices.ContainsFunc(got, func(s string) bool { return strings.Contains(s, tt.want) }) {
+			t.Errorf("%q: want %q, got:\n%s", tt.yaml, tt.want, strings.Join(got, "\n"))
+		}
+	}
+}
+
+func TestOrderAndLocals(t *testing.T) {
+	dir := write(t, map[string]string{
+		"opstruss.yaml": `
+name: app
+include: [more/units.yaml]
+inputs:
+  domain: {type: string, default: example.dev}
+locals:
+  prefix: ${{ opstruss.project }}-${{ stack }}
+  host: ${{ locals.prefix }}.${{ inputs.domain }}
+  later: ${{ kv('last') }}
+units:
+  web:
+    run: [deploy]
+    needs: [dns]
+  db:
+    run: [db]
+    outputs: {url: {from: stdout}}
+`,
+		"more/units.yaml": "units:\n  dns:\n    run: [dns, \"${{ units.db.outputs.url }}\"]\nlocals:\n  ca: ${{ file('ca.pem') }}\n",
+		"more/ca.pem":     "CERT",
+	})
+	_, err := Load(dir, "")
+	if err == nil || !strings.Contains(err.Error(), "kv() is not supported yet") {
+		t.Fatalf("want kv() refused, got %v", err)
+	}
+	rewrite(t, dir, strings.Replace(mustRead(t, filepath.Join(dir, "opstruss.yaml")), "  later: ${{ kv('last') }}\n", "", 1))
+	p, err := Load(dir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"db", "dns", "web"}; !slices.Equal(p.Order, want) {
+		t.Fatalf("order %v, want %v", p.Order, want)
+	}
+	locals, err := p.EvalLocals(map[string]any{"domain": "example.dev"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{"prefix": "app-default", "host": "app-default.example.dev", "ca": "CERT"}
+	if !reflect.DeepEqual(locals, want) {
+		t.Fatalf("locals %v, want %v", locals, want)
+	}
+}
+
+func mustRead(t *testing.T, path string) string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}

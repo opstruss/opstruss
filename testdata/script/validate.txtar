@@ -24,10 +24,15 @@ cp twokinds.yaml opstruss.yaml
 ! exec opstruss validate
 stderr '^opstruss.yaml:3:3: units.site: a unit has exactly one of run, service, or uses$'
 
+# a reference to what does not exist is a problem too
+cp missingref.yaml opstruss.yaml
+! exec opstruss validate
+stderr '^opstruss.yaml:4:5: units.site.run: there is no unit db \(in \$\{\{ units.db.outputs.url \}\}\)$'
+
 # --json prints one document
 ! exec opstruss validate --json
 stdout '"valid": false'
-stdout '"path": "units.site"'
+stdout '"path": "units.site.run"'
 
 -- opstruss.yaml --
 name: app
@@ -51,6 +56,11 @@ units:
   site:
     run: [npm, run, build]
     service: [npm, start]
+-- missingref.yaml --
+name: app
+units:
+  site:
+    run: [deploy, "${{ units.db.outputs.url }}"]
 -- tasks/release.yaml --
 tasks:
   release:

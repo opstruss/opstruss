@@ -14,11 +14,21 @@ minor release can change what a project, a component, or a plugin relies on.
 ### Added
 
 - `opstruss validate` checks `opstruss.yaml`, its include files, and every
-  stack against the schema and the rules of the model, naming the file,
-  line, and column of each problem; `--json` prints one document.
+  stack against the schema and the rules of the model, among them that
+  every `${{ }}` compiles and reads only what exists and may be read where
+  it is written, and that units, task calls, and locals form no cycle. It
+  names the file, line, and column of each problem; `--json` prints one
+  document.
 - `opstruss explain` prints the project of one stack as read: include files
-  and stack overrides merged, and each project input with where its value
-  came from (`--input`, the stack, `env`, or `default`).
+  and stack overrides merged, each project input with where its value came
+  from (`--input`, the stack, `env`, or `default`), the value of each local,
+  and the order of the units; names pick units and tasks with what they
+  depend on.
+- `${{ }}` is CEL with the cel-go extensions for strings, lists, math, sets,
+  two-variable comprehensions, bindings, encoders, and optional values, plus
+  `toJSON()`, `fromJSON()`, `toYAML()`, `fromYAML()`, `sha256()`, `file()`,
+  and `strftime()` on timestamps. A value that is one `${{ }}` keeps its
+  type, and maps are iterated in key order.
 - `-C <dir>`, `--stack` (or `OPSTRUSS_STACK`), `--input name=value`, and
   `--json`.
 - `opstruss --completion bash|zsh|fish` prints a completion script.

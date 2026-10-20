@@ -65,6 +65,7 @@ func (p *Project) check() Problems {
 	c.units()
 	c.tasks()
 	c.moves()
+	c.references()
 	c.unsupported()
 	slices.SortStableFunc(c.probs, func(a, b Problem) int {
 		return cmp.Or(cmp.Compare(a.File, b.File), cmp.Compare(a.Line, b.Line), cmp.Compare(a.Column, b.Column))
