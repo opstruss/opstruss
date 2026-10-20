@@ -1,0 +1,71 @@
+# explain prints one stack as read and resolved: include files and stack
+# overrides merged, and each project input with where its value came from.
+
+! exec opstruss explain
+stderr 'the project has stacks dev, prod; choose one with --stack'
+
+exec opstruss explain --stack prod
+stdout '^stack: prod$'
+stdout '^  domain:\n    value: example.com\n    from: stack$'
+stdout '^  replicas:\n    value: 2\n    from: default$'
+stdout '^  backup:$'
+stdout '^  listen: 127.0.0.1:7879$'
+
+# the dev stack has no backup unit, and $OPSTRUSS_STACK chooses the stack
+env OPSTRUSS_STACK=dev
+exec opstruss explain
+stdout '^stack: dev$'
+! stdout 'backup'
+env OPSTRUSS_STACK=
+
+# --input wins over the stack, and env: fills an input that nothing gave
+env APP_DEBUG=true
+exec opstruss explain --stack dev --input replicas=5 --json
+stdout '"replicas": \{\n      "value": 5,\n      "from": "--input"'
+stdout '"debug": \{\n      "value": true,\n      "from": "env"'
+
+# names pick units and tasks
+exec opstruss explain --stack prod release
+stdout '^  release:$'
+! stdout 'site:'
+! exec opstruss explain --stack prod nope
+stderr 'the project has no unit or task nope; it has backup, release, site'
+
+! exec opstruss explain --stack dev --input replicas=many
+stderr '--input replicas: "many" is not an integer'
+
+-- opstruss.yaml --
+name: app
+include: [tasks/*.yaml]
+inputs:
+  domain:
+    type: string
+  replicas:
+    type: integer
+    default: 2
+  debug:
+    type: boolean
+    env: APP_DEBUG
+runtime:
+  listen: 127.0.0.1:7878
+stacks:
+  dev:
+    with:
+      domain: example.dev
+  prod:
+    with:
+      domain: example.com
+    runtime:
+      listen: 127.0.0.1:7879
+    include: [prod/*.yaml]
+units:
+  site:
+    run: [npm, run, build]
+-- tasks/release.yaml --
+tasks:
+  release:
+    run: [./release.sh]
+-- prod/backup.yaml --
+units:
+  backup:
+    run: [./backup.sh]

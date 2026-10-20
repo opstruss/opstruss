@@ -2,47 +2,160 @@
 package cli
 
 import (
+	"cmp"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
+	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"slices"
+	"strings"
+
+	"github.com/opstruss/opstruss/internal/model"
+	"github.com/spf13/cobra"
+	"go.yaml.in/yaml/v3"
 )
 
-const usage = `Usage: opstruss <command>
-
-Commands:
-  version  Print the version
-  help     Show this help
-`
-
-// Main runs the command line with the process arguments and returns the exit
-// code.
+// Main runs the command line with the process arguments and returns the
+// exit code.
 func Main() int {
-	return run(os.Args[1:], os.Stdout, os.Stderr)
+	return run(os.Args[1:], os.Stdout, os.Stderr, os.LookupEnv)
 }
 
-func run(args []string, stdout, stderr io.Writer) int {
-	if len(args) == 0 {
-		fmt.Fprint(stdout, usage)
+type app struct {
+	stdout, stderr io.Writer
+	lookupEnv      func(string) (string, bool)
+
+	dir        string
+	stack      string
+	inputs     []string
+	json       bool
+	completion string
+}
+
+// exitError ends a command that already wrote why it failed.
+type exitError struct{ code int }
+
+func (e *exitError) Error() string { return fmt.Sprintf("exit %d", e.code) }
+
+func run(args []string, stdout, stderr io.Writer, lookupEnv func(string) (string, bool)) int {
+	a := &app{stdout: stdout, stderr: stderr, lookupEnv: lookupEnv}
+	args, err := a.takeDir(args)
+	if err == nil {
+		root := a.root()
+		root.SetArgs(args)
+		root.SetOut(stdout)
+		root.SetErr(stderr)
+		err = root.Execute()
+	}
+	var exit *exitError
+	var probs model.Problems
+	switch {
+	case err == nil:
 		return 0
-	}
-	var out string
-	switch args[0] {
-	case "help", "-h", "--help":
-		out = usage
-	case "version":
-		out = fmt.Sprintf("opstruss %s %s/%s\n", version(), runtime.GOOS, runtime.GOARCH)
+	case errors.As(err, &exit):
+		return exit.code
+	case errors.As(err, &probs):
+		for _, p := range probs {
+			fmt.Fprintln(stderr, p)
+		}
 	default:
-		fmt.Fprintf(stderr, "opstruss: unknown command %q\n\n%s", args[0], usage)
-		return 1
+		fmt.Fprintf(stderr, "opstruss: %v\n", err)
 	}
-	if len(args) > 1 {
-		fmt.Fprintf(stderr, "opstruss: %s takes no arguments\n", args[0])
-		return 1
+	return 1
+}
+
+// takeDir removes -C <dir> from args, like git -C: each one after the
+// first is relative to the one before.
+func (a *app) takeDir(args []string) ([]string, error) {
+	var out []string
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--":
+			return append(out, args[i:]...), nil
+		case arg == "-C":
+			if i+1 == len(args) {
+				return nil, errors.New("-C needs a directory")
+			}
+			i++
+			a.dir = joinDir(a.dir, args[i])
+		case strings.HasPrefix(arg, "-C"):
+			a.dir = joinDir(a.dir, strings.TrimPrefix(arg, "-C"))
+		default:
+			out = append(out, arg)
+		}
 	}
-	fmt.Fprint(stdout, out)
-	return 0
+	return out, nil
+}
+
+func joinDir(base, dir string) string {
+	if base == "" || filepath.IsAbs(dir) {
+		return dir
+	}
+	return filepath.Join(base, dir)
+}
+
+func (a *app) root() *cobra.Command {
+	root := &cobra.Command{
+		Use:               "opstruss",
+		Short:             "Event-driven workflow orchestration that runs any tool and hands its typed results to the next.",
+		Args:              cobra.NoArgs,
+		SilenceErrors:     true,
+		SilenceUsage:      true,
+		CompletionOptions: cobra.CompletionOptions{DisableDefaultCmd: true},
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if a.completion != "" {
+				return a.printCompletion(cmd)
+			}
+			return cmd.Help()
+		},
+	}
+	pf := root.PersistentFlags()
+	pf.StringVar(&a.stack, "stack", "", "the stack to use; defaults to the only one, or $OPSTRUSS_STACK")
+	pf.StringArrayVar(&a.inputs, "input", nil, "set a project input, as name=value")
+	pf.BoolVar(&a.json, "json", false, "print JSON")
+	root.Flags().StringVar(&a.completion, "completion", "", "print a completion script for bash, zsh, or fish")
+	root.AddCommand(a.versionCommand(), a.validateCommand(), a.explainCommand())
+	return root
+}
+
+func (a *app) printCompletion(root *cobra.Command) error {
+	switch a.completion {
+	case "bash":
+		return root.GenBashCompletionV2(a.stdout, true)
+	case "zsh":
+		return root.GenZshCompletion(a.stdout)
+	case "fish":
+		return root.GenFishCompletion(a.stdout, true)
+	}
+	return fmt.Errorf("--completion takes bash, zsh, or fish, not %q", a.completion)
+}
+
+func (a *app) printJSON(v any) error {
+	enc := json.NewEncoder(a.stdout)
+	enc.SetIndent("", "  ")
+	enc.SetEscapeHTML(false)
+	return enc.Encode(v)
+}
+
+func (a *app) versionCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "version",
+		Short: "Print the version",
+		Args:  cobra.NoArgs,
+		RunE: func(*cobra.Command, []string) error {
+			if a.json {
+				return a.printJSON(map[string]string{"version": version(), "os": runtime.GOOS, "arch": runtime.GOARCH})
+			}
+			fmt.Fprintf(a.stdout, "opstruss %s %s/%s\n", version(), runtime.GOOS, runtime.GOARCH)
+			return nil
+		},
+	}
 }
 
 // version returns the module version stamped by the go command: the tag for
@@ -52,4 +165,135 @@ func version() string {
 		return info.Main.Version
 	}
 	return "(devel)"
+}
+
+// projectDir finds the project from the directory OpsTruss starts in.
+func (a *app) projectDir() (string, error) {
+	return model.Find(cmp.Or(a.dir, "."))
+}
+
+// stackName is --stack, or $OPSTRUSS_STACK outside a run, because a run
+// started by a program of another run chooses its stack itself.
+func (a *app) stackName() string {
+	if a.stack != "" {
+		return a.stack
+	}
+	if _, nested := a.lookupEnv("OPSTRUSS_RUN"); nested {
+		return ""
+	}
+	s, _ := a.lookupEnv("OPSTRUSS_STACK")
+	return s
+}
+
+func (a *app) validateCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "validate",
+		Short: "Check the project's files without running anything",
+		Args:  cobra.NoArgs,
+		RunE: func(*cobra.Command, []string) error {
+			dir, err := a.projectDir()
+			if err != nil {
+				return err
+			}
+			err = model.Validate(dir)
+			var probs model.Problems
+			if err != nil && !errors.As(err, &probs) {
+				return err
+			}
+			if a.json {
+				if probs == nil {
+					probs = model.Problems{}
+				}
+				if err := a.printJSON(map[string]any{"valid": len(probs) == 0, "problems": probs}); err != nil {
+					return err
+				}
+				if len(probs) > 0 {
+					return &exitError{1}
+				}
+				return nil
+			}
+			if len(probs) > 0 {
+				return probs
+			}
+			fmt.Fprintln(a.stdout, "valid")
+			return nil
+		},
+	}
+}
+
+func (a *app) explainCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "explain [unit|task]...",
+		Short: "Print the project of one stack as read and resolved, without state",
+		RunE: func(_ *cobra.Command, names []string) error {
+			dir, err := a.projectDir()
+			if err != nil {
+				return err
+			}
+			p, err := model.Load(dir, a.stackName())
+			if err != nil {
+				return err
+			}
+			given := map[string]string{}
+			for _, kv := range a.inputs {
+				k, v, ok := strings.Cut(kv, "=")
+				if !ok {
+					return fmt.Errorf("--input %s is not name=value", kv)
+				}
+				given[k] = v
+			}
+			inputs, err := p.ResolveInputs(given, a.lookupEnv)
+			if err != nil {
+				return err
+			}
+			out, err := explain(p, inputs, names)
+			if err != nil {
+				return err
+			}
+			if a.json {
+				return a.printJSON(out)
+			}
+			enc := yaml.NewEncoder(a.stdout)
+			enc.SetIndent(2)
+			if err := enc.Encode(out); err != nil {
+				return err
+			}
+			return enc.Close()
+		},
+	}
+}
+
+// explain builds the document that explain prints: the stack's project as
+// written, with each input's value and where it came from.
+func explain(p *model.Project, inputs map[string]model.InputValue, names []string) (map[string]any, error) {
+	out := map[string]any{"project": p.Name, "stack": p.StackName, "inputs": inputs}
+	for k, v := range p.Doc() {
+		switch k {
+		case "name", "description", "opstruss", "inputs":
+		default:
+			out[k] = v
+		}
+	}
+	if len(names) == 0 {
+		return out, nil
+	}
+	units, _ := out["units"].(map[string]any)
+	tasks, _ := out["tasks"].(map[string]any)
+	pickedUnits, pickedTasks := map[string]any{}, map[string]any{}
+	for _, n := range names {
+		u, isUnit := units[n]
+		t, isTask := tasks[n]
+		if !isUnit && !isTask {
+			return nil, fmt.Errorf("the project has no unit or task %s; it has %s", n,
+				strings.Join(slices.Sorted(slices.Values(append(slices.Collect(maps.Keys(units)), slices.Collect(maps.Keys(tasks))...))), ", "))
+		}
+		if isUnit {
+			pickedUnits[n] = u
+		}
+		if isTask {
+			pickedTasks[n] = t
+		}
+	}
+	out["units"], out["tasks"] = pickedUnits, pickedTasks
+	return out, nil
 }

@@ -1,0 +1,609 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "opstruss.yaml",
+  "description": "An OpsTruss project, or a component when used through uses:.",
+  "type": "object",
+  "properties": {
+    "name": { "$ref": "#/$defs/name" },
+    "description": { "type": "string" },
+    "opstruss": { "$ref": "#/$defs/level" },
+    "include": { "$ref": "#/$defs/globs" },
+    "uses": { "$ref": "#/$defs/uses" },
+    "inputs": { "$ref": "#/$defs/inputs" },
+    "locals": { "$ref": "#/$defs/locals" },
+    "outputs": { "$ref": "#/$defs/projectOutputs" },
+    "stacks": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/name" },
+      "additionalProperties": { "$ref": "#/$defs/stack" }
+    },
+    "backend": { "$ref": "#/$defs/backend" },
+    "secrets": { "$ref": "#/$defs/secrets" },
+    "runtime": { "$ref": "#/$defs/runtime" },
+    "mcp": { "$ref": "#/$defs/mcp" },
+    "units": { "$ref": "#/$defs/units" },
+    "tasks": { "$ref": "#/$defs/tasks" },
+    "moved": { "$ref": "#/$defs/moved" },
+    "removed": { "$ref": "#/$defs/removed" }
+  },
+  "patternProperties": { "^x-": true },
+  "additionalProperties": false,
+  "$defs": {
+    "includeFile": {
+      "description": "A file merged into a project through include:.",
+      "type": "object",
+      "properties": {
+        "uses": { "$ref": "#/$defs/uses" },
+        "inputs": { "$ref": "#/$defs/inputs" },
+        "locals": { "$ref": "#/$defs/locals" },
+        "secrets": { "$ref": "#/$defs/secrets" },
+        "units": { "$ref": "#/$defs/units" },
+        "tasks": { "$ref": "#/$defs/tasks" },
+        "moved": { "$ref": "#/$defs/moved" },
+        "removed": { "$ref": "#/$defs/removed" }
+      },
+      "patternProperties": { "^x-": true },
+      "additionalProperties": false
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{0,62}$"
+    },
+    "level": {
+      "description": "The OpsTruss version this file was written for, as MAJOR.MINOR.",
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$"
+    },
+    "globs": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "duration": {
+      "type": "string",
+      "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h))+$"
+    },
+    "condition": { "type": ["string", "boolean"] },
+    "command": {
+      "oneOf": [
+        { "type": "string", "minLength": 1 },
+        { "type": "array", "minItems": 1, "items": { "type": "string" } }
+      ]
+    },
+    "envName": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+    },
+    "env": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/envName" },
+      "additionalProperties": {
+        "oneOf": [
+          { "type": "string" },
+          {
+            "type": "object",
+            "properties": { "file": { "type": "string" } },
+            "required": ["file"],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "pass": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[A-Za-z_*][A-Za-z0-9_*]*$" }
+    },
+    "requires": {
+      "oneOf": [
+        { "type": "string", "minLength": 1 },
+        { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      ]
+    },
+    "shell": { "enum": ["sh", "bash", "python", "node", "pwsh"] },
+    "approval": { "enum": ["ask", "auto"] },
+    "format": { "enum": ["text", "json", "yaml", "lines", "dotenv"] },
+    "valueType": { "enum": ["string", "number", "integer", "boolean", "object", "array"] },
+    "stdin": {
+      "type": "object",
+      "properties": {
+        "value": true,
+        "format": { "$ref": "#/$defs/format" }
+      },
+      "required": ["value"],
+      "patternProperties": { "^x-": true },
+      "additionalProperties": false
+    },
+    "paths": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          { "type": "string", "minLength": 1 },
+          {
+            "type": "object",
+            "properties": { "exclude": { "type": "string", "minLength": 1 } },
+            "required": ["exclude"],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "forEach": { "type": ["array", "object", "string"] },
+    "names": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/name" }
+    },
+    "retry": {
+      "type": "object",
+      "properties": {
+        "attempts": { "type": "integer", "minimum": 1 },
+        "delay": { "$ref": "#/$defs/duration" },
+        "backoff": { "type": "number", "minimum": 1 },
+        "until": { "$ref": "#/$defs/condition" }
+      },
+      "patternProperties": { "^x-": true },
+      "additionalProperties": false
+    },
+    "stop": {
+      "type": "object",
+      "properties": {
+        "signal": { "type": "string", "pattern": "^SIG[A-Z0-9]+$" },
+        "grace": { "$ref": "#/$defs/duration" },
+        "run": { "$ref": "#/$defs/command" }
+      },
+      "patternProperties": { "^x-": true },
+      "additionalProperties": false
+    },
+    "inputs": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/name" },
+      "additionalProperties": { "$ref": "#/$defs/input" }
+    },
+    "input": {
+      "type": "object",
+      "properties": {
+        "type": { "$ref": "#/$defs/valueType" },
+        "description": { "type": "string" },
+        "required": { "type": "boolean" },
+        "default": true,
+        "env": { "$ref": "#/$defs/envName" },
+        "enum": { "type": "array", "minItems": 1 },
+        "pattern": { "type": "string" },
+        "minimum": { "type": "number" },
+        "maximum": { "type": "number" },
+        "items": { "$ref": "#/$defs/input" },
+        "properties": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/name" },
+          "additionalProperties": { "$ref": "#/$defs/input" }
+        },
+        "sensitive": { "type": "boolean" },
+        "literal": { "type": "boolean" },
+        "args": { "type": "boolean" }
+      },
+      "patternProperties": { "^x-": true },
+      "additionalProperties": false
+    },
+    "outputs": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/name" },
+      "additionalProperties": { "$ref": "#/$defs/output" }
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "type": { "$ref": "#/$defs/valueType" },
+        "description": { "type": "string" },
+        "sensitive": { "type": "boolean" },
+        "from": { "enum": ["stdout", "stderr", "file", "output"] },
+        "path": { "type": "string", "minLength": 1 },
+        "format": { "$ref": "#/$defs/format" },
+        "value": true
+      },
+      "patternProperties": { "^x-": true },
+      "additionalProperties": false
+    },
+    "projectOutputs": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/name" },
+      "additionalProperties": {
+        "oneOf": [
+          { "type": "string" },
+          {
+            "type": "object",
+            "properties": {
+              "value": true,
+              "description": { "type": "string" },
+              "sensitive": { "type": "boolean" }
+            },
+            "required": ["value"],
+            "patternProperties": { "^x-": true },
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "locals": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/name" }
+    },
+    "uses": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/name" },
+      "additionalProperties": {
+        "oneOf": [
+          { "type": "string", "minLength": 1 },
+          {
+            "type": "object",
+            "properties": {
+              "source": { "type": "string", "minLength": 1 },
+              "with": { "type": "object" },
+              "env": { "$ref": "#/$defs/env" },
+              "pass": { "$ref": "#/$defs/pass" }
+            },
+            "required": ["source"],
+            "patternProperties": { "^x-": true },
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "stack": {
+      "type": "object",
+      "properties": {
+        "description": { "type": "string" },
+        "with": { "type": "object" },
+        "secrets": { "$ref": "#/$defs/secrets" },
+        "runtime": { "$ref": "#/$defs/runtime" },
+        "mcp": { "$ref": "#/$defs/mcp" },
+        "backend": { "$ref": "#/$defs/backend" },
+        "approval": { "$ref": "#/$defs/approval" },
+        "include": { "$ref": "#/$defs/globs" }
+      },
+      "patternProperties": { "^x-": true },
+      "additionalProperties": false
+    },
+    "backend": {
+      "oneOf": [
+        { "const": "local" },
+        {
+          "type": "object",
+          "properties": {
+            "uses": { "type": "string", "minLength": 1 },
+            "with": { "type": "object" },
+            "pass": { "$ref": "#/$defs/pass" }
+          },
+          "required": ["uses"],
+          "patternProperties": { "^x-": true },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "secrets": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/name" },
+      "additionalProperties": { "$ref": "#/$defs/secret" }
+    },
+    "secret": {
+      "description": "One source: sops, env, run, or a call of a plugin task whose output is value.",
+      "type": "object",
+      "properties": {
+        "sops": { "type": "string", "minLength": 1 },
+        "field": { "type": "string", "minLength": 1 },
+        "env": {
+          "oneOf": [
+            { "$ref": "#/$defs/envName" },
+            { "$ref": "#/$defs/env" }
+          ]
+        },
+        "run": { "$ref": "#/$defs/command" },
+        "pass": { "$ref": "#/$defs/pass" },
+        "dir": { "type": "string" },
+        "shell": { "$ref": "#/$defs/shell" }
+      },
+      "patternProperties": { "^x-": true },
+      "additionalProperties": { "$ref": "#/$defs/call" }
+    },
+    "runtime": {
+      "type": "object",
+      "properties": {
+        "listen": { "type": "string", "minLength": 1 }
+      },
+      "patternProperties": { "^x-": true },
+      "additionalProperties": false
+    },
+    "mcp": {
+      "oneOf": [
+        { "const": false },
+        {
+          "type": "object",
+          "properties": {
+            "tasks": { "$ref": "#/$defs/names" }
+          },
+          "patternProperties": { "^x-": true },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "units": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/name" },
+      "additionalProperties": { "$ref": "#/$defs/unit" }
+    },
+    "unit": {
+      "type": "object",
+      "properties": {
+        "description": { "type": "string" },
+        "run": { "$ref": "#/$defs/command" },
+        "service": { "$ref": "#/$defs/command" },
+        "uses": { "type": "string", "minLength": 1 },
+        "with": { "type": "object" },
+        "tasks": { "$ref": "#/$defs/tasks" },
+        "requires": { "$ref": "#/$defs/requires" },
+        "shell": { "$ref": "#/$defs/shell" },
+        "dir": { "type": "string" },
+        "env": { "$ref": "#/$defs/env" },
+        "pass": { "$ref": "#/$defs/pass" },
+        "stdin": { "$ref": "#/$defs/stdin" },
+        "sources": { "$ref": "#/$defs/paths" },
+        "generates": { "$ref": "#/$defs/globs" },
+        "revision": { "type": "string" },
+        "outputs": { "$ref": "#/$defs/outputs" },
+        "down": { "$ref": "#/$defs/command" },
+        "restart": { "enum": ["no", "on-failure", "always"] },
+        "stop": { "$ref": "#/$defs/stop" },
+        "ready": {
+          "type": "object",
+          "properties": {
+            "http": { "type": "string", "minLength": 1 },
+            "tcp": { "type": "string", "minLength": 1 },
+            "run": { "$ref": "#/$defs/command" },
+            "interval": { "$ref": "#/$defs/duration" },
+            "timeout": { "$ref": "#/$defs/duration" }
+          },
+          "patternProperties": { "^x-": true },
+          "additionalProperties": false
+        },
+        "needs": { "$ref": "#/$defs/names" },
+        "if": { "$ref": "#/$defs/condition" },
+        "for_each": { "$ref": "#/$defs/forEach" },
+        "approval": { "$ref": "#/$defs/approval" },
+        "timeout": { "$ref": "#/$defs/duration" },
+        "protect": { "type": "boolean" },
+        "retry": { "$ref": "#/$defs/retry" }
+      },
+      "patternProperties": { "^x-": true },
+      "additionalProperties": false
+    },
+    "tasks": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/name" },
+      "additionalProperties": { "$ref": "#/$defs/task" }
+    },
+    "call": {
+      "description": "A call of a task by name, with its inputs.",
+      "type": "object"
+    },
+    "task": {
+      "description": "Exactly one of run, steps, or one call of a task.",
+      "type": "object",
+      "properties": {
+        "description": { "type": "string" },
+        "inputs": { "$ref": "#/$defs/inputs" },
+        "outputs": { "$ref": "#/$defs/outputs" },
+        "run": { "$ref": "#/$defs/command" },
+        "steps": { "$ref": "#/$defs/steps" },
+        "shell": { "$ref": "#/$defs/shell" },
+        "dir": { "type": "string" },
+        "env": { "$ref": "#/$defs/env" },
+        "pass": { "$ref": "#/$defs/pass" },
+        "stdin": { "$ref": "#/$defs/stdin" },
+        "requires": { "$ref": "#/$defs/requires" },
+        "needs": { "$ref": "#/$defs/names" },
+        "if": { "$ref": "#/$defs/condition" },
+        "for_each": { "$ref": "#/$defs/forEach" },
+        "max_parallel": { "type": "integer", "minimum": 1 },
+        "on": { "$ref": "#/$defs/triggers" },
+        "approval": { "$ref": "#/$defs/approval" },
+        "concurrency": {
+          "oneOf": [
+            { "$ref": "#/$defs/concurrencyMode" },
+            {
+              "type": "object",
+              "properties": {
+                "group": { "type": "string", "minLength": 1 },
+                "mode": { "$ref": "#/$defs/concurrencyMode" }
+              },
+              "required": ["group"],
+              "patternProperties": { "^x-": true },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "timeout": { "$ref": "#/$defs/duration" },
+        "stop": { "$ref": "#/$defs/stop" },
+        "retry": { "$ref": "#/$defs/retry" },
+        "failed_when": { "$ref": "#/$defs/condition" },
+        "changed_when": { "$ref": "#/$defs/condition" },
+        "continue_on_error": { "type": "boolean" },
+        "internal": { "type": "boolean" }
+      },
+      "patternProperties": { "^x-": true },
+      "additionalProperties": { "$ref": "#/$defs/call" }
+    },
+    "concurrencyMode": { "enum": ["queue", "cancel", "skip", "parallel"] },
+    "steps": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/step" }
+    },
+    "step": {
+      "description": "Exactly one of run, task, block, or one call of a task.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "id": { "$ref": "#/$defs/name" },
+        "if": { "$ref": "#/$defs/condition" },
+        "run": { "$ref": "#/$defs/command" },
+        "task": { "type": "string", "minLength": 1 },
+        "block": { "$ref": "#/$defs/steps" },
+        "rescue": { "$ref": "#/$defs/steps" },
+        "always": { "$ref": "#/$defs/steps" },
+        "with": { "type": "object" },
+        "units": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "yes": { "type": "boolean" },
+        "force": { "type": "boolean" },
+        "env": { "$ref": "#/$defs/env" },
+        "pass": { "$ref": "#/$defs/pass" },
+        "shell": { "$ref": "#/$defs/shell" },
+        "dir": { "type": "string" },
+        "stdin": { "$ref": "#/$defs/stdin" },
+        "timeout": { "$ref": "#/$defs/duration" },
+        "for_each": { "$ref": "#/$defs/forEach" },
+        "retry": { "$ref": "#/$defs/retry" },
+        "failed_when": { "$ref": "#/$defs/condition" },
+        "changed_when": { "$ref": "#/$defs/condition" },
+        "continue_on_error": { "type": "boolean" },
+        "outputs": { "$ref": "#/$defs/outputs" }
+      },
+      "patternProperties": { "^x-": true },
+      "additionalProperties": { "$ref": "#/$defs/call" }
+    },
+    "triggers": {
+      "type": "object",
+      "properties": {
+        "schedule": {
+          "oneOf": [
+            { "$ref": "#/$defs/schedule" },
+            { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/schedule" } }
+          ]
+        },
+        "every": {
+          "oneOf": [
+            { "$ref": "#/$defs/duration" },
+            { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/duration" } }
+          ]
+        },
+        "webhook": {
+          "oneOf": [
+            { "$ref": "#/$defs/webhook" },
+            { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/webhook" } }
+          ]
+        },
+        "watch": {
+          "oneOf": [
+            { "$ref": "#/$defs/watch" },
+            { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/watch" } }
+          ]
+        },
+        "after": {
+          "oneOf": [
+            { "$ref": "#/$defs/after" },
+            { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/after" } }
+          ]
+        }
+      },
+      "patternProperties": { "^x-": true },
+      "additionalProperties": false
+    },
+    "schedule": {
+      "oneOf": [
+        { "type": "string", "minLength": 1 },
+        {
+          "type": "object",
+          "properties": {
+            "cron": { "type": "string", "minLength": 1 },
+            "timezone": { "type": "string", "minLength": 1 },
+            "persistent": { "type": "boolean" },
+            "if": { "$ref": "#/$defs/condition" },
+            "with": { "type": "object" }
+          },
+          "required": ["cron"],
+          "patternProperties": { "^x-": true },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "webhook": {
+      "type": "object",
+      "properties": {
+        "path": { "type": "string", "pattern": "^/" },
+        "method": { "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"] },
+        "secret": { "type": "string", "minLength": 1 },
+        "signature": {
+          "oneOf": [
+            { "enum": ["github", "gitlab", "slack", "stripe", "standard", "bearer"] },
+            {
+              "type": "object",
+              "properties": {
+                "header": { "type": "string", "minLength": 1 },
+                "algorithm": { "enum": ["sha256", "sha512"] },
+                "encoding": { "enum": ["hex", "base64"] },
+                "prefix": { "type": "string" }
+              },
+              "required": ["header"],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "respond": { "enum": ["accepted", "wait"] },
+        "if": { "$ref": "#/$defs/condition" },
+        "with": { "type": "object" }
+      },
+      "required": ["path", "secret", "signature"],
+      "patternProperties": { "^x-": true },
+      "additionalProperties": false
+    },
+    "watch": {
+      "description": "Exactly one source: unit, paths, or one call of a task.",
+      "type": "object",
+      "properties": {
+        "unit": { "type": "string", "minLength": 1 },
+        "paths": { "$ref": "#/$defs/paths" },
+        "stream": { "enum": ["stdout", "stderr", "both"] },
+        "if": { "$ref": "#/$defs/condition" },
+        "batch": { "$ref": "#/$defs/duration" },
+        "debounce": { "$ref": "#/$defs/duration" },
+        "with": { "type": "object" }
+      },
+      "patternProperties": { "^x-": true },
+      "additionalProperties": { "$ref": "#/$defs/call" }
+    },
+    "after": {
+      "type": "object",
+      "properties": {
+        "task": { "type": "string", "minLength": 1 },
+        "unit": { "type": "string", "minLength": 1 },
+        "outcome": { "enum": ["success", "failure", "any"] },
+        "if": { "$ref": "#/$defs/condition" },
+        "with": { "type": "object" }
+      },
+      "required": ["task"],
+      "patternProperties": { "^x-": true },
+      "additionalProperties": false
+    },
+    "moved": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "from": { "type": "string", "minLength": 1 },
+          "to": { "type": "string", "minLength": 1 }
+        },
+        "required": ["from", "to"],
+        "patternProperties": { "^x-": true },
+        "additionalProperties": false
+      }
+    },
+    "removed": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "from": { "type": "string", "minLength": 1 },
+          "destroy": { "type": "boolean" }
+        },
+        "required": ["from", "destroy"],
+        "patternProperties": { "^x-": true },
+        "additionalProperties": false
+      }
+    }
+  }
+}

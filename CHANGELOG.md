@@ -13,6 +13,15 @@ minor release can change what a project, a component, or a plugin relies on.
 
 ### Added
 
+- `opstruss validate` checks `opstruss.yaml`, its include files, and every
+  stack against the schema and the rules of the model, naming the file,
+  line, and column of each problem; `--json` prints one document.
+- `opstruss explain` prints the project of one stack as read: include files
+  and stack overrides merged, and each project input with where its value
+  came from (`--input`, the stack, `env`, or `default`).
+- `-C <dir>`, `--stack` (or `OPSTRUSS_STACK`), `--input name=value`, and
+  `--json`.
+- `opstruss --completion bash|zsh|fish` prints a completion script.
 - `opstruss version` prints the version and the platform.
 - Release builds for Linux and macOS on amd64 and arm64, with checksums,
   SBOMs, and build provenance attestations.

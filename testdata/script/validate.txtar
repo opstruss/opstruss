@@ -1,0 +1,68 @@
+# validate reads every stack and reports each problem with its place.
+
+exec opstruss validate
+stdout '^valid$'
+
+# from a subdirectory, and from anywhere with -C
+cd site
+exec opstruss validate
+stdout '^valid$'
+cd $WORK/..
+exec opstruss -C $WORK validate
+stdout '^valid$'
+cd $WORK
+
+# problems name the file, line, column, and path, in every file at once
+cp broken.yaml opstruss.yaml
+! exec opstruss validate
+stderr '^opstruss.yaml:5:5: units.site.comand: unknown key$'
+stderr '^broken/release.yaml:3:5: tasks.release.when: when is an Ansible keyword; OpsTruss writes if$'
+! stdout .
+
+# rules beyond the schema come once the files have the right shape
+cp twokinds.yaml opstruss.yaml
+! exec opstruss validate
+stderr '^opstruss.yaml:3:3: units.site: a unit has exactly one of run, service, or uses$'
+
+# --json prints one document
+! exec opstruss validate --json
+stdout '"valid": false'
+stdout '"path": "units.site"'
+
+-- opstruss.yaml --
+name: app
+include: [tasks/*.yaml]
+stacks:
+  dev: {}
+  prod:
+    include: [prod/*.yaml]
+units:
+  site:
+    run: [npm, run, build]
+-- broken.yaml --
+name: app
+include: [broken/*.yaml]
+units:
+  site:
+    comand: [npm, run, build]
+-- twokinds.yaml --
+name: app
+units:
+  site:
+    run: [npm, run, build]
+    service: [npm, start]
+-- tasks/release.yaml --
+tasks:
+  release:
+    run: [./release.sh]
+-- broken/release.yaml --
+tasks:
+  release:
+    when: inputs.ok
+    run: [./release.sh]
+-- prod/backup.yaml --
+units:
+  backup:
+    run: [./backup.sh]
+-- site/index.html --
+<p>site</p>

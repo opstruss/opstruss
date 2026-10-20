@@ -6,41 +6,50 @@ import (
 	"testing"
 )
 
+func noEnv(string) (string, bool) { return "", false }
+
 func TestRun(t *testing.T) {
-	platform := " " + runtime.GOOS + "/" + runtime.GOARCH + "\n"
 	tests := []struct {
 		args   []string
 		code   int
-		stdout func(string) bool
+		stdout string
 		stderr string
 	}{
-		{args: nil, stdout: isUsage},
-		{args: []string{"help"}, stdout: isUsage},
-		{args: []string{"-h"}, stdout: isUsage},
-		{args: []string{"--help"}, stdout: isUsage},
-		{
-			args: []string{"version"},
-			stdout: func(s string) bool {
-				return strings.HasPrefix(s, "opstruss ") && strings.HasSuffix(s, platform)
-			},
-		},
-		{args: []string{"version", "extra"}, code: 1, stderr: "opstruss: version takes no arguments\n"},
-		{args: []string{"nope"}, code: 1, stderr: "opstruss: unknown command \"nope\"\n\n" + usage},
+		{args: nil, stdout: "Usage:"},
+		{args: []string{"--help"}, stdout: "Usage:"},
+		{args: []string{"help"}, stdout: "Usage:"},
+		{args: []string{"version"}, stdout: "opstruss (devel) " + runtime.GOOS + "/" + runtime.GOARCH + "\n"},
+		{args: []string{"version", "--json"}, stdout: `"os": "` + runtime.GOOS + `"`},
+		{args: []string{"version", "extra"}, code: 1, stderr: `unknown command "extra"`},
+		{args: []string{"nope"}, code: 1, stderr: `unknown command "nope"`},
+		{args: []string{"--completion", "zsh"}, stdout: "#compdef opstruss"},
+		{args: []string{"--completion", "csh"}, code: 1, stderr: "--completion takes bash, zsh, or fish"},
+		{args: []string{"-C"}, code: 1, stderr: "-C needs a directory"},
+		{args: []string{"-C", t.TempDir(), "validate"}, code: 1, stderr: "no opstruss.yaml in"},
 	}
 	for _, tt := range tests {
 		t.Run(strings.Join(tt.args, " "), func(t *testing.T) {
 			var stdout, stderr strings.Builder
-			if code := run(tt.args, &stdout, &stderr); code != tt.code {
-				t.Errorf("exit code = %d, want %d", code, tt.code)
+			if code := run(tt.args, &stdout, &stderr, noEnv); code != tt.code {
+				t.Errorf("exit code = %d, want %d; stderr %q", code, tt.code, stderr.String())
 			}
-			if tt.stdout == nil && stdout.Len() > 0 || tt.stdout != nil && !tt.stdout(stdout.String()) {
-				t.Errorf("unexpected stdout %q", stdout.String())
+			if !strings.Contains(stdout.String(), tt.stdout) {
+				t.Errorf("stdout %q does not contain %q", stdout.String(), tt.stdout)
 			}
-			if stderr.String() != tt.stderr {
-				t.Errorf("stderr = %q, want %q", stderr.String(), tt.stderr)
+			if !strings.Contains(stderr.String(), tt.stderr) {
+				t.Errorf("stderr %q does not contain %q", stderr.String(), tt.stderr)
 			}
 		})
 	}
 }
 
-func isUsage(s string) bool { return s == usage }
+func TestTakeDir(t *testing.T) {
+	a := &app{}
+	args, err := a.takeDir([]string{"-C", "/srv", "-Cops", "explain", "--", "-C", "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.dir != "/srv/ops" || strings.Join(args, " ") != "explain -- -C x" {
+		t.Fatalf("dir %q, args %q", a.dir, args)
+	}
+}

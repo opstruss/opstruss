@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "opstruss.plugin.yaml",
+  "description": "An OpsTruss plugin.",
+  "type": "object",
+  "properties": {
+    "name": { "$ref": "project.json#/$defs/name" },
+    "description": { "type": "string" },
+    "opstruss": { "$ref": "project.json#/$defs/level" },
+    "requires": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "env": {
+      "description": "Variables the plugin asks for; the project grants them with pass:.",
+      "type": "array",
+      "items": { "$ref": "project.json#/$defs/envName" }
+    },
+    "state": { "enum": ["opstruss", "tool"] },
+    "inputs": { "$ref": "project.json#/$defs/inputs" },
+    "outputs": {
+      "oneOf": [
+        { "const": "tool" },
+        { "$ref": "project.json#/$defs/outputs" }
+      ]
+    },
+    "tasks": { "$ref": "project.json#/$defs/tasks" },
+    "bin": {
+      "type": "object",
+      "propertyNames": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+      "additionalProperties": {
+        "type": "object",
+        "propertyNames": { "enum": ["linux/amd64", "linux/arm64", "darwin/amd64", "darwin/arm64"] },
+        "additionalProperties": {
+          "type": "object",
+          "properties": {
+            "url": { "type": "string", "pattern": "^https://" },
+            "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+          },
+          "required": ["url", "sha256"],
+          "additionalProperties": false
+        }
+      }
+    },
+    "backend": {
+      "type": "object",
+      "properties": {
+        "run": { "$ref": "project.json#/$defs/command" }
+      },
+      "required": ["run"],
+      "patternProperties": { "^x-": true },
+      "additionalProperties": false
+    }
+  },
+  "required": ["name"],
+  "patternProperties": { "^x-": true },
+  "additionalProperties": false
+}
