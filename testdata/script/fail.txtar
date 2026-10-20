@@ -1,0 +1,70 @@
+# A unit that fails keeps what it parsed in pending, and the next attempt
+# gets it with OPSTRUSS_REASON=interrupted; units that depend on it wait.
+
+env HOME=$WORK/home
+
+# the program fails after it made something; its id stays in pending
+! exec opstruss up db web --yes
+stderr '^default/db: the program exited with 3$'
+stdout '^default/web: skipped: default/db is failure$'
+exec opstruss state pull db
+stdout '"op": "up"'
+stdout '"id": "db-1"'
+exec opstruss plan db
+stdout '^default/db: will run: up of run .* did not finish$'
+
+# the next attempt reads what the last one made, and succeeds
+cp ok.sh db.sh
+exec opstruss up db web --yes
+grep '^interrupted db-1$' attempt
+stdout '^default/web: up: done$'
+exec opstruss state pull db
+! stdout '"pending"'
+
+# retry runs the program again while it fails
+exec opstruss up flaky --yes
+stdout 'attempt 1 of 3 failed: the program exited with 1; again in 10ms'
+stdout '^default/flaky: up: done$'
+grep -count=3 . flaky.count
+
+# a program that requires: names and PATH does not have fails before it runs
+! exec opstruss up needs-tool --yes
+stderr '^default/needs-tool: requires: no-such-tool-x is not in PATH$'
+
+# timeout stops the program with stop.signal, then kills it
+! exec opstruss up slow --yes
+stderr '^default/slow: the program exited with 143$'
+
+# a run nested in a program of this one fails at once on a lock it holds
+! exec opstruss up nested --yes
+stdout 'the lock is held by run .*, which this run is nested in'
+
+-- opstruss.yaml --
+name: shop
+units:
+  db:
+    run: [sh, ./db.sh]
+    outputs:
+      id: {}
+  web:
+    run: echo web
+    env:
+      DB: ${{ units.db.outputs.id }}
+  flaky:
+    run: echo x >> flaky.count; test "$(wc -l < flaky.count)" -ge 3
+    retry: {attempts: 3, delay: 10ms}
+  needs-tool:
+    run: echo hi
+    requires: [no-such-tool-x]
+  slow:
+    run: sleep 30
+    timeout: 300ms
+    stop: {signal: SIGTERM, grace: 1s}
+  nested:
+    run: opstruss up nested --yes
+-- db.sh --
+echo "id=db-1" >> "$OPSTRUSS_OUTPUT"
+exit 3
+-- ok.sh --
+echo "$OPSTRUSS_REASON $(grep -o '"id":"[^"]*"' "$OPSTRUSS_STATE" | cut -d'"' -f4)" > attempt
+echo "id=db-1" >> "$OPSTRUSS_OUTPUT"

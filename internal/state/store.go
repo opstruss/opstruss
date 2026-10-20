@@ -6,17 +6,19 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
 // Store is the state of one stack in a backend. It reads _meta before
 // anything else: a newer layout stops the run, and a stack that belongs to
-// another project is never written.
+// another project is never written. Units of one run use it at once.
 type Store struct {
 	Backend Backend
 	Stack   string
 	Project string
 
+	mu   sync.Mutex
 	meta *Meta
 }
 
@@ -65,6 +67,12 @@ func Open(b Backend, stack, project string) (*Store, error) {
 // Writable reports whether runs may write this stack: not when its _meta
 // names another project.
 func (s *Store) Writable() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.writable()
+}
+
+func (s *Store) writable() error {
 	if s.meta != nil && s.meta.Project != s.Project {
 		return fmt.Errorf("stack %s belongs to project %s, not %s; a renamed project updates it with opstruss state pull _meta and push", s.Stack, s.meta.Project, s.Project)
 	}
@@ -74,8 +82,10 @@ func (s *Store) Writable() error {
 // EnsureMeta writes _meta before the stack's first record, and checks
 // that the stack may be written.
 func (s *Store) EnsureMeta() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.meta != nil {
-		return s.Writable()
+		return s.writable()
 	}
 	m := &Meta{Version: MetaVersion, Project: s.Project}
 	data, err := encodeJSON(m)
@@ -96,7 +106,7 @@ func (s *Store) EnsureMeta() error {
 		return err
 	}
 	s.meta = m
-	return s.Writable()
+	return s.writable()
 }
 
 func (s *Store) checkAddress(address string) error {

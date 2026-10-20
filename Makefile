@@ -5,6 +5,7 @@ build:
 
 test:
 	go test -race ./...
+	go test -race -tags failpoints -run 'TestScripts/crash' .
 
 lint:
 	golangci-lint run

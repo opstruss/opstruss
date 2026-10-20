@@ -367,7 +367,7 @@ func (p *Project) EvalLocals(inputs map[string]any) (map[string]any, error) {
 			out[name] = p.Locals[name]
 			continue
 		}
-		s := &expr.Scope{Dir: p.dirOf("locals." + name), Vars: map[string]any{
+		s := &expr.Scope{Dir: p.DirOf("locals." + name), Vars: map[string]any{
 			"inputs": inputs, "locals": out, "stack": p.StackName,
 			"opstruss": map[string]any{"project": p.Name, "os": runtime.GOOS, "arch": runtime.GOARCH, "host": hostname()},
 		}}
@@ -380,9 +380,9 @@ func (p *Project) EvalLocals(inputs map[string]any) (map[string]any, error) {
 	return out, nil
 }
 
-// dirOf returns the directory of the file that wrote an entry, which
+// DirOf returns the directory of the file that wrote an entry, which
 // relative paths and file() read from.
-func (p *Project) dirOf(key string) string {
+func (p *Project) DirOf(key string) string {
 	if o, ok := p.origins[key]; ok {
 		return filepath.Join(p.Dir, filepath.Dir(o.doc.file))
 	}

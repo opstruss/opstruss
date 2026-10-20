@@ -38,6 +38,34 @@ minor release can change what a project, a component, or a plugin relies on.
   atomically with a backup of the previous content. `_meta` names the
   project a stack belongs to, and a stack of another project, of a newer
   layout, or with records but no `_meta` is never written.
+- `opstruss plan`, `up`, and `down` (also `preview`, `apply`, and
+  `destroy`) run the `run` units of a stack in graph order, units that do
+  not depend on each other in parallel, at most `OPSTRUSS_PARALLEL` (10) at
+  once. Names and patterns with `*` or `name[key]` pick units; `plan` and
+  `up` take what they depend on, `down` what depends on them, unless
+  `--no-deps`.
+- A unit runs again when its definition, a file of `sources`, `revision`,
+  or a `pass` value changes, or a file of `generates` is missing;
+  `up --force` runs the units named anyway. `if` and `for_each` decide
+  which instances exist, from what is known when the run starts.
+- A change needs approval: `approval: auto`, or `--yes` for the run;
+  otherwise the unit stops at plan, the units that depend on it are
+  skipped, and the run exits with 2.
+- Each unit holds the lock of its address from its plan to the end of its
+  program, waiting while another run holds it; a run nested in a program
+  of another fails at once on a lock that run holds.
+- `up` marks the record pending before the program runs and keeps what a
+  failed attempt parsed, so the next attempt gets it in `$OPSTRUSS_STATE`
+  with `OPSTRUSS_REASON=interrupted`; programs that a killed OpsTruss left
+  running are waited for first. `retry`, `timeout`, and `requires:` apply
+  to units. A record the backend refuses at the end is kept in
+  `.opstruss/errored/`.
+- `down` runs the `down:` recorded for each unit, units that depend on
+  others first, with the context it was written with: it refuses `pass`
+  values that differ unless `--force`, and nothing goes down while a unit
+  it reaches has `protect: true`. Instances that leave `if` or `for_each`
+  go down at `up`; units that leave the files stay as orphans until
+  `removed:` takes them down or forgets them, which leaves a tombstone.
 - Programs of units and tasks start from a clean environment (`PATH`,
   `HOME`, `USER`, the locale, `TZ`, `TMPDIR`, `TERM`, proxies,
   `SSL_CERT_*`, `SSH_AUTH_SOCK`) plus the variables that `pass:` names and

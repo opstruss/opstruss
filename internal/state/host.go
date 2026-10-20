@@ -60,6 +60,9 @@ func NewHolder(run, hostID string) Holder {
 	return h
 }
 
+// NewID returns the id of a new record: 8 random hex digits, never reused.
+func NewID() string { return newToken()[:8] }
+
 // NewRunID names a run by its UTC start time and 8 random hex digits, so
 // runs list in order and never share a name.
 func NewRunID() string {

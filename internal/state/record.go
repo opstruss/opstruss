@@ -49,15 +49,24 @@ type Source struct {
 }
 
 // Down is what down runs, resolved: the program of a run unit or the
-// plugin's task, with its context. Pass holds the sha256 fingerprint of
-// each variable passed from the operator.
+// plugin's task, with its context. Dir is relative to the project root,
+// EnvFiles are env values that the program gets as files, and Pass holds
+// the sha256 fingerprint of each variable passed from the operator.
 type Down struct {
-	Run     any               `json:"run,omitempty"`
-	Shell   string            `json:"shell,omitempty"`
-	Dir     string            `json:"dir,omitempty"`
-	Env     map[string]string `json:"env,omitempty"`
-	Pass    map[string]string `json:"pass,omitempty"`
-	Timeout string            `json:"timeout,omitempty"`
+	Run      any               `json:"run,omitempty"`
+	Shell    string            `json:"shell,omitempty"`
+	Dir      string            `json:"dir,omitempty"`
+	Env      map[string]string `json:"env,omitempty"`
+	EnvFiles map[string]string `json:"env_files,omitempty"`
+	Pass     map[string]string `json:"pass,omitempty"`
+	Timeout  string            `json:"timeout,omitempty"`
+	Stop     *DownStop         `json:"stop,omitempty"`
+}
+
+// DownStop is how the program of down stops.
+type DownStop struct {
+	Signal string `json:"signal,omitempty"`
+	Grace  string `json:"grace,omitempty"`
 }
 
 // Attempt is an operation that started and has not finished: the pending

@@ -62,8 +62,20 @@
         "shell": { "type": "string" },
         "dir": { "type": "string" },
         "env": { "type": "object", "additionalProperties": { "type": "string" } },
+        "env_files": {
+          "description": "env values that the program gets as the path of a temporary file",
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
         "pass": { "type": "object", "additionalProperties": { "type": "string" } },
-        "timeout": { "type": "string" }
+        "timeout": { "type": "string" },
+        "stop": {
+          "type": "object",
+          "properties": {
+            "signal": { "type": "string" },
+            "grace": { "type": "string" }
+          }
+        }
       }
     },
     "holder": {

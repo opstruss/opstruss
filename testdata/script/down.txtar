@@ -1,0 +1,124 @@
+# down runs the down contract of each record, units that depend on others
+# first; up takes down the instances that left for_each, and removed:
+# decides about units that left the files.
+
+env HOME=$WORK/home
+env AWS_PROFILE=dev
+
+exec opstruss up --yes
+stdout '^default/app\[eu\]: up: done$'
+
+# protect refuses down before anything goes down, also the units that
+# depend on it
+! exec opstruss down vault --yes
+stderr '^default/vault: protect: true refuses down; .*nothing went down$'
+exists '.opstruss/state/default/app[eu]/state.json'
+
+# a pass value that differs from the record refuses down; --force runs it
+env AWS_PROFILE=prod
+! exec opstruss down --yes --no-deps app
+stderr 'pass values differ from those of the record: AWS_PROFILE; down --force'
+exec opstruss down --yes --force --no-deps 'app[eu]'
+stdout '^default/app\[eu\] \| down id-eu$'
+grep '^app\[eu\]$' downs
+env AWS_PROFILE=dev
+
+# an instance that leaves for_each goes down at up, after the turns
+exec opstruss up --yes
+stdout '^default/app\[eu\]: up: done$'
+cp opstruss2.yaml opstruss.yaml
+exec opstruss plan
+stdout '^default/app\[us\]: will go down: its instance is no longer in if or for_each$'
+exec opstruss up --yes
+stdout '^default/app\[us\]: down: done$'
+grep '^app\[us\]$' downs
+
+# a unit that leaves the files is an orphan until removed: decides
+cp opstruss3.yaml opstruss.yaml
+exec opstruss up --yes
+stderr '^default/cache: orphan: its unit is no longer in the files; decide with removed:$'
+exists .opstruss/state/default/cache/state.json
+cp opstruss4.yaml opstruss.yaml
+exec opstruss plan
+stdout '^default/cache: will be forgotten without going down: removed: with destroy: false$'
+stdout '^default/old: will go down: removed: with destroy: true$'
+exec opstruss up --yes
+stdout '^default/cache: forgotten; a tombstone stays at the address$'
+stdout '^default/old: down: done$'
+grep '^old$' downs
+! grep cache downs
+
+# a tombstone keeps an old checkout from making a second unit there
+cp opstruss5.yaml opstruss.yaml
+! exec opstruss up --yes
+stderr '^default/cache: this address was forgotten in run'
+exec opstruss state rm cache
+exec opstruss up --yes
+stdout '^default/cache: up: done$'
+
+-- opstruss.yaml --
+name: shop
+units:
+  vault:
+    run: echo vault
+    down: echo vault >> downs
+    protect: true
+  app:
+    for_each: [eu, us]
+    run: [sh, -c, 'echo "id=id-$1" >> "$OPSTRUSS_OUTPUT"', app, "${{ each.key }}"]
+    down: |
+      echo "down $(grep -o '"id":"[^"]*"' "$OPSTRUSS_STATE" | cut -d'"' -f4)"
+      echo "${OPSTRUSS_ADDRESS#default/}" >> downs
+    outputs:
+      id: {}
+    pass: [AWS_PROFILE]
+    needs: [vault]
+  cache:
+    run: echo cache
+  old:
+    run: echo old
+    down: echo old >> downs
+-- opstruss2.yaml --
+name: shop
+units:
+  vault:
+    run: echo vault
+    down: echo vault >> downs
+    protect: true
+  app:
+    for_each: [eu]
+    run: [sh, -c, 'echo "id=id-$1" >> "$OPSTRUSS_OUTPUT"', app, "${{ each.key }}"]
+    down: echo "${OPSTRUSS_ADDRESS#default/}" >> downs
+    outputs:
+      id: {}
+    pass: [AWS_PROFILE]
+    needs: [vault]
+  cache:
+    run: echo cache
+  old:
+    run: echo old
+    down: echo old >> downs
+-- opstruss3.yaml --
+name: shop
+units:
+  vault:
+    run: echo vault
+    protect: true
+-- opstruss4.yaml --
+name: shop
+units:
+  vault:
+    run: echo vault
+    protect: true
+removed:
+  - {from: cache, destroy: false}
+  - {from: old, destroy: true}
+  - {from: app, destroy: false}
+-- opstruss5.yaml --
+name: shop
+units:
+  vault:
+    run: echo vault
+    protect: true
+  cache:
+    run: echo cache

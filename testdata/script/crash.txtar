@@ -1,0 +1,54 @@
+# OpsTruss killed at each point of an up leaves a record that the next up
+# finishes, and a program it left running is waited for. Run with
+# go test -tags failpoints.
+
+[!failpoints] skip 'needs a build with -tags failpoints'
+env HOME=$WORK/home
+
+# killed before the pending mark, the unit is still new
+env OPSTRUSS_FAILPOINT=up-before-pending=kill
+! exec opstruss up db --yes
+env OPSTRUSS_FAILPOINT=
+exec opstruss plan db
+stdout '^default/db: will run: new$'
+
+# killed after it, or after the program, or before the last write, the
+# next plan shows the attempt that did not finish, and up finishes it
+env OPSTRUSS_FAILPOINT=up-before-program=kill
+! exec opstruss up db --yes
+env OPSTRUSS_FAILPOINT=
+exec opstruss plan db
+stdout '^default/db: will run: up of run .* did not finish$'
+env OPSTRUSS_FAILPOINT=up-before-put=kill
+! exec opstruss up db --yes
+env OPSTRUSS_FAILPOINT=
+exec opstruss up db --yes
+stdout '^default/db: up: done$'
+exec opstruss state pull db
+! stdout '"pending"'
+stdout '"id": "made-'
+
+# a program that outlives its OpsTruss is waited for before the next
+# attempt, also as sh and sleep, whose environment macOS hides
+env OPSTRUSS_FAILPOINT=program-started=kill
+! exec opstruss up slow --yes
+env OPSTRUSS_FAILPOINT=
+exec opstruss up slow --yes
+stdout '^default/slow: waiting for .* of interrupted run '
+stdout '^default/slow: up: done$'
+cmp slow.log slow.want
+
+-- opstruss.yaml --
+name: shop
+units:
+  db:
+    run: echo "id=made-$$" >> "$OPSTRUSS_OUTPUT"
+    outputs:
+      id: {}
+  slow:
+    run: echo "start $OPSTRUSS_REASON" >> slow.log; sleep 1; echo "end $OPSTRUSS_REASON" >> slow.log
+-- slow.want --
+start changed
+end changed
+start interrupted
+end interrupted

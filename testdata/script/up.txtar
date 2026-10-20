@@ -1,0 +1,88 @@
+# up runs each run unit whose definition changed, in graph order, and hands
+# the outputs of one unit to the next with their types.
+
+env HOME=$WORK/home
+
+# a unit that changes something stops at plan without approval, and so do
+# the units that depend on it; exit code 2 says so
+exec opstruss plan
+stdout '^default/db: will run: new$'
+stdout '^default/web: planned after default/db$'
+! exec opstruss up
+stdout '^default/db: will run: new; needs approval, stopped at plan$'
+stdout '^default/web: skipped: default/db is skipped$'
+! exists facts
+
+# --yes approves the run; web reads the port of db as a number
+exec opstruss up --yes
+stdout '^default/db \| db up$'
+stdout '^default/db: up: done$'
+stdout '^default/web: up: done$'
+grep '^url=http://localhost:5432 port=5432 \(number\)$' web.log
+grep '^OPSTRUSS_ADDRESS=default/db$' facts
+grep '^OPSTRUSS_TASK=up$' facts
+grep '^OPSTRUSS_REASON=changed$' facts
+grep '^OPSTRUSS_STATE_KEY=default/db\.[0-9a-f]{8}$' facts
+grep '^OPSTRUSS_WORKDIR=.*/\.opstruss/work/default/db$' facts
+exec opstruss state pull web
+stdout '"url": "http://localhost:5432"'
+stdout '"default/db"'
+
+# nothing changed, so nothing runs
+exec opstruss up
+stdout '^default/db: unchanged$'
+stdout '^default/web: unchanged$'
+
+# a file in sources, the revision, and a missing file of generates each
+# make the unit run again; files that generates matches stay out of sources
+cp src/schema2.sql src/schema.sql
+exec opstruss plan
+stdout '^default/db: will run: definition changed$'
+exec opstruss up db --yes --no-deps
+stdout '^default/db: up: done$'
+rm build/db.done
+exec opstruss plan db
+stdout '^default/db: will run: generates missing: build/\*\.done$'
+exec opstruss up db --yes
+exists build/db.done
+exec opstruss up --input revision=2 --yes
+stdout '^default/db: up: done$'
+exec opstruss plan --input revision=2
+stdout '^default/db: unchanged$'
+
+# --force runs the units named again, and not their dependencies
+exec opstruss up web --force --input revision=2 --yes
+stdout '^default/db: unchanged$'
+stdout '^default/web: up: done$'
+grep '^OPSTRUSS_REASON=forced$' web.facts
+
+# a pattern names no unit
+! exec opstruss up nothing
+stderr 'no unit matches nothing'
+
+-- opstruss.yaml --
+name: shop
+inputs:
+  revision: {type: string, default: "1"}
+units:
+  db:
+    run: |
+      echo db up
+      env | grep -E '^OPSTRUSS_(ADDRESS|TASK|REASON|STATE_KEY|WORKDIR)=' > facts
+      mkdir -p build && touch build/db.done
+      echo "port=5432" >> "$OPSTRUSS_OUTPUT"
+    outputs:
+      port: {type: integer}
+    sources: [src/*.sql, build/**]
+    generates: [build/*.done]
+    revision: ${{ inputs.revision }}
+  web:
+    run: [sh, -c, 'echo "url=$URL" >> "$OPSTRUSS_OUTPUT"; echo "url=$URL port=$1 ($2)" > web.log; env | grep OPSTRUSS_REASON > web.facts', web, "${{ units.db.outputs.port }}", "${{ type(units.db.outputs.port) == int ? 'number' : 'text' }}"]
+    env:
+      URL: http://localhost:${{ units.db.outputs.port }}
+    outputs:
+      url: {}
+-- src/schema.sql --
+create table a;
+-- src/schema2.sql --
+create table b;

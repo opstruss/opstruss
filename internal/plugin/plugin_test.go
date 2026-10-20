@@ -321,7 +321,7 @@ func TestProgram(t *testing.T) {
 			t.Errorf("%+v: want an error", c)
 		}
 	}
-	if _, err := program("sh", "relative/bin"); err == nil {
+	if _, err := LookPath("sh", "relative/bin"); err == nil {
 		t.Error("a program found through a relative PATH directory")
 	}
 }
@@ -344,7 +344,7 @@ func TestShells(t *testing.T) {
 		Outputs: map[string]*model.Output{"after": {}}}); res.ExitCode != 1 || res.Outputs["after"] != nil {
 		t.Fatalf("sh: exit %d, outputs %v", res.ExitCode, res.Outputs)
 	}
-	if _, err := program("bash", os.Getenv("PATH")); err == nil {
+	if _, err := LookPath("bash", os.Getenv("PATH")); err == nil {
 		if res := run(t, r, &Call{Shell: "bash", Command: script("false | true")}); res.ExitCode != 1 {
 			t.Fatalf("bash pipefail: exit %d", res.ExitCode)
 		}

@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/opstruss/opstruss/internal/failpoint"
 	"github.com/opstruss/opstruss/internal/model"
 	"github.com/opstruss/opstruss/internal/proc"
 )
@@ -94,11 +95,11 @@ func argv(cmd model.Command, shell string) ([]string, error) {
 	return append(slices.Clone(s), cmd.Script), nil
 }
 
-// program finds argv[0]: a path as written, relative to the working
-// directory, as a shell does, or a name in the PATH of the call. A
+// LookPath finds a program: a path as written, relative to the working
+// directory, as a shell does, or a name in path, the PATH of a call. A
 // directory in PATH that is not absolute is skipped, as os/exec refuses
 // programs found through one.
-func program(name, path string) (string, error) {
+func LookPath(name, path string) (string, error) {
 	if strings.Contains(name, "/") {
 		return name, nil
 	}
@@ -191,7 +192,7 @@ func (r *Run) Exec(ctx context.Context, c *Call) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	path, err := program(args[0], env["PATH"])
+	path, err := LookPath(args[0], env["PATH"])
 	if err != nil {
 		return nil, err
 	}
@@ -249,6 +250,7 @@ func (r *Run) Exec(ctx context.Context, c *Call) (*Result, error) {
 		closeAll(ours)
 		return nil, err
 	}
+	failpoint.Hit("program-started")
 	for _, s := range streams {
 		go s.copy()
 	}

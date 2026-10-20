@@ -23,12 +23,13 @@ import (
 // Main runs the command line with the process arguments and returns the
 // exit code.
 func Main() int {
-	return run(os.Args[1:], os.Stdout, os.Stderr, os.LookupEnv)
+	return run(os.Args[1:], os.Stdout, os.Stderr, os.Environ())
 }
 
 type app struct {
 	stdout, stderr io.Writer
-	lookupEnv      func(string) (string, bool)
+	environ        []string
+	env            map[string]string
 
 	dir        string
 	stack      string
@@ -42,8 +43,14 @@ type exitError struct{ code int }
 
 func (e *exitError) Error() string { return fmt.Sprintf("exit %d", e.code) }
 
-func run(args []string, stdout, stderr io.Writer, lookupEnv func(string) (string, bool)) int {
-	a := &app{stdout: stdout, stderr: stderr, lookupEnv: lookupEnv}
+// run runs the command line with args in the operator's environment.
+func run(args []string, stdout, stderr io.Writer, environ []string) int {
+	a := &app{stdout: stdout, stderr: stderr, environ: environ, env: map[string]string{}}
+	for _, kv := range environ {
+		if k, v, ok := strings.Cut(kv, "="); ok {
+			a.env[k] = v
+		}
+	}
 	args, err := a.takeDir(args)
 	if err == nil {
 		root := a.root()
@@ -93,6 +100,24 @@ func (a *app) takeDir(args []string) ([]string, error) {
 	return out, nil
 }
 
+func (a *app) lookupEnv(name string) (string, bool) {
+	v, ok := a.env[name]
+	return v, ok
+}
+
+// givenInputs reads --input name=value.
+func (a *app) givenInputs() (map[string]string, error) {
+	given := map[string]string{}
+	for _, kv := range a.inputs {
+		k, v, ok := strings.Cut(kv, "=")
+		if !ok {
+			return nil, fmt.Errorf("--input %s is not name=value", kv)
+		}
+		given[k] = v
+	}
+	return given, nil
+}
+
 func joinDir(base, dir string) string {
 	if base == "" || filepath.IsAbs(dir) {
 		return dir
@@ -121,6 +146,7 @@ func (a *app) root() *cobra.Command {
 	pf.BoolVar(&a.json, "json", false, "print JSON")
 	root.Flags().StringVar(&a.completion, "completion", "", "print a completion script for bash, zsh, or fish")
 	root.AddCommand(a.versionCommand(), a.validateCommand(), a.explainCommand(), a.stateCommand())
+	root.AddCommand(a.unitCommands()...)
 	return root
 }
 
@@ -234,13 +260,9 @@ func (a *app) explainCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			given := map[string]string{}
-			for _, kv := range a.inputs {
-				k, v, ok := strings.Cut(kv, "=")
-				if !ok {
-					return fmt.Errorf("--input %s is not name=value", kv)
-				}
-				given[k] = v
+			given, err := a.givenInputs()
+			if err != nil {
+				return err
 			}
 			inputs, err := p.ResolveInputs(given, a.lookupEnv)
 			if err != nil {

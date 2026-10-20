@@ -6,8 +6,6 @@ import (
 	"testing"
 )
 
-func noEnv(string) (string, bool) { return "", false }
-
 func TestRun(t *testing.T) {
 	tests := []struct {
 		args   []string
@@ -30,7 +28,7 @@ func TestRun(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(strings.Join(tt.args, " "), func(t *testing.T) {
 			var stdout, stderr strings.Builder
-			if code := run(tt.args, &stdout, &stderr, noEnv); code != tt.code {
+			if code := run(tt.args, &stdout, &stderr, nil); code != tt.code {
 				t.Errorf("exit code = %d, want %d; stderr %q", code, tt.code, stderr.String())
 			}
 			if !strings.Contains(stdout.String(), tt.stdout) {
