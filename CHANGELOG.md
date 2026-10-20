@@ -29,6 +29,15 @@ minor release can change what a project, a component, or a plugin relies on.
   `toJSON()`, `fromJSON()`, `toYAML()`, `fromYAML()`, `sha256()`, `file()`,
   and `strftime()` on timestamps. A value that is one `${{ }}` keeps its
   type, and maps are iterated in key order.
+- `opstruss state list`, `pull`, `push`, and `rm` read and repair the
+  records of a stack under their locks: `push` takes the etag of a `pull`,
+  or `--force`, and refuses a stale copy, a record for another address,
+  and a record of a newer OpsTruss; `rm` forgets a record without taking
+  anything down and leaves a tombstone, and removes a tombstone.
+- State lives in `.opstruss/state/`, one record per address, written
+  atomically with a backup of the previous content. `_meta` names the
+  project a stack belongs to, and a stack of another project, of a newer
+  layout, or with records but no `_meta` is never written.
 - `-C <dir>`, `--stack` (or `OPSTRUSS_STACK`), `--input name=value`, and
   `--json`.
 - `opstruss --completion bash|zsh|fish` prints a completion script.

@@ -120,7 +120,7 @@ func (a *app) root() *cobra.Command {
 	pf.StringArrayVar(&a.inputs, "input", nil, "set a project input, as name=value")
 	pf.BoolVar(&a.json, "json", false, "print JSON")
 	root.Flags().StringVar(&a.completion, "completion", "", "print a completion script for bash, zsh, or fish")
-	root.AddCommand(a.versionCommand(), a.validateCommand(), a.explainCommand())
+	root.AddCommand(a.versionCommand(), a.validateCommand(), a.explainCommand(), a.stateCommand())
 	return root
 }
 

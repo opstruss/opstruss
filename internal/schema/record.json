@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OpsTruss record",
+  "description": "The state of one unit at its address. Readers ignore fields they do not know.",
+  "type": "object",
+  "properties": {
+    "version": { "type": "integer", "minimum": 1 },
+    "id": { "$ref": "#/$defs/id" },
+    "state_key": { "type": "string", "minLength": 1 },
+    "address": { "type": "string", "minLength": 1 },
+    "kind": { "enum": ["run", "service", "uses", "component"] },
+    "source": { "$ref": "#/$defs/source" },
+    "inputs": { "type": "object" },
+    "down": { "$ref": "#/$defs/down" },
+    "needs": { "type": "array", "items": { "type": "string" } },
+    "outputs": { "type": "object" },
+    "sensitive": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": { "type": "string" }
+      }
+    },
+    "digest": { "$ref": "#/$defs/digest" },
+    "run": { "$ref": "#/$defs/run" },
+    "updated": { "type": "string", "format": "date-time" },
+    "pending": { "$ref": "#/$defs/attempt" },
+    "abandoned": { "type": "array", "items": { "$ref": "#/$defs/attempt" } },
+    "tombstone": {
+      "type": "object",
+      "properties": {
+        "moved_to": { "type": "string", "minLength": 1 },
+        "forgotten": { "type": "boolean" },
+        "run": { "$ref": "#/$defs/run" },
+        "time": { "type": "string", "format": "date-time" }
+      },
+      "required": ["run", "time"]
+    }
+  },
+  "required": ["version", "id", "address"],
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[0-9a-f]{8}$" },
+    "run": { "type": "string", "pattern": "^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$" },
+    "digest": { "type": "string", "pattern": "^sha256:v[0-9]+:[0-9a-f]+$" },
+    "source": {
+      "type": "object",
+      "properties": {
+        "uses": { "type": "string" },
+        "commit": { "type": "string" },
+        "hash": { "type": "string" }
+      }
+    },
+    "down": {
+      "type": "object",
+      "properties": {
+        "run": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "array", "items": { "type": "string" } }
+          ]
+        },
+        "shell": { "type": "string" },
+        "dir": { "type": "string" },
+        "env": { "type": "object", "additionalProperties": { "type": "string" } },
+        "pass": { "type": "object", "additionalProperties": { "type": "string" } },
+        "timeout": { "type": "string" }
+      }
+    },
+    "holder": {
+      "description": "Who holds a lock; also the content of a local state.lock.",
+      "type": "object",
+      "properties": {
+        "version": { "type": "integer", "minimum": 1 },
+        "run": { "type": "string" },
+        "host": { "type": "string" },
+        "hostname": { "type": "string" },
+        "user": { "type": "string" },
+        "pid": { "type": "integer", "minimum": 0 },
+        "started": { "type": "string", "format": "date-time" },
+        "since": { "type": "string", "format": "date-time" }
+      },
+      "required": ["run", "host", "pid"]
+    },
+    "attempt": {
+      "type": "object",
+      "properties": {
+        "op": { "enum": ["up", "down", "moved"] },
+        "run": { "$ref": "#/$defs/run" },
+        "holder": { "$ref": "#/$defs/holder" },
+        "approval": { "type": "string" },
+        "digest": { "$ref": "#/$defs/digest" },
+        "source": { "$ref": "#/$defs/source" },
+        "inputs": { "type": "object" },
+        "down": { "$ref": "#/$defs/down" },
+        "needs": { "type": "array", "items": { "type": "string" } },
+        "outputs": { "type": "object" },
+        "raw_output": { "type": "string" },
+        "peer": { "type": "string" }
+      },
+      "required": ["op", "run", "holder"]
+    }
+  }
+}

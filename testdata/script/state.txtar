@@ -1,0 +1,92 @@
+# opstruss state reads and repairs records through the backend, under their
+# locks, and refuses copies that are stale or written by a newer OpsTruss.
+
+env HOME=$WORK/home
+
+# a stack without records lists nothing
+exec opstruss state list
+! stdout .
+
+# push needs the etag of a pull, or --force, and checks the address
+stdin record.json
+! exec opstruss state push web
+stderr 'push needs --if-match <etag> from state pull, or --force'
+stdin record.json
+exec opstruss state push web --force
+stderr '^etag [0-9a-f]{32}$'
+exists home/.opstruss/host-id
+exists .opstruss/state/default/_meta
+stdin record.json
+! exec opstruss state push db --force
+stderr 'the record is for default/web, not default/db'
+
+exec opstruss state list
+stdout '^default/web\tok$'
+exec opstruss state list --json
+stdout '"address": "default/web"'
+
+# a push with the etag of the pull replaces the record; a stale etag is
+# refused
+exec sh -c 'opstruss state pull web 2>etag'
+stdout '"id": "7f3a9c1e"'
+exec sh -c 'opstruss state push web --if-match "$(cut -d" " -f2 etag)" < record2.json'
+exec opstruss state pull web
+stdout '"url": "https://example.com"'
+exists .opstruss/state/default/web/state.backup.json
+! exec sh -c 'opstruss state push web --if-match "$(cut -d" " -f2 etag)" < record.json'
+stderr 'web changed since the pull'
+
+# a record of a newer OpsTruss is refused
+stdin newer.json
+! exec opstruss state push web --force
+stderr 'version 2, written by a newer OpsTruss'
+
+# rm leaves a tombstone, and rm on a tombstone removes it
+exec opstruss state rm web
+stdout '^default/web: forgotten; a tombstone stays$'
+exec opstruss state list
+stdout '^default/web\tforgotten$'
+exec opstruss state rm web
+stdout '^default/web: removed the tombstone$'
+exec opstruss state list
+! stdout .
+
+# a record whose unit left the files is an orphan
+stdin orphan.json
+exec opstruss state push gone --force
+exec opstruss state list
+stdout '^default/gone\torphan: no longer in the files$'
+
+# another project at the same place reads but never writes, until _meta
+# is pushed with its new name
+cp renamed.yaml opstruss.yaml
+exec opstruss state list
+stdout '^default/gone'
+stdin orphan.json
+! exec opstruss state push gone --force
+stderr 'stack default belongs to project app, not renamed'
+stdin meta.json
+exec opstruss state push _meta --force
+stdin orphan.json
+exec opstruss state push gone --force
+
+-- opstruss.yaml --
+name: app
+units:
+  web:
+    run: [deploy]
+-- renamed.yaml --
+name: renamed
+units:
+  web:
+    run: [deploy]
+-- record.json --
+{"version": 1, "id": "7f3a9c1e", "address": "default/web", "kind": "run"}
+-- record2.json --
+{"version": 1, "id": "7f3a9c1e", "address": "default/web", "kind": "run", "outputs": {"url": "https://example.com"}}
+-- newer.json --
+{"version": 2, "id": "7f3a9c1e", "address": "default/web"}
+-- orphan.json --
+{"version": 1, "id": "1b2c3d4e", "address": "default/gone", "kind": "run"}
+-- meta.json --
+{"version": 1, "project": "renamed"}

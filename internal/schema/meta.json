@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OpsTruss _meta",
+  "description": "The first object of every stack: the version of its layout and the project it belongs to. Readers ignore fields they do not know.",
+  "type": "object",
+  "properties": {
+    "version": { "type": "integer", "minimum": 1 },
+    "project": { "$ref": "project.json#/$defs/name" }
+  },
+  "required": ["version", "project"]
+}
