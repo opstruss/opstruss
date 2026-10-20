@@ -24,13 +24,16 @@ jobs:
       - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
         with:
           cache: false
-      # The notes are the CHANGELOG.md section of this version, which must
-      # carry its release date instead of "(Unreleased)".
+      # The notes are the CHANGELOG.md section of this version, written
+      # "## [1.2.3] - 2026-11-02" once [Unreleased] became the release.
       - name: Extract release notes
         run: |
           awk -v version="${GITHUB_REF_NAME#v}" '
-            $1 == "##" && $2 == version { if (/Unreleased/) exit 1; found = 1; next }
-            found && /^## / { exit }
+            $1 == "##" && $2 == "[" version "]" {
+              if ($3 != "-" || $4 !~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$/) exit 1
+              found = 1; next
+            }
+            found && (/^## / || /^\[[^]]+\]: /) { exit }
             found { print }
           ' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
           grep -q '[^[:space:]]' "$RUNNER_TEMP/notes.md"
