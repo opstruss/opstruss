@@ -5,6 +5,7 @@
 package record
 
 import (
+	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -94,6 +95,7 @@ type Run struct {
 	mu     sync.Mutex
 	seq    int64
 	events *os.File
+	out    *bufio.Writer // buffers events.jsonl, flushed by what is not program output
 	lock   *os.File
 	sink   func(Event)
 	stored int64   // program output written
@@ -131,6 +133,7 @@ func Create(root string, newID func() string, rec *Record, sink func(Event)) (*R
 		if r.events, err = os.OpenFile(filepath.Join(dir, "events.jsonl"), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600); err != nil {
 			return nil, err
 		}
+		r.out = bufio.NewWriterSize(r.events, 64<<10)
 		return r, write(dir, rec)
 	}
 }
@@ -177,10 +180,16 @@ func (r *Run) Emit(ev Event) {
 	}
 }
 
+// writeEvent buffers an event; one that reports a problem or a result is
+// written out at once with what came before it, so a crash loses at most
+// the program output and plan lines just before it.
 func (r *Run) writeEvent(ev Event) {
 	data, err := json.Marshal(ev)
 	if err == nil {
-		_, _ = r.events.Write(append(data, '\n'))
+		_, _ = r.out.Write(append(data, '\n'))
+	}
+	if ev.Level != "info" || (ev.Type != "log" && ev.Type != "plan") {
+		_ = r.out.Flush()
 	}
 }
 
@@ -199,6 +208,7 @@ func (r *Run) Finish(update func(*Record)) error {
 		r.writeEvent(ev)
 	}
 	r.tail = nil
+	_ = r.out.Flush()
 	update(r.rec)
 	r.rec.Status = Finished
 	r.rec.Ended = time.Now().UTC().Format(time.RFC3339)

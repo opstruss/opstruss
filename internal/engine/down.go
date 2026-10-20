@@ -39,7 +39,7 @@ func (e *engine) downPass(ctx context.Context) ([]*leftover, error) {
 	if err := e.selectUnits(true); err != nil {
 		return nil, err
 	}
-	records, err := e.records()
+	records, err := e.records(nil)
 	if err != nil {
 		return nil, err
 	}
@@ -76,13 +76,16 @@ func (e *engine) downPass(ctx context.Context) ([]*leftover, error) {
 }
 
 // records reads every record of the stack, tombstones left out.
-func (e *engine) records() ([]*leftover, error) {
+func (e *engine) records(skip map[string]bool) ([]*leftover, error) {
 	addrs, err := e.store.Inventory()
 	if err != nil {
 		return nil, err
 	}
 	var out []*leftover
 	for _, addr := range addrs {
+		if skip[addr] {
+			continue
+		}
 		rec, _, err := e.store.Get(addr)
 		if err != nil {
 			return nil, err
@@ -102,14 +105,14 @@ func (e *engine) records() ([]*leftover, error) {
 // decides. Units gone from the files without removed: stay, with a
 // warning.
 func (e *engine) previewLeftovers() []*leftover {
-	records, err := e.records()
-	if err != nil {
-		e.fail("", err)
-		return nil
-	}
 	planned := map[string]bool{}
 	for _, inst := range e.insts {
 		planned[inst.address] = true
+	}
+	records, err := e.records(planned)
+	if err != nil {
+		e.fail("", err)
+		return nil
 	}
 	var out []*leftover
 	for _, l := range records {

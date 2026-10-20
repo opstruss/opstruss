@@ -1,0 +1,169 @@
+# Crash: OpsTruss killed at every point of up, down, and moved:, and up
+# after output that does not parse and after a last write that fails:
+# after up again, no resource lacks a record, no unit has two, records
+# read, and every interrupted operation shows in plan.
+
+[!failpoints] skip 'needs a build with -tags failpoints'
+env HOME=$WORK/home
+env OPSTRUSS_FAILPOINT_LOG=$WORK/visited
+
+exec opstruss up --yes --input rev=0
+exec fakecloud check cloud .opstruss/state
+stdout '^3 resources, each with a record$'
+# killed at up-before-pending
+env OPSTRUSS_FAILPOINT=up-before-pending=kill
+! exec opstruss up --yes --input rev=1
+env OPSTRUSS_FAILPOINT=
+exec opstruss up --yes --input rev=1
+exec fakecloud check cloud .opstruss/state
+stdout '^3 resources, each with a record$'
+# killed at up-before-program
+env OPSTRUSS_FAILPOINT=up-before-program=kill
+! exec opstruss up --yes --input rev=2
+env OPSTRUSS_FAILPOINT=
+exec opstruss up --yes --input rev=2
+exec fakecloud check cloud .opstruss/state
+stdout '^3 resources, each with a record$'
+# killed at program-started
+env OPSTRUSS_FAILPOINT=program-started=kill
+! exec opstruss up --yes --input rev=3
+env OPSTRUSS_FAILPOINT=
+exec opstruss up --yes --input rev=3
+exec fakecloud check cloud .opstruss/state
+stdout '^3 resources, each with a record$'
+# killed at up-after-program
+env OPSTRUSS_FAILPOINT=up-after-program=kill
+! exec opstruss up --yes --input rev=4
+env OPSTRUSS_FAILPOINT=
+exec opstruss up --yes --input rev=4
+exec fakecloud check cloud .opstruss/state
+stdout '^3 resources, each with a record$'
+# killed at up-before-put
+env OPSTRUSS_FAILPOINT=up-before-put=kill
+! exec opstruss up --yes --input rev=5
+env OPSTRUSS_FAILPOINT=
+exec opstruss up --yes --input rev=5
+exec fakecloud check cloud .opstruss/state
+stdout '^3 resources, each with a record$'
+# the plan after a kill past the pending mark names what did not finish
+env OPSTRUSS_FAILPOINT=up-before-program=kill
+! exec opstruss up a --yes --input rev=10
+env OPSTRUSS_FAILPOINT=
+exec opstruss plan --input rev=10
+stdout '^default/a: will run: up of run .* did not finish$'
+exec opstruss up --yes --input rev=10
+
+# output that does not parse keeps the raw output in pending
+cp yes break-output
+! exec opstruss up a --yes --input rev=11
+rm break-output
+exec opstruss state pull a
+stdout '"raw_output": "id=r-'
+exec opstruss up --yes --input rev=11
+exec fakecloud check cloud .opstruss/state
+stdout '^3 resources, each with a record$'
+
+# a last write that fails keeps the record in errored/ and the ids in pending
+env OPSTRUSS_FAILPOINT=up-before-put=fail
+! exec opstruss up a --yes --input rev=12
+stderr 'it is kept in .*/\.opstruss/errored/default/a\.json for opstruss state push'
+env OPSTRUSS_FAILPOINT=
+exec opstruss up --yes --input rev=12
+stderr 'removed .*errored/default/a\.json, which this up replaces'
+exec fakecloud check cloud .opstruss/state
+stdout '^3 resources, each with a record$'
+
+# a move killed at each stage is finished by the next up
+cp moved.yaml opstruss.yaml
+env OPSTRUSS_FAILPOINT=moved-after-pending=kill
+! exec opstruss up --yes --input rev=12
+env OPSTRUSS_FAILPOINT=moved-after-copy=kill
+! exec opstruss up --yes --input rev=12
+env OPSTRUSS_FAILPOINT=moved-after-tombstone=kill
+! exec opstruss up --yes --input rev=12
+env OPSTRUSS_FAILPOINT=
+exec opstruss up --yes --input rev=12
+stdout '^default/first: unchanged$'
+exec fakecloud check cloud .opstruss/state
+stdout '^3 resources, each with a record$'
+
+# down killed before and after its program finishes with the next down
+env OPSTRUSS_FAILPOINT=down-before-program=kill
+! exec opstruss down --yes --input rev=12
+env OPSTRUSS_FAILPOINT=down-after-program=kill
+! exec opstruss down --yes --input rev=12
+env OPSTRUSS_FAILPOINT=
+exec opstruss down --yes --input rev=12
+exec fakecloud check cloud .opstruss/state
+stdout '^0 resources, each with a record$'
+
+# every failpoint was reached
+grep '^up-before-pending$' visited
+grep '^up-before-program$' visited
+grep '^program-started$' visited
+grep '^up-after-program$' visited
+grep '^up-before-put$' visited
+grep '^down-before-program$' visited
+grep '^down-after-program$' visited
+grep '^moved-after-pending$' visited
+grep '^moved-after-copy$' visited
+grep '^moved-after-tombstone$' visited
+
+-- yes --
+yes
+-- opstruss.yaml --
+name: shop
+inputs:
+  rev: {type: string}
+units:
+  a:
+    run: |
+      if [ -e break-output ]; then fakecloud up cloud && echo "not a line" >> "$OPSTRUSS_OUTPUT"; else fakecloud up cloud; fi
+    down: fakecloud down cloud
+    revision: ${{ inputs.rev }}
+    outputs:
+      id: {}
+  b:
+    run: |
+      if [ -e break-output ]; then fakecloud up cloud && echo "not a line" >> "$OPSTRUSS_OUTPUT"; else fakecloud up cloud; fi
+    down: fakecloud down cloud
+    revision: ${{ inputs.rev }}
+    outputs:
+      id: {}
+    needs: [a]
+  c:
+    run: |
+      if [ -e break-output ]; then fakecloud up cloud && echo "not a line" >> "$OPSTRUSS_OUTPUT"; else fakecloud up cloud; fi
+    down: fakecloud down cloud
+    revision: ${{ inputs.rev }}
+    outputs:
+      id: {}
+-- moved.yaml --
+name: shop
+inputs:
+  rev: {type: string}
+units:
+  first:
+    run: |
+      if [ -e break-output ]; then fakecloud up cloud && echo "not a line" >> "$OPSTRUSS_OUTPUT"; else fakecloud up cloud; fi
+    down: fakecloud down cloud
+    revision: ${{ inputs.rev }}
+    outputs:
+      id: {}
+  b:
+    run: |
+      if [ -e break-output ]; then fakecloud up cloud && echo "not a line" >> "$OPSTRUSS_OUTPUT"; else fakecloud up cloud; fi
+    down: fakecloud down cloud
+    revision: ${{ inputs.rev }}
+    outputs:
+      id: {}
+    needs: [first]
+  c:
+    run: |
+      if [ -e break-output ]; then fakecloud up cloud && echo "not a line" >> "$OPSTRUSS_OUTPUT"; else fakecloud up cloud; fi
+    down: fakecloud down cloud
+    revision: ${{ inputs.rev }}
+    outputs:
+      id: {}
+moved:
+  - {from: a, to: first}

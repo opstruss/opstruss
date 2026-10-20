@@ -1,0 +1,68 @@
+# Context: a unit whose target comes from pass. Up in context a, then down
+# or the orphan from context b is refused; an attempt of a that did not
+# finish, then up from b, goes to abandoned; no resource lacks a record.
+
+[!failpoints] skip 'needs a build with -tags failpoints'
+env HOME=$WORK/home
+
+env AWS_PROFILE=a
+exec opstruss up --yes
+exec fakecloud check cloud-a .opstruss/state
+stdout '^1 resources, each with a record$'
+
+# from context b, neither down nor the orphan's down reaches cloud-a
+env AWS_PROFILE=b
+! exec opstruss down --yes
+stderr 'pass values differ from those of the record: AWS_PROFILE'
+cp removed.yaml opstruss.yaml
+! exec opstruss up --yes
+stderr 'pass values differ from those of the record: AWS_PROFILE'
+exec fakecloud check cloud-a .opstruss/state
+stdout '^1 resources, each with a record$'
+
+# an attempt in a that did not finish, then up from b: it is abandoned and
+# keeps its record, since only context a can take it down
+cp fresh.yaml opstruss.yaml
+env AWS_PROFILE=a
+env OPSTRUSS_FAILPOINT=program-started=kill
+! exec opstruss up fresh --yes
+env OPSTRUSS_FAILPOINT=
+env AWS_PROFILE=b
+! exec opstruss up fresh --yes
+stdout '^default/fresh: up: done$'
+stderr '^default/fresh: the abandoned attempt of run .* needs AWS_PROFILE as it recorded them'
+exec opstruss state pull fresh
+stdout '"abandoned"'
+exec fakecloud check cloud-a .opstruss/state
+stdout '^2 resources, each with a record$'
+exec fakecloud check cloud-b .opstruss/state
+stdout '^1 resources, each with a record$'
+
+-- opstruss.yaml --
+name: shop
+units:
+  bucket:
+    run: fakecloud up "cloud-$AWS_PROFILE"
+    down: fakecloud down "cloud-$AWS_PROFILE"
+    pass: [AWS_PROFILE]
+    outputs:
+      id: {}
+-- removed.yaml --
+name: shop
+removed:
+  - {from: bucket, destroy: true}
+-- fresh.yaml --
+name: shop
+units:
+  bucket:
+    run: fakecloud up "cloud-$AWS_PROFILE"
+    down: fakecloud down "cloud-$AWS_PROFILE"
+    pass: [AWS_PROFILE]
+    outputs:
+      id: {}
+  fresh:
+    run: sleep 0.3; fakecloud up "cloud-$AWS_PROFILE"
+    down: fakecloud down "cloud-$AWS_PROFILE"
+    pass: [AWS_PROFILE]
+    outputs:
+      id: {}

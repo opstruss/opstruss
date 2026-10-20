@@ -265,29 +265,37 @@ func (e *engine) unitsView() map[string]any {
 		}
 		views[name] = byKey
 	}
+	inPass := e.inPass
 	e.mu.Unlock()
-	// Units that no pass of this run expanded read their records.
-	for name := range e.p.Units {
-		if views[name] != nil {
-			continue
-		}
-		byKey := map[string]any{}
-		addrs, _ := e.store.Inventory()
-		for _, a := range addrs {
-			id := strings.TrimPrefix(a, e.p.StackName+"/")
-			unit, key, _ := strings.Cut(strings.TrimSuffix(id, "]"), "[")
-			if unit != name {
+	// Outside a pass, as in a step of a task, units that no pass of this run
+	// expanded read their records. Inside one, units are expanded in graph
+	// order, so the units an expression may read are expanded already.
+	if !inPass {
+		var addrs []string
+		for name := range e.p.Units {
+			if views[name] != nil {
 				continue
 			}
-			if rec, _, err := e.store.Get(a); err == nil && rec != nil && rec.Tombstone == nil {
-				out := rec.Outputs
-				if out == nil {
-					out = map[string]any{}
-				}
-				byKey[key] = map[string]any{"outputs": out}
+			if addrs == nil {
+				addrs, _ = e.store.Inventory()
 			}
+			byKey := map[string]any{}
+			for _, a := range addrs {
+				id := strings.TrimPrefix(a, e.p.StackName+"/")
+				unit, key, _ := strings.Cut(strings.TrimSuffix(id, "]"), "[")
+				if unit != name {
+					continue
+				}
+				if rec, _, err := e.store.Get(a); err == nil && rec != nil && rec.Tombstone == nil {
+					out := rec.Outputs
+					if out == nil {
+						out = map[string]any{}
+					}
+					byKey[key] = map[string]any{"outputs": out}
+				}
+			}
+			views[name] = byKey
 		}
-		views[name] = byKey
 	}
 	view := map[string]any{}
 	for name, byKey := range views {

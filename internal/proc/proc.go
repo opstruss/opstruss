@@ -50,10 +50,13 @@ func (g Group) Signal(sig syscall.Signal) error {
 	return err
 }
 
-// Empty reports whether no process is left in the group. A leader that
-// exited counts until it is reaped.
+// Empty reports whether no process of this user is left in the group. A
+// leader that exited counts until it is reaped. A group whose members all
+// belong to another user (EPERM) holds nothing of ours: its number was
+// reused, or a setuid program is in it, which no signal of ours reaches.
 func (g Group) Empty() bool {
-	return errors.Is(syscall.Kill(-int(g), 0), syscall.ESRCH)
+	err := syscall.Kill(-int(g), 0)
+	return errors.Is(err, syscall.ESRCH) || errors.Is(err, syscall.EPERM)
 }
 
 // Stop sends sig to the group, waits up to grace for it to empty, and then

@@ -2,10 +2,13 @@ package engine
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/opstruss/opstruss/internal/record"
+	"github.com/opstruss/opstruss/internal/state"
 )
 
 // pass is one plan, up, or down of units in a run: the command line gives
@@ -24,6 +27,8 @@ type pass struct {
 func (e *engine) unitPass(ctx context.Context, op string, p pass) (map[string]any, error) {
 	e.passMu.Lock()
 	defer e.passMu.Unlock()
+	e.setInPass(true)
+	defer e.setInPass(false)
 	e.pass = p
 	e.insts, e.byUnit = nil, map[string][]*instance{}
 	if op == "down" {
@@ -46,6 +51,14 @@ func (e *engine) unitPass(ctx context.Context, op string, p pass) (map[string]an
 	leftovers := e.previewLeftovers()
 	if len(e.p.Units) == 0 {
 		e.say("run", "", "no units")
+	}
+	// Data that a newer OpsTruss wrote stops the run before any turn, as
+	// a newer _meta does, rather than leaving that unit out.
+	for _, inst := range e.insts {
+		var newer *state.NewerError
+		if errors.As(inst.plan.err, &newer) {
+			return nil, fmt.Errorf("%s: %w; nothing ran", inst.address, newer)
+		}
 	}
 	out := map[string]any{}
 	if op == "plan" {
@@ -110,6 +123,12 @@ func (e *engine) approves(ctx context.Context, q Question, digest string) (sourc
 		return "", "the answer was no", waited
 	}
 	return "terminal", "", waited
+}
+
+func (e *engine) setInPass(v bool) {
+	e.mu.Lock()
+	e.inPass = v
+	e.mu.Unlock()
 }
 
 func (e *engine) short(addr string) string { return strings.TrimPrefix(addr, e.p.StackName+"/") }

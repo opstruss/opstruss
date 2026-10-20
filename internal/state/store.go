@@ -172,6 +172,23 @@ func (s *Store) Lock(address string, h Holder) (string, error) {
 	return s.Backend.Lock(LockKey(address), h)
 }
 
+// Held reports whether another holder has the lock of an address, and who,
+// without taking it, for a plan that only looks.
+func (s *Store) Held(address string) (Holder, bool, error) {
+	if l, ok := s.Backend.(*Local); ok {
+		return l.Held(LockKey(address))
+	}
+	token, err := s.Lock(address, Holder{})
+	var le *LockedError
+	switch {
+	case err == nil:
+		return Holder{}, false, s.Unlock(address, token)
+	case errors.As(err, &le):
+		return le.Holder, true, nil
+	}
+	return Holder{}, false, err
+}
+
 // Unlock releases the lock of an address.
 func (s *Store) Unlock(address, token string) error {
 	return s.Backend.Unlock(LockKey(address), token)

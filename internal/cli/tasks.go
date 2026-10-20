@@ -19,9 +19,16 @@ import (
 // internal, and of every task of its units, also under opstruss run, which
 // still reaches a task that a later built-in command shadows.
 func (a *app) taskCommands(root *cobra.Command) {
-	p := a.commandProject()
 	run := &cobra.Command{Use: "run <task>", Short: "Run a task of the project, also one that a built-in command shadows"}
 	root.AddCommand(run)
+	// A built-in command needs no task commands, so the project is read
+	// for them only when the command may be a task, or for completion.
+	if name := a.command(); name != "" && name != "run" && name != "help" && !a.completing() {
+		if c, _, err := root.Find([]string{name}); err == nil && c != root {
+			return
+		}
+	}
+	p := a.commandProject()
 	if p == nil {
 		return
 	}
@@ -46,6 +53,33 @@ func (a *app) taskCommands(root *cobra.Command) {
 		}
 		root.AddCommand(a.taskCommand(name, defs[name], !unitTask))
 	}
+}
+
+// command is the first argument that is not a flag, which names the
+// command.
+func (a *app) command() string {
+	for i := 0; i < len(a.args); i++ {
+		arg := a.args[i]
+		switch {
+		case arg == "--":
+			return ""
+		case arg == "--stack" || arg == "--input":
+			i++
+		case strings.HasPrefix(arg, "-"):
+		default:
+			return arg
+		}
+	}
+	return ""
+}
+
+func (a *app) completing() bool {
+	for _, arg := range a.args {
+		if arg == "--completion" || strings.HasPrefix(arg, "--completion=") || arg == "__complete" {
+			return true
+		}
+	}
+	return false
 }
 
 // commandProject reads the project to build the commands of its tasks, with

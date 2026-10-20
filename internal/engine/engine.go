@@ -114,6 +114,7 @@ type engine struct {
 	mu       sync.Mutex
 	exit     int
 	promptMu sync.Mutex
+	inPass   bool // a pass is expanding and planning units
 }
 
 // open reads the project and the state of its stack, marks the runs that
@@ -257,7 +258,10 @@ func (e *engine) cleanTemp() {
 	}
 	for _, ent := range ents {
 		run := ent.Name()
-		if run == e.runID {
+		// A run makes its record before its temporary directory, so a run
+		// that is starting is alive by its record before its programs hold
+		// the directory's lock.
+		if run == e.runID || record.Alive(e.root, run) {
 			continue
 		}
 		ps, held, err := plugin.Marker(run, e.tempOf(run)).Alive()
@@ -315,10 +319,15 @@ func (e *engine) stopAtPlan() {
 
 func (e *engine) result() *Result { return &Result{Run: e.runID, ExitCode: e.exit} }
 
+// hostname is the name of this machine, read once.
+var hostname = sync.OnceValue(func() string {
+	h, _ := os.Hostname()
+	return h
+})
+
 // facts are what opstruss.* holds for the units of this run.
 func (e *engine) facts(inst *instance) map[string]any {
-	host, _ := os.Hostname()
-	f := map[string]any{"project": e.p.Name, "os": runtime.GOOS, "arch": runtime.GOARCH, "host": host,
+	f := map[string]any{"project": e.p.Name, "os": runtime.GOOS, "arch": runtime.GOARCH, "host": hostname(),
 		"run": e.runID, "time": e.started}
 	if inst != nil {
 		f["dir"], f["address"] = inst.dir, inst.address

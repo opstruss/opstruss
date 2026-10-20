@@ -62,7 +62,8 @@ minor release can change what a project, a component, or a plugin relies on.
   with `OPSTRUSS_REASON=interrupted`; programs that a killed OpsTruss left
   running are waited for first. `retry`, `timeout`, and `requires:` apply
   to units. A record the backend refuses at the end is kept in
-  `.opstruss/errored/`.
+  `.opstruss/errored/`, while what the program made stays in pending for
+  the next `up`, which then removes the kept record.
 - `moved:` carries a record, and the tool's state of a local unit, to its
   new address on the next `up`, in stages that a later run finishes if
   one is interrupted, and leaves a tombstone that older files stop at.

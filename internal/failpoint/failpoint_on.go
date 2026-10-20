@@ -6,6 +6,7 @@
 package failpoint
 
 import (
+	"errors"
 	"os"
 	"strings"
 	"syscall"
@@ -14,6 +15,17 @@ import (
 
 // Enabled reports whether this build stops at failpoints.
 const Enabled = true
+
+// Fail is Hit at a point where an operation can fail: OPSTRUSS_FAILPOINT
+// name=fail makes it return an error, as if the backend refused.
+func Fail(name string) error {
+	if point, action, _ := strings.Cut(os.Getenv("OPSTRUSS_FAILPOINT"), "="); point == name && action == "fail" {
+		Hit(name)
+		return errors.New("failpoint " + name)
+	}
+	Hit(name)
+	return nil
+}
 
 // Hit appends name to the file that OPSTRUSS_FAILPOINT_LOG names, so a test
 // can check that every point was reached. When OPSTRUSS_FAILPOINT is

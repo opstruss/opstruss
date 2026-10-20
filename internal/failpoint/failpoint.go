@@ -10,3 +10,6 @@ const Enabled = false
 
 // Hit marks the named point.
 func Hit(string) {}
+
+// Fail marks the named point, where a test can make an operation fail.
+func Fail(string) error { return nil }

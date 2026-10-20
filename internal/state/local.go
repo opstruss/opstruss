@@ -229,8 +229,41 @@ func (l *Local) Lock(key string, h Holder) (string, error) {
 	return token, nil
 }
 
+// Held reports whether the lock key is held, and by whom, without taking
+// it: a probe that writes nothing.
+func (l *Local) Held(key string) (Holder, bool, error) {
+	p, err := l.path(key)
+	if err != nil {
+		return Holder{}, false, err
+	}
+	f, err := os.OpenFile(p, os.O_RDWR, 0)
+	if errors.Is(err, fs.ErrNotExist) {
+		return Holder{}, false, nil
+	}
+	if err != nil {
+		return Holder{}, false, err
+	}
+	defer func() { _ = f.Close() }()
+	if m, ok := l.paths.Load(p); ok {
+		mu := m.(*sync.Mutex)
+		if !mu.TryLock() {
+			return readHolder(f), true, nil
+		}
+		defer mu.Unlock()
+	}
+	err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+	if errors.Is(err, syscall.EWOULDBLOCK) {
+		return readHolder(f), true, nil
+	}
+	if err != nil {
+		return Holder{}, false, err
+	}
+	return Holder{}, false, syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+}
+
 // writeHolder writes who holds the lock into the lock file, where a run
-// that waits reads it.
+// that waits reads it. It is not synced: flock is the lock, and what the
+// file says only names the holder to those who wait.
 func writeHolder(f *os.File, h Holder) error {
 	data, err := json.Marshal(h)
 	if err != nil {
@@ -239,10 +272,8 @@ func writeHolder(f *os.File, h Holder) error {
 	if err := f.Truncate(0); err != nil {
 		return err
 	}
-	if _, err := f.WriteAt(data, 0); err != nil {
-		return err
-	}
-	return f.Sync()
+	_, err = f.WriteAt(data, 0)
+	return err
 }
 
 func readHolder(f *os.File) Holder {

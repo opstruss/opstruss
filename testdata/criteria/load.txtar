@@ -1,0 +1,6 @@
+# Load: plan of 1,000 run units that did not change takes at most 2 s.
+
+env HOME=$WORK/home
+exec sh -c '{ echo "name: big"; echo "units:"; for i in $(seq 1000); do printf "  u%s:\n    run: \"true\"\n    approval: auto\n" "$i"; done; } > opstruss.yaml'
+exec opstruss up
+within 2s opstruss plan

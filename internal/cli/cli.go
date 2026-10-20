@@ -31,6 +31,7 @@ func Main() int {
 
 type app struct {
 	stdout, stderr io.Writer
+	args           []string
 	stdin          *bufio.Reader
 	terminal       bool
 	environ        []string
@@ -68,6 +69,7 @@ func start(args []string, stdin io.Reader, terminal bool, stdout, stderr io.Writ
 		}
 	}
 	args, err := a.takeDir(args)
+	a.args = args
 	if err == nil {
 		root := a.root()
 		root.SetArgs(args)

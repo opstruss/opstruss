@@ -1,0 +1,27 @@
+# Lock: two processes run up on one unit 500 times each: its program never
+# overlaps itself, and no update is lost.
+
+env HOME=$WORK/home
+exec sh -c 'for i in $(seq 500); do opstruss up --force --yes > /dev/null 2>> errors || echo failed >> errors; done' &
+exec sh -c 'for i in $(seq 500); do opstruss up --force --yes > /dev/null 2>> errors || echo failed >> errors; done' &
+wait
+! exists overlap
+exec sh -c 'cat errors 2> /dev/null; true'
+! stdout .
+exec cat count
+stdout '^1000$'
+exec opstruss state pull counter
+stdout '"n": 1000'
+
+-- opstruss.yaml --
+name: shop
+units:
+  counter:
+    run: |
+      mkdir busy 2> /dev/null || { touch overlap; exit 1; }
+      n=$(( $(cat count 2> /dev/null || echo 0) + 1 ))
+      echo "$n" > count
+      echo "n=$n" >> "$OPSTRUSS_OUTPUT"
+      rmdir busy
+    outputs:
+      n: {type: integer}

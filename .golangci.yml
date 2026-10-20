@@ -22,6 +22,10 @@ linters:
         linters:
           - errcheck
         text: '`fmt\.Fprint'
+      # The fake programs of the criteria tests write what they report.
+      - path: ^criteria_test\.go$
+        linters:
+          - forbidigo
 
 formatters:
   enable:

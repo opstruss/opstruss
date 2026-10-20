@@ -93,14 +93,11 @@ func (e *engine) preview(inst *instance) {
 		inst.plan.err = err
 		return
 	}
-	token, err := e.store.Lock(inst.address, e.holder)
-	if err == nil {
-		_ = e.store.Unlock(inst.address, token)
-	} else if le, ok := err.(*state.LockedError); ok {
-		inst.plan.locked = le.Holder.String()
-		return
-	} else {
+	if h, held, err := e.store.Held(inst.address); err != nil {
 		inst.plan.err = err
+		return
+	} else if held {
+		inst.plan.locked = h.String()
 		return
 	}
 	r, err := e.resolve(inst, true)
@@ -398,13 +395,28 @@ func (e *engine) turn(ctx context.Context, inst *instance) {
 		failed(err)
 		return
 	}
+	// What the program made is kept in pending first, so a last write
+	// that fails still leaves its ids for the next attempt.
+	next.Pending.Outputs, next.Pending.RawOutput = res.Outputs, ""
+	if etag, err = e.store.Put(addr, next, etag); err != nil {
+		failed(err)
+		return
+	}
 	done := &state.Record{ID: next.ID, StateKey: next.StateKey, Kind: "run", Down: down, Needs: attempt.Needs,
 		Outputs: res.Outputs, Digest: p.digest, Run: e.runID, Updated: time.Now().UTC().Format(time.RFC3339),
 		Abandoned: next.Abandoned}
-	failpoint.Hit("up-before-put")
-	if etag, err = e.store.Put(addr, done, etag); err != nil {
+	err = failpoint.Fail("up-before-put")
+	if err == nil {
+		etag, err = e.store.Put(addr, done, etag)
+	}
+	if err != nil {
 		failed(e.errored(addr, done, err))
 		return
+	}
+	if kept := e.erroredPath(addr); fileExists(kept) {
+		// A record kept after a write that failed is older than this one.
+		_ = os.Remove(kept)
+		e.warn(addr, "removed %s, which this up replaces", kept)
 	}
 	if res.Changed {
 		e.say("unit", addr, "up: done")
@@ -603,12 +615,21 @@ func same(a, b any) bool {
 	return err1 == nil && err2 == nil && bytes.Equal(x, y)
 }
 
+func (e *engine) erroredPath(addr string) string {
+	return filepath.Join(e.root, "errored", filepath.FromSlash(addr)+".json")
+}
+
+func fileExists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
+}
+
 // errored keeps a record that the backend did not take in
 // .opstruss/errored/, from where opstruss state push puts it back.
 func (e *engine) errored(addr string, rec *state.Record, cause error) error {
 	data, err := state.EncodeRecord(rec)
 	if err == nil {
-		p := filepath.Join(e.root, "errored", filepath.FromSlash(addr)+".json")
+		p := e.erroredPath(addr)
 		if err = os.MkdirAll(filepath.Dir(p), 0o700); err == nil {
 			err = os.WriteFile(p, data, 0o600)
 		}

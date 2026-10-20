@@ -35,18 +35,45 @@ func Interrupted(root, stack string) ([]string, error) {
 	var out []string
 	for _, ent := range ents {
 		dir := filepath.Join(base, ent.Name())
-		rec, err := Read(dir)
-		if err != nil || rec.Status != Running || held(filepath.Join(dir, ".lock")) {
+		if rec, err := Read(dir); err != nil || rec.Status != Running {
 			continue
 		}
-		rec.Status, rec.Outcome, rec.Reason = Finished, "cancelled", "interrupted"
-		rec.Ended = time.Now().UTC().Format(time.RFC3339)
-		if err := write(dir, rec); err != nil {
+		// The owner lets go of its lock only after it wrote its record as
+		// finished, so the record is read again under the lock.
+		f, err := os.OpenFile(filepath.Join(dir, ".lock"), os.O_RDWR, 0)
+		if err != nil {
+			continue
+		}
+		if syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB) != nil {
+			_ = f.Close()
+			continue
+		}
+		rec, err := Read(dir)
+		if err == nil && rec.Status == Running {
+			rec.Status, rec.Outcome, rec.Reason = Finished, "cancelled", "interrupted"
+			rec.Ended = time.Now().UTC().Format(time.RFC3339)
+			if err = write(dir, rec); err == nil {
+				out = append(out, rec.Run)
+			}
+		}
+		_ = f.Close()
+		if err != nil {
 			return out, err
 		}
-		out = append(out, rec.Run)
 	}
 	return out, nil
+}
+
+// Alive reports whether the run named run, of any stack under root, still
+// holds the lock of its record.
+func Alive(root, run string) bool {
+	locks, _ := filepath.Glob(filepath.Join(root, "runs", "*", filepath.Base(run), ".lock"))
+	for _, p := range locks {
+		if held(p) {
+			return true
+		}
+	}
+	return false
 }
 
 // held reports whether a process holds the lock at p.

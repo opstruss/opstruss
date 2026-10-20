@@ -1,0 +1,23 @@
+# Compatibility: data that a newer OpsTruss wrote stops the command line
+# before the first up.
+
+env HOME=$WORK/home
+exec opstruss up --yes
+rm second
+exec sh -c 'sed "s/\"version\": 1,/\"version\": 99,/" .opstruss/state/default/web/state.json > new && mv new .opstruss/state/default/web/state.json'
+! exec opstruss up --yes --input rev=2
+stderr 'version 99.*nothing ran'
+! stdout 'up: done'
+! exists second
+
+-- opstruss.yaml --
+name: shop
+inputs:
+  rev: {type: string, default: "1"}
+units:
+  web:
+    run: echo web
+  other:
+    run: touch second
+    revision: ${{ inputs.rev }}
+    approval: auto
