@@ -34,6 +34,7 @@ func Plan(opts Options) (*Result, error) {
 	if err := e.selectUnits(false); err != nil {
 		return nil, err
 	}
+	e.previewMoves()
 	e.previewAll()
 	e.previewLeftovers()
 	if len(e.insts) == 0 && len(e.p.Units) == 0 {
@@ -53,11 +54,13 @@ func Up(ctx context.Context, opts Options) (*Result, error) {
 	if err := e.selectUnits(false); err != nil {
 		return nil, err
 	}
+	e.previewMoves()
 	e.previewAll()
 	leftovers := e.previewLeftovers()
 	if len(e.p.Units) == 0 {
 		e.say("run", "", "no units")
 	}
+	e.applyMoves(ctx)
 	e.turns(ctx)
 	e.settle(ctx, leftovers)
 	return e.result(), nil
@@ -90,9 +93,15 @@ func (e *engine) previewAll() {
 
 func (e *engine) preview(inst *instance) {
 	rec, _, err := e.store.Get(inst.address)
+	if err == nil {
+		err = e.moveFailed[inst.address]
+	}
 	if err != nil {
 		inst.plan.err = err
 		return
+	}
+	if v := e.moveFrom[inst.address]; v != nil {
+		rec = v
 	}
 	e.setRecord(inst, rec)
 	if !e.sel.has(inst) {
@@ -142,18 +151,38 @@ func (e *engine) decide(inst *instance, r *resolved, rec *state.Record) plan {
 		return plan{err: err}
 	}
 	p := plan{digest: digest, run: true}
+	if a := pendingMove(rec); a != nil {
+		return plan{err: fmt.Errorf("this address is moving to %s in run %s; the files with that moved: finish it", a.Peer, a.Run)}
+	}
+	if rec != nil {
+		// Attempts with the contract up writes become part of the record.
+		down := e.downContract(inst, r)
+		for _, a := range rec.Abandoned {
+			if !sameTarget(a.Down, down) {
+				p.teardown = append(p.teardown, a.Run)
+			}
+		}
+		if a := rec.Pending; a != nil && a.Op == "up" && !sameTarget(a.Down, down) {
+			p.teardown = append(p.teardown, a.Run)
+		}
+	}
 	switch {
 	case rec == nil:
 		p.reason = "new"
 	case rec.Pending != nil:
 		p.reason = fmt.Sprintf("%s of %s did not finish", rec.Pending.Op, rec.Pending.Holder)
+	case len(changedPass(rec, r)) > 0:
+		// The down of the record reaches the target of the values it
+		// recorded; up with others would leave that target without one.
+		names := strings.Join(changedPass(rec, r), ", ")
+		if !e.forced(inst) {
+			return plan{err: fmt.Errorf("context changed: %s differs from the record, whose down reaches the old target; up --force moves the unit and forgets that target", names)}
+		}
+		p.reason = "context changed: " + names + "; forced, the old target is forgotten"
 	case e.forced(inst):
 		p.reason = "forced"
 	case rec.Digest != digest:
 		p.reason = "definition changed"
-		if names := changedPass(rec, r); len(names) > 0 {
-			p.reason = "context changed: " + strings.Join(names, ", ")
-		}
 	case len(missing) > 0:
 		p.reason = "generates missing: " + strings.Join(missing, ", ")
 	default:
@@ -240,6 +269,10 @@ func (e *engine) turn(ctx context.Context, inst *instance) {
 		failed(inst.plan.err)
 		return
 	}
+	if err := e.moveFailed[addr]; err != nil {
+		failed(err)
+		return
+	}
 	timeout := DefaultTimeout
 	if t := inst.def.Timeout; t != "" {
 		d, err := time.ParseDuration(t)
@@ -286,7 +319,7 @@ func (e *engine) turn(ctx context.Context, inst *instance) {
 		return
 	}
 	down := e.downContract(inst, r)
-	if !p.run {
+	if !p.run && len(p.teardown) == 0 {
 		// A down contract that changed alone is written without running.
 		if !same(rec.Down, down) {
 			rec.Down = down
@@ -309,6 +342,15 @@ func (e *engine) turn(ctx context.Context, inst *instance) {
 		}
 		approval = "--yes"
 	}
+	if !p.run {
+		// Only old attempts are left to tear down; the approval covered them.
+		if err := e.tearDown(ctx, addr, rec, etag); err != nil {
+			failed(err)
+			return
+		}
+		e.finish(inst, success, true, rec.Outputs)
+		return
+	}
 	reason := "changed"
 	switch {
 	case rec != nil && rec.Pending != nil:
@@ -327,9 +369,17 @@ func (e *engine) turn(ctx context.Context, inst *instance) {
 	attempt := &state.Attempt{Op: "up", Run: e.runID, Holder: e.holder, Approval: approval, Digest: p.digest,
 		Down: down, Needs: e.needs(inst)}
 	if prev := next.Pending; prev != nil {
-		// What an interrupted attempt parsed stays until this one parses its
-		// own, so ids of what it made are not lost if this one stops too.
-		attempt.Outputs, attempt.RawOutput = prev.Outputs, prev.RawOutput
+		if sameTarget(prev.Down, down) {
+			// What an interrupted attempt parsed stays until this one parses
+			// its own, so ids of what it made are not lost if this one stops
+			// too.
+			attempt.Outputs, attempt.RawOutput = prev.Outputs, prev.RawOutput
+		} else {
+			// An attempt with another down contract may have made something
+			// elsewhere; it is kept to be torn down after this one succeeds,
+			// as Terraform keeps a deposed object.
+			next.Abandoned = append(next.Abandoned, prev)
+		}
 	}
 	next.Pending = attempt
 	if data, err := state.EncodeRecord(next); err != nil || len(data)+plugin.MaxOutputs > MaxRecord {
@@ -359,19 +409,66 @@ func (e *engine) turn(ctx context.Context, inst *instance) {
 		Outputs: res.Outputs, Digest: p.digest, Run: e.runID, Updated: time.Now().UTC().Format(time.RFC3339),
 		Abandoned: next.Abandoned}
 	failpoint.Hit("up-before-put")
-	if _, err := e.store.Put(addr, done, etag); err != nil {
+	if etag, err = e.store.Put(addr, done, etag); err != nil {
 		failed(e.errored(addr, done, err))
 		return
 	}
-	e.finish(inst, success, res.Changed, res.Outputs)
 	if res.Changed {
 		e.say("unit", addr, "up: done")
 	} else {
 		e.say("unit", addr, "up: done, nothing changed")
 	}
+	if err := e.tearDown(ctx, addr, done, etag); err != nil {
+		failed(err)
+		return
+	}
+	e.finish(inst, success, res.Changed, res.Outputs)
 	if _, missing, _ := files(inst.dir, nil, inst.def.Generates); len(missing) > 0 {
 		e.warn(addr, "generates still missing after up: %s", strings.Join(missing, ", "))
 	}
+}
+
+// tearDown runs down for each abandoned attempt of rec once up succeeded,
+// under the same lock, and drops each one whose down succeeded; one that
+// fails stays in the record, and the unit fails. An attempt with the
+// contract of the record is dropped without down, since what it made now
+// belongs to the record.
+func (e *engine) tearDown(ctx context.Context, addr string, rec *state.Record, etag string) error {
+	for len(rec.Abandoned) > 0 {
+		a := rec.Abandoned[0]
+		if sameTarget(a.Down, rec.Down) {
+			rec.Abandoned = rec.Abandoned[1:]
+			var err error
+			if etag, err = e.store.Put(addr, rec, etag); err != nil {
+				return err
+			}
+			e.say("unit", addr, "the attempt of run %s has the contract of the record now; dropped without down", a.Run)
+			continue
+		}
+		if names := e.passDiffers(a.Down); len(names) > 0 {
+			return fmt.Errorf("the abandoned attempt of run %s needs %s as it recorded them; run up with those values, or down --force", a.Run, strings.Join(names, ", "))
+		}
+		if err := e.runDown(ctx, addr, rec.StateKey, a); err != nil {
+			return fmt.Errorf("tearing down the attempt of run %s: %w", a.Run, err)
+		}
+		rec.Abandoned = rec.Abandoned[1:]
+		var err error
+		if etag, err = e.store.Put(addr, rec, etag); err != nil {
+			return err
+		}
+		e.say("unit", addr, "tore down the attempt of run %s", a.Run)
+	}
+	return nil
+}
+
+// sameTarget reports whether two down contracts take down the same thing:
+// the same program, directory, env, and pass values. Timeout and stop do
+// not change that.
+func sameTarget(a, b *state.Down) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return same([]any{a.Run, a.Shell, a.Dir, a.Env, a.EnvFiles, a.Pass}, []any{b.Run, b.Shell, b.Dir, b.Env, b.EnvFiles, b.Pass})
 }
 
 // attempts runs the program as often as retry allows: while an attempt

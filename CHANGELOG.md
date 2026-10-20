@@ -46,7 +46,10 @@ minor release can change what a project, a component, or a plugin relies on.
   `--no-deps`.
 - A unit runs again when its definition, a file of `sources`, `revision`,
   or a `pass` value changes, or a file of `generates` is missing;
-  `up --force` runs the units named anyway. `if` and `for_each` decide
+  `up --force` runs the units named anyway. A unit with `down:` whose
+  `pass` values differ from its record is refused, since its down reaches
+  the old target, unless `up --force` moves it and forgets that target.
+  `if` and `for_each` decide
   which instances exist, from what is known when the run starts.
 - A change needs approval: `approval: auto`, or `--yes` for the run;
   otherwise the unit stops at plan, the units that depend on it are
@@ -60,6 +63,15 @@ minor release can change what a project, a component, or a plugin relies on.
   running are waited for first. `retry`, `timeout`, and `requires:` apply
   to units. A record the backend refuses at the end is kept in
   `.opstruss/errored/`.
+- `moved:` carries a record, and the tool's state of a local unit, to its
+  new address on the next `up`, in stages that a later run finishes if
+  one is interrupted, and leaves a tombstone that older files stop at.
+  Entries chain; a target that has a record of its own is refused, and so
+  is a source whose last attempt did not finish.
+- An attempt that did not finish with another down contract, such as other
+  `pass` values, is kept as abandoned when `up` runs again, shown in the
+  plan, and torn down after that `up` succeeds, with the values it
+  recorded; one with the contract of the record is dropped without down.
 - `down` runs the `down:` recorded for each unit, units that depend on
   others first, with the context it was written with: it refuses `pass`
   values that differ unless `--force`, and nothing goes down while a unit

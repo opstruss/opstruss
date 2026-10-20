@@ -38,6 +38,37 @@ stdout '^default/slow: waiting for .* of interrupted run '
 stdout '^default/slow: up: done$'
 cmp slow.log slow.want
 
+# a move killed at any stage is finished by the next up with that entry
+cp moved.yaml opstruss.yaml
+env OPSTRUSS_FAILPOINT=moved-after-pending=kill
+! exec opstruss up db --yes
+env OPSTRUSS_FAILPOINT=
+exec opstruss plan store
+stdout '^default/store: will move from default/db$'
+stdout '^default/store: unchanged$'
+env OPSTRUSS_FAILPOINT=moved-after-copy=kill
+! exec opstruss up store --yes
+env OPSTRUSS_FAILPOINT=moved-after-tombstone=kill
+! exec opstruss up store --yes
+env OPSTRUSS_FAILPOINT=
+exec opstruss plan store
+stdout '^default/store: will finish the move from default/db$'
+stdout '^default/store: unchanged$'
+exec opstruss up store --yes
+stdout '^default/store: unchanged$'
+exec opstruss state pull store
+! stdout '"pending"'
+stdout '"id": "made-'
+
+-- moved.yaml --
+name: shop
+units:
+  store:
+    run: echo "id=made-$$" >> "$OPSTRUSS_OUTPUT"
+    outputs:
+      id: {}
+moved:
+  - {from: db, to: store}
 -- opstruss.yaml --
 name: shop
 units:

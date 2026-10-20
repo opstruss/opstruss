@@ -88,6 +88,10 @@ type engine struct {
 	insts  []*instance // in graph order
 	byUnit map[string][]*instance
 
+	moveFrom   map[string]*state.Record // the record a target of moved: starts from
+	moveFailed map[string]error         // targets whose move cannot happen
+	moving     map[string]bool          // addresses that moved: moves away from
+
 	mu   sync.Mutex
 	exit int
 }
@@ -96,9 +100,6 @@ func open(opts Options) (*engine, error) {
 	p, err := model.Load(opts.Dir, opts.Stack)
 	if err != nil {
 		return nil, err
-	}
-	if len(p.Moved) > 0 {
-		return nil, errors.New("moved: is not supported yet")
 	}
 	values, err := p.ResolveInputs(opts.Inputs, opts.LookupEnv)
 	if err != nil {

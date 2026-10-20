@@ -118,7 +118,7 @@ func (e *engine) previewLeftovers() []*leftover {
 	}
 	var out []*leftover
 	for _, l := range records {
-		if planned[l.address] {
+		if planned[l.address] || e.moving[l.address] {
 			continue
 		}
 		var rm *model.Removed
@@ -250,6 +250,9 @@ func (e *engine) downOne(ctx context.Context, l *leftover) string {
 	if rec == nil || rec.Tombstone != nil {
 		e.say("unit", addr, "already down")
 		return success
+	}
+	if a := pendingMove(rec); a != nil {
+		return fail(fmt.Errorf("this address is moving to %s in run %s; the files with that moved: finish it", a.Peer, a.Run))
 	}
 	if a := rec.Pending; a != nil && a.Run != e.runID {
 		if err := e.waitForPrograms(ctx, addr, a); err != nil {

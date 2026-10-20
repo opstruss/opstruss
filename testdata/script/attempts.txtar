@@ -1,0 +1,54 @@
+# An attempt that did not finish with another down contract, such as other
+# pass values, is kept as abandoned when up runs again, and torn down only
+# with its own context: no resource is left without a record.
+
+env HOME=$WORK/home
+
+# an attempt in context a fails after it made something
+env AWS_PROFILE=a
+! exec opstruss up --yes
+stderr '^default/bucket: the program exited with 1$'
+
+# up from context b keeps that attempt as abandoned, succeeds, and cannot
+# tear it down with the values of b
+env AWS_PROFILE=b
+cp ok.sh up.sh
+exec opstruss plan
+stdout '^default/bucket: will run: up of .* did not finish; then tear down the attempts of '
+! exec opstruss up --yes
+stdout '^default/bucket: up: done$'
+stderr '^default/bucket: the abandoned attempt of run .* needs AWS_PROFILE as it recorded them'
+exec opstruss state pull bucket
+stdout '"abandoned"'
+stdout '"made-a"'
+! exec opstruss down --yes
+stderr 'pass values differ from those of the record: AWS_PROFILE'
+! exists downs
+
+# up with other pass values than the record's is refused, since its down
+# reaches the old target; --force moves the unit, and then the abandoned
+# attempt is part of the record, so it is dropped rather than torn down
+env AWS_PROFILE=a
+! exec opstruss up --yes
+stderr '^default/bucket: context changed: AWS_PROFILE differs from the record, whose down reaches the old target; up --force moves the unit and forgets that target$'
+exec opstruss up --yes --force
+stdout '^default/bucket: will run: context changed: AWS_PROFILE; forced, the old target is forgotten$'
+stdout '^default/bucket: the attempt of run .* has the contract of the record now; dropped without down$'
+exec opstruss state pull bucket
+! stdout '"abandoned"'
+! exists downs
+
+-- opstruss.yaml --
+name: shop
+units:
+  bucket:
+    run: [sh, ./up.sh]
+    down: echo "down $AWS_PROFILE" >> downs
+    pass: [AWS_PROFILE]
+    outputs:
+      id: {}
+-- up.sh --
+echo "id=made-$AWS_PROFILE" >> "$OPSTRUSS_OUTPUT"
+exit 1
+-- ok.sh --
+echo "id=made-$AWS_PROFILE" >> "$OPSTRUSS_OUTPUT"

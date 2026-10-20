@@ -34,15 +34,20 @@ type instance struct {
 
 // plan is what the run will do to an instance.
 type plan struct {
-	run     bool   // up runs its program
-	reason  string // why, when it runs
-	waitFor string // an upstream unit whose outputs this run changes before this one's turn
-	locked  string // the holder of the address, for another run
-	digest  string
-	err     error
+	run      bool   // up runs its program
+	reason   string // why, when it runs
+	waitFor  string // an upstream unit whose outputs this run changes before this one's turn
+	locked   string // the holder of the address, for another run
+	digest   string
+	teardown []string // runs whose attempts up tears down after it succeeds
+	err      error
 }
 
 func (p plan) summary() string {
+	old := ""
+	if len(p.teardown) > 0 {
+		old = "tear down the attempts of " + strings.Join(p.teardown, ", ")
+	}
 	switch {
 	case p.err != nil:
 		return "error: " + p.err.Error()
@@ -50,8 +55,12 @@ func (p plan) summary() string {
 		return "locked by " + p.locked + "; left out"
 	case p.waitFor != "":
 		return "planned after " + p.waitFor
+	case p.run && old != "":
+		return "will run: " + p.reason + "; then " + old
 	case p.run:
 		return "will run: " + p.reason
+	case old != "":
+		return "will " + old
 	}
 	return "unchanged"
 }

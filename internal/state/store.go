@@ -242,6 +242,28 @@ func (s *Store) ForgetTool(address, run string) error {
 	return os.Rename(from, to)
 }
 
+// MoveTool moves tool/, the tool's own state of a local unit, with its
+// record from one address to another. A tool/ that moved already is left
+// as it is, so a move that was interrupted can be repeated.
+func (s *Store) MoveTool(from, to string) error {
+	l, ok := s.Backend.(*Local)
+	if !ok {
+		return nil
+	}
+	src := filepath.Join(l.root, filepath.FromSlash(from), "tool")
+	dst := filepath.Join(l.root, filepath.FromSlash(to), "tool")
+	if _, err := os.Stat(src); errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if _, err := os.Stat(dst); err == nil {
+		return fmt.Errorf("both %s and %s have the state of a tool", from, to)
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
+		return err
+	}
+	return os.Rename(src, dst)
+}
+
 // KeyOf names the backend key and lock of a key given to opstruss state:
 // an address without its stack, _meta, or _kv/<name>.
 func (s *Store) KeyOf(key string) (data, lock string, address string) {
