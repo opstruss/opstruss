@@ -3,6 +3,8 @@ package engine
 import (
 	"context"
 	"strings"
+
+	"github.com/opstruss/opstruss/internal/record"
 )
 
 // pass is one plan, up, or down of units in a run: the command line gives
@@ -31,6 +33,7 @@ func (e *engine) unitPass(ctx context.Context, op string, p pass) (map[string]an
 		out := map[string]any{}
 		for _, l := range items {
 			out[e.short(l.address)] = map[string]any{"outcome": l.outcome, "changed": l.outcome == success, "outputs": map[string]any{}}
+			e.touch(e.short(l.address), &record.Unit{Outcome: l.outcome, Changed: l.outcome == success, Plan: "down"})
 		}
 		return out, nil
 	}
@@ -66,6 +69,7 @@ func (e *engine) unitPass(ctx context.Context, op string, p pass) (map[string]an
 		if e.sel.has(inst) {
 			out[e.short(inst.address)] = map[string]any{"outcome": inst.outcome, "changed": inst.changed, "outputs": inst.outputsNow(),
 				"plan": inst.plan.view(inst.plan.err == nil && inst.plan.waitFor == "" && inst.plan.locked == "")}
+			e.touch(e.short(inst.address), &record.Unit{Outcome: inst.outcome, Changed: inst.changed, Plan: inst.plan.summary(), Approval: inst.approval})
 		}
 	}
 	return out, nil

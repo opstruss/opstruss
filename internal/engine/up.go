@@ -36,14 +36,15 @@ func Up(ctx context.Context, opts Options) (*Result, error) { return runCommand(
 func Down(ctx context.Context, opts Options) (*Result, error) { return runCommand(ctx, opts, "down") }
 
 func runCommand(ctx context.Context, opts Options, op string) (*Result, error) {
-	e, err := open(opts)
+	e, err := open(opts, op, "")
 	if err != nil {
 		return nil, err
 	}
-	defer e.close()
 	if _, err := e.unitPass(ctx, op, pass{units: opts.Units, yes: opts.Yes, force: opts.Force, noDeps: opts.NoDeps, source: "--yes"}); err != nil {
-		return nil, err
+		e.fail("", err)
 	}
+	outcome := map[int]string{0: success, 1: failure, 2: skipped}[e.exit]
+	e.close(outcome, nil)
 	return e.result(), nil
 }
 
@@ -323,6 +324,7 @@ func (e *engine) turn(ctx context.Context, inst *instance) {
 		}
 		approval = e.pass.source
 	}
+	inst.approval = approval
 	if !p.run {
 		// Only old attempts are left to tear down; the approval covered them.
 		if err := e.tearDown(ctx, addr, rec, etag); err != nil {

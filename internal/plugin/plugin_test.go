@@ -363,7 +363,7 @@ func TestFormats(t *testing.T) {
 		{"json", `{"n": 1.5}`, map[string]any{"n": 1.5}},
 		{"yaml", "a: 1\nb: [x]\n", map[string]any{"a": int64(1), "b": []any{"x"}}},
 		{"dotenv", "# c\nexport A=1\nB = 'x y'\nC=\"l1\\nl2\"\n", map[string]any{"A": "1", "B": "x y", "C": "l1\nl2"}},
-		{"text", "bad \xff", "bad �"},
+		{"text", "bad \xff", "bad \uFFFD"},
 	} {
 		got, err := Decode([]byte(tt.in), tt.format)
 		if err != nil || !reflect.DeepEqual(got, tt.want) {

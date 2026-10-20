@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/user"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -18,6 +19,7 @@ import (
 	"github.com/opstruss/opstruss/internal/model"
 	"github.com/opstruss/opstruss/internal/plugin"
 	"github.com/opstruss/opstruss/internal/proc"
+	"github.com/opstruss/opstruss/internal/record"
 	"github.com/opstruss/opstruss/internal/state"
 )
 
@@ -36,18 +38,9 @@ type Options struct {
 	Emit      func(Event)
 }
 
-// Event is one thing that happened in a run. The last event of a task's
-// run carries its outcome and outputs.
-type Event struct {
-	Type    string         `json:"type"`
-	Level   string         `json:"level"`
-	Address string         `json:"address,omitempty"`
-	Task    string         `json:"task,omitempty"`
-	Stream  string         `json:"stream,omitempty"`
-	Message string         `json:"message"`
-	Outcome string         `json:"outcome,omitempty"`
-	Outputs map[string]any `json:"outputs,omitempty"`
-}
+// Event is one thing that happened in a run; the last one, of type run,
+// carries the outcome, the exit code, and the outputs of a task.
+type Event = record.Event
 
 // Result is how a run ended.
 type Result struct {
@@ -91,6 +84,8 @@ type engine struct {
 	pass     pass
 	passMu   sync.Mutex
 	read     map[string]string // digests of the exact plans read in this run, by address; empty when not exact
+	rec      *record.Run
+	touched  map[string]*record.Unit
 
 	rootTask string
 	needed   map[string]*taskOnce               // tasks of needs, which run once per run
@@ -107,7 +102,10 @@ type engine struct {
 	exit int
 }
 
-func open(opts Options) (*engine, error) {
+// open reads the project and the state of its stack, marks the runs that
+// a crash left running, and starts the record of a run of command, or of
+// the task with that name.
+func open(opts Options, command, task string) (*engine, error) {
 	p, err := model.Load(opts.Dir, opts.Stack)
 	if err != nil {
 		return nil, err
@@ -125,8 +123,9 @@ func open(opts Options) (*engine, error) {
 		return nil, err
 	}
 	e := &engine{opts: opts, p: p, inputs: inputs, locals: locals, root: filepath.Join(p.Dir, ".opstruss"),
-		runID: state.NewRunID(), started: time.Now().UTC(), parallel: DefaultParallel, byUnit: map[string][]*instance{},
-		read: map[string]string{}, needed: map[string]*taskOnce{}, holders: map[string]context.CancelCauseFunc{}}
+		started: time.Now().UTC(), parallel: DefaultParallel, byUnit: map[string][]*instance{},
+		read: map[string]string{}, needed: map[string]*taskOnce{}, holders: map[string]context.CancelCauseFunc{},
+		touched: map[string]*record.Unit{}}
 	if s, ok := opts.LookupEnv("OPSTRUSS_PARALLEL"); ok {
 		if e.parallel, err = strconv.Atoi(s); err != nil || e.parallel < 1 {
 			return nil, fmt.Errorf("OPSTRUSS_PARALLEL is %q, not a number above 0", s)
@@ -148,6 +147,27 @@ func open(opts Options) (*engine, error) {
 	if e.host, err = state.HostID(); err != nil {
 		return nil, err
 	}
+	interrupted, err := record.Interrupted(e.root, p.StackName)
+	if err != nil {
+		return nil, err
+	}
+	rec := &record.Record{Project: p.Name, Stack: p.StackName, Command: command, Task: task, Args: opts.Units,
+		Host: e.host, PID: os.Getpid(), Started: e.started.Format(time.RFC3339)}
+	if len(e.parents) > 0 {
+		rec.Parent = e.parents[len(e.parents)-1]
+	}
+	rec.Hostname, _ = os.Hostname()
+	if u, err := user.Current(); err == nil {
+		rec.User = u.Username
+	}
+	if e.rec, err = record.Create(e.root, state.NewRunID, rec, opts.Emit); err != nil {
+		return nil, err
+	}
+	e.runID = e.rec.ID()
+	for _, run := range interrupted {
+		e.warn("", "run %s ended without finishing its record; it is marked cancelled, as interrupted", run)
+	}
+	e.cleanTemp()
 	e.holder = state.NewHolder(e.runID, e.host)
 	e.run = &plugin.Run{Project: p.Name, Stack: p.StackName, ID: e.runID, Parents: e.parents,
 		Temp: e.tempOf(e.runID), Artifacts: filepath.Join(e.root, "runs", p.StackName, e.runID, "artifacts"), Environ: opts.Environ}
@@ -157,25 +177,69 @@ func open(opts Options) (*engine, error) {
 	return e, nil
 }
 
-func (e *engine) close() {
+// close ends the run: the last event, of type run, then the record, then
+// the retention of old runs, and the run's temporary files go.
+func (e *engine) close(outcome string, outputs map[string]any) {
 	if err := e.run.Close(); err != nil {
 		e.warn("", "removing the run's temporary files: %v", err)
 	}
+	code := e.exit
+	e.emit(Event{Type: "run", Level: "info", Task: e.rec.Task(), Message: outcome, Outcome: outcome, ExitCode: &code, Outputs: outputs})
+	e.mu.Lock()
+	touched := e.touched
+	e.mu.Unlock()
+	err := e.rec.Finish(func(r *record.Record) {
+		r.Outcome, r.ExitCode, r.Outputs = outcome, code, outputs
+		if len(touched) > 0 {
+			r.Units = touched
+		}
+	})
+	if err == nil {
+		err = record.Prune(e.root, e.p.StackName)
+	}
+	if err != nil && e.opts.Emit != nil {
+		e.opts.Emit(Event{Type: "diagnostic", Level: "warn", Message: "keeping the record of the run: " + err.Error()})
+	}
+}
+
+// cleanTemp removes the temporary directories of runs that no longer run
+// and whose programs are all gone: a crash leaves them behind.
+func (e *engine) cleanTemp() {
+	ents, err := os.ReadDir(filepath.Join(e.root, "tmp"))
+	if err != nil {
+		return
+	}
+	for _, ent := range ents {
+		run := ent.Name()
+		if run == e.runID {
+			continue
+		}
+		ps, held, err := plugin.Marker(run, e.tempOf(run)).Alive()
+		if err == nil && len(ps) == 0 && !held {
+			_ = os.RemoveAll(e.tempOf(run))
+		}
+	}
+}
+
+// touch notes what the run did to a unit, for its record.
+func (e *engine) touch(addr string, u *record.Unit) {
+	e.mu.Lock()
+	e.touched[addr] = u
+	e.mu.Unlock()
 }
 
 func (e *engine) tempOf(run string) string { return filepath.Join(e.root, "tmp", run) }
 
-func (e *engine) emit(ev Event) {
-	if e.opts.Emit == nil {
-		return
-	}
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	e.opts.Emit(ev)
-}
+func (e *engine) emit(ev Event) { e.rec.Emit(ev) }
 
 func (e *engine) say(typ, addr, format string, args ...any) {
 	e.emit(Event{Type: typ, Level: "info", Address: addr, Message: fmt.Sprintf(format, args...)})
+}
+
+// sayTask reports on a task, or on one of its steps.
+func (e *engine) sayTask(task, step, format string, args ...any) {
+	e.emit(Event{Type: map[bool]string{true: "step", false: "task"}[step != ""], Level: "info", Task: task, Step: step,
+		Message: fmt.Sprintf(format, args...)})
 }
 
 func (e *engine) warn(addr, format string, args ...any) {
@@ -217,6 +281,7 @@ type lineWriter struct {
 	e      *engine
 	addr   string
 	task   string
+	step   string
 	stream string
 	buf    []byte
 }
@@ -235,7 +300,7 @@ func (w *lineWriter) Write(p []byte) (int, error) {
 }
 
 func (w *lineWriter) line(s string) {
-	w.e.emit(Event{Type: "log", Level: "info", Address: w.addr, Task: w.task, Stream: w.stream, Message: strings.ToValidUTF8(s, "�")})
+	w.e.emit(Event{Type: "log", Level: "info", Address: w.addr, Task: w.task, Step: w.step, Stream: w.stream, Message: strings.ToValidUTF8(s, "\uFFFD")})
 }
 
 func (w *lineWriter) flush() {

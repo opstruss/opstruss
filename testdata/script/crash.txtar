@@ -11,6 +11,7 @@ env OPSTRUSS_FAILPOINT=up-before-pending=kill
 env OPSTRUSS_FAILPOINT=
 exec opstruss plan db
 stdout '^default/db: will run: new$'
+stderr 'ended without finishing its record; it is marked cancelled, as interrupted$'
 
 # killed after it, or after the program, or before the last write, the
 # next plan shows the attempt that did not finish, and up finishes it
@@ -37,6 +38,10 @@ exec opstruss up slow --yes
 stdout '^default/slow: waiting for .* of interrupted run '
 stdout '^default/slow: up: done$'
 cmp slow.log slow.want
+# the temporary files of the killed run go once none of its programs is left
+exec opstruss plan
+exec sh -c 'ls .opstruss/tmp | wc -l'
+stdout '^ *0$'
 
 # a move killed at any stage is finished by the next up with that entry
 cp moved.yaml opstruss.yaml

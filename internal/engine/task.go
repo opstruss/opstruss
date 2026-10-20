@@ -82,11 +82,10 @@ type call struct {
 // Task runs the project task name, or the task name of each unit that has
 // it, as one run whose exit code follows the outcome of that call.
 func Task(ctx context.Context, opts Options, name string, inputs map[string]any) (*Result, error) {
-	e, err := open(opts)
+	e, err := open(opts, "task", name)
 	if err != nil {
 		return nil, err
 	}
-	defer e.close()
 	e.rootTask = name
 	c := call{yes: opts.Yes, source: "--yes"}
 	var res *taskResult
@@ -94,18 +93,19 @@ func Task(ctx context.Context, opts Options, name string, inputs map[string]any)
 		res = e.callTask(ctx, name, t, e.p.DirOf("tasks."+name), inputs, c)
 	} else {
 		if res, err = e.unitTasks(ctx, name, opts.Units, inputs, c); err != nil {
-			return nil, err
+			e.emit(Event{Type: "task", Level: "error", Task: name, Message: err.Error()})
+			res = failed(err)
 		}
 	}
-	e.emit(Event{Type: "run", Level: "info", Task: name, Message: res.outcome, Outcome: res.outcome, Outputs: res.outputs})
-	r := &Result{Run: e.runID}
+	e.exit = 0
 	switch {
 	case res.outcome == failure && res.approval, res.outcome == skipped && res.approval:
-		r.ExitCode = 2
+		e.exit = 2
 	case res.outcome == failure, res.outcome == cancelled:
-		r.ExitCode = 1
+		e.exit = 1
 	}
-	return r, nil
+	e.close(res.outcome, res.outputs)
+	return &Result{Run: e.runID, ExitCode: e.exit}, nil
 }
 
 // unitTasks runs the task name of each unit that has it, in graph order,
@@ -187,7 +187,7 @@ func (e *engine) callTask(ctx context.Context, name string, t *model.Task, dir s
 		r := e.need(ctx, n)
 		tasks[n] = r.view()
 		if r.outcome != success {
-			e.say("task", label, "skipped: task %s it needs is %s", n, r.outcome)
+			e.sayTask(label, "", "skipped: task %s it needs is %s", n, r.outcome)
 			return &taskResult{outcome: skipped, outputs: map[string]any{}, approval: r.approval}
 		}
 	}
@@ -198,7 +198,7 @@ func (e *engine) callTask(ctx context.Context, name string, t *model.Task, dir s
 			return fail(fmt.Errorf("if: %w", err))
 		}
 		if !ok {
-			e.say("task", label, "skipped: if is false")
+			e.sayTask(label, "", "skipped: if is false")
 			return &taskResult{outcome: skipped, outputs: map[string]any{}}
 		}
 	}
@@ -212,7 +212,7 @@ func (e *engine) callTask(ctx context.Context, name string, t *model.Task, dir s
 		return fail(err)
 	}
 	if skip {
-		e.say("task", label, "skipped: a run of %s is going on, and concurrency is skip", name)
+		e.sayTask(label, "", "skipped: a run of %s is going on, and concurrency is skip", name)
 		return &taskResult{outcome: skipped, outputs: map[string]any{}}
 	}
 	defer release()
@@ -281,7 +281,7 @@ func (e *engine) taskOnce(ctx context.Context, name, label string, t *model.Task
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	e.say("task", label, "started")
+	e.sayTask(label, "", "started")
 	var res *taskResult
 	if t.Run != nil {
 		res = e.program(ctx, progSpec{label: label, task: name, cmd: t.Run, shell: t.Shell, dir: t.Dir, base: dir,
@@ -296,12 +296,12 @@ func (e *engine) taskOnce(ctx context.Context, name, label string, t *model.Task
 	switch res.outcome {
 	case failure:
 		if t.ContinueOnError {
-			e.say("task", label, "failed; continue_on_error goes on")
+			e.sayTask(label, "", "failed; continue_on_error goes on")
 		} else {
-			e.say("task", label, "failed")
+			e.sayTask(label, "", "failed")
 		}
 	default:
-		e.say("task", label, "%s", res.outcome)
+		e.sayTask(label, "", "%s", res.outcome)
 	}
 	return res
 }
@@ -339,7 +339,7 @@ func (e *engine) stepsWithRetry(ctx context.Context, name, label string, t *mode
 			}
 			return res
 		}
-		e.say("task", label, "attempt %d of %d did not succeed; again in %s", i, n, delay)
+		e.sayTask(label, "", "attempt %d of %d did not succeed; again in %s", i, n, delay)
 		select {
 		case <-ctx.Done():
 			return res
@@ -430,7 +430,7 @@ func (tc *taskCtx) run(ctx context.Context, steps []*model.Step, d defaults) *ta
 		res.changed = res.changed || r.changed
 		if r.outcome == failure || r.outcome == cancelled {
 			if (s.ContinueOnError || r.soft) && r.outcome == failure {
-				tc.e.say("step", tc.label, "%s failed; continue_on_error goes on", label)
+				tc.e.sayTask(tc.label, label, "failed; continue_on_error goes on")
 				continue
 			}
 			res.outcome, res.approval = r.outcome, r.approval
@@ -449,7 +449,7 @@ func (tc *taskCtx) step(ctx context.Context, s *model.Step, label string, d defa
 			return tc.fail(label, fmt.Errorf("if: %w", err))
 		}
 		if !ok {
-			tc.e.say("step", tc.label, "%s: skipped", label)
+			tc.e.sayTask(tc.label, label, "skipped")
 			return &taskResult{outcome: skipped, outputs: map[string]any{}}
 		}
 	}
@@ -472,7 +472,7 @@ func (tc *taskCtx) step(ctx context.Context, s *model.Step, label string, d defa
 }
 
 func (tc *taskCtx) fail(label string, err error) *taskResult {
-	tc.e.emit(Event{Type: "step", Level: "error", Task: tc.label, Message: label + ": " + err.Error()})
+	tc.e.emit(Event{Type: "step", Level: "error", Task: tc.label, Step: label, Message: err.Error()})
 	return failed(err)
 }
 
@@ -492,8 +492,8 @@ func (tc *taskCtx) stepOnce(ctx context.Context, s *model.Step, label string, d 
 	switch {
 	case s.Run != nil:
 		d := d.with(s.Shell, s.Dir, s.Env, s.Pass)
-		res = tc.e.program(ctx, progSpec{label: tc.label + ": " + label, task: tc.name, cmd: s.Run, shell: d.shell, dir: d.dir, base: tc.dir,
-			env: d.env, pass: d.pass, stdin: s.Stdin, outputs: s.Outputs, step: true, retry: s.Retry,
+		res = tc.e.program(ctx, progSpec{label: tc.label, step: label, task: tc.name, cmd: s.Run, shell: d.shell, dir: d.dir, base: tc.dir,
+			env: d.env, pass: d.pass, stdin: s.Stdin, outputs: s.Outputs, retry: s.Retry,
 			failedWhen: s.FailedWhen, changedWhen: s.ChangedWhen, unit: tc.c.unit}, scope)
 	case s.Task != "":
 		res = tc.callStep(ctx, s, label, scope)
@@ -502,7 +502,7 @@ func (tc *taskCtx) stepOnce(ctx context.Context, s *model.Step, label string, d 
 		res = tc.block(ctx, s, label, d.with(s.Shell, s.Dir, s.Env, s.Pass))
 	}
 	if res.outcome == failure {
-		tc.e.say("step", tc.label, "%s: failed", label)
+		tc.e.sayTask(tc.label, label, "failed")
 	}
 	return res
 }

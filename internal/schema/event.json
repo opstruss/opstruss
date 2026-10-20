@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OpsTruss event",
+  "description": "One event of a run, as --json prints it and events.jsonl keeps it. Readers ignore fields and types they do not know.",
+  "type": "object",
+  "properties": {
+    "v": { "type": "integer", "minimum": 1 },
+    "seq": { "type": "integer", "minimum": 1 },
+    "time": { "type": "string" },
+    "run": { "type": "string" },
+    "type": { "type": "string" },
+    "level": { "enum": ["debug", "info", "warn", "error"] },
+    "address": { "type": "string" },
+    "task": { "type": "string" },
+    "step": { "type": "string" },
+    "stream": { "enum": ["stdout", "stderr"] },
+    "message": { "type": "string" },
+    "outcome": { "enum": ["success", "failure", "skipped", "cancelled"] },
+    "exit_code": { "type": "integer" },
+    "outputs": { "type": "object" }
+  },
+  "required": ["v", "seq", "time", "run", "type", "level", "message"]
+}

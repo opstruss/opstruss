@@ -24,12 +24,13 @@ type instance struct {
 	dir     string // directory of the file that wrote the unit
 	deps    []*instance
 
-	record  *state.Record
-	plan    plan
-	outcome string
-	changed bool
-	outputs map[string]any
-	done    chan struct{}
+	record   *state.Record
+	plan     plan
+	approval string // what approved its change: auto, --yes, or a step
+	outcome  string
+	changed  bool
+	outputs  map[string]any
+	done     chan struct{}
 }
 
 // plan is what the run will do to an instance.

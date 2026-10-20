@@ -91,13 +91,16 @@ func (a *app) render() func(engine.Event) {
 			w = a.stderr
 		}
 		who := ev.Address
-		if who == "" {
+		if who == "" && ev.Task != "" {
 			who = ev.Task
+			if ev.Step != "" {
+				who += ": " + ev.Step
+			}
 		}
 		switch {
 		case ev.Type == "log":
 			fmt.Fprintf(w, "%s | %s\n", who, ev.Message)
-		case ev.Type == "run" && ev.Task != "":
+		case ev.Type == "run":
 			for _, k := range slices.Sorted(maps.Keys(ev.Outputs)) {
 				fmt.Fprintf(w, "  %s: %s\n", k, expr.Text(ev.Outputs[k]))
 			}

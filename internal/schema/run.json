@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OpsTruss run record",
+  "description": "record.json of a run in .opstruss/runs/<stack>/<run>/: who ran what and when, and how it ended. Readers ignore fields they do not know.",
+  "type": "object",
+  "properties": {
+    "version": { "type": "integer", "minimum": 1 },
+    "run": { "type": "string", "pattern": "^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$" },
+    "parent": { "type": "string" },
+    "project": { "type": "string" },
+    "stack": { "type": "string" },
+    "command": { "type": "string" },
+    "task": { "type": "string" },
+    "args": { "type": "array", "items": { "type": "string" } },
+    "user": { "type": "string" },
+    "host": { "type": "string" },
+    "hostname": { "type": "string" },
+    "pid": { "type": "integer" },
+    "started": { "type": "string" },
+    "ended": { "type": "string" },
+    "status": { "enum": ["running", "finished"] },
+    "outcome": { "enum": ["success", "failure", "skipped", "cancelled"] },
+    "reason": { "type": "string" },
+    "exit_code": { "type": "integer" },
+    "units": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "outcome": { "type": "string" },
+          "changed": { "type": "boolean" },
+          "plan": { "type": "string" },
+          "approval": { "type": "string" }
+        },
+        "required": ["outcome", "changed"]
+      }
+    },
+    "outputs": { "type": "object" }
+  },
+  "required": ["version", "run", "project", "stack", "command", "host", "pid", "started", "status", "exit_code"]
+}

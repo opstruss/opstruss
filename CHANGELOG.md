@@ -105,6 +105,21 @@ minor release can change what a project, a component, or a plugin relies on.
   one lock per value.
 - The exit code of a task follows the outcome of the task called: 0, 1
   when it failed, and 2 when it stopped at plan for approval.
+- Every run keeps `record.json` (who ran what and when, the units it
+  touched with their outcome, plan, and approval, and the outcome, exit
+  code, and outputs of the run) and `events.jsonl` in
+  `.opstruss/runs/<stack>/<run>/`, whose name an exclusive mkdir makes
+  unique. A run stores at most 10 MiB of program output; the middle of
+  more is dropped, with one diagnostic event.
+- `--json` prints every event of a run on a line of its own, with `v`,
+  `seq`, `time`, `run`, `type`, `level`, and `message`, and the address,
+  task, step, or stream it belongs to. The last event, of type `run`,
+  carries the outcome, the exit code, and the outputs of a task.
+- A run that a crash left unfinished is marked cancelled, as interrupted,
+  by the next run of its stack, and its temporary files go once none of
+  its programs is left.
+- Old runs go: a stack keeps 100 runs per task and at most 1 GiB of runs,
+  and never drops a run still going or the last run that touched a unit.
 - Programs of units and tasks start from a clean environment (`PATH`,
   `HOME`, `USER`, the locale, `TZ`, `TMPDIR`, `TERM`, proxies,
   `SSL_CERT_*`, `SSH_AUTH_SOCK`) plus the variables that `pass:` names and

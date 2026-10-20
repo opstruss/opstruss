@@ -106,7 +106,7 @@ func output(c *Call, o *model.Output, written any, streams map[string]*stream) (
 // its output, or one JSON object, whose types are kept. Names that no
 // output declares are left out, with a warning.
 func ParseOutputFile(data []byte, decl map[string]*model.Output) (map[string]any, []string, error) {
-	text := strings.ToValidUTF8(string(data), "�")
+	text := strings.ToValidUTF8(string(data), "\uFFFD")
 	values := map[string]any{}
 	var errs []error
 	if t := strings.TrimSpace(text); strings.HasPrefix(t, "{") {

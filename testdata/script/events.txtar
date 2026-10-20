@@ -1,0 +1,34 @@
+# Every run keeps record.json and events.jsonl in .opstruss/runs/<stack>/,
+# and --json prints the same events, one per line.
+
+env HOME=$WORK/home
+
+exec opstruss up --yes --json
+stdout '^\{"v":1,"seq":1,"time":"[^"]+","run":"[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}","type":"plan","level":"info","address":"default/web","message":"will run: new"\}$'
+stdout '"type":"log","level":"info","address":"default/web","task":"up","stream":"stdout","message":"hello"'
+stdout '"type":"run","level":"info","message":"success","outcome":"success","exit_code":0\}$'
+exec sh -c 'cat .opstruss/runs/default/*/record.json'
+stdout '"status": "finished"'
+stdout '"command": "up"'
+stdout '"outcome": "success"'
+stdout '"approval": "--yes"'
+exec sh -c 'cat .opstruss/runs/default/*/events.jsonl'
+stdout '"message":"hello"'
+
+# a task records its outputs in the last event and in record.json
+exec opstruss greet --json
+stdout '"type":"run",.*"outputs":\{"msg":"hi"\}'
+exec sh -c 'grep -l greet .opstruss/runs/default/*/record.json | xargs cat'
+stdout '"task": "greet"'
+stdout '"msg": "hi"'
+
+-- opstruss.yaml --
+name: shop
+units:
+  web:
+    run: echo hello
+tasks:
+  greet:
+    run: echo "msg=hi" >> "$OPSTRUSS_OUTPUT"
+    outputs:
+      msg: {}

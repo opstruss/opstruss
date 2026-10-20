@@ -87,7 +87,7 @@ func (e *engine) taskLock(ctx context.Context, name string, t *model.Task, s *ex
 		}
 		if !waiting {
 			waiting = true
-			e.say("task", name, "waiting for the run of %s that holds its concurrency lock", file)
+			e.sayTask(name, "", "waiting for the run of %s that holds its concurrency lock", file)
 		}
 		select {
 		case <-ctx.Done():

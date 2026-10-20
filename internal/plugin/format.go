@@ -22,7 +22,7 @@ var envName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 // Compose and EnvironmentFile of systemd. Bytes that are not UTF-8 become
 // U+FFFD. Empty json is null.
 func Decode(data []byte, format string) (any, error) {
-	text := strings.ToValidUTF8(string(data), "�")
+	text := strings.ToValidUTF8(string(data), "\uFFFD")
 	switch format {
 	case "", "text":
 		return strings.TrimRight(text, "\n"), nil

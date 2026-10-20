@@ -29,6 +29,8 @@ const (
 	Plugin  Kind = "plugin.json"
 	Record  Kind = "record.json"
 	Meta    Kind = "meta.json"
+	Run     Kind = "run.json"
+	Event   Kind = "event.json"
 )
 
 const base = "https://schema.opstruss.invalid/"
@@ -59,7 +61,7 @@ var compiled = sync.OnceValues(func() (map[Kind]*jsonschema.Schema, error) {
 		}
 	}
 	out := map[Kind]*jsonschema.Schema{}
-	for _, k := range []Kind{Project, Include, Plugin, Record, Meta} {
+	for _, k := range []Kind{Project, Include, Plugin, Record, Meta, Run, Event} {
 		s, err := c.Compile(base + string(k))
 		if err != nil {
 			return nil, err

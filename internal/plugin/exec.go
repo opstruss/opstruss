@@ -164,7 +164,7 @@ func (s *stream) tail() string {
 	if len(b) > Tail {
 		b = b[len(b)-Tail:]
 	}
-	return strings.ToValidUTF8(string(b), "�")
+	return strings.ToValidUTF8(string(b), "\uFFFD")
 }
 
 // Exec runs one program under the contract, and returns once it and every

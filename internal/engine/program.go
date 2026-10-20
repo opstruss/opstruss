@@ -18,6 +18,7 @@ import (
 // evaluated.
 type progSpec struct {
 	label, task string
+	step        string // the label of a step: its outputs have stdout, stderr, and exit_code too
 	cmd         *model.Command
 	shell, dir  string
 	base        string
@@ -26,7 +27,6 @@ type progSpec struct {
 	stdin       *model.Stdin
 	inputs      map[string]any // INPUT_*, only for the program of a task
 	outputs     map[string]*model.Output
-	step        bool // a step: its outputs have stdout, stderr, and exit_code too
 	retry       *model.Retry
 	failedWhen  any
 	changedWhen any
@@ -39,7 +39,7 @@ type progSpec struct {
 // its outputs with stdout, stderr, and exit_code.
 func (e *engine) program(ctx context.Context, p progSpec, s *expr.Scope) *taskResult {
 	fail := func(err error) *taskResult {
-		e.emit(Event{Type: "step", Level: "error", Task: p.label, Message: err.Error()})
+		e.emit(Event{Type: "step", Level: "error", Task: p.label, Step: p.step, Message: err.Error()})
 		return failed(err)
 	}
 	cmd, err := command(p.cmd, s)
@@ -103,8 +103,8 @@ func (e *engine) program(ctx context.Context, p progSpec, s *expr.Scope) *taskRe
 		}
 	}
 	for i := 1; ; i++ {
-		out := &lineWriter{e: e, addr: addr, task: p.label, stream: "stdout"}
-		errw := &lineWriter{e: e, addr: addr, task: p.label, stream: "stderr"}
+		out := &lineWriter{e: e, addr: addr, task: p.label, step: p.step, stream: "stdout"}
+		errw := &lineWriter{e: e, addr: addr, task: p.label, step: p.step, stream: "stderr"}
 		res, err := e.run.Exec(ctx, &plugin.Call{Command: cmd, Shell: p.shell, Base: p.base, Dir: dir, Env: env, Pass: pass,
 			Stdin: stdin, Stop: stop, Task: p.task, Reason: "requested", Unit: unit, Inputs: p.inputs, Outputs: p.outputs,
 			Stdout: out, Stderr: errw})
@@ -114,18 +114,18 @@ func (e *engine) program(ctx context.Context, p progSpec, s *expr.Scope) *taskRe
 			return fail(err)
 		}
 		for _, w := range res.Warnings {
-			e.warn(addr, "%s: %s", p.label, w)
+			e.emit(Event{Type: "diagnostic", Level: "warn", Address: addr, Task: p.label, Step: p.step, Message: w})
 		}
 		judged := maps.Clone(res.Outputs)
 		judged["stdout"], judged["stderr"], judged["exit_code"] = res.Stdout, res.Stderr, int64(res.ExitCode)
 		r := &taskResult{outcome: success, changed: res.Changed, outputs: res.Outputs}
-		if p.step {
+		if p.step != "" {
 			r.outputs = judged
 		}
 		if err := outcomeErr(res); err != nil {
 			r.outcome = failure
 			if p.failedWhen == nil {
-				e.emit(Event{Type: "step", Level: "error", Task: p.label, Message: err.Error()})
+				e.emit(Event{Type: "step", Level: "error", Task: p.label, Step: p.step, Message: err.Error()})
 			}
 		}
 		js := s.With("outputs", judged)
@@ -144,7 +144,7 @@ func (e *engine) program(ctx context.Context, p progSpec, s *expr.Scope) *taskRe
 			}
 			return r
 		}
-		e.say("step", addr, "%s: attempt %d of %d did not succeed; again in %s", p.label, i, n, delay)
+		e.sayTask(p.label, p.step, "attempt %d of %d did not succeed; again in %s", i, n, delay)
 		select {
 		case <-ctx.Done():
 			return r
