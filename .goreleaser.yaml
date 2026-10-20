@@ -1,0 +1,39 @@
+version: 2
+
+project_name: opstruss
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - formats:
+      - tar.gz
+
+checksum:
+  name_template: checksums.txt
+
+sboms:
+  - artifacts: archive
+
+# Release notes come from CHANGELOG.md; see .github/workflows/release.yml.
+changelog:
+  disable: true
+
+release:
+  github:
+    owner: opstruss
+    name: opstruss
+  draft: true
+  replace_existing_draft: true

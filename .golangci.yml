@@ -1,0 +1,29 @@
+version: "2"
+
+linters:
+  enable:
+    - forbidigo
+  settings:
+    forbidigo:
+      analyze-types: true
+      forbid:
+        - pattern: ^fmt\.Print
+          msg: only internal/cli writes to the terminal
+        - pattern: ^os\.Std(out|err)$
+          msg: only internal/cli writes to the terminal
+  exclusions:
+    rules:
+      # internal/cli owns the terminal, and a failed write to it has nowhere
+      # to be reported.
+      - path: ^internal/cli/
+        linters:
+          - forbidigo
+      - path: ^internal/cli/
+        linters:
+          - errcheck
+        text: '`fmt\.Fprint'
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
