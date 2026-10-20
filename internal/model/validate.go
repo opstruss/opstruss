@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/opstruss/opstruss/internal/proc"
 )
 
 // BuiltinTasks are the tasks in the binary, also called opstruss.<name>.
@@ -107,6 +109,7 @@ func (c *checker) uses() {
 		case strings.HasPrefix(name, "x-"):
 			c.add(path, "names in uses: do not start with x-")
 		}
+		c.environment(path, c.p.Uses[name].Env, c.p.Uses[name].Pass)
 		src := c.p.Uses[name].Source
 		switch {
 		case strings.HasPrefix(src, "./") || strings.HasPrefix(src, "../"):
@@ -144,6 +147,30 @@ func hasExpr(cmd *Command) bool {
 }
 
 const scriptExpr = "${{ }} is not allowed in a script; pass values through env:, or write the program as a list"
+
+// environment rejects env: and pass: on the variables of the program
+// contract.
+func (c *checker) environment(path []string, env Env, pass []string) {
+	for _, k := range slices.Sorted(maps.Keys(env)) {
+		if ReservedEnv(k) {
+			c.add(at(path, "env", k), "OPSTRUSS_ and INPUT_ variables come from OpsTruss; env: cannot set them")
+		}
+	}
+	for i, p := range pass {
+		if ReservedEnv(p) {
+			c.add(at(path, "pass", strconv.Itoa(i)), "OPSTRUSS_ and INPUT_ variables come from OpsTruss; pass: never passes them")
+		}
+	}
+}
+
+func (c *checker) stop(path []string, s *Stop) {
+	if s == nil || s.Signal == "" {
+		return
+	}
+	if _, err := proc.ParseSignal(s.Signal); err != nil {
+		c.add(at(path, "stop", "signal"), "%v", err)
+	}
+}
 
 func (c *checker) units() {
 	for _, name := range slices.Sorted(maps.Keys(c.p.Units)) {
@@ -188,6 +215,8 @@ func (c *checker) units() {
 				c.add(at(path, k), scriptExpr)
 			}
 		}
+		c.environment(path, u.Env, u.Pass)
+		c.stop(path, u.Stop)
 		for _, tn := range slices.Sorted(maps.Keys(u.Tasks)) {
 			tp := at(path, "tasks", tn)
 			if slices.Contains(StandardTasks, tn) || slices.Contains(Hooks, tn) {
@@ -250,6 +279,16 @@ func (c *checker) task(path []string, t *Task, project bool) {
 	}
 	if hasExpr(t.Run) {
 		c.add(at(path, "run"), scriptExpr)
+	}
+	c.environment(path, t.Env, t.Pass)
+	c.stop(path, t.Stop)
+	vars := map[string]string{}
+	for _, name := range slices.Sorted(maps.Keys(t.Inputs)) {
+		v := InputEnv(name)
+		if other, dup := vars[v]; dup {
+			c.add(at(path, "inputs", name), "inputs %s and %s are both %s for the program; rename one", other, name, v)
+		}
+		vars[v] = name
 	}
 	for _, name := range slices.Sorted(maps.Keys(t.Outputs)) {
 		o := t.Outputs[name]
@@ -345,6 +384,7 @@ func (c *checker) steps(path []string, steps []*Step, ids map[string]bool) {
 		if hasExpr(s.Run) {
 			c.add(at(sp, "run"), scriptExpr)
 		}
+		c.environment(sp, s.Env, s.Pass)
 		c.steps(at(sp, "block"), s.Block, ids)
 		c.steps(at(sp, "rescue"), s.Rescue, ids)
 		c.steps(at(sp, "always"), s.Always, ids)

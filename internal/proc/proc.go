@@ -1,0 +1,116 @@
+// Package proc runs each program as the leader of its own process group,
+// stops a group with a signal, a grace period, and a kill, and finds the
+// processes of this user that carry a marker in their environment.
+package proc
+
+import (
+	"errors"
+	"fmt"
+	"maps"
+	"os/exec"
+	"slices"
+	"strings"
+	"syscall"
+	"time"
+)
+
+// KillWait is how long Stop waits for a group to empty after SIGKILL, for
+// processes that the kernel has not removed yet.
+const KillWait = 5 * time.Second
+
+// Start starts cmd as the leader of a new process group, so a stop reaches
+// every program it starts, such as tofu under sh, and Ctrl-C at the
+// terminal reaches OpsTruss alone, which then stops each group itself.
+func Start(cmd *exec.Cmd) (Group, error) {
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	cmd.SysProcAttr.Setpgid = true
+	if err := cmd.Start(); err != nil {
+		return 0, err
+	}
+	return Group(cmd.Process.Pid), nil
+}
+
+// Group is a process group, numbered by the pid of its leader. The number
+// is not reused while the group has members.
+type Group int
+
+// Signal sends sig to every process in the group, then SIGCONT, so a
+// stopped process, such as one that read the terminal from the background,
+// gets it too, as a shell does for a stopped job.
+func (g Group) Signal(sig syscall.Signal) error {
+	err := syscall.Kill(-int(g), sig)
+	if err == nil && sig != syscall.SIGKILL && sig != syscall.SIGCONT {
+		err = syscall.Kill(-int(g), syscall.SIGCONT)
+	}
+	if errors.Is(err, syscall.ESRCH) {
+		return nil
+	}
+	return err
+}
+
+// Empty reports whether no process is left in the group. A leader that
+// exited counts until it is reaped.
+func (g Group) Empty() bool {
+	return errors.Is(syscall.Kill(-int(g), 0), syscall.ESRCH)
+}
+
+// Stop sends sig to the group, waits up to grace for it to empty, and then
+// kills what is left. Whoever started the leader reaps it meanwhile, as
+// cmd.Wait does, or the group never empties.
+func (g Group) Stop(sig syscall.Signal, grace time.Duration) error {
+	if g.Empty() {
+		return nil
+	}
+	if err := g.Signal(sig); err != nil {
+		return err
+	}
+	if g.wait(grace) {
+		return nil
+	}
+	if err := g.Signal(syscall.SIGKILL); err != nil {
+		return err
+	}
+	if g.wait(KillWait) {
+		return nil
+	}
+	return fmt.Errorf("process group %d still has processes %s after SIGKILL", g, KillWait)
+}
+
+// wait polls until the group is empty or d has passed.
+func (g Group) wait(d time.Duration) bool {
+	deadline := time.Now().Add(d)
+	for delay := 5 * time.Millisecond; ; delay = min(2*delay, 100*time.Millisecond) {
+		if g.Empty() {
+			return true
+		}
+		left := time.Until(deadline)
+		if left <= 0 {
+			return false
+		}
+		time.Sleep(min(delay, left))
+	}
+}
+
+// signals are the signals a program can be stopped with.
+var signals = map[string]syscall.Signal{
+	"SIGHUP":   syscall.SIGHUP,
+	"SIGINT":   syscall.SIGINT,
+	"SIGQUIT":  syscall.SIGQUIT,
+	"SIGABRT":  syscall.SIGABRT,
+	"SIGKILL":  syscall.SIGKILL,
+	"SIGUSR1":  syscall.SIGUSR1,
+	"SIGUSR2":  syscall.SIGUSR2,
+	"SIGALRM":  syscall.SIGALRM,
+	"SIGTERM":  syscall.SIGTERM,
+	"SIGWINCH": syscall.SIGWINCH,
+}
+
+// ParseSignal returns the signal named name, such as SIGTERM.
+func ParseSignal(name string) (syscall.Signal, error) {
+	if s, ok := signals[name]; ok {
+		return s, nil
+	}
+	return 0, fmt.Errorf("unknown signal %s; use one of %s", name, strings.Join(slices.Sorted(maps.Keys(signals)), ", "))
+}

@@ -38,6 +38,33 @@ minor release can change what a project, a component, or a plugin relies on.
   atomically with a backup of the previous content. `_meta` names the
   project a stack belongs to, and a stack of another project, of a newer
   layout, or with records but no `_meta` is never written.
+- Programs of units and tasks start from a clean environment (`PATH`,
+  `HOME`, `USER`, the locale, `TZ`, `TMPDIR`, `TERM`, proxies,
+  `SSL_CERT_*`, `SSH_AUTH_SOCK`) plus the variables that `pass:` names and
+  the values of `env:`, where `{file: …}` gives the path of a 0600 file.
+  On top come the facts of the program contract, such as
+  `OPSTRUSS_CONTRACT`, `OPSTRUSS_RUN`, `OPSTRUSS_TASK`, and
+  `OPSTRUSS_ADDRESS`, and the inputs of a task as `INPUT_<NAME>` and in
+  `$OPSTRUSS_INPUTS`.
+- A program writes its outputs to `$OPSTRUSS_OUTPUT` as `name=value`
+  lines, `name<<EOF` blocks, or one JSON object, and `changed`, `message`,
+  and `sensitive` to `$OPSTRUSS_RESULT`. An output can also come from
+  stdout, stderr, or a file, read as `text`, `json`, `yaml`, `lines`, or
+  `dotenv`, the formats of `stdin:` too. The outputs of a unit or task take
+  at most 1 MiB.
+- Scripts run through `sh -e`, `bash --noprofile --norc -eo pipefail`,
+  `python3 -c`, `node -e`, or `pwsh -NoProfile -NonInteractive -Command`,
+  as `shell:` says.
+- Each program runs in its own process group. A cancel or a timeout sends
+  `stop.signal` (default `SIGINT`) to the group, waits `stop.grace`
+  (default one minute), and kills what is left; processes that a program
+  leaves in its group when it exits are stopped the same way.
+- Every program holds the lock of its run on file descriptor 3, which
+  tells OpsTruss that programs of an interrupted run still live, also
+  where their environment cannot be read; a program leaves it open.
+- `opstruss validate` rejects `env:` keys and `pass:` names that start with
+  `OPSTRUSS_` or `INPUT_`, task inputs that become the same `INPUT_`
+  variable, and an unknown `stop.signal`.
 - `-C <dir>`, `--stack` (or `OPSTRUSS_STACK`), `--input name=value`, and
   `--json`.
 - `opstruss --completion bash|zsh|fish` prints a completion script.

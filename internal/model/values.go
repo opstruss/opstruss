@@ -189,3 +189,16 @@ func jsonText(v any) string {
 	}
 	return strings.TrimSuffix(b.String(), "\n")
 }
+
+// ReservedEnv reports whether a variable belongs to the program contract:
+// env: cannot set OPSTRUSS_* and INPUT_*, and pass: never lets them
+// through, so new facts never collide with a user's variables.
+func ReservedEnv(name string) bool {
+	return strings.HasPrefix(name, "OPSTRUSS_") || strings.HasPrefix(name, "INPUT_")
+}
+
+// InputEnv names the variable that holds an input for a program:
+// upper case, with - as _, so a shell can read it.
+func InputEnv(name string) string {
+	return "INPUT_" + strings.ToUpper(strings.ReplaceAll(name, "-", "_"))
+}

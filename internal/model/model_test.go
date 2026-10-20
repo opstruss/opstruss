@@ -309,6 +309,12 @@ func TestRules(t *testing.T) {
 		{"name: app\nunits:\n  web:\n    run: [x]\nmoved:\n  - {from: web, to: site}\n", "web is still a unit"},
 		{"name: app\nunits:\n  site:\n    run: [x]\nmoved:\n  - {from: old, to: new}\n", "there is no unit new"},
 		{"name: app\nunits:\n  c:\n    run: [x]\nmoved:\n  - {from: a, to: b}\n  - {from: b, to: c}\n", ""},
+		{"name: app\nunits:\n  a:\n    run: [x]\n    env: {OPSTRUSS_STACK: dev}\n", "opstruss.yaml:5:11: units.a.env.OPSTRUSS_STACK: OPSTRUSS_ and INPUT_ variables come from OpsTruss; env: cannot set them"},
+		{"name: app\ntasks:\n  t:\n    steps:\n      - run: [x]\n        pass: [AWS_*, INPUT_TOKEN]\n", "pass: never passes them"},
+		{"name: app\ntasks:\n  t:\n    run: [x]\n    pass: ['*']\n", ""},
+		{"name: app\ntasks:\n  t:\n    run: [x]\n    inputs:\n      log-level: {type: string}\n      log_level: {type: string}\n", "inputs log-level and log_level are both INPUT_LOG_LEVEL"},
+		{"name: app\nunits:\n  a:\n    run: [x]\n    stop: {signal: SIGFOO}\n", "unknown signal SIGFOO"},
+		{"name: app\ntasks:\n  t:\n    run: [x]\n    stop: {signal: SIGTERM, grace: 5s}\n", ""},
 	}
 	for _, tt := range tests {
 		dir := write(t, map[string]string{"opstruss.yaml": tt.yaml})

@@ -64,18 +64,14 @@ var env = sync.OnceValues(func() (*cel.Env, error) {
 			if err != nil {
 				return types.NewErr("toYAML: %v", err)
 			}
-			out, err := yaml.Marshal(n)
+			out, err := ToYAML(n)
 			if err != nil {
 				return types.NewErr("toYAML: %v", err)
 			}
 			return types.String(out)
 		}),
 		unary("fromYAML", cel.StringType, cel.DynType, func(v ref.Val) ref.Val {
-			var n any
-			if err := yaml.Unmarshal([]byte(v.(types.String)), &n); err != nil {
-				return types.NewErr("fromYAML: %v", err)
-			}
-			n, err := normalize(n)
+			n, err := FromYAML([]byte(v.(types.String)))
 			if err != nil {
 				return types.NewErr("fromYAML: %v", err)
 			}
@@ -457,6 +453,18 @@ func FromJSON(data []byte) (any, error) {
 		return nil, fmt.Errorf("more than one JSON value")
 	}
 	return jsonNumbers(v), nil
+}
+
+// ToYAML writes a value as YAML, maps in key order.
+func ToYAML(v any) ([]byte, error) { return yaml.Marshal(v) }
+
+// FromYAML reads YAML 1.2 into the engine's types.
+func FromYAML(data []byte) (any, error) {
+	var v any
+	if err := yaml.Unmarshal(data, &v); err != nil {
+		return nil, err
+	}
+	return normalize(v)
 }
 
 func jsonNumbers(v any) any {
