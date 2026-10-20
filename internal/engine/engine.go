@@ -36,6 +36,19 @@ type Options struct {
 	Force     bool     // up: run the units named although unchanged; down: although pass values differ
 	NoDeps    bool     // leave out the dependencies of up and the dependents of down
 	Emit      func(Event)
+	// Approve asks whoever is at a terminal to approve one change, one
+	// question at a time; without it, a change that needs approval stops
+	// at plan. Ask asks for a required input that has no value.
+	Approve func(context.Context, Question) (bool, error)
+	Ask     func(context.Context, string, *model.Input) (string, error)
+	Debug   bool // OPSTRUSS_LOG=debug: diagnostics of the engine as debug events
+}
+
+// Question is a change that waits for approval.
+type Question struct {
+	Address string `json:"address,omitempty"`
+	Task    string `json:"task,omitempty"`
+	Summary string `json:"summary"`
 }
 
 // Event is one thing that happened in a run; the last one, of type run,
@@ -98,14 +111,25 @@ type engine struct {
 	moveFailed map[string]error         // targets whose move cannot happen
 	moving     map[string]bool          // addresses that moved: moves away from
 
-	mu   sync.Mutex
-	exit int
+	mu       sync.Mutex
+	exit     int
+	promptMu sync.Mutex
 }
 
 // open reads the project and the state of its stack, marks the runs that
 // a crash left running, and starts the record of a run of command, or of
 // the task with that name.
 func open(opts Options, command, task string) (*engine, error) {
+	e, err := load(opts)
+	if err != nil {
+		return nil, err
+	}
+	return e, e.start(command, task)
+}
+
+// load reads the project and opens the state of its stack, for a run or
+// for a command that only reads.
+func load(opts Options) (*engine, error) {
 	p, err := model.Load(opts.Dir, opts.Stack)
 	if err != nil {
 		return nil, err
@@ -147,9 +171,17 @@ func open(opts Options, command, task string) (*engine, error) {
 	if e.host, err = state.HostID(); err != nil {
 		return nil, err
 	}
+	return e, nil
+}
+
+// start begins a run: the record of the run, with the runs that a crash
+// left running marked first, the holder of its locks, and its directory
+// of temporary files.
+func (e *engine) start(command, task string) error {
+	p, opts := e.p, e.opts
 	interrupted, err := record.Interrupted(e.root, p.StackName)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	rec := &record.Record{Project: p.Name, Stack: p.StackName, Command: command, Task: task, Args: opts.Units,
 		Host: e.host, PID: os.Getpid(), Started: e.started.Format(time.RFC3339)}
@@ -160,8 +192,8 @@ func open(opts Options, command, task string) (*engine, error) {
 	if u, err := user.Current(); err == nil {
 		rec.User = u.Username
 	}
-	if e.rec, err = record.Create(e.root, state.NewRunID, rec, opts.Emit); err != nil {
-		return nil, err
+	if e.rec, err = record.Create(e.root, state.NewRunID, rec, e.sink()); err != nil {
+		return err
 	}
 	e.runID = e.rec.ID()
 	for _, run := range interrupted {
@@ -171,10 +203,24 @@ func open(opts Options, command, task string) (*engine, error) {
 	e.holder = state.NewHolder(e.runID, e.host)
 	e.run = &plugin.Run{Project: p.Name, Stack: p.StackName, ID: e.runID, Parents: e.parents,
 		Temp: e.tempOf(e.runID), Artifacts: filepath.Join(e.root, "runs", p.StackName, e.runID, "artifacts"), Environ: opts.Environ}
-	if err := e.run.Open(); err != nil {
-		return nil, err
+	return e.run.Open()
+}
+
+// sink hands events to the caller; debug events only with OPSTRUSS_LOG=debug.
+func (e *engine) sink() func(Event) {
+	return func(ev Event) {
+		if e.opts.Emit != nil && (ev.Level != "debug" || e.opts.Debug) {
+			e.opts.Emit(ev)
+		}
 	}
-	return e, nil
+}
+
+// debug reports a diagnostic of the engine, which the caller sees only
+// with OPSTRUSS_LOG=debug.
+func (e *engine) debug(addr, format string, args ...any) {
+	if e.opts.Debug {
+		e.emit(Event{Type: "diagnostic", Level: "debug", Address: addr, Message: fmt.Sprintf(format, args...)})
+	}
 }
 
 // close ends the run: the last event, of type run, then the record, then
@@ -230,7 +276,11 @@ func (e *engine) touch(addr string, u *record.Unit) {
 
 func (e *engine) tempOf(run string) string { return filepath.Join(e.root, "tmp", run) }
 
-func (e *engine) emit(ev Event) { e.rec.Emit(ev) }
+func (e *engine) emit(ev Event) {
+	if e.rec != nil {
+		e.rec.Emit(ev)
+	}
+}
 
 func (e *engine) say(typ, addr, format string, args ...any) {
 	e.emit(Event{Type: typ, Level: "info", Address: addr, Message: fmt.Sprintf(format, args...)})

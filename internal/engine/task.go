@@ -178,6 +178,27 @@ func (e *engine) callTask(ctx context.Context, name string, t *model.Task, dir s
 		e.emit(Event{Type: "task", Level: "error", Task: label, Message: err.Error()})
 		return failed(err)
 	}
+	if e.opts.Ask != nil {
+		// A required input without a value is asked for at the terminal.
+		for _, k := range slices.Sorted(maps.Keys(t.Inputs)) {
+			in := t.Inputs[k]
+			if _, ok := given[k]; ok || !in.Required || in.Default != nil {
+				continue
+			}
+			text, err := e.opts.Ask(ctx, k, in)
+			if err != nil {
+				return fail(fmt.Errorf("input %s: %w", k, err))
+			}
+			v, err := model.ParseText(text, in.Type)
+			if err != nil {
+				return fail(fmt.Errorf("input %s: %w", k, err))
+			}
+			if given == nil {
+				given = map[string]any{}
+			}
+			given[k] = v
+		}
+	}
 	inputs, err := conform(t.Inputs, given)
 	if err != nil {
 		return fail(err)
@@ -203,9 +224,17 @@ func (e *engine) callTask(ctx context.Context, name string, t *model.Task, dir s
 		}
 	}
 	if t.Approval == "ask" && !c.yes {
-		e.say("approval", label, "task %s needs approval; stopped", name)
-		e.stopAtPlan()
-		return &taskResult{outcome: skipped, outputs: map[string]any{}, approval: true}
+		ok := false
+		if e.opts.Approve != nil {
+			e.promptMu.Lock()
+			ok, err = e.opts.Approve(ctx, Question{Task: label, Summary: "run task " + name})
+			e.promptMu.Unlock()
+		}
+		if !ok || err != nil {
+			e.say("approval", label, "task %s needs approval; stopped", name)
+			e.stopAtPlan()
+			return &taskResult{outcome: skipped, outputs: map[string]any{}, approval: true}
+		}
 	}
 	ctx, release, skip, err := e.taskLock(ctx, name, t, scope)
 	if err != nil {

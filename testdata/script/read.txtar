@@ -1,0 +1,49 @@
+# list, outputs, and runs read the stack without running anything.
+
+env HOME=$WORK/home
+
+exec opstruss list
+stdout '^  greet +Say hello +never run$'
+stdout '^  default/web +run +absent$'
+
+exec opstruss up --yes
+exec opstruss greet
+exec opstruss list --json
+stdout '"name": "greet"'
+stdout '"outcome": "success"'
+stdout '"state": "up"'
+
+# outputs are the outputs of the project, from the stored outputs of units
+exec opstruss outputs
+stdout '^url: https://example.com$'
+exec opstruss outputs --json
+stdout '"url": "https://example.com"'
+
+# runs lists the runs, newest first, and shows the events of one again
+exec opstruss runs
+stdout 'greet +success'
+stdout 'up +success'
+exec sh -c 'opstruss runs --json | grep -m1 "\"run\":" | cut -d\" -f4 > id'
+exec sh -c 'opstruss runs "$(cat id)"'
+stdout '^greet \| hello$'
+! exec opstruss runs 20200101T000000Z-00000000
+stderr 'stack default has no run 20200101T000000Z-00000000'
+
+# OPSTRUSS_LOG=debug writes the diagnostics of the engine to stderr
+env OPSTRUSS_LOG=debug
+exec opstruss up --yes
+stderr '^default/web: took the lock; digest sha256:v1:[0-9a-f]+; unchanged$'
+
+-- opstruss.yaml --
+name: shop
+outputs:
+  url: ${{ units.web.outputs.url }}
+units:
+  web:
+    run: echo "url=https://example.com" >> "$OPSTRUSS_OUTPUT"
+    outputs:
+      url: {}
+tasks:
+  greet:
+    description: Say hello
+    run: echo hello

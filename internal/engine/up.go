@@ -264,6 +264,7 @@ func (e *engine) turn(ctx context.Context, inst *instance) {
 		}
 		timeout = d
 	}
+	parent := ctx
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	token, err := e.lock(ctx, addr)
@@ -300,6 +301,7 @@ func (e *engine) turn(ctx context.Context, inst *instance) {
 		failed(p.err)
 		return
 	}
+	e.debug(addr, "took the lock; digest %s; %s", p.digest, p.summary())
 	down := e.downContract(inst, r)
 	if !p.run && len(p.teardown) == 0 {
 		// A down contract that changed alone is written without running.
@@ -316,13 +318,21 @@ func (e *engine) turn(ctx context.Context, inst *instance) {
 	}
 	approval := cmp.Or(inst.def.Approval, e.stackApproval(), "ask")
 	if approval != "auto" {
-		if why := e.approves(addr, p.digest); why != "" {
+		source, why, waited := e.approves(ctx, Question{Address: addr, Summary: p.summary()}, p.digest)
+		if why != "" {
 			e.finish(inst, skipped, false, nil)
 			e.say("approval", addr, "%s; %s, stopped at plan", p.summary(), why)
 			e.stopAtPlan()
 			return
 		}
-		approval = e.pass.source
+		approval = source
+		if waited > 0 {
+			// Waiting for the answer does not count toward the timeout.
+			deadline, _ := ctx.Deadline()
+			var more context.CancelFunc
+			ctx, more = context.WithDeadline(parent, deadline.Add(waited))
+			defer more()
+		}
 	}
 	inst.approval = approval
 	if !p.run {

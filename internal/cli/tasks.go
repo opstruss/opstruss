@@ -10,7 +10,6 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/opstruss/opstruss/internal/engine"
 	"github.com/opstruss/opstruss/internal/expr"
 	"github.com/opstruss/opstruss/internal/model"
 	"github.com/spf13/cobra"
@@ -170,14 +169,14 @@ func (a *app) taskCommand(name string, t *model.Task, ofUnits bool) *cobra.Comma
 		if len(units) > 0 && !ofUnits {
 			return fmt.Errorf("task %s of the project takes no units", name)
 		}
-		opts, err := a.engineOptions(units)
+		req, err := a.request(units)
 		if err != nil {
 			return err
 		}
-		opts.Yes = yes
+		req.Yes, req.Task, req.With = yes, name, given
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
-		res, err := engine.Task(ctx, opts, name, given)
+		res, err := a.api().Run(ctx, req)
 		if err != nil {
 			return err
 		}

@@ -275,12 +275,13 @@ func (e *engine) downOne(ctx context.Context, l *leftover) string {
 		approval = cmp.Or(l.def.Approval, approval)
 	}
 	if approval != "auto" {
-		if why := e.approves(addr, ""); why != "" {
+		source, why, _ := e.approves(ctx, Question{Address: addr, Summary: "will go down (" + l.reason + ")"}, "")
+		if why != "" {
 			e.say("approval", addr, "will go down (%s); %s, stopped at plan", l.reason, why)
 			e.stopAtPlan()
 			return skipped
 		}
-		approval = e.pass.source
+		approval = source
 	}
 	rec.Pending = &state.Attempt{Op: "down", Run: e.runID, Holder: e.holder, Approval: approval}
 	if etag, err = e.store.Put(addr, rec, etag); err != nil {

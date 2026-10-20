@@ -2,6 +2,7 @@
 package cli
 
 import (
+	"bufio"
 	"cmp"
 	"encoding/json"
 	"errors"
@@ -21,13 +22,17 @@ import (
 )
 
 // Main runs the command line with the process arguments and returns the
-// exit code.
+// exit code. A terminal on stdin can answer the questions of a run.
 func Main() int {
-	return run(os.Args[1:], os.Stdout, os.Stderr, os.Environ())
+	info, err := os.Stdin.Stat()
+	terminal := err == nil && info.Mode()&os.ModeCharDevice != 0
+	return start(os.Args[1:], os.Stdin, terminal, os.Stdout, os.Stderr, os.Environ())
 }
 
 type app struct {
 	stdout, stderr io.Writer
+	stdin          *bufio.Reader
+	terminal       bool
 	environ        []string
 	env            map[string]string
 
@@ -45,9 +50,17 @@ type exitError struct{ code int }
 
 func (e *exitError) Error() string { return fmt.Sprintf("exit %d", e.code) }
 
-// run runs the command line with args in the operator's environment.
+// run runs the command line with args in the operator's environment,
+// without a terminal.
 func run(args []string, stdout, stderr io.Writer, environ []string) int {
-	a := &app{stdout: stdout, stderr: stderr, environ: environ, env: map[string]string{}}
+	return start(args, nil, false, stdout, stderr, environ)
+}
+
+func start(args []string, stdin io.Reader, terminal bool, stdout, stderr io.Writer, environ []string) int {
+	a := &app{stdout: stdout, stderr: stderr, terminal: terminal, environ: environ, env: map[string]string{}}
+	if stdin != nil {
+		a.stdin = bufio.NewReader(stdin)
+	}
 	a.cwd, _ = os.Getwd()
 	for _, kv := range environ {
 		if k, v, ok := strings.Cut(kv, "="); ok {
@@ -161,6 +174,7 @@ func (a *app) root() *cobra.Command {
 	root.Flags().StringVar(&a.completion, "completion", "", "print a completion script for bash, zsh, or fish")
 	root.AddCommand(a.versionCommand(), a.validateCommand(), a.explainCommand(), a.stateCommand())
 	root.AddCommand(a.unitCommands()...)
+	root.AddCommand(a.listCommand(), a.outputsCommand(), a.runsCommand())
 	a.taskCommands(root)
 	return root
 }

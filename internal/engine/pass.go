@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/opstruss/opstruss/internal/record"
 )
@@ -75,24 +76,40 @@ func (e *engine) unitPass(ctx context.Context, op string, p pass) (map[string]an
 	return out, nil
 }
 
-// approves says why the pass may not apply a change at addr whose plan has
-// digest, or "" when it may: with yes, a unit whose plan this run read is
-// approved only when that plan was exact and has the same digest, so what
-// is applied is what was seen.
-func (e *engine) approves(addr, digest string) string {
-	if !e.pass.yes {
-		return "needs approval"
+// approves says what approves a change at addr whose plan has digest, or
+// why nothing does. With yes, a unit whose plan this run read is approved
+// only when that plan was exact and has the same digest, so what is
+// applied is what was seen; without yes, whoever is at the terminal is
+// asked, one question at a time, and the time of the answer does not
+// count toward the unit's timeout. It returns how long the question took.
+func (e *engine) approves(ctx context.Context, q Question, digest string) (source, why string, waited time.Duration) {
+	if e.pass.yes {
+		read, ok := e.read[q.Address]
+		switch {
+		case !ok:
+			return e.pass.source, "", 0
+		case read == "":
+			return "", "the plan read earlier in this run was not exact, so yes does not approve it", 0
+		case read != digest:
+			return "", "the plan changed since this run read it", 0
+		}
+		return e.pass.source, "", 0
 	}
-	read, ok := e.read[addr]
+	if e.opts.Approve == nil {
+		return "", "needs approval", 0
+	}
+	e.promptMu.Lock()
+	defer e.promptMu.Unlock()
+	start := time.Now()
+	ok, err := e.opts.Approve(ctx, q)
+	waited = time.Since(start)
 	switch {
+	case err != nil:
+		return "", "no answer: " + err.Error(), waited
 	case !ok:
-		return ""
-	case read == "":
-		return "the plan read earlier in this run was not exact, so yes does not approve it"
-	case read != digest:
-		return "the plan changed since this run read it"
+		return "", "the answer was no", waited
 	}
-	return ""
+	return "terminal", "", waited
 }
 
 func (e *engine) short(addr string) string { return strings.TrimPrefix(addr, e.p.StackName+"/") }

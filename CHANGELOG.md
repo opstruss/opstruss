@@ -105,6 +105,17 @@ minor release can change what a project, a component, or a plugin relies on.
   one lock per value.
 - The exit code of a task follows the outcome of the task called: 0, 1
   when it failed, and 2 when it stopped at plan for approval.
+- At a terminal, `up`, `down`, and a task with `approval: ask` ask before
+  each change, one question at a time, and only `y` or `yes` applies it;
+  the time an answer takes does not count toward `timeout`. A required
+  input of a task that has no value is asked for there too.
+- `opstruss list` shows the tasks with their last run and the units with
+  their state; `opstruss outputs` prints the outputs of the project from
+  the stored outputs of its units, read without a lock; `opstruss runs`
+  lists the runs of the stack, newest first, and `opstruss runs <run>`
+  shows the events of one again. With `--json`, each prints one document,
+  and `runs <run>` the events as they are stored.
+- `OPSTRUSS_LOG=debug` writes the diagnostics of the engine to stderr.
 - Every run keeps `record.json` (who ran what and when, the units it
   touched with their outcome, plan, and approval, and the outcome, exit
   code, and outputs of the run) and `events.jsonl` in
