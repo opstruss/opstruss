@@ -312,11 +312,19 @@ func (e *engine) taskOnce(ctx context.Context, name, label string, t *model.Task
 	defer cancel()
 	e.sayTask(label, "", "started")
 	var res *taskResult
-	if t.Run != nil {
+	switch {
+	case t.Run != nil:
 		res = e.program(ctx, progSpec{label: label, task: name, cmd: t.Run, shell: t.Shell, dir: t.Dir, base: dir,
 			env: t.Env, pass: t.Pass, stdin: t.Stdin, inputs: scope.Vars["inputs"].(map[string]any), outputs: t.Outputs,
 			retry: t.Retry, failedWhen: t.FailedWhen, changedWhen: t.ChangedWhen, stop: t.Stop, unit: c.unit}, scope)
-	} else {
+	case len(t.Calls) == 1:
+		// A task that calls one task passes on its outputs.
+		for callee, args := range t.Calls {
+			res = e.callByName(ctx, progSpec{label: label, task: name, shell: t.Shell, dir: t.Dir, base: dir, env: t.Env,
+				pass: t.Pass, stdin: t.Stdin, retry: t.Retry, failedWhen: t.FailedWhen, changedWhen: t.ChangedWhen,
+				stop: t.Stop, unit: c.unit}, callee, args, scope)
+		}
+	default:
 		res = e.stepsWithRetry(ctx, name, label, t, dir, scope, c)
 	}
 	if ctx.Err() != nil && res.outcome == failure && errors.Is(ctx.Err(), context.Canceled) {
@@ -524,6 +532,13 @@ func (tc *taskCtx) stepOnce(ctx context.Context, s *model.Step, label string, d 
 		res = tc.e.program(ctx, progSpec{label: tc.label, step: label, task: tc.name, cmd: s.Run, shell: d.shell, dir: d.dir, base: tc.dir,
 			env: d.env, pass: d.pass, stdin: s.Stdin, outputs: s.Outputs, retry: s.Retry,
 			failedWhen: s.FailedWhen, changedWhen: s.ChangedWhen, unit: tc.c.unit}, scope)
+	case len(s.Calls) == 1:
+		d := d.with(s.Shell, s.Dir, s.Env, s.Pass)
+		for callee, args := range s.Calls {
+			res = tc.e.callByName(ctx, progSpec{label: tc.label, step: label, task: tc.name, shell: d.shell, dir: d.dir,
+				base: tc.dir, env: d.env, pass: d.pass, stdin: s.Stdin, retry: s.Retry, failedWhen: s.FailedWhen,
+				changedWhen: s.ChangedWhen, unit: tc.c.unit}, callee, args, scope)
+		}
 	case s.Task != "":
 		res = tc.callStep(ctx, s, label, scope)
 		res = judge(res, s.FailedWhen, s.ChangedWhen, scope.With("outputs", res.outputs))

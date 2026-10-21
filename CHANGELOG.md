@@ -27,7 +27,16 @@ minor release can change what a project, a component, or a plugin relies on.
   which read only their inputs and steps and call only built-in tasks. It
   also checks what each unit's `uses:` and each call of a task by name
   stand for, and the inputs given to them. Git sources, units that use
-  something, and calls by name do not run yet.
+  something, and calls of plugin tasks do not run yet.
+- Built-in tasks, called by name in a step (`http: {…}`) or as the one
+  call of a task, which passes its outputs on: `command` (`argv` or
+  `script`, `shell`, `stdin`), `http` (JSON bodies parsed, lower-case
+  header names, `status_code` with patterns such as `2xx`, extra roots
+  from `ca`, and `tls` with the certificates of an https answer), `read`,
+  `write` (only when the content or mode differs, through a rename),
+  `set`, `assert`, `wait` (seconds, a TCP port, or a URL), and `log`. Each
+  is also `opstruss.<name>`, and `retry` evaluates the inputs of a call
+  again at each attempt.
 - `opstruss explain` prints the project of one stack as read: include files
   and stack overrides merged, each project input with where its value came
   from (`--input`, the stack, `env`, or `default`), the value of each local,

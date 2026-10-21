@@ -6,7 +6,11 @@ command:
     argv: {type: array, items: {type: string}}
     script: {type: string, literal: true}
     shell: {type: string}
-    stdin: {}
+    stdin:
+      type: object
+      properties:
+        value: {}
+        format: {type: string, enum: [text, json, yaml, lines, dotenv]}
   outputs:
     stdout: {type: string}
     stderr: {type: string}

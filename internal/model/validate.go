@@ -587,8 +587,13 @@ func (c *checker) unsupportedCalls(path []string, calls Calls) {
 		if _, hinted := ansible[name]; hinted {
 			continue
 		}
-		if _, err := c.p.Resolve(name); err == nil {
-			c.add(at(path, name), "calling a task by name is not supported yet; write run, or task: for a task of this project")
+		t, err := c.p.Resolve(name)
+		switch {
+		case err != nil:
+		case t.Kind != TargetBuiltin:
+			c.add(at(path, name), "calling a task of a plugin is not supported yet")
+		case t.Task == "kv":
+			c.add(at(path, name), "kv is not supported yet")
 		}
 	}
 }

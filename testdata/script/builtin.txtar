@@ -1,0 +1,66 @@
+# Built-in tasks are called by name in steps, or as the one call of a
+# task, which passes its outputs on; a name in uses: gives one another name.
+
+env HOME=$WORK/home
+
+# write only when the content differs, read it back, shape and check
+# values, and log through an alias
+exec opstruss files
+stdout '^files: say \| wrote 2 lines$'
+stdout '^  first: alpha$'
+stdout '^  rewritten: false$'
+cmp out.txt want.txt
+
+# command takes argv and stdin from its inputs, and passes stdout on
+exec opstruss shout --msg hi
+stdout '^shout \| HI$'
+stdout '^  exit_code: 0$'
+
+# a failed assert fails the task with its message
+! exec opstruss check
+stderr 'the port is not open'
+
+# retry runs a call again until it holds
+exec opstruss count
+stdout '^count \| 3$'
+! stdout '^count \| 4$'
+
+-- opstruss.yaml --
+name: app
+uses:
+  say: opstruss.log
+tasks:
+  files:
+    steps:
+      - id: w
+        write: {path: out.txt, content: [alpha, beta], format: lines}
+      - id: again
+        write: {path: out.txt, content: [alpha, beta], format: lines}
+      - id: r
+        read: {path: out.txt, format: lines}
+      - id: s
+        set: {first: "${{ steps.r.outputs.content[0] }}"}
+      - assert:
+          that: ["${{ steps.w.changed }}", "${{ !steps.again.changed }}"]
+      - name: say
+        say: {msg: "wrote ${{ size(steps.r.outputs.content) }} lines"}
+    outputs:
+      first: {value: "${{ steps.s.outputs.first }}"}
+      rewritten: {value: "${{ steps.again.changed }}"}
+  shout:
+    inputs:
+      msg: {type: string, required: true}
+    command:
+      argv: [tr, a-z, A-Z]
+      stdin: {value: "${{ inputs.msg }}"}
+  check:
+    assert:
+      that: "${{ 1 == 2 }}"
+      msg: the port is not open
+  count:
+    command:
+      script: 'n=$(cat n 2>/dev/null || echo 0); n=$((n + 1)); echo $n > n; echo $n'
+    retry: {attempts: 5, until: "outputs.stdout.trim() == '3'"}
+-- want.txt --
+alpha
+beta

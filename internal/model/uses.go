@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"github.com/opstruss/opstruss/internal/expr"
 )
 
 // Package is what a name in uses: stands for, or a path that a unit uses
@@ -294,8 +296,11 @@ func (c *checker) with(path, missing []string, t *Target, with map[string]any) {
 		return
 	}
 	for _, k := range slices.Sorted(maps.Keys(with)) {
-		if inputs[k] == nil {
+		switch v, ok := with[k].(string); {
+		case inputs[k] == nil:
 			c.add(at(path, k), "%s has no input %s", t.Name, k)
+		case inputs[k].Literal && ok && expr.HasExpr(v):
+			c.add(at(path, k), "%s is taken as written; ${{ }} is not allowed in it (write $${{ for ${{)", k)
 		}
 	}
 	for _, k := range slices.Sorted(maps.Keys(inputs)) {
