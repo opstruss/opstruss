@@ -315,7 +315,7 @@ func (a *app) explainCommand() *cobra.Command {
 			if err != nil {
 				return red.Err(err)
 			}
-			for k := range p.LocalMarks(map[string]any{"inputs": marks}) {
+			for k := range p.LocalMarks(map[string]any{"inputs": marks}, nil) {
 				locals[k] = secret.Mask
 			}
 			out, err := explain(p, inputs, locals, names)

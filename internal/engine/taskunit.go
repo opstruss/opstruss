@@ -31,20 +31,31 @@ type taskUnit struct {
 // a run unit does.
 func (e *engine) resolveTask(inst *instance, r *resolved, s *expr.Scope) error {
 	u, t := inst.def, inst.def.Target
-	in, _, err := e.callInputs(t, u.With, s)
+	in, marks, err := e.callInputs(t, u.With, s)
 	if err != nil {
 		return fmt.Errorf("with: %w", err)
+	}
+	for k, v := range in {
+		if marks[k] != nil || e.redact.Contains(v) {
+			r.inputHidden[k] = true
+		}
 	}
 	tu := &taskUnit{target: t, inputs: in}
 	allowed := slices.Clone(u.Pass)
 	if d := t.Package; d != nil && d.Decl != nil {
 		env := map[string]model.EnvValue{}
 		for k, v := range d.Decl.Env {
-			text, err := expr.EvalText(v.Text, s)
+			text, sensitive, err := expr.EvalTextMarked(v.Text, s)
 			if err != nil {
 				return fmt.Errorf("env.%s: %w", k, err)
 			}
 			env[k] = model.EnvValue{Text: text, File: v.File}
+			if _, set := r.env[k]; !set {
+				r.envHidden[k] = sensitive
+			}
+			if sensitive {
+				e.hide(text, true)
+			}
 		}
 		maps.Copy(env, r.env)
 		r.env = env
@@ -168,7 +179,7 @@ func (e *engine) execTask(ctx context.Context, inst *instance, r *resolved, rec 
 				}
 				return ok
 			}
-			out = e.kvCall(ctx, r.task.inputs, given("value"), given("expect"))
+			out, _ = e.kvCall(ctx, r.task.inputs, nil, given("value"), given("expect"))
 		} else {
 			out = builtin.Run(ctx, &builtin.Call{Task: t.Task, Inputs: r.task.inputs, Dir: r.cwd, Log: func(level, msg string) {
 				e.emit(Event{Type: "log", Level: level, Address: inst.address, Task: "up", Message: msg})

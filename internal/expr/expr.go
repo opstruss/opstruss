@@ -205,6 +205,9 @@ type Scope struct {
 	Marks map[string]any // the marks of each variable that has sensitive parts
 	Dir   string
 	KV    func(key string) (any, error)
+	// KVMarked says whether kv() of key reads a sensitive value: a name, a
+	// prefix ending in *, or "" for a name known only when it runs.
+	KVMarked func(key string) bool
 }
 
 // With returns a copy of s in which name holds v, which has no sensitive
@@ -230,12 +233,13 @@ func (s *Scope) WithMarks(name string, v, marks any) *Scope {
 			ms[name] = marks
 		}
 	}
-	return &Scope{Vars: vars, Marks: ms, Dir: s.Dir, KV: s.KV}
+	return &Scope{Vars: vars, Marks: ms, Dir: s.Dir, KV: s.KV, KVMarked: s.KVMarked}
 }
 
-// WithKV returns a copy of s whose kv() reads through read.
-func (s *Scope) WithKV(read func(string) (any, error)) *Scope {
-	return &Scope{Vars: s.Vars, Marks: s.Marks, Dir: s.Dir, KV: read}
+// WithKV returns a copy of s whose kv() reads through read, and marked
+// says which names hold sensitive values.
+func (s *Scope) WithKV(read func(string) (any, error), marked func(string) bool) *Scope {
+	return &Scope{Vars: s.Vars, Marks: s.Marks, Dir: s.Dir, KV: read, KVMarked: marked}
 }
 
 func (s *Scope) activation() map[string]any {

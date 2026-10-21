@@ -636,21 +636,11 @@ func (c *checker) unsupported() {
 	if p.MCP != nil {
 		c.add([]string{"mcp"}, "not supported yet")
 	}
-	// A component keeps what it is given in the records of its units.
-	if p.component {
-		c.sensitiveInputs([]string{"inputs"}, p.Inputs)
-	}
-	for _, name := range slices.Sorted(maps.Keys(p.Outputs)) {
-		if p.Outputs[name].Sensitive {
-			c.add([]string{"outputs", name, "sensitive"}, "sensitive values are not supported yet")
-		}
-	}
 	for _, name := range slices.Sorted(maps.Keys(p.Units)) {
 		u, path := p.Units[name], []string{"units", name}
 		if u.Service != nil {
 			c.add(at(path, "service"), "service units are not supported yet")
 		}
-		c.sensitiveOutputs(at(path, "outputs"), u.Outputs)
 		for _, tn := range slices.Sorted(maps.Keys(u.Tasks)) {
 			c.triggers(at(path, "tasks", tn), u.Tasks[tn])
 		}
@@ -666,30 +656,8 @@ func (c *checker) triggers(path []string, t *Task) {
 	}
 }
 
-func (c *checker) sensitiveInputs(path []string, inputs map[string]*Input) {
-	for _, name := range slices.Sorted(maps.Keys(inputs)) {
-		in, ip := inputs[name], at(path, name)
-		if in.Sensitive {
-			c.add(at(ip, "sensitive"), "sensitive values are not supported yet")
-		}
-		if in.Items != nil {
-			c.sensitiveInputs(ip, map[string]*Input{"items": in.Items})
-		}
-		c.sensitiveInputs(at(ip, "properties"), in.Properties)
-	}
-}
-
-func (c *checker) sensitiveOutputs(path []string, outputs map[string]*Output) {
-	for _, name := range slices.Sorted(maps.Keys(outputs)) {
-		if outputs[name].Sensitive {
-			c.add(at(path, name, "sensitive"), "sensitive values are not supported yet")
-		}
-	}
-}
-
 // sensitiveValues keeps sensitive values out of the argv of programs,
-// which other users can read in the list of processes, and, while records
-// do not encrypt them, out of units.
+// which other users can read in the list of processes.
 func (c *checker) sensitiveValues() {
 	p := c.p
 	marks := map[string]any{}
@@ -699,19 +667,15 @@ func (c *checker) sensitiveValues() {
 	if len(p.Secrets) > 0 {
 		marks["secrets"] = true
 	}
-	if l := p.LocalMarks(marks); len(l) > 0 {
+	if l := p.LocalMarks(marks, nil); len(l) > 0 {
 		marks["locals"] = l
 	}
 	for _, name := range slices.Sorted(maps.Keys(p.Units)) {
 		u, path := p.Units[name], []string{"units", name}
-		values := unitValues(u)
-		for _, key := range slices.Sorted(maps.Keys(values)) {
-			if reads(values[key], marks) {
-				c.add(at(path, strings.Split(key, ".")...), "a unit does not take sensitive values yet")
+		for key, cmd := range map[string]*Command{"run": u.Run, "down": u.Down, "service": u.Service} {
+			if reads(argv(cmd), marks) {
+				c.add(at(path, key), "%s", argvMessage)
 			}
-		}
-		if u.Target != nil && keepsSensitive(u.Target) {
-			c.add(at(path, "uses"), "%s has sensitive inputs or outputs, which a unit does not keep yet", u.Uses)
 		}
 		for _, tn := range slices.Sorted(maps.Keys(u.Tasks)) {
 			c.argvSensitive(at(path, "tasks", tn), u.Tasks[tn], marks)
@@ -721,6 +685,9 @@ func (c *checker) sensitiveValues() {
 		c.argvSensitive([]string{"tasks", name}, p.Tasks[name], marks)
 	}
 }
+
+// argvMessage says why a sensitive value is not an item of argv.
+const argvMessage = "a sensitive value cannot be an item of argv, which other users can read in the list of processes; pass it through env or stdin"
 
 // inputMarks marks the sensitive inputs among inputs.
 func inputMarks(inputs map[string]*Input) map[string]any {
@@ -750,42 +717,6 @@ func reads(v any, marks map[string]any) bool {
 	return false
 }
 
-// keepsSensitive says whether a unit that uses t would keep a sensitive
-// value in its record: an input or output of t that is sensitive.
-func keepsSensitive(t *Target) bool {
-	in, _ := t.Inputs()
-	if len(inputMarks(in)) > 0 {
-		return true
-	}
-	var outs map[string]*Output
-	switch t.Kind {
-	case TargetTask:
-		outs = maps.Clone(t.Package.Plugin.Outputs.Declared)
-		if outs == nil {
-			outs = map[string]*Output{}
-		}
-		maps.Copy(outs, t.Package.Plugin.Tasks[t.Task].Outputs)
-	case TargetPlugin:
-		outs = t.Package.Plugin.Outputs.Declared
-	case TargetProject:
-		outs = t.project.Outputs
-	case TargetComponent:
-		if t.Component != nil {
-			for _, o := range t.Component.Outputs {
-				if o.Sensitive {
-					return true
-				}
-			}
-		}
-	}
-	for _, o := range outs {
-		if o.Sensitive {
-			return true
-		}
-	}
-	return false
-}
-
 // argvSensitive rejects a sensitive value in an item of the argv of a
 // program of t, whose own inputs add to what marks marks.
 func (c *checker) argvSensitive(path []string, t *Task, marks map[string]any) {
@@ -801,9 +732,9 @@ func (c *checker) argvSensitive(path []string, t *Task, marks map[string]any) {
 	if len(marks) == 0 {
 		return
 	}
-	const msg = "a sensitive value cannot be an item of argv, which other users can read in the list of processes; pass it through env or stdin"
+	msg := argvMessage
 	if reads(argv(t.Run), marks) {
-		c.add(at(path, "run"), msg)
+		c.add(at(path, "run"), "%s", msg)
 	}
 	c.callArgv(path, t.Calls, marks, msg)
 	var walk func([]string, []*Step)
@@ -811,7 +742,7 @@ func (c *checker) argvSensitive(path []string, t *Task, marks map[string]any) {
 		for i, s := range steps {
 			p := at(sp, strconv.Itoa(i))
 			if reads(argv(s.Run), marks) {
-				c.add(at(p, "run"), msg)
+				c.add(at(p, "run"), "%s", msg)
 			}
 			c.callArgv(p, s.Calls, marks, msg)
 			walk(at(p, "block"), s.Block)

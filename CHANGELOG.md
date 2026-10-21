@@ -124,8 +124,25 @@ minor release can change what a project, a component, or a plugin relies on.
   program starts, and it is never a key of `for_each`, a
   `concurrency.group`, or a name in `units:`; `write` keeps sensitive
   content in a file with mode 0600. A value shorter than 4 characters is
-  not hidden, and the run warns about it. Units, components, `kv`, and the
-  outputs of a project do not take sensitive values yet.
+  not hidden, and the run warns about it.
+- The data key of a stack, made the first time a value needs it, plan
+  included, is kept in `<stack>/_meta`, wrapped by the `sops` program
+  with the keys of the rule in `.sops.yaml` that matches `<stack>/_meta`,
+  and a run opens it once. Sensitive values of units, components,
+  plugins, and `kv` are kept encrypted with it (AES-256-GCM, `enc:v1:`)
+  and bound to their record or name: inputs, outputs, the env of `down`,
+  and, for a unit with sensitive values, what its program wrote to
+  `$OPSTRUSS_OUTPUT` when it could not be read, also in `pending`,
+  abandoned attempts, and `.opstruss/errored/`. The digest of a unit
+  hashes its sensitive values with HMAC, under a key from the data key and
+  the id of the record, so a new value runs the unit again and the digest
+  tells nothing of it. A unit with a sensitive value fails before it runs
+  when the stack has no way to its data key, and an output that a program
+  marks sensitive there is not kept. `opstruss state pull` shows the
+  values encrypted; a new member of a team is added with `sops updatekeys`
+  on the pulled `_meta`, pushed back with `state push`.
+- `opstruss outputs` prints sensitive outputs as `***`, and as they are
+  with `--show-sensitive`; `status` and `list` hide them too.
 - A task input with `env:` takes its value from that variable when the
   call gives none, before the default.
 - `opstruss init` sets up the project in its directory, adding only what

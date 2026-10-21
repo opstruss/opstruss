@@ -320,7 +320,7 @@ func (e *engine) downOne(ctx context.Context, l *leftover) string {
 	}
 	contracts := slices.Clone(rec.Abandoned)
 	if rec.Down != nil {
-		contracts = append(contracts, &state.Attempt{Inputs: rec.Inputs, Outputs: rec.Outputs, Down: rec.Down})
+		contracts = append(contracts, &state.Attempt{Inputs: rec.Inputs, Outputs: rec.Outputs, Down: rec.Down, Hidden: rec.Hidden})
 	}
 	if !e.pass.force {
 		for _, c := range contracts {

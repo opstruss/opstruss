@@ -62,18 +62,18 @@ func (e *engine) callByName(ctx context.Context, p progSpec, name string, args m
 			return r, r.outputs, nil
 		}
 		var res *builtin.Result
-		switch {
-		case t.Task == "kv" && (marks["value"] != nil || marks["expect"] != nil):
-			res = &builtin.Result{Outputs: map[string]any{}, Err: errors.New("kv does not keep sensitive values yet")}
-		case t.Task == "kv":
-			res = e.kvCall(ctx, in, given("value"), given("expect"))
-		default:
+		var outMarks map[string]any
+		if t.Task == "kv" {
+			res, outMarks = e.kvCall(ctx, in, marks, given("value"), given("expect"))
+		} else {
 			res = builtin.Run(ctx, &builtin.Call{Task: t.Task, Inputs: in, Dir: dir, Sensitive: marks["content"] != nil,
 				Log: func(level, msg string) {
 					e.emit(Event{Type: "log", Level: level, Task: p.label, Step: p.step, Message: msg})
 				}})
 		}
-		outMarks := map[string]any{}
+		if outMarks == nil {
+			outMarks = map[string]any{}
+		}
 		if t.Task == "set" {
 			// set gives its inputs as its outputs.
 			maps.Copy(outMarks, marks)
@@ -141,7 +141,8 @@ func (e *engine) pluginScope(dir string, inputs, marks map[string]any, unit *ins
 	if len(marks) > 0 {
 		s.Marks = map[string]any{"inputs": marks}
 	}
-	return s.WithKV(e.newKV().get)
+	k := e.newKV()
+	return s.WithKV(k.get, k.marked)
 }
 
 // checkRequires fails a task whose programs are not in PATH: those of its

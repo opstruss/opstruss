@@ -18,6 +18,14 @@ type Store struct {
 	Stack   string
 	Project string
 
+	// Key gives the data key of the stack, which records and kv need for
+	// their sensitive values. Without it, as in opstruss state, records are
+	// read with those values encrypted, and written as they are.
+	Key func() ([]byte, error)
+	// Known, when set, says whether a value of a record holds a sensitive
+	// value that the run knows, which is then kept encrypted too.
+	Known func(part, name string, v any) bool
+
 	mu   sync.Mutex
 	meta *Meta
 }
@@ -133,6 +141,9 @@ func (s *Store) Get(address string) (*Record, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
+	if err := s.openRecord(r); err != nil {
+		return nil, "", fmt.Errorf("%s: %w", address, err)
+	}
 	return r, etag, nil
 }
 
@@ -146,11 +157,57 @@ func (s *Store) Put(address string, r *Record, etag string) (string, error) {
 		return "", err
 	}
 	r.Address = address
-	data, err := EncodeRecord(r)
+	data, err := s.Encode(r)
 	if err != nil {
 		return "", err
 	}
 	return s.Backend.Put(RecordKey(address), data, etag)
+}
+
+// Encode is a record as Put writes it: its sensitive values encrypted.
+func (s *Store) Encode(r *Record) ([]byte, error) {
+	sealed, err := s.sealRecord(r)
+	if err != nil {
+		return nil, err
+	}
+	return EncodeRecord(sealed)
+}
+
+// MetaData returns _meta as the backend keeps it, with its etag, or nil
+// when the stack has none yet.
+func (s *Store) MetaData() ([]byte, string, error) {
+	data, etag, err := s.Backend.Get(MetaKey(s.Stack))
+	if errors.Is(err, ErrNotExist) {
+		return nil, "", nil
+	}
+	return data, etag, err
+}
+
+// LockMeta takes the lock of _meta without waiting, for a write of it.
+func (s *Store) LockMeta(h Holder) (string, error) { return s.Backend.Lock(metaLockKey(s.Stack), h) }
+
+// UnlockMeta releases the lock of _meta.
+func (s *Store) UnlockMeta(token string) error { return s.Backend.Unlock(metaLockKey(s.Stack), token) }
+
+// ReplaceMeta writes _meta, as sops wrapped it, when it still has etag, or
+// makes it when etag is empty and there is none; the caller holds its
+// lock. It keeps the version and the project it guards.
+func (s *Store) ReplaceMeta(data []byte, etag string) (string, error) {
+	m, err := DecodeMeta(data)
+	if err != nil {
+		return "", err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if m.Project != s.Project {
+		return "", fmt.Errorf("_meta names project %s, not %s", m.Project, s.Project)
+	}
+	etag, err = s.Backend.Put(MetaKey(s.Stack), data, etag)
+	if err != nil {
+		return "", err
+	}
+	s.meta = m
+	return etag, nil
 }
 
 // Delete removes the record at address when it still has etag.

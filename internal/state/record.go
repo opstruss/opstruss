@@ -39,6 +39,11 @@ type Record struct {
 	Pending   *Attempt                     `json:"pending,omitempty"`
 	Abandoned []*Attempt                   `json:"abandoned,omitempty"`
 	Tombstone *Tombstone                   `json:"tombstone,omitempty"`
+
+	// Hidden names, by part, the values that are sensitive. A Store that
+	// has the data key keeps them in Sensitive, encrypted, and gives them
+	// back in their parts, in plain text, with their names here.
+	Hidden map[string][]string `json:"-"`
 }
 
 // Source is where the program of a unit comes from.
@@ -87,6 +92,9 @@ type Attempt struct {
 	Outputs   map[string]any `json:"outputs,omitempty"`
 	RawOutput string         `json:"raw_output,omitempty"`
 	Peer      string         `json:"peer,omitempty"`
+
+	Sensitive map[string]map[string]string `json:"sensitive,omitempty"`
+	Hidden    map[string][]string          `json:"-"` // as in Record
 }
 
 // Tombstone is what stays at an address that moved or was forgotten, so
@@ -98,11 +106,14 @@ type Tombstone struct {
 	Time      string `json:"time"`
 }
 
-// Meta is <stack>/_meta: the layout version of the stack and the project
-// it belongs to.
+// Meta is <stack>/_meta: the layout version of the stack, the project it
+// belongs to, and, once a value needs it, the data key of the stack, which
+// sops wraps, with what sops keeps about it.
 type Meta struct {
-	Version int    `json:"version"`
-	Project string `json:"project"`
+	Version int             `json:"version"`
+	Project string          `json:"project"`
+	Key     string          `json:"key,omitempty"`
+	Sops    json.RawMessage `json:"sops,omitempty"`
 }
 
 // NewerError is a version written by a newer OpsTruss.

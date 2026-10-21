@@ -21,15 +21,16 @@ import (
 // it changed something, and its outputs, or one result per key of its
 // for_each.
 type taskResult struct {
-	outcome  string
-	changed  bool
-	outputs  map[string]any
-	approval bool           // it failed only because something stopped at plan for approval
-	units    map[string]any // for a step that calls a task of units: the result of each instance
-	keys     map[string]*taskResult
-	part     string         // for a block: the outcome of block: alone, which steps.<id>.outcome shows
-	soft     bool           // the task failed with continue_on_error, so its caller goes on
-	marks    map[string]any // the sensitive outputs
+	outcome   string
+	changed   bool
+	outputs   map[string]any
+	approval  bool           // it failed only because something stopped at plan for approval
+	units     map[string]any // for a step that calls a task of units: the result of each instance
+	keys      map[string]*taskResult
+	part      string         // for a block: the outcome of block: alone, which steps.<id>.outcome shows
+	soft      bool           // the task failed with continue_on_error, so its caller goes on
+	marks     map[string]any // the sensitive outputs
+	unitMarks map[string]any // the sensitive outputs of units
 }
 
 func (r *taskResult) view() any {
@@ -61,10 +62,17 @@ func (r *taskResult) viewMarks() any {
 		}
 		return m
 	}
-	if len(r.marks) == 0 {
+	m := map[string]any{}
+	if len(r.marks) > 0 {
+		m["outputs"] = r.marks
+	}
+	if len(r.unitMarks) > 0 {
+		m["units"] = r.unitMarks
+	}
+	if len(m) == 0 {
 		return nil
 	}
-	return map[string]any{"outputs": r.marks}
+	return m
 }
 
 // failed is the result of a call that failed before or outside its
@@ -568,14 +576,16 @@ func (tc *taskCtx) scopeNow() *expr.Scope {
 	defer tc.mu.Unlock()
 	s := tc.scope.WithMarks("steps", maps.Clone(tc.steps), anyMarks(maps.Clone(tc.marks)))
 	if tc.c.plugin != nil {
-		return s.WithKV(tc.e.newKV().get)
+		k := tc.e.newKV()
+		return s.WithKV(k.get, k.marked)
 	}
 	f, k := tc.c.where(tc.e), tc.e.newKV()
-	s = s.With("units", tc.e.unitsView(f, slices.Sorted(maps.Keys(f.in.Units))))
+	units, unitMarks := tc.e.unitsView(f, slices.Sorted(maps.Keys(f.in.Units)))
+	s = s.WithMarks("units", units, anyMarks(unitMarks))
 	if f.node == nil {
 		return k.scope(s)
 	}
-	return s.With("locals", k.localsOf(f, tc.e.inputsOf(f))).WithKV(k.get)
+	return s.With("locals", k.localsOf(f, tc.e.inputsOf(f))).WithKV(k.get, k.marked)
 }
 
 func (tc *taskCtx) record(id string, r *taskResult) {
@@ -759,12 +769,12 @@ func (tc *taskCtx) callStep(ctx context.Context, s *model.Step, label string, sc
 	units = e.within(f, units)
 	switch s.Task {
 	case "plan", "up", "down":
-		got, err := e.unitPass(ctx, s.Task, pass{units: units, yes: yes, force: s.Force, source: source})
+		got, gotMarks, err := e.unitPass(ctx, s.Task, pass{units: units, yes: yes, force: s.Force, source: source})
 		if err != nil {
 			return tc.fail(label, err)
 		}
 		got = e.relative(f, got)
-		res := &taskResult{outcome: success, outputs: map[string]any{}, units: got, approval: true}
+		res := &taskResult{outcome: success, outputs: map[string]any{}, units: got, approval: true, unitMarks: e.relative(f, gotMarks)}
 		for _, v := range got {
 			u := v.(map[string]any)
 			res.changed = res.changed || u["changed"] == true
@@ -972,27 +982,29 @@ func (e *engine) taskScope(dir string, inputs, marks, tasks, taskMarks map[strin
 	own := e.inputsOf(f)
 	all := maps.Clone(own)
 	maps.Copy(all, inputs)
-	inputMarks, localMarks := map[string]any{}, map[string]any{}
-	if f.node == nil {
-		maps.Copy(inputMarks, e.inputMarks)
-		maps.Copy(localMarks, e.localMarks)
+	ownMarks := e.inputMarks
+	if f.node != nil {
+		_, ownMarks = e.inputsAndMarks(f)
 	}
+	inputMarks := maps.Clone(ownMarks)
 	maps.Copy(inputMarks, marks)
+	localMarks := e.localMarksOf(f, ownMarks, k)
 	facts := e.facts(c.unit)
 	if c.unit == nil && f.node != nil {
 		facts["address"] = f.address
 	}
 	facts["dir"], facts["artifacts"], facts["temp"] = dir, e.run.Artifacts, e.run.Temp
 	facts["cwd"] = e.opts.Cwd
+	units, unitMarks := e.unitsView(f, slices.Sorted(maps.Keys(f.in.Units)))
 	s := &expr.Scope{Dir: dir, Vars: map[string]any{"stack": e.p.StackName, "inputs": all, "locals": k.localsOf(f, own),
-		"opstruss": facts, "units": e.unitsView(f, slices.Sorted(maps.Keys(f.in.Units))), "tasks": tasks, "steps": map[string]any{}},
+		"opstruss": facts, "units": units, "tasks": tasks, "steps": map[string]any{}},
 		Marks: map[string]any{}}
-	for name, m := range map[string]map[string]any{"inputs": inputMarks, "locals": localMarks, "tasks": taskMarks} {
+	for name, m := range map[string]map[string]any{"inputs": inputMarks, "locals": localMarks, "tasks": taskMarks, "units": unitMarks} {
 		if len(m) > 0 {
 			s.Marks[name] = m
 		}
 	}
-	return s.WithKV(k.get)
+	return s.WithKV(k.get, k.marked)
 }
 
 // anyMarks is m as marks: nil when it marks nothing.

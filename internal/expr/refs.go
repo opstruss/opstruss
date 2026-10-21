@@ -17,10 +17,12 @@ type Ref struct {
 	Expr    string
 }
 
-// Use is what an expression reads and the functions it calls.
+// Use is what an expression reads and the functions it calls, with the
+// names that its kv() calls read, "" for one known only when it runs.
 type Use struct {
 	Refs  []Ref
 	Funcs []string
+	KV    []string
 }
 
 // Analyze parses src and returns what it reads from the namespaces, and
@@ -62,6 +64,7 @@ func AnalyzeValue(v any) (*Use, error) {
 				}
 				all.Refs = append(all.Refs, u.Refs...)
 				all.Funcs = append(all.Funcs, u.Funcs...)
+				all.KV = append(all.KV, u.KV...)
 			}
 		case map[string]any:
 			for _, k := range sortedKeys(x) {
@@ -97,6 +100,15 @@ func (u *Use) walk(e ast.Expr, src string) {
 	case ast.CallKind:
 		c := e.AsCall()
 		u.Funcs = append(u.Funcs, c.FunctionName())
+		if c.FunctionName() == "kv" && len(c.Args()) >= 2 {
+			name := ""
+			if a := c.Args()[1]; a.Kind() == ast.LiteralKind {
+				if s, ok := a.AsLiteral().(types.String); ok {
+					name = string(s)
+				}
+			}
+			u.KV = append(u.KV, name)
+		}
 		if c.FunctionName() == "_[_]" && len(c.Args()) == 2 {
 			// A path indexed with a key known only at run time.
 			if p, ok := selectPath(c.Args()[0]); ok && slices.Contains(Namespaces, p[0]) {

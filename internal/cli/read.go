@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"time"
 
 	"github.com/opstruss/opstruss/internal/api"
 	"github.com/opstruss/opstruss/internal/expr"
@@ -54,7 +55,8 @@ func (a *app) listCommand() *cobra.Command {
 }
 
 func (a *app) outputsCommand() *cobra.Command {
-	return &cobra.Command{
+	var show bool
+	cmd := &cobra.Command{
 		Use:   "outputs",
 		Short: "Print the outputs of the project from the stored outputs of its units",
 		Args:  cobra.NoArgs,
@@ -63,6 +65,7 @@ func (a *app) outputsCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			req.ShowSensitive = show
 			out, err := a.api().Outputs(context.Background(), req)
 			if err != nil {
 				return err
@@ -76,6 +79,8 @@ func (a *app) outputsCommand() *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&show, "show-sensitive", false, "print sensitive outputs as they are")
+	return cmd
 }
 
 func (a *app) runsCommand() *cobra.Command {
@@ -106,7 +111,11 @@ func (a *app) runsCommand() *cobra.Command {
 				if r.Task != "" {
 					what = r.Task
 				}
-				fmt.Fprintf(a.stdout, "%s  %-20s %-10s %s\n", r.Run, what, r.Outcome, r.Started)
+				started := r.Started
+				if t, err := time.Parse(time.RFC3339Nano, started); err == nil {
+					started = t.Format(time.RFC3339)
+				}
+				fmt.Fprintf(a.stdout, "%s  %-20s %-10s %s\n", r.Run, what, r.Outcome, started)
 			}
 			return nil
 		},

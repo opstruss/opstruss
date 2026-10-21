@@ -108,7 +108,7 @@ func TestEval(t *testing.T) {
 			return out, nil
 		}
 		return mem[key], nil
-	})
+	}, nil)
 	for in, want := range map[string]any{
 		"${{ kv('last') + 1 }}":                 int64(4),
 		"${{ kv('none') }}":                     nil,

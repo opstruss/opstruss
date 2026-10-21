@@ -1,0 +1,187 @@
+# Sensitive values of units, components, plugins, and kv are kept
+# encrypted with the data key of the stack, which sops wraps in _meta: 0
+# plaintext in .opstruss/, digests that hash them with a key of their own,
+# and outputs that show them only with --show-sensitive.
+
+env HOME=$WORK/home
+env SOPS_AGE_KEY_FILE=$WORK/age/keys.txt
+env TOKEN=s3cr3t-token-value
+exec opstruss init
+stdout 'wrote .sops.yaml'
+
+# the first value that needs the data key makes it
+exec opstruss up --yes
+stdout 'made the data key of stack default, wrapped by sops in default/_meta'
+stdout '^default/api \| deploying with \*\*\*$'
+stderr 'output auth holds a sensitive value, so it is sensitive'
+! stdout s3cr3t
+! stderr s3cr3t
+! exec sh -c 'grep -r -e s3cr3t -e czNjcjN0 .opstruss'
+exec opstruss state pull _meta
+stdout '"key": "ENC\[AES256_GCM'
+stdout '"project": "app"'
+exec opstruss state pull api
+stdout '"down.env": \{'
+stdout '"T": "enc:v1:'
+stdout '"auth": "enc:v1:'
+stdout '"id": "api-1"'
+exec opstruss state pull web
+stdout '"secret": "enc:v1:'
+stdout '"note": "enc:v1:'
+exec opstruss state pull comp
+stdout '"key": "enc:v1:'
+
+# the digest hashes the value, so the same value leaves the unit as it is,
+# and another runs it again
+exec opstruss up --yes
+stdout '^default/api: unchanged$'
+stdout '^default/web: unchanged$'
+env TOKEN=s3cr3t-token-other
+exec opstruss plan
+stdout '^default/api: will run'
+env TOKEN=s3cr3t-token-value
+
+# outputs hide sensitive values unless asked; status does too
+exec opstruss outputs
+stdout '^auth: \*\*\*$'
+stdout '^id: api-1$'
+exec opstruss outputs --show-sensitive
+stdout '^auth: Bearer s3cr3t-token-value$'
+exec opstruss list --json
+stdout '"auth": "\*\*\*"'
+! stdout s3cr3t
+
+# kv keeps a sensitive value encrypted, and what reads it is sensitive
+exec opstruss remember
+exec opstruss recall
+stdout 'recalled \*\*\*'
+! stdout s3cr3t
+! exec sh -c 'grep -r s3cr3t .opstruss'
+
+# a new member of the team gets the data key: pull _meta, sops updatekeys
+# with the new key in the rule, and push it back
+mkdir other
+exec sh -c 'SOPS_AGE_KEY_FILE=$WORK/age2/keys.txt opstruss -C other init --name other'
+exec sh -c 'sed -i.bak "s/age: \(age1[a-z0-9]*\)/age: \1,$(sed -n "s/^# public key: //p" age2/keys.txt)/" .sops.yaml'
+exec sh -c 'opstruss state pull _meta > _meta 2>etag'
+exec sops updatekeys --yes --input-type json _meta
+exec sh -c 'opstruss state push _meta --if-match "$(cut -d" " -f2 etag)" < _meta'
+env SOPS_AGE_KEY_FILE=$WORK/age2/keys.txt
+exec opstruss outputs --show-sensitive
+stdout '^auth: Bearer s3cr3t-token-value$'
+env SOPS_AGE_KEY_FILE=$WORK/age/keys.txt
+
+# a unit whose output does not parse keeps it encrypted in pending
+! exec opstruss up broken --yes --input break=true
+exec opstruss state pull broken
+stdout '"raw_output": "enc:v1:'
+! exec sh -c 'grep -r s3cr3t .opstruss'
+
+# down runs with the value it kept
+exec opstruss down api --yes
+stdout '^default/api \| down with \*\*\*$'
+
+# without a rule for _meta, a unit with a sensitive value fails before it
+# runs, and an output a program marks sensitive is not kept; sops looks for
+# .sops.yaml in the directories above too
+mv .sops.yaml sops.yaml.away
+cd norule
+exec opstruss up plain --yes
+! exec opstruss up secret --yes
+stderr 'no rule in .sops.yaml matches default/_meta'
+! exists ran
+! exec opstruss up marks --yes
+stderr 'the program gave sensitive outputs \(pin\), which were not kept'
+exec opstruss state pull marks
+stdout '"id": "m-1"'
+! stdout '1234-5678'
+
+-- opstruss.yaml --
+name: app
+inputs:
+  token: {type: string, sensitive: true, env: TOKEN}
+  break: {type: boolean, default: false}
+outputs:
+  auth: ${{ units.api.outputs.auth }}
+  id: ${{ units.api.outputs.id }}
+uses:
+  echo: ./plugins/echo
+units:
+  api:
+    run: |
+      printf 'id=api-1\nauth=Bearer %s\n' "$T" > "$OPSTRUSS_OUTPUT"
+      echo "deploying with $T"
+    env: {T: '${{ inputs.token }}'}
+    down: echo "down with $T"
+    approval: auto
+    outputs:
+      id: {type: string}
+      auth: {type: string}
+  web:
+    uses: echo
+    approval: auto
+    with:
+      secret: ${{ base64.encode(bytes(inputs.token)) }}
+  comp:
+    uses: ./comp
+    approval: auto
+    with:
+      key: ${{ inputs.token }}
+  broken:
+    if: ${{ inputs.break }}
+    run: echo "x=not-a-number" > "$OPSTRUSS_OUTPUT"
+    env: {T: '${{ inputs.token }}'}
+    approval: auto
+    outputs:
+      x: {type: integer}
+tasks:
+  remember:
+    kv: {key: tok, value: '${{ inputs.token }}'}
+  recall:
+    steps:
+      - id: r
+        kv: {key: tok}
+      - run: echo "recalled $V"
+        env: {V: '${{ steps.r.outputs.value }}'}
+-- plugins/echo/opstruss.plugin.yaml --
+name: echo
+inputs:
+  secret: {type: string, sensitive: true}
+outputs:
+  size: {type: integer}
+  note: {type: string}
+tasks:
+  up:
+    run: |
+      printf 'size=%s\nnote=n-%s\n' "${#INPUT_SECRET}" "$INPUT_SECRET" > "$OPSTRUSS_OUTPUT"
+      echo '{"sensitive": ["note"]}' > "$OPSTRUSS_RESULT"
+-- comp/opstruss.yaml --
+inputs:
+  key: {type: string}
+units:
+  inner:
+    run: printf 'len=%s\n' "${#K}" > "$OPSTRUSS_OUTPUT"
+    env: {K: '${{ inputs.key }}'}
+    approval: auto
+    outputs:
+      len: {type: string}
+-- norule/opstruss.yaml --
+name: norule
+inputs:
+  token: {type: string, sensitive: true, env: TOKEN}
+units:
+  plain:
+    run: echo plain
+    approval: auto
+  secret:
+    run: touch ran
+    env: {T: '${{ inputs.token }}'}
+    approval: auto
+  marks:
+    run: |
+      printf 'id=m-1\npin=1234-5678\n' > "$OPSTRUSS_OUTPUT"
+      echo '{"sensitive": ["pin"]}' > "$OPSTRUSS_RESULT"
+    approval: auto
+    outputs:
+      id: {type: string}
+      pin: {type: string}

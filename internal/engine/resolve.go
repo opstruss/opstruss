@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -39,6 +40,13 @@ type resolved struct {
 	waitFor  string
 	plugin   *pluginUnit // for a unit that uses a plugin
 	task     *taskUnit   // for a unit that uses a task
+
+	// What is sensitive: inputs of the plugin or task, variables of env,
+	// and stdin. The record keeps them encrypted and the digest hashes them
+	// with a key of its own.
+	inputHidden    map[string]bool
+	envHidden      map[string]bool
+	stdinSensitive bool
 }
 
 // resolve evaluates the expressions of inst. In a preview, a unit that
@@ -80,16 +88,14 @@ func (e *engine) resolve(inst *instance, preview bool) (*resolved, error) {
 	if filepath.IsAbs(r.dir) {
 		r.cwd = r.dir
 	}
-	r.env = map[string]model.EnvValue{}
-	if err := e.frameEnv(inst.frame, r.env); err != nil {
+	r.env, r.envHidden, r.inputHidden = map[string]model.EnvValue{}, map[string]bool{}, map[string]bool{}
+	if err := e.frameEnv(inst.frame, r.env, r.envHidden); err != nil {
 		return nil, err
 	}
 	for k, v := range u.Env {
-		text, err := expr.EvalText(v.Text, s)
-		if err != nil {
-			return nil, fmt.Errorf("env.%s: %w", k, err)
+		if err := r.evalEnv(e, k, v, s); err != nil {
+			return nil, err
 		}
-		r.env[k] = model.EnvValue{Text: text, File: v.File}
 	}
 	r.pass = map[string]string{}
 	for _, kv := range e.opts.Environ {
@@ -101,8 +107,13 @@ func (e *engine) resolve(inst *instance, preview bool) (*resolved, error) {
 		}
 	}
 	if u.Stdin != nil {
-		if r.stdinVal, err = expr.EvalValue(u.Stdin.Value, s); err != nil {
+		var marks any
+		if r.stdinVal, marks, err = expr.EvalMarked(u.Stdin.Value, s); err != nil {
 			return nil, fmt.Errorf("stdin: %w", err)
+		}
+		if marks != nil || e.redact.Contains(r.stdinVal) {
+			r.stdinSensitive = true
+			e.hide(r.stdinVal, true)
 		}
 		if r.stdin, err = plugin.Encode(r.stdinVal, u.Stdin.Format); err != nil {
 			return nil, fmt.Errorf("stdin: %w", err)
@@ -262,6 +273,62 @@ func (r *resolved) inputs() map[string]any {
 	return nil
 }
 
+// evalEnv evaluates the variable k of env in s, noting whether it is
+// sensitive.
+func (r *resolved) evalEnv(e *engine, k string, v model.EnvValue, s *expr.Scope) error {
+	text, sensitive, err := expr.EvalTextMarked(v.Text, s)
+	if err != nil {
+		return fmt.Errorf("env.%s: %w", k, err)
+	}
+	r.env[k] = model.EnvValue{Text: text, File: v.File}
+	r.envHidden[k] = sensitive
+	if sensitive {
+		e.hide(text, true)
+	}
+	return nil
+}
+
+// hidden names what the record of the unit keeps encrypted: its sensitive
+// inputs, and the sensitive variables of the env of down d.
+func (r *resolved) hidden(d *state.Down) map[string][]string {
+	out := map[string][]string{}
+	for _, k := range slices.Sorted(maps.Keys(r.inputs())) {
+		if r.inputHidden[k] {
+			out[state.PartInputs] = append(out[state.PartInputs], k)
+		}
+	}
+	if d != nil {
+		for _, k := range slices.Sorted(maps.Keys(r.envHidden)) {
+			switch _, file := d.EnvFiles[k]; {
+			case !r.envHidden[k]:
+			case file:
+				out[state.PartEnvFiles] = append(out[state.PartEnvFiles], k)
+			default:
+				if _, ok := d.Env[k]; ok {
+					out[state.PartEnv] = append(out[state.PartEnv], k)
+				}
+			}
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// sensitive reports whether the unit has a sensitive value of its own,
+// which makes its record keep raw_output encrypted too.
+func (r *resolved) sensitive() bool {
+	for _, h := range []map[string]bool{r.inputHidden, r.envHidden} {
+		for _, v := range h {
+			if v {
+				return true
+			}
+		}
+	}
+	return r.stdinSensitive
+}
+
 // source is where the programs of a unit that uses a plugin come from.
 func (r *resolved) source(inst *instance) *state.Source {
 	switch {
@@ -330,13 +397,21 @@ func (e *engine) digest(inst *instance, r *resolved) (string, []string, error) {
 	if err != nil {
 		return "", nil, err
 	}
+	with := maps.Clone(r.inputs())
+	for k := range with {
+		if r.inputHidden[k] {
+			if with[k], err = e.hashed(inst, with[k]); err != nil {
+				return "", nil, err
+			}
+		}
+	}
 	def := map[string]any{"kind": "run", "run": cmdValue(r.cmd)}
 	if r.plugin != nil {
-		def["kind"], def["uses"], def["source"], def["with"] = "plugin", inst.def.Uses, r.plugin.hash, r.plugin.inputs
+		def["kind"], def["uses"], def["source"], def["with"] = "plugin", inst.def.Uses, r.plugin.hash, with
 	}
 	if r.task != nil {
 		t := r.task.target
-		def["kind"], def["uses"], def["with"], def["task"] = "task", inst.def.Uses, r.task.inputs, t.Task
+		def["kind"], def["uses"], def["with"], def["task"] = "task", inst.def.Uses, with, t.Task
 		switch t.Kind {
 		case model.TargetProject:
 			src := map[string]any{}
@@ -362,10 +437,16 @@ func (e *engine) digest(inst *instance, r *resolved) (string, []string, error) {
 	add("dir", filepath.ToSlash(rel), rel == ".")
 	env := map[string]any{}
 	for k, v := range r.env {
+		var text any = v.Text
+		if r.envHidden[k] {
+			if text, err = e.hashed(inst, v.Text); err != nil {
+				return "", nil, err
+			}
+		}
 		if v.File {
-			env[k] = map[string]any{"file": v.Text}
+			env[k] = map[string]any{"file": text}
 		} else {
-			env[k] = v.Text
+			env[k] = text
 		}
 	}
 	add("env", env, len(env) == 0)
@@ -375,7 +456,13 @@ func (e *engine) digest(inst *instance, r *resolved) (string, []string, error) {
 	}
 	add("pass", prints, len(prints) == 0)
 	if inst.def.Stdin != nil {
-		def["stdin"] = map[string]any{"value": r.stdinVal, "format": inst.def.Stdin.Format}
+		v := r.stdinVal
+		if r.stdinSensitive {
+			if v, err = e.hashed(inst, v); err != nil {
+				return "", nil, err
+			}
+		}
+		def["stdin"] = map[string]any{"value": v, "format": inst.def.Stdin.Format}
 	}
 	outputs := map[string]any{}
 	for k, o := range inst.def.Outputs {
@@ -401,6 +488,48 @@ func (e *engine) digest(inst *instance, r *resolved) (string, []string, error) {
 	}
 	sum := sha256.Sum256(data)
 	return "sha256:v1:" + hex.EncodeToString(sum[:]), missing, nil
+}
+
+// hashed is a sensitive value as a digest holds it: the HMAC of its
+// canonical JSON under a key that the data key of the stack and the id of
+// the record give, as Vault's audit log does, so the digest changes when
+// the value does and tells nothing about it.
+func (e *engine) hashed(inst *instance, v any) (string, error) {
+	key, err := e.dataKey()
+	if err != nil {
+		return "", err
+	}
+	dk, err := state.DigestKey(key, e.recordID(inst))
+	if err != nil {
+		return "", err
+	}
+	data, err := canonical(v)
+	if err != nil {
+		return "", err
+	}
+	mac := hmac.New(sha256.New, dk)
+	mac.Write(data)
+	return "hmac:v1:" + hex.EncodeToString(mac.Sum(nil)), nil
+}
+
+// recordID is the id of the record of inst: the one it has, or for a unit
+// without one, the id up gives it, made once a run, so the digests of a
+// plan and of up agree.
+func (e *engine) recordID(inst *instance) string {
+	if inst.record != nil && inst.record.Tombstone == nil {
+		return inst.record.ID
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.newIDs == nil {
+		e.newIDs = map[string]string{}
+	}
+	if id, ok := e.newIDs[inst.address]; ok {
+		return id
+	}
+	id := state.NewID()
+	e.newIDs[inst.address] = id
+	return id
 }
 
 // files hashes the files of sources, relative to dir, without those that

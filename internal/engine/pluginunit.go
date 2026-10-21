@@ -57,9 +57,24 @@ func (e *engine) resolvePlugin(inst *instance, r *resolved, s *expr.Scope) error
 		maps.Copy(given, d.With)
 	}
 	maps.Copy(given, u.With)
-	v, err := expr.EvalValue(given, s)
+	v, withMarks, err := expr.EvalMarked(given, s)
 	if err != nil {
 		return fmt.Errorf("with: %w", err)
+	}
+	marks, _ := withMarks.(map[string]any)
+	inputMarks := map[string]any{}
+	for k, val := range v.(map[string]any) {
+		// A sensitive value is known before the schema checks it, so the
+		// error of the check hides it.
+		switch {
+		case pl.Inputs[k] != nil && pl.Inputs[k].Sensitive:
+			e.known("input "+k+" of "+e.short(inst.address), val)
+		case marks[k] != nil:
+			e.hide(val, marks[k])
+		case !e.redact.Contains(val):
+			continue
+		}
+		r.inputHidden[k], inputMarks[k] = true, true
 	}
 	inputs, err := conform(pl.Inputs, v.(map[string]any))
 	if err != nil {
@@ -75,7 +90,7 @@ func (e *engine) resolvePlugin(inst *instance, r *resolved, s *expr.Scope) error
 			pu.tool = dir
 		}
 	}
-	ps := e.pluginScope(pu.dir, inputs, nil, inst)
+	ps := e.pluginScope(pu.dir, inputs, inputMarks, inst)
 	up := pl.Tasks["up"]
 	if r.cmd, err = e.command(up.Run, ps); err != nil {
 		return fmt.Errorf("up: %w", err)
@@ -108,22 +123,34 @@ func (e *engine) resolvePlugin(inst *instance, r *resolved, s *expr.Scope) error
 	own := model.Env{}
 	if d := t.Package.Decl; d != nil {
 		for k, v := range d.Env {
-			text, err := expr.EvalText(v.Text, s)
+			text, sensitive, err := expr.EvalTextMarked(v.Text, s)
 			if err != nil {
 				return fmt.Errorf("env.%s: %w", k, err)
 			}
 			own[k] = model.EnvValue{Text: text, File: v.File}
+			if _, set := r.env[k]; !set {
+				r.envHidden[k] = sensitive
+			}
+			if sensitive {
+				e.hide(text, true)
+			}
 		}
 		allowed = append(allowed, d.Pass...)
 	}
 	maps.Copy(own, r.env)
 	env := map[string]model.EnvValue{}
 	for k, v := range up.Env {
-		text, err := expr.EvalText(v.Text, ps)
+		text, sensitive, err := expr.EvalTextMarked(v.Text, ps)
 		if err != nil {
 			return fmt.Errorf("up: env.%s: %w", k, err)
 		}
 		env[k] = model.EnvValue{Text: text, File: v.File}
+		if _, set := own[k]; !set {
+			r.envHidden[k] = sensitive
+		}
+		if sensitive {
+			e.hide(text, true)
+		}
 	}
 	maps.Copy(env, own)
 	r.env, pu.env = env, own
@@ -254,7 +281,7 @@ func (e *engine) statusPass(ctx context.Context, patterns []string) error {
 		default:
 			e.say("unit", inst.address, "up, from run %s at %s", rec.Run, rec.Updated)
 			if len(rec.Outputs) > 0 {
-				e.say("unit", inst.address, "outputs: %s", expr.JSON(rec.Outputs))
+				e.say("unit", inst.address, "outputs: %s", expr.JSON(e.shown(rec.Outputs, hiddenMarks(rec.Hidden[state.PartOutputs]))))
 			}
 		}
 	}

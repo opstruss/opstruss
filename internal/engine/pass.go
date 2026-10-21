@@ -24,7 +24,8 @@ type pass struct {
 // unitPass runs one pass and returns, for each address it touched without
 // its stack, the outcome, changed, outputs, and plan. Passes of a run take
 // turns, since they share the instances.
-func (e *engine) unitPass(ctx context.Context, op string, p pass) (map[string]any, error) {
+// The marks say which outputs of each unit are sensitive.
+func (e *engine) unitPass(ctx context.Context, op string, p pass) (map[string]any, map[string]any, error) {
 	e.passMu.Lock()
 	defer e.passMu.Unlock()
 	e.setInPass(true)
@@ -34,20 +35,21 @@ func (e *engine) unitPass(ctx context.Context, op string, p pass) (map[string]an
 	e.mu.Unlock()
 	e.pass = p
 	e.resetUnits()
+	marks := map[string]any{}
 	if op == "down" {
 		items, err := e.downPass(ctx)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		out := map[string]any{}
 		for _, l := range items {
 			out[e.short(l.address)] = map[string]any{"outcome": l.outcome, "changed": l.outcome == success, "outputs": map[string]any{}}
 			e.touch(e.short(l.address), &record.Unit{Outcome: l.outcome, Changed: l.outcome == success, Plan: "down"})
 		}
-		return out, nil
+		return out, marks, nil
 	}
 	if err := e.selectUnits(false); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	e.previewMoves()
 	e.setCollect(true)
@@ -62,7 +64,7 @@ func (e *engine) unitPass(ctx context.Context, op string, p pass) (map[string]an
 	for _, inst := range e.insts {
 		var newer *state.NewerError
 		if errors.As(inst.plan.err, &newer) {
-			return nil, fmt.Errorf("%s: %w; nothing ran", inst.address, newer)
+			return nil, nil, fmt.Errorf("%s: %w; nothing ran", inst.address, newer)
 		}
 	}
 	out := map[string]any{}
@@ -82,9 +84,12 @@ func (e *engine) unitPass(ctx context.Context, op string, p pass) (map[string]an
 				e.read[inst.address] = digest
 				out[e.short(inst.address)] = map[string]any{"outcome": success, "changed": false, "outputs": inst.outputsNow(),
 					"plan": inst.plan.view(exact)}
+				if m := inst.viewMarks(); m != nil {
+					marks[e.short(inst.address)] = m
+				}
 			}
 		}
-		return out, nil
+		return out, marks, nil
 	}
 	e.applyMoves(ctx)
 	e.turns(ctx)
@@ -94,9 +99,12 @@ func (e *engine) unitPass(ctx context.Context, op string, p pass) (map[string]an
 			out[e.short(inst.address)] = map[string]any{"outcome": inst.outcome, "changed": inst.changed, "outputs": inst.outputsNow(),
 				"plan": inst.plan.view(inst.plan.err == nil && inst.plan.waitFor == "" && inst.plan.locked == "")}
 			e.touch(e.short(inst.address), &record.Unit{Outcome: inst.outcome, Changed: inst.changed, Plan: inst.plan.summary(), Approval: inst.approval})
+			if m := inst.viewMarks(); m != nil {
+				marks[e.short(inst.address)] = m
+			}
 		}
 	}
-	return out, nil
+	return out, marks, nil
 }
 
 // approves says what approves a change at addr whose plan has digest, or
@@ -150,6 +158,17 @@ func (e *engine) setInPass(v bool) {
 }
 
 func (e *engine) short(addr string) string { return strings.TrimPrefix(addr, e.p.StackName+"/") }
+
+// outputMarksNow marks the sensitive outputs of outputsNow.
+func (inst *instance) outputMarksNow() map[string]any {
+	if inst.outputs != nil {
+		return inst.outMarks
+	}
+	if inst.record != nil && inst.record.Tombstone == nil && inst.record.Outputs != nil {
+		return hiddenMarks(inst.record.Hidden[state.PartOutputs])
+	}
+	return nil
+}
 
 func (inst *instance) outputsNow() map[string]any {
 	if inst.outputs != nil {

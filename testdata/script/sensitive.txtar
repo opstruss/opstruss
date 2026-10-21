@@ -56,15 +56,16 @@ stderr 'item 1: a sensitive value cannot be an item of argv, which other users c
 ! stdout 'from-program'
 ! stderr 'from-program'
 
-# write keeps sensitive content for the user alone; kv does not keep a
-# sensitive value yet; a sensitive list is not a for_each
+# write keeps sensitive content for the user alone; kv keeps a sensitive
+# value encrypted, which needs the data key of the stack; a sensitive list
+# is not a for_each
 exec opstruss keep
 [darwin] exec stat -f %Lp secret.txt
 [linux] exec stat -c %a secret.txt
 stdout '^600$'
 grep 's3cr3t-token-value' secret.txt
 ! exec opstruss memo
-stderr 'kv does not keep sensitive values yet'
+stderr 'no rule in .sops.yaml matches default/_meta, which holds the data key of the stack; opstruss init adds one'
 ! exec opstruss each
 stderr 'a sensitive list would make its items keys'
 

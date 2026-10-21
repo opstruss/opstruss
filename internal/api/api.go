@@ -35,6 +35,8 @@ type Request struct {
 	With    map[string]any    `json:"with,omitempty"` // run: its inputs
 	Run     string            `json:"run,omitempty"`  // events: the run to read
 	Debug   bool              `json:"debug,omitempty"`
+	// ShowSensitive gives outputs their sensitive values.
+	ShowSensitive bool `json:"show_sensitive,omitempty"`
 }
 
 // Result is how a run ended.
@@ -67,7 +69,7 @@ func (a *API) options(r Request) engine.Options {
 	}
 	return engine.Options{Dir: r.Dir, Cwd: r.Cwd, Stack: r.Stack, Inputs: r.Inputs, Environ: r.Environ,
 		LookupEnv: func(k string) (string, bool) { v, ok := env[k]; return v, ok },
-		Units:     r.Units, Yes: r.Yes, Force: r.Force, NoDeps: r.NoDeps, Debug: r.Debug,
+		Units:     r.Units, Yes: r.Yes, Force: r.Force, NoDeps: r.NoDeps, Debug: r.Debug, ShowSensitive: r.ShowSensitive,
 		Emit: a.h.Event, Approve: a.h.Approve, Ask: a.h.Ask}
 }
 

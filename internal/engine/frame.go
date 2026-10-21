@@ -20,12 +20,13 @@ import (
 // unit that uses the component gives each of them its env, as the table of
 // keys of a component unit says.
 type frame struct {
-	node    *model.Node    // the unit that uses the component; nil for the project
-	in      *model.Project // the files that write the units inside
-	parent  *frame
-	key     string
-	each    any
-	address string // <stack>, or the address of the instance, such as <stack>/site[eu]
+	node      *model.Node    // the unit that uses the component; nil for the project
+	in        *model.Project // the files that write the units inside
+	parent    *frame
+	key       string
+	each      any
+	eachMarks any    // each.value is sensitive
+	address   string // <stack>, or the address of the instance, such as <stack>/site[eu]
 }
 
 // frameSet is the instances of a component unit in a pass, or why they
@@ -81,7 +82,7 @@ func (e *engine) framesOf(n *model.Node) ([]*frame, error) {
 	fs = &frameSet{}
 	parents, err := e.framesOf(n.Parent)
 	for _, pf := range parents {
-		keys, items, kerr := e.keysOf(pf, n)
+		keys, items, eachMarks, kerr := e.keysOf(pf, n)
 		if kerr != nil {
 			err = fmt.Errorf("%s: %w", e.short(pf.address+"/"+n.Name), kerr)
 			break
@@ -91,7 +92,8 @@ func (e *engine) framesOf(n *model.Node) ([]*frame, error) {
 			if n.Unit.ForEach != nil {
 				id += "[" + k + "]"
 			}
-			fs.frames = append(fs.frames, &frame{node: n, in: n.Component(), parent: pf, key: k, each: items[k], address: pf.address + "/" + id})
+			fs.frames = append(fs.frames, &frame{node: n, in: n.Component(), parent: pf, key: k, each: items[k], eachMarks: eachMarks,
+				address: pf.address + "/" + id})
 		}
 	}
 	if err != nil {
@@ -140,37 +142,48 @@ func (e *engine) allFrames() []*frame {
 
 // scope is what the expressions of inst read.
 func (e *engine) scope(inst *instance) *expr.Scope {
-	return e.scopeOf(inst.frame, inst.node, inst.address, eachOf(inst.node.Unit, inst.key, inst.each))
+	return e.scopeOf(inst.frame, inst.node, inst.address, eachOf(inst.node.Unit, inst.key, inst.each), inst.eachMarks)
 }
 
 // useScope is what the expressions of the unit that uses the component of
 // f read for that instance: its with:, env:, and the like.
 func (e *engine) useScope(f *frame) *expr.Scope {
-	return e.scopeOf(f.parent, f.node, f.address, eachOf(f.node.Unit, f.key, f.each))
+	return e.scopeOf(f.parent, f.node, f.address, eachOf(f.node.Unit, f.key, f.each), f.eachMarks)
 }
 
 // scopeOf is what the expressions of unit n in f read: for an instance at
 // address with each, or, with an empty address, for its if and for_each,
 // which come before its instances.
-func (e *engine) scopeOf(f *frame, n *model.Node, address string, each map[string]any) *expr.Scope {
-	return e.frameScope(f, n.Reads, n.Dir(), address, each)
+func (e *engine) scopeOf(f *frame, n *model.Node, address string, each map[string]any, eachMarks any) *expr.Scope {
+	return e.frameScope(f, n.Reads, n.Dir(), address, each, eachMarks)
 }
 
 // frameScope is what expressions written in the files of f read, with
-// units.<name> holding the units in names.
-func (e *engine) frameScope(f *frame, names []string, dir, address string, each map[string]any) *expr.Scope {
+// units.<name> holding the units in names, and the marks of what is
+// sensitive there.
+func (e *engine) frameScope(f *frame, names []string, dir, address string, each map[string]any, eachMarks any) *expr.Scope {
 	k := e.passKV()
-	inputs := e.inputsOf(f)
+	inputs, inputMarks := e.inputsAndMarks(f)
 	facts := e.facts(nil)
 	if address != "" {
 		facts["address"], facts["dir"] = address, dir
 	}
+	units, unitMarks := e.unitsView(f, names)
 	vars := map[string]any{"stack": e.p.StackName, "inputs": inputs, "locals": k.localsOf(f, inputs), "opstruss": facts,
-		"units": e.unitsView(f, names)}
+		"units": units}
 	if each != nil {
 		vars["each"] = each
 	}
-	return (&expr.Scope{Dir: dir, Vars: vars}).WithKV(k.get)
+	marks := map[string]any{}
+	for name, m := range map[string]map[string]any{"inputs": inputMarks, "locals": e.localMarksOf(f, inputMarks, k), "units": unitMarks} {
+		if len(m) > 0 {
+			marks[name] = m
+		}
+	}
+	if eachMarks != nil {
+		marks["each"] = eachMarks
+	}
+	return (&expr.Scope{Dir: dir, Vars: vars, Marks: marks}).WithKV(k.get, k.marked)
 }
 
 // inputsOf is inputs.<name> in f: those of the project, or those of the
@@ -179,21 +192,42 @@ func (e *engine) frameScope(f *frame, names []string, dir, address string, each 
 // one whose unit upstream runs later, fails only the expressions that read
 // it.
 func (e *engine) inputsOf(f *frame) map[string]any {
+	inputs, _ := e.inputsAndMarks(f)
+	return inputs
+}
+
+// inputsAndMarks is inputsOf with the marks of the sensitive inputs: those
+// that the project or component declares so, and those that the unit that
+// uses the component gives from a sensitive value.
+func (e *engine) inputsAndMarks(f *frame) (map[string]any, map[string]any) {
 	if f.node == nil {
-		return e.inputs
+		return e.inputs, e.inputMarks
 	}
 	s := e.useScope(f)
-	out := map[string]any{}
+	out, marks := map[string]any{}, map[string]any{}
 	for _, name := range slices.Sorted(maps.Keys(f.in.Inputs)) {
 		in := f.in.Inputs[name]
 		var v any
 		var err error
 		if w, ok := f.node.Unit.With[name]; ok {
-			v, err = expr.EvalValue(w, s)
+			var m any
+			if v, m, err = expr.EvalMarked(w, s); err == nil && m != nil {
+				e.hide(v, true)
+				marks[name] = true
+			}
 		}
 		if err == nil && v == nil && in.Env != "" {
 			if text, ok := e.opts.LookupEnv(in.Env); ok {
+				if in.Sensitive {
+					e.known("input "+name+" of "+e.short(f.address), text)
+				}
 				v, err = model.ParseText(text, in.Type)
+			}
+		}
+		if in.Sensitive {
+			marks[name] = true
+			if err == nil && v != nil {
+				e.known("input "+name+" of "+e.short(f.address), v)
 			}
 		}
 		if err == nil {
@@ -206,25 +240,39 @@ func (e *engine) inputsOf(f *frame) map[string]any {
 			out[name] = v
 		}
 	}
-	return out
+	return out, marks
+}
+
+// localMarksOf marks the sensitive locals in f, which read a sensitive
+// input, local, or value of kv() in k.
+func (e *engine) localMarksOf(f *frame, inputMarks map[string]any, k *kvMemory) map[string]any {
+	if f.node == nil && !e.kvLocals {
+		return e.localMarks
+	}
+	return f.in.LocalMarks(map[string]any{"inputs": inputMarks}, k.marked)
 }
 
 // frameEnv adds to env the env of the units that use the components f is
 // in, outermost first, each evaluated where it is written.
-func (e *engine) frameEnv(f *frame, env map[string]model.EnvValue) error {
+// The names of the sensitive ones go to hidden.
+func (e *engine) frameEnv(f *frame, env map[string]model.EnvValue, hidden map[string]bool) error {
 	if f.node == nil {
 		return nil
 	}
-	if err := e.frameEnv(f.parent, env); err != nil {
+	if err := e.frameEnv(f.parent, env, hidden); err != nil {
 		return err
 	}
 	s := e.useScope(f)
 	for k, v := range f.node.Unit.Env {
-		text, err := expr.EvalText(v.Text, s)
+		text, sensitive, err := expr.EvalTextMarked(v.Text, s)
 		if err != nil {
 			return fmt.Errorf("env.%s of %s: %w", k, e.short(f.address), err)
 		}
 		env[k] = model.EnvValue{Text: text, File: v.File}
+		hidden[k] = sensitive
+		if sensitive {
+			e.hide(text, true)
+		}
 	}
 	return nil
 }
@@ -234,8 +282,9 @@ func (e *engine) frameEnv(f *frame, env map[string]model.EnvValue) error {
 // outcome, changed, and plan once a pass of this run reached them; a unit
 // with for_each is a map of its instances, and a unit that uses a
 // component holds what the component gives.
-func (e *engine) unitsView(f *frame, names []string) map[string]any {
-	views := map[string]any{}
+// The marks say which outputs are sensitive.
+func (e *engine) unitsView(f *frame, names []string) (map[string]any, map[string]any) {
+	views, viewMarks := map[string]any{}, map[string]map[string]any{}
 	var comps []*model.Node
 	e.mu.Lock()
 	for _, name := range names {
@@ -249,13 +298,16 @@ func (e *engine) unitsView(f *frame, names []string) map[string]any {
 			if !ok {
 				continue
 			}
-			byKey := map[string]any{}
+			byKey, marks := map[string]any{}, map[string]any{}
 			for _, inst := range insts {
 				if inst.frame == f {
 					byKey[inst.key] = inst.view()
+					if m := inst.viewMarks(); m != nil {
+						marks[inst.key] = m
+					}
 				}
 			}
-			views[name] = byKey
+			views[name], viewMarks[name] = byKey, marks
 		}
 	}
 	inPass := e.inPass
@@ -266,13 +318,17 @@ func (e *engine) unitsView(f *frame, names []string) map[string]any {
 			views[n.Name] = expr.Broken(err)
 			continue
 		}
-		byKey := map[string]any{}
+		byKey, marks := map[string]any{}, map[string]any{}
 		for _, g := range frames {
 			if g.parent == f {
-				byKey[g.key] = e.componentView(g)
+				var m any
+				byKey[g.key], m = e.componentView(g)
+				if m != nil {
+					marks[g.key] = m
+				}
 			}
 		}
-		views[n.Name] = byKey
+		views[n.Name], viewMarks[n.Name] = byKey, marks
 	}
 	// Outside a pass, as in a step of a task, units that no pass of this run
 	// expanded read their records. Inside one, units are expanded in graph
@@ -286,7 +342,7 @@ func (e *engine) unitsView(f *frame, names []string) map[string]any {
 			if addrs == nil {
 				addrs, _ = e.store.Inventory()
 			}
-			byKey := map[string]any{}
+			byKey, marks := map[string]any{}, map[string]any{}
 			for _, a := range addrs {
 				rest, ok := strings.CutPrefix(a, f.address+"/")
 				if !ok || strings.Contains(rest, "/") {
@@ -302,12 +358,15 @@ func (e *engine) unitsView(f *frame, names []string) map[string]any {
 						out = map[string]any{}
 					}
 					byKey[seg.Key] = map[string]any{"outputs": out}
+					if m := hiddenMarks(rec.Hidden[state.PartOutputs]); m != nil {
+						marks[seg.Key] = map[string]any{"outputs": m}
+					}
 				}
 			}
-			views[name] = byKey
+			views[name], viewMarks[name] = byKey, marks
 		}
 	}
-	view := map[string]any{}
+	view, marks := map[string]any{}, map[string]any{}
 	for name, v := range views {
 		byKey, ok := v.(map[string]any)
 		switch {
@@ -315,13 +374,39 @@ func (e *engine) unitsView(f *frame, names []string) map[string]any {
 			view[name] = v
 		case e.p.Nodes[f.child(name)].Unit.ForEach != nil:
 			view[name] = byKey
+			if len(viewMarks[name]) > 0 {
+				marks[name] = viewMarks[name]
+			}
 		case byKey[""] != nil:
 			view[name] = byKey[""]
+			if m := viewMarks[name][""]; m != nil {
+				marks[name] = m
+			}
 		default:
 			view[name] = map[string]any{"outputs": map[string]any{}}
 		}
 	}
-	return view
+	return view, marks
+}
+
+// hiddenMarks are the marks of the values names, as a record hides them.
+func hiddenMarks(names []string) map[string]any {
+	if len(names) == 0 {
+		return nil
+	}
+	m := map[string]any{}
+	for _, n := range names {
+		m[n] = true
+	}
+	return m
+}
+
+// viewMarks are the marks of view(): its sensitive outputs.
+func (inst *instance) viewMarks() any {
+	if m := inst.outputMarksNow(); len(m) > 0 {
+		return map[string]any{"outputs": m}
+	}
+	return nil
 }
 
 // view is units.<name> of one instance; the caller holds e.mu.
@@ -341,17 +426,27 @@ func (inst *instance) view() map[string]any {
 // inside, their outcome and changed together, and their plans as one, as
 // a module is in the JSON plan of Terraform. The units inside stay out of
 // reach.
-func (e *engine) componentView(g *frame) map[string]any {
-	s := e.frameScope(g, slices.Sorted(maps.Keys(g.in.Units)), g.in.Dir, g.address, nil)
-	outputs := map[string]any{}
+// The marks say which outputs are sensitive: declared so, or read from a
+// sensitive value.
+func (e *engine) componentView(g *frame) (map[string]any, any) {
+	s := e.frameScope(g, slices.Sorted(maps.Keys(g.in.Units)), g.in.Dir, g.address, nil, nil)
+	outputs, outMarks := map[string]any{}, map[string]any{}
 	for _, k := range slices.Sorted(maps.Keys(g.in.Outputs)) {
 		so := *s
 		so.Dir = g.in.DirOf("outputs." + k)
-		v, err := expr.EvalValue(g.in.Outputs[k].Value, &so)
+		v, m, err := expr.EvalMarked(g.in.Outputs[k].Value, &so)
 		if err != nil {
 			v = expr.Broken(fmt.Errorf("output %s of %s: %w", k, e.short(g.address), err))
 		}
 		outputs[k] = v
+		if m != nil || g.in.Outputs[k].Sensitive {
+			outMarks[k] = true
+			e.hide(v, true)
+		}
+	}
+	var marks any
+	if len(outMarks) > 0 {
+		marks = map[string]any{"outputs": outMarks}
 	}
 	view := map[string]any{"outputs": outputs}
 	rank := map[string]int{success: 0, skipped: 1, cancelled: 2, failure: 3}
@@ -396,7 +491,7 @@ func (e *engine) componentView(g *frame) map[string]any {
 		view["plan"] = map[string]any{"changes": changes, "outputs": []any{}, "exact": exact,
 			"digest": fmt.Sprintf("sha256:v1:%x", sum), "summary": strings.Join(lines, "\n")}
 	}
-	return view
+	return view, marks
 }
 
 // inside are the instances of the units that run inside g, also in the
@@ -565,17 +660,25 @@ func (e *engine) writeFrame(f *frame) error {
 	if err != nil {
 		return err
 	}
-	inputs := map[string]any{}
-	for k, v := range e.inputsOf(f) {
+	inputs, hidden := map[string]any{}, []string(nil)
+	all, marks := e.inputsAndMarks(f)
+	for k, v := range all {
 		if !expr.IsBroken(v) {
 			inputs[k] = v
+			if marks[k] != nil {
+				hidden = append(hidden, k)
+			}
 		}
 	}
+	slices.Sort(hidden)
 	src := &state.Source{Uses: f.node.Unit.Uses}
 	if rec != nil && same(rec.Source, src) && same(rec.Inputs, inputs) {
 		return nil
 	}
 	next := &state.Record{Kind: "component", Source: src, Inputs: inputs, Run: e.runID, Updated: time.Now().UTC().Format(time.RFC3339)}
+	if len(hidden) > 0 {
+		next.Hidden = map[string][]string{state.PartInputs: hidden}
+	}
 	if rec != nil {
 		next.ID = rec.ID
 	} else {

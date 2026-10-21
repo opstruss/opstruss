@@ -42,7 +42,7 @@ func runCommand(ctx context.Context, opts Options, op string) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := e.unitPass(ctx, op, pass{units: opts.Units, yes: opts.Yes, force: opts.Force, noDeps: opts.NoDeps, source: "--yes"}); err != nil {
+	if _, _, err := e.unitPass(ctx, op, pass{units: opts.Units, yes: opts.Yes, force: opts.Force, noDeps: opts.NoDeps, source: "--yes"}); err != nil {
 		e.fail("", err)
 	}
 	outcome := map[int]string{0: success, 1: failure, 2: skipped}[e.exit]
@@ -303,10 +303,66 @@ func (e *engine) setRecord(inst *instance, rec *state.Record) {
 }
 
 // finish says how an instance ended; units that read it see its outputs.
-func (e *engine) finish(inst *instance, outcome string, changed bool, outputs map[string]any) {
+func (e *engine) finish(inst *instance, outcome string, changed bool, outputs, marks map[string]any) {
 	e.mu.Lock()
-	inst.outcome, inst.changed, inst.outputs = outcome, changed, outputs
+	inst.outcome, inst.changed, inst.outputs, inst.outMarks = outcome, changed, outputs, marks
 	e.mu.Unlock()
+}
+
+// outputMarks marks the sensitive outputs of a unit: those it or its
+// plugin declares so, those its program names in OPSTRUSS_RESULT, and those
+// that hold a sensitive value, which a diagnostic names unless quiet. The
+// values of them are hidden from then on.
+func (e *engine) outputMarks(inst *instance, r *resolved, res *plugin.Result, quiet bool) map[string]any {
+	marks := map[string]any{}
+	for k, o := range inst.def.Outputs {
+		if o.Sensitive {
+			marks[k] = true
+		}
+	}
+	if r.plugin != nil {
+		for k, o := range r.plugin.target.Package.Plugin.Outputs.Declared {
+			if o.Sensitive {
+				marks[k] = true
+			}
+		}
+	}
+	for _, k := range res.Sensitive {
+		marks[k] = true
+	}
+	if quiet {
+		for k, v := range res.Outputs {
+			if e.redact.Contains(v) {
+				marks[k] = true
+			}
+		}
+	} else {
+		marks = e.markContent(res.Outputs, marks, Event{Address: inst.address, Task: "up"})
+	}
+	for k := range marks {
+		if _, ok := res.Outputs[k]; !ok {
+			delete(marks, k)
+		}
+	}
+	e.hide(res.Outputs, anyMarks(marks))
+	return marks
+}
+
+// withHidden is hidden with the names of the parts in more in place of its
+// own.
+func withHidden(hidden, more map[string][]string, parts ...string) map[string][]string {
+	out := map[string][]string{}
+	for p, names := range hidden {
+		out[p] = names
+	}
+	for _, p := range parts {
+		if len(more[p]) > 0 {
+			out[p] = more[p]
+		} else {
+			delete(out, p)
+		}
+	}
+	return out
 }
 
 // turns runs every instance once the instances it depends on are done, at
@@ -323,12 +379,12 @@ func (e *engine) turns(ctx context.Context) {
 				<-d.done
 			}
 			if !e.sel.has(inst) {
-				e.finish(inst, success, false, nil)
+				e.finish(inst, success, false, nil, nil)
 				return
 			}
 			for _, d := range inst.deps {
 				if d.outcome != success {
-					e.finish(inst, skipped, false, nil)
+					e.finish(inst, skipped, false, nil, nil)
 					e.say("unit", inst.address, "skipped: %s is %s", d.address, d.outcome)
 					return
 				}
@@ -347,7 +403,7 @@ func (e *engine) turns(ctx context.Context) {
 func (e *engine) turn(ctx context.Context, inst *instance) {
 	addr := inst.address
 	failed := func(err error) {
-		e.finish(inst, failure, false, nil)
+		e.finish(inst, failure, false, nil, nil)
 		e.fail(addr, err)
 	}
 	if inst.plan.err != nil {
@@ -408,12 +464,13 @@ func (e *engine) turn(ctx context.Context, inst *instance) {
 		// A down contract that changed alone is written without running.
 		if !same(rec.Down, down) {
 			rec.Down = down
+			rec.Hidden = withHidden(rec.Hidden, r.hidden(down), state.PartEnv, state.PartEnvFiles)
 			if _, err := e.store.Put(addr, rec, etag); err != nil {
 				failed(err)
 				return
 			}
 		}
-		e.finish(inst, success, false, rec.Outputs)
+		e.finish(inst, success, false, rec.Outputs, hiddenMarks(rec.Hidden[state.PartOutputs]))
 		e.say("unit", addr, "unchanged")
 		return
 	}
@@ -421,7 +478,7 @@ func (e *engine) turn(ctx context.Context, inst *instance) {
 	if approval != "auto" {
 		source, why, waited := e.approves(ctx, Question{Address: addr, Summary: p.summary()}, p.approval())
 		if why != "" {
-			e.finish(inst, skipped, false, nil)
+			e.finish(inst, skipped, false, nil, nil)
 			e.say("approval", addr, "%s; %s, stopped at plan", p.summary(), why)
 			e.stopAtPlan()
 			return
@@ -442,7 +499,7 @@ func (e *engine) turn(ctx context.Context, inst *instance) {
 			failed(err)
 			return
 		}
-		e.finish(inst, success, true, rec.Outputs)
+		e.finish(inst, success, true, rec.Outputs, hiddenMarks(rec.Hidden[state.PartOutputs]))
 		return
 	}
 	reason := "changed"
@@ -457,17 +514,22 @@ func (e *engine) turn(ctx context.Context, inst *instance) {
 	if rec != nil {
 		*next = *rec
 	} else {
-		next.ID = state.NewID()
+		next.ID = e.recordID(inst)
 		next.StateKey = addr + "." + next.ID
 	}
 	attempt := &state.Attempt{Op: "up", Run: e.runID, Holder: e.holder, Approval: approval, Digest: p.digest,
-		Down: down, Needs: e.needs(inst), Inputs: r.inputs(), Source: r.source(inst)}
+		Down: down, Needs: e.needs(inst), Inputs: r.inputs(), Source: r.source(inst), Hidden: r.hidden(down)}
+	if r.sensitive() {
+		// What the program writes may hold what it was given.
+		attempt.Hidden = withHidden(attempt.Hidden, map[string][]string{state.PartRawOutput: {""}}, state.PartRawOutput)
+	}
 	if prev := next.Pending; prev != nil {
 		if sameTarget(prev.Down, down) {
 			// What an interrupted attempt parsed stays until this one parses
 			// its own, so ids of what it made are not lost if this one stops
 			// too.
 			attempt.Outputs, attempt.RawOutput = prev.Outputs, prev.RawOutput
+			attempt.Hidden = withHidden(attempt.Hidden, prev.Hidden, state.PartOutputs)
 		} else {
 			// An attempt with another down contract may have made something
 			// elsewhere; it is kept to be torn down after this one succeeds,
@@ -476,7 +538,11 @@ func (e *engine) turn(ctx context.Context, inst *instance) {
 		}
 	}
 	next.Pending = attempt
-	if data, err := state.EncodeRecord(next); err != nil || len(data)+plugin.MaxOutputs > MaxRecord {
+	if data, err := e.store.Encode(next); err != nil || len(data)+plugin.MaxOutputs > MaxRecord {
+		if err != nil {
+			failed(err)
+			return
+		}
 		failed(fmt.Errorf("the record has no room for outputs of %d bytes", plugin.MaxOutputs))
 		return
 	}
@@ -495,13 +561,33 @@ func (e *engine) turn(ctx context.Context, inst *instance) {
 	failpoint.Hit("up-before-program")
 	// up of a plugin gets the digest of its own plan, to apply what it
 	// planned or refuse.
-	res, err := e.attempts(ctx, inst, r, next, reason, cmp.Or(p.pluginDigest, p.digest), func(res *plugin.Result) error {
+	keep := func(res *plugin.Result, marks map[string]any) error {
 		next.Pending.Outputs, next.Pending.RawOutput = res.Outputs, ""
 		if res.OutputErr != nil {
 			next.Pending.RawOutput = string(res.RawOutput)
 		}
-		etag, err = e.store.Put(addr, next, etag)
+		next.Pending.Hidden = withHidden(next.Pending.Hidden, map[string][]string{state.PartOutputs: slices.Sorted(maps.Keys(marks))}, state.PartOutputs)
+		tag, err := e.store.Put(addr, next, etag)
+		var keyErr *state.KeyError
+		if errors.As(err, &keyErr) {
+			// An output that the program marked sensitive needs the data key,
+			// which the stack cannot have: it is not kept, and the others are,
+			// so the next attempt finds what this one made.
+			for k := range marks {
+				delete(next.Pending.Outputs, k)
+			}
+			next.Pending.Hidden, next.Pending.RawOutput = withHidden(next.Pending.Hidden, nil, state.PartOutputs), ""
+			if tag, err = e.store.Put(addr, next, etag); err == nil {
+				err = fmt.Errorf("the program gave sensitive outputs (%s), which were not kept: %w", strings.Join(slices.Sorted(maps.Keys(marks)), ", "), keyErr)
+			}
+		}
+		if tag != "" {
+			etag = tag
+		}
 		return err
+	}
+	res, err := e.attempts(ctx, inst, r, next, reason, cmp.Or(p.pluginDigest, p.digest), func(res *plugin.Result) error {
+		return keep(res, e.outputMarks(inst, r, res, true))
 	})
 	failpoint.Hit("up-after-program")
 	if err != nil {
@@ -510,14 +596,15 @@ func (e *engine) turn(ctx context.Context, inst *instance) {
 	}
 	// What the program made is kept in pending first, so a last write
 	// that fails still leaves its ids for the next attempt.
-	next.Pending.Outputs, next.Pending.RawOutput = res.Outputs, ""
-	if etag, err = e.store.Put(addr, next, etag); err != nil {
+	outMarks := e.outputMarks(inst, r, res, false)
+	if err := keep(res, outMarks); err != nil {
 		failed(err)
 		return
 	}
 	done := &state.Record{ID: next.ID, StateKey: next.StateKey, Kind: r.kind(), Source: attempt.Source, Inputs: attempt.Inputs,
 		Down: down, Needs: attempt.Needs, Outputs: res.Outputs, Digest: p.digest, Run: e.runID,
-		Updated: time.Now().UTC().Format(time.RFC3339), Abandoned: next.Abandoned}
+		Updated: time.Now().UTC().Format(time.RFC3339), Abandoned: next.Abandoned,
+		Hidden: withHidden(attempt.Hidden, map[string][]string{state.PartOutputs: slices.Sorted(maps.Keys(outMarks))}, state.PartOutputs, state.PartRawOutput)}
 	err = failpoint.Fail("up-before-put")
 	if err == nil {
 		etag, err = e.store.Put(addr, done, etag)
@@ -540,7 +627,7 @@ func (e *engine) turn(ctx context.Context, inst *instance) {
 		failed(err)
 		return
 	}
-	e.finish(inst, success, res.Changed, res.Outputs)
+	e.finish(inst, success, res.Changed, res.Outputs, outMarks)
 	if _, missing, _ := files(inst.dir, nil, inst.def.Generates); len(missing) > 0 {
 		e.warn(addr, "generates still missing after up: %s", strings.Join(missing, ", "))
 	}
@@ -616,9 +703,6 @@ func (e *engine) attempts(ctx context.Context, inst *instance, r *resolved, rec 
 			return nil, err
 		}
 		ferr := outcomeErr(res)
-		if ferr == nil && len(res.Sensitive) > 0 {
-			ferr = fmt.Errorf("the program marked %s sensitive, and units do not keep sensitive values yet", strings.Join(res.Sensitive, ", "))
-		}
 		done := ferr == nil
 		if retry != nil && retry.Until != nil {
 			s := e.scope(inst)
@@ -755,7 +839,7 @@ func fileExists(p string) bool {
 // errored keeps a record that the backend did not take in
 // .opstruss/errored/, from where opstruss state push puts it back.
 func (e *engine) errored(addr string, rec *state.Record, cause error) error {
-	data, err := state.EncodeRecord(rec)
+	data, err := e.store.Encode(rec)
 	if err == nil {
 		p := e.erroredPath(addr)
 		if err = os.MkdirAll(filepath.Dir(p), 0o700); err == nil {

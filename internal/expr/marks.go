@@ -2,6 +2,7 @@ package expr
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 )
 
@@ -28,9 +29,9 @@ func MarkAt(marks any, path ...string) any {
 }
 
 // Sensitive reports whether the expression src reads a sensitive part of
-// s.
+// s, or a sensitive value through kv().
 func Sensitive(src string, s *Scope) bool {
-	if len(s.Marks) == 0 {
+	if len(s.Marks) == 0 && s.KVMarked == nil {
 		return false
 	}
 	use, err := analyzed(src)
@@ -41,6 +42,11 @@ func Sensitive(src string, s *Scope) bool {
 	}
 	for _, r := range use.Refs {
 		if MarkAt(s.Marks, r.Path...) != nil {
+			return true
+		}
+	}
+	for _, k := range use.KV {
+		if s.KVMarked != nil && s.KVMarked(k) {
 			return true
 		}
 	}
@@ -119,7 +125,7 @@ func EvalTextMarked(str string, s *Scope) (string, bool, error) {
 }
 
 func stringMarks(str string, s *Scope) any {
-	if len(s.Marks) == 0 {
+	if len(s.Marks) == 0 && (s.KVMarked == nil || !strings.Contains(str, "kv(")) {
 		return nil
 	}
 	parts, err := Split(str)
@@ -129,6 +135,33 @@ func stringMarks(str string, s *Scope) any {
 	for _, p := range parts {
 		if p.IsExpr && Sensitive(p.Expr, s) {
 			return true
+		}
+	}
+	return nil
+}
+
+// MarksOf returns the marks that EvalMarked gives v in s, without
+// evaluating it.
+func MarksOf(v any, s *Scope) any {
+	switch x := v.(type) {
+	case string:
+		return stringMarks(x, s)
+	case map[string]any:
+		marks := map[string]any{}
+		for k, e := range x {
+			if m := MarksOf(e, s); m != nil {
+				marks[k] = m
+			}
+		}
+		if len(marks) == 0 {
+			return nil
+		}
+		return marks
+	case []any:
+		for _, e := range x {
+			if MarksOf(e, s) != nil {
+				return true
+			}
 		}
 	}
 	return nil

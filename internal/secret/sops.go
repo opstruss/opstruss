@@ -2,12 +2,15 @@ package secret
 
 import (
 	"bytes"
+	"cmp"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -120,3 +123,46 @@ func AddMetaRule(dir, recipient string) error {
 }
 
 func str(s string) *yaml.Node { return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: s} }
+
+// Sops runs the sops program on the _meta of a stack, which holds its
+// data key: from the project root, where sops finds .sops.yaml, with the
+// operator's whole environment, as for git, since sops needs the keys and
+// credentials that open it. OpsTruss names what is encrypted itself, so a
+// rule needs only the keys.
+type Sops struct {
+	Dir     string   // the project root
+	Environ []string // the operator's environment
+	Stack   string
+}
+
+// Wrap encrypts the key field of plain, _meta as JSON, with the keys of the
+// rule in .sops.yaml that matches the _meta of the stack.
+func (s *Sops) Wrap(plain []byte) ([]byte, error) {
+	return s.run(plain, "encrypt", "--encrypted-regex", "^key$")
+}
+
+// Unwrap decrypts _meta as sops wrapped it.
+func (s *Sops) Unwrap(wrapped []byte) ([]byte, error) {
+	return s.run(wrapped, "decrypt")
+}
+
+func (s *Sops) run(stdin []byte, args ...string) ([]byte, error) {
+	name := MetaName(s.Stack)
+	args = append(args, "--filename-override", name, "--input-type", "json", "--output-type", "json")
+	cmd := exec.Command("sops", args...)
+	cmd.Dir, cmd.Env, cmd.Stdin = s.Dir, s.Environ, bytes.NewReader(stdin)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if errors.Is(err, exec.ErrNotFound) {
+		return nil, errors.New("sops is not in PATH, and the data key of the stack is kept by sops; install it, for example with mise use sops")
+	}
+	if err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if strings.Contains(msg, "no matching creation rules found") || strings.Contains(msg, "has no creation rules") {
+			return nil, fmt.Errorf("no rule in %s matches %s, which holds the data key of the stack; opstruss init adds one", SopsConfig, name)
+		}
+		return nil, fmt.Errorf("sops %s %s: %s", args[0], name, cmp.Or(msg, err.Error()))
+	}
+	return out, nil
+}

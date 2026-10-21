@@ -10,26 +10,39 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"time"
 
 	"github.com/opstruss/opstruss/internal/expr"
 	"github.com/opstruss/opstruss/internal/record"
+	"github.com/opstruss/opstruss/internal/state"
 )
 
 // Outputs evaluates the outputs of the project from the stored outputs of
-// its units, as a snapshot read without a lock.
+// its units, as a snapshot read without a lock. A sensitive output, one
+// declared so or read from a sensitive value, is secret.Mask unless
+// opts.ShowSensitive, which refuses a project that has none.
 func Outputs(opts Options) (map[string]any, error) {
 	e, err := e0(opts)
 	if err != nil {
 		return nil, err
 	}
-	out := map[string]any{}
+	out, marks := map[string]any{}, map[string]any{}
 	for _, name := range slices.Sorted(maps.Keys(e.p.Outputs)) {
-		s := e.frameScope(e.top, e.rootUnits(), e.p.DirOf("outputs."+name), "", nil)
-		v, err := expr.EvalValue(e.p.Outputs[name].Value, s)
+		s := e.frameScope(e.top, e.rootUnits(), e.p.DirOf("outputs."+name), "", nil, nil)
+		v, m, err := expr.EvalMarked(e.p.Outputs[name].Value, s)
 		if err != nil {
-			return nil, fmt.Errorf("output %s: %w", name, err)
+			return nil, e.redact.Err(fmt.Errorf("output %s: %w", name, err))
 		}
 		out[name] = v
+		if m != nil || e.p.Outputs[name].Sensitive || e.redact.Contains(v) {
+			marks[name] = true
+		}
+	}
+	if !opts.ShowSensitive {
+		return e.shown(out, marks), nil
+	}
+	if len(marks) == 0 {
+		return nil, errors.New("--show-sensitive shows sensitive outputs, and the project has none")
 	}
 	return out, nil
 }
@@ -103,7 +116,7 @@ func List(opts Options) (*Status, error) {
 			u.Kind = inst.def.Target.Kind
 		}
 		if rec := inst.record; rec != nil && rec.Tombstone == nil {
-			u.State, u.Run, u.Outputs = "up", rec.Run, rec.Outputs
+			u.State, u.Run, u.Outputs = "up", rec.Run, e.shown(rec.Outputs, hiddenMarks(rec.Hidden[state.PartOutputs]))
 			if rec.Pending != nil {
 				u.State = "pending"
 			}
@@ -137,6 +150,13 @@ func runRecords(root, stack string) ([]*record.Record, error) {
 			out = append(out, rec)
 		}
 	}
+	// Names order runs by the second they started in; within one, the
+	// time they started says which is newer.
+	started := func(r *record.Record) time.Time {
+		t, _ := time.Parse(time.RFC3339Nano, r.Started)
+		return t
+	}
+	slices.SortStableFunc(out, func(a, b *record.Record) int { return started(b).Compare(started(a)) })
 	return out, nil
 }
 

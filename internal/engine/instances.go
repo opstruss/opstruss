@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"regexp"
@@ -16,17 +17,18 @@ import (
 // for_each, in the project or in an instance of a component, and what the
 // run found and did there.
 type instance struct {
-	unit    string // the path of the unit, such as web or site/db
-	key     string
-	keys    []string // those of the instances of the components it is in, outermost first, and its own
-	each    any
-	address string // <frame address>/<name>, or <frame address>/<name>[<key>]
-	node    *model.Node
-	frame   *frame
-	def     *model.Unit // the unit as it runs, with what the components it is in give it
-	dir     string      // directory of the file that wrote the unit
-	deps    []*instance
-	backend string // the backend input of a unit whose plugin has state: tool, as JSON
+	unit      string // the path of the unit, such as web or site/db
+	key       string
+	keys      []string // those of the instances of the components it is in, outermost first, and its own
+	each      any
+	eachMarks any    // each.value is sensitive
+	address   string // <frame address>/<name>, or <frame address>/<name>[<key>]
+	node      *model.Node
+	frame     *frame
+	def       *model.Unit // the unit as it runs, with what the components it is in give it
+	dir       string      // directory of the file that wrote the unit
+	deps      []*instance
+	backend   string // the backend input of a unit whose plugin has state: tool, as JSON
 
 	record   *state.Record
 	plan     plan
@@ -34,6 +36,7 @@ type instance struct {
 	outcome  string
 	changed  bool
 	outputs  map[string]any
+	outMarks map[string]any // the sensitive outputs
 	done     chan struct{}
 }
 
@@ -268,7 +271,7 @@ func (e *engine) expand(path string) ([]*instance, error) {
 	def := n.Def()
 	var out []*instance
 	for _, f := range frames {
-		keys, items, err := e.keysOf(f, n)
+		keys, items, eachMarks, err := e.keysOf(f, n)
 		if err != nil {
 			return nil, err
 		}
@@ -277,7 +280,7 @@ func (e *engine) expand(path string) ([]*instance, error) {
 			if n.Unit.ForEach != nil {
 				id += "[" + k + "]"
 			}
-			out = append(out, &instance{unit: path, key: k, keys: append(f.keys(), k), each: items[k], address: f.address + "/" + id,
+			out = append(out, &instance{unit: path, key: k, keys: append(f.keys(), k), each: items[k], eachMarks: eachMarks, address: f.address + "/" + id,
 				node: n, frame: f, def: def, dir: n.Dir(), done: make(chan struct{})})
 		}
 	}
@@ -288,32 +291,41 @@ func (e *engine) expand(path string) ([]*instance, error) {
 // one empty key without for_each, and one per item with it, in key order.
 // Both read only what is known when the run starts, so the outputs they
 // read come from units this run leaves as they are.
-func (e *engine) keysOf(f *frame, n *model.Node) ([]string, map[string]any, error) {
+// each.value is sensitive when for_each is; a key never is.
+func (e *engine) keysOf(f *frame, n *model.Node) ([]string, map[string]any, any, error) {
 	u := n.Unit
 	for _, v := range []any{u.If, u.ForEach} {
 		if v == nil {
 			continue
 		}
 		if up := e.changing(v, f); up != "" {
-			return nil, nil, fmt.Errorf("if and for_each of %s are known when the run starts, but this run changes %s first; run opstruss up %s, then this", n.Path, up, up)
+			return nil, nil, nil, fmt.Errorf("if and for_each of %s are known when the run starts, but this run changes %s first; run opstruss up %s, then this", n.Path, up, up)
 		}
 	}
-	scope := e.scopeOf(f, n, "", nil)
+	scope := e.scopeOf(f, n, "", nil, nil)
 	if u.If != nil {
 		ok, err := expr.EvalCondition(u.If, scope)
 		if err != nil {
-			return nil, nil, fmt.Errorf("if: %w", err)
+			return nil, nil, nil, fmt.Errorf("if: %w", err)
 		}
 		if !ok {
-			return nil, nil, nil
+			return nil, nil, nil, nil
 		}
 	}
 	if u.ForEach == nil {
-		return []string{""}, nil, nil
+		return []string{""}, nil, nil, nil
 	}
-	v, err := expr.EvalValue(u.ForEach, scope)
+	v, marks, err := expr.EvalMarked(u.ForEach, scope)
 	if err != nil {
-		return nil, nil, fmt.Errorf("for_each: %w", err)
+		return nil, nil, nil, fmt.Errorf("for_each: %w", err)
+	}
+	var eachMarks any
+	if marks != nil {
+		if _, list := v.([]any); list {
+			return nil, nil, nil, errors.New("for_each: a sensitive list would make its items keys, which addresses show; give each item a key of its own with a map")
+		}
+		e.hide(v, marks)
+		eachMarks = map[string]any{"value": true}
 	}
 	items := map[string]any{}
 	switch x := v.(type) {
@@ -323,21 +335,24 @@ func (e *engine) keysOf(f *frame, n *model.Node) ([]string, map[string]any, erro
 		for _, it := range x {
 			k, ok := it.(string)
 			if !ok {
-				return nil, nil, fmt.Errorf("for_each of a unit takes strings or a map, not %s; build a map with keys of your own", model.TypeName(it))
+				return nil, nil, nil, fmt.Errorf("for_each of a unit takes strings or a map, not %s; build a map with keys of your own", model.TypeName(it))
 			}
 			if _, dup := items[k]; dup {
-				return nil, nil, fmt.Errorf("for_each has %s twice", k)
+				return nil, nil, nil, fmt.Errorf("for_each has %s twice", k)
 			}
 			items[k] = k
 		}
 	default:
-		return nil, nil, fmt.Errorf("for_each takes a list or a map, not %s", model.TypeName(v))
+		return nil, nil, nil, fmt.Errorf("for_each takes a list or a map, not %s", model.TypeName(v))
 	}
 	keys := slices.Sorted(maps.Keys(items))
 	for _, k := range keys {
+		if e.redact.Contains(k) {
+			return nil, nil, nil, errors.New("for_each: a key holds a sensitive value, and keys show in addresses")
+		}
 		if !forEachKey.MatchString(k) {
-			return nil, nil, fmt.Errorf("for_each key %q has more than lower-case letters, digits, '.', '-', and '_'", k)
+			return nil, nil, nil, fmt.Errorf("for_each key %q has more than lower-case letters, digits, '.', '-', and '_'", k)
 		}
 	}
-	return keys, items, nil
+	return keys, items, eachMarks, nil
 }

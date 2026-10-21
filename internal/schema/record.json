@@ -14,13 +14,7 @@
     "down": { "$ref": "#/$defs/down" },
     "needs": { "type": "array", "items": { "type": "string" } },
     "outputs": { "type": "object" },
-    "sensitive": {
-      "type": "object",
-      "additionalProperties": {
-        "type": "object",
-        "additionalProperties": { "type": "string" }
-      }
-    },
+    "sensitive": { "$ref": "#/$defs/sensitive" },
     "digest": { "$ref": "#/$defs/digest" },
     "run": { "$ref": "#/$defs/run" },
     "updated": { "type": "string", "format": "date-time" },
@@ -115,9 +109,18 @@
         "needs": { "type": "array", "items": { "type": "string" } },
         "outputs": { "type": "object" },
         "raw_output": { "type": "string" },
-        "peer": { "type": "string" }
+        "peer": { "type": "string" },
+        "sensitive": { "$ref": "#/$defs/sensitive" }
       },
       "required": ["op", "run", "holder"]
+    },
+    "sensitive": {
+      "description": "Sensitive values by the part they belong to (inputs, outputs, down.env, down.env_files), each encrypted with the data key of the stack.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": { "type": "string", "pattern": "^enc:v1:" }
+      }
     }
   }
 }

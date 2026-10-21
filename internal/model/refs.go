@@ -442,11 +442,12 @@ func (p *Project) EvalLocals(inputs map[string]any, kv func(string) (any, error)
 }
 
 // LocalMarks says which locals are sensitive, given the marks of what they
-// read, such as {"inputs": {"token": true}}: a local that reads a
+// read, such as {"inputs": {"token": true}}, and which names of kv() hold
+// sensitive values, when kvMarked is not nil: a local that reads a
 // sensitive value, or a sensitive local, is sensitive as a whole.
-func (p *Project) LocalMarks(marks map[string]any) map[string]any {
+func (p *Project) LocalMarks(marks map[string]any, kvMarked func(string) bool) map[string]any {
 	out := map[string]any{}
-	if len(marks) == 0 {
+	if len(marks) == 0 && kvMarked == nil {
 		return out
 	}
 	scope := maps.Clone(marks)
@@ -466,6 +467,11 @@ func (p *Project) LocalMarks(marks map[string]any) map[string]any {
 				if expr.MarkAt(scope, r.Path...) != nil {
 					out[name], changed = true, true
 					break
+				}
+			}
+			for _, k := range use.KV {
+				if out[name] == nil && kvMarked != nil && kvMarked(k) {
+					out[name], changed = true, true
 				}
 			}
 		}

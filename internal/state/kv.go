@@ -33,9 +33,31 @@ func CheckKVName(name string) error {
 // KVEntry is one value in the memory of a stack, with the time it expires
 // when it was written with a ttl.
 type KVEntry struct {
-	Version int    `json:"version"`
-	Value   any    `json:"value"`
-	Expires string `json:"expires,omitempty"`
+	Version   int    `json:"version"`
+	Value     any    `json:"value"`
+	Sensitive bool   `json:"sensitive,omitempty"` // Value is encrypted with the data key
+	Expires   string `json:"expires,omitempty"`
+}
+
+// kvAAD binds an encrypted value to its name, so it cannot move to
+// another.
+func kvAAD(name string) string { return "_kv/" + name }
+
+// open decrypts a sensitive value with the data key of the store.
+func (s *Store) openKV(e *KVEntry, name string) error {
+	if !e.Sensitive {
+		return nil
+	}
+	text, _ := e.Value.(string)
+	sl := &sealer{key: s.Key}
+	key, err := sl.dataKey()
+	if err != nil {
+		return fmt.Errorf("kv %s: %w", name, err)
+	}
+	if e.Value, err = Unseal(key, kvAAD(name), text); err != nil {
+		return fmt.Errorf("kv %s: %w", name, err)
+	}
+	return nil
 }
 
 func (e *KVEntry) expired(now time.Time) bool {
@@ -55,42 +77,46 @@ func decodeKV(data []byte, name string) (*KVEntry, error) {
 	return &e, nil
 }
 
-// KVGet returns the value of name and its etag, or nil when there is none
-// or its ttl passed.
-func (s *Store) KVGet(name string, now time.Time) (any, string, error) {
+// KVGet returns the value of name, whether it is sensitive, and its etag,
+// or nil when there is none or its ttl passed.
+func (s *Store) KVGet(name string, now time.Time) (any, bool, string, error) {
 	if err := CheckKVName(name); err != nil {
-		return nil, "", err
+		return nil, false, "", err
 	}
 	data, etag, err := s.Backend.Get(kvKey(s.Stack, name))
 	if errors.Is(err, ErrNotExist) {
-		return nil, "", nil
+		return nil, false, "", nil
 	}
 	if err != nil {
-		return nil, "", err
+		return nil, false, "", err
 	}
 	e, err := decodeKV(data, name)
 	if err != nil {
-		return nil, "", err
+		return nil, false, "", err
 	}
 	if e.expired(now) {
-		return nil, etag, nil
+		return nil, false, etag, nil
 	}
-	return e.Value, etag, nil
+	if err := s.openKV(e, name); err != nil {
+		return nil, false, "", err
+	}
+	return e.Value, e.Sensitive, etag, nil
 }
 
 // KVList returns the values of the names that start with prefix, at most
 // MaxKVKeys of them and MaxKV in all.
-func (s *Store) KVList(prefix string, now time.Time) (map[string]any, error) {
+// The names of sensitive values come back too.
+func (s *Store) KVList(prefix string, now time.Time) (map[string]any, map[string]bool, error) {
 	if prefix != "" {
 		if err := CheckKVName(prefix); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	keys, err := s.Backend.List(kvKey(s.Stack, ""))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	out := map[string]any{}
+	out, sensitive := map[string]any{}, map[string]bool{}
 	size := 0
 	for _, k := range keys {
 		name := strings.TrimPrefix(k, kvKey(s.Stack, ""))
@@ -102,21 +128,27 @@ func (s *Store) KVList(prefix string, now time.Time) (map[string]any, error) {
 			continue
 		}
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		e, err := decodeKV(data, name)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if e.expired(now) {
 			continue
 		}
 		if size += len(data); len(out) >= MaxKVKeys || size > MaxKV {
-			return nil, fmt.Errorf("kv('%s*') reads more than %d keys or %d bytes", prefix, MaxKVKeys, MaxKV)
+			return nil, nil, fmt.Errorf("kv('%s*') reads more than %d keys or %d bytes", prefix, MaxKVKeys, MaxKV)
+		}
+		if err := s.openKV(e, name); err != nil {
+			return nil, nil, err
 		}
 		out[name] = e.Value
+		if e.Sensitive {
+			sensitive[name] = true
+		}
 	}
-	return out, nil
+	return out, sensitive, nil
 }
 
 // KVLock takes the lock of the memory of the stack without waiting; one
@@ -129,7 +161,8 @@ func (s *Store) KVUnlock(token string) error { return s.Backend.Unlock(kvLockKey
 // KVPut writes value under name, still at etag, or removes it when value
 // is nil; ttl, when above zero, makes it expire. The caller holds the lock,
 // and every write also removes the names whose ttl passed.
-func (s *Store) KVPut(name string, value any, ttl time.Duration, etag string, now time.Time) error {
+// A sensitive value is kept encrypted with the data key.
+func (s *Store) KVPut(name string, value any, sensitive bool, ttl time.Duration, etag string, now time.Time) error {
 	if err := CheckKVName(name); err != nil {
 		return err
 	}
@@ -145,6 +178,16 @@ func (s *Store) KVPut(name string, value any, ttl time.Duration, etag string, no
 		}
 	} else {
 		e := &KVEntry{Version: KVVersion, Value: value}
+		if sensitive {
+			key, err := (&sealer{key: s.Key}).dataKey()
+			if err != nil {
+				return fmt.Errorf("kv %s: %w", name, err)
+			}
+			if e.Value, err = Seal(key, kvAAD(name), value); err != nil {
+				return err
+			}
+			e.Sensitive = true
+		}
 		if ttl > 0 {
 			e.Expires = now.Add(ttl).UTC().Format(time.RFC3339Nano)
 		}

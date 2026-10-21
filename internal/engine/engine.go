@@ -39,7 +39,9 @@ type Options struct {
 	Yes       bool     // approve the changes of this run
 	Force     bool     // up: run the units named although unchanged; down: although pass values differ
 	NoDeps    bool     // leave out the dependencies of up and the dependents of down
-	Emit      func(Event)
+
+	ShowSensitive bool // outputs: give sensitive values as they are
+	Emit          func(Event)
 	// Approve asks whoever is at a terminal to approve one change, one
 	// question at a time; without it, a change that needs approval stops
 	// at plan. Ask asks for a required input that has no value.
@@ -133,6 +135,11 @@ type engine struct {
 	inputMarks map[string]any   // the sensitive inputs of the project
 	localMarks map[string]any   // the locals that read them
 	tooShort   []string         // sensitive values too short to hide, by name, for a warning once the run starts
+
+	keyOnce sync.Once
+	key     []byte // the data key of the stack, once a value needed it
+	keyErr  error
+	newIDs  map[string]string // the ids of records that up makes, by address
 }
 
 // open reads the project and the state of its stack, marks the runs that
@@ -177,7 +184,7 @@ func load(opts Options) (*engine, error) {
 	if err != nil {
 		return nil, red.Err(err)
 	}
-	localMarks := p.LocalMarks(map[string]any{"inputs": inputMarks})
+	localMarks := p.LocalMarks(map[string]any{"inputs": inputMarks}, nil)
 	for k := range localMarks {
 		red.AddDerived(locals[k])
 	}
@@ -210,6 +217,8 @@ func load(opts Options) (*engine, error) {
 	if e.store, err = state.Open(state.NewLocal(filepath.Join(e.root, "state")), p.StackName, p.Name); err != nil {
 		return nil, err
 	}
+	e.store.Key = e.dataKey
+	e.store.Known = func(_, _ string, v any) bool { return e.redact.Contains(v) }
 	if e.host, err = state.HostID(); err != nil {
 		return nil, err
 	}
@@ -226,7 +235,7 @@ func (e *engine) start(command, task string) error {
 		return err
 	}
 	rec := &record.Record{Project: p.Name, Stack: p.StackName, Command: command, Task: task, Args: opts.Units,
-		Host: e.host, PID: os.Getpid(), Started: e.started.Format(time.RFC3339)}
+		Host: e.host, PID: os.Getpid(), Started: e.started.Format(time.RFC3339Nano)}
 	if len(e.parents) > 0 {
 		rec.Parent = e.parents[len(e.parents)-1]
 	}
