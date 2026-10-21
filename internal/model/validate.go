@@ -208,6 +208,9 @@ func (c *checker) stop(path []string, s *Stop) {
 func (c *checker) units() {
 	for _, name := range slices.Sorted(maps.Keys(c.p.Units)) {
 		u, path := c.p.Units[name], []string{"units", name}
+		if name == "tool" {
+			c.add(path, "tool is the directory where a plugin with state: tool keeps the tool's state; give the unit another name")
+		}
 		kinds := 0
 		for _, set := range []bool{u.Run != nil, u.Service != nil, u.Uses != ""} {
 			if set {
@@ -552,8 +555,6 @@ func (c *checker) unsupported() {
 		u, path := p.Units[name], []string{"units", name}
 		switch {
 		case u.Target == nil:
-		case u.Target.Kind == TargetPlugin && u.Target.Package.Plugin.Outputs.Tool:
-			c.add(at(path, "uses"), "units of a plugin with outputs: tool are not supported yet")
 		case u.Target.Kind != TargetPlugin:
 			c.add(at(path, "uses"), "units that use a task or component are not supported yet")
 		}

@@ -134,6 +134,12 @@ func (r *Run) environment(c *Call, dir string) (map[string]string, error) {
 			}
 			env["OPSTRUSS_WORKDIR"] = u.Workdir
 		}
+		if u.StateDir != "" {
+			if err := os.MkdirAll(u.StateDir, 0o700); err != nil {
+				return nil, err
+			}
+			env["OPSTRUSS_STATE_DIR"] = u.StateDir
+		}
 		if u.State != nil {
 			p, err := write(stateFile, []byte(expr.JSON(u.State)))
 			if err != nil {

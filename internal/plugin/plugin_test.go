@@ -196,7 +196,7 @@ func TestParseOutputFile(t *testing.T) {
 		"just text\n":       "line 1 is neither",
 		`{"a": 1} {"b": 2}`: "not one JSON object",
 	} {
-		if _, _, err := ParseOutputFile([]byte(in), nil); err == nil || !strings.Contains(err.Error(), want) {
+		if _, _, err := ParseOutputFile([]byte(in), nil, false); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%q: %v, want %q", in, err, want)
 		}
 	}

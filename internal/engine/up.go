@@ -72,6 +72,25 @@ func (e *engine) previewAll(ctx context.Context) {
 		e.byUnit[name] = insts
 		e.insts = append(e.insts, insts...)
 	}
+	// Two units that keep the tool's state in one backend overwrite each
+	// other's.
+	first := map[string]*instance{}
+	for _, inst := range e.insts {
+		if inst.backend == "" {
+			continue
+		}
+		if other := first[inst.backend]; other != nil {
+			err := fmt.Errorf("%s and %s have the same input backend; each unit keeps its own state", other.address, inst.address)
+			other.plan, inst.plan = plan{err: err}, plan{err: err}
+			for _, i := range []*instance{other, inst} {
+				if e.sel.has(i) {
+					e.say("plan", i.address, "%s", i.plan.summary())
+				}
+			}
+			continue
+		}
+		first[inst.backend] = inst
+	}
 }
 
 func (e *engine) preview(ctx context.Context, inst *instance) {
@@ -109,6 +128,11 @@ func (e *engine) preview(ctx context.Context, inst *instance) {
 	case r.waitFor != "":
 		inst.plan.waitFor = e.p.StackName + "/" + r.waitFor
 		return
+	}
+	if r.plugin != nil && r.plugin.tool != "" {
+		if b := r.plugin.inputs["backend"]; b != nil && b != "" {
+			inst.backend = expr.JSON(b)
+		}
 	}
 	if err := e.missing(inst, r); err != nil {
 		// A unit that runs first in this run may install the program.
@@ -216,6 +240,9 @@ func (e *engine) decide(ctx context.Context, inst *instance, r *resolved, rec *s
 		p.reason = "generates missing: " + strings.Join(missing, ", ")
 	default:
 		p.run = false
+	}
+	if err := e.toolMoved(inst, r); err != nil {
+		return plan{err: err}
 	}
 	if r.plugin != nil && r.plugin.plan != nil {
 		pp, err := e.planPlugin(ctx, inst, r, rec)
@@ -620,10 +647,10 @@ func (e *engine) exec(ctx context.Context, inst *instance, r *resolved, rec *sta
 	defer errw.flush()
 	c := &plugin.Call{Command: r.cmd, Shell: r.shell, Base: inst.dir, Dir: r.dir, Env: r.env,
 		Pass: slices.Sorted(maps.Keys(r.pass)), Stdin: r.stdin, Stop: r.stop, Task: "up", Reason: reason, Digest: digest,
-		Unit:    &plugin.Unit{Address: inst.address, StateKey: rec.StateKey, Workdir: e.workdir(inst.address), State: programState(rec)},
-		Outputs: inst.def.Outputs, Stdout: out, Stderr: errw}
+		Unit: e.unitOf(inst, r, rec), Outputs: inst.def.Outputs, Stdout: out, Stderr: errw}
 	if r.plugin != nil {
-		c.Inputs, c.PluginDir, c.Outputs = r.plugin.inputs, r.plugin.dir, r.plugin.target.Package.Plugin.Outputs.Declared
+		outs := r.plugin.target.Package.Plugin.Outputs
+		c.Inputs, c.PluginDir, c.Outputs, c.AnyOutputs = r.plugin.inputs, r.plugin.dir, outs.Declared, outs.Tool
 	}
 	res, err := e.run.Exec(ctx, c)
 	if err != nil {

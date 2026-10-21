@@ -151,6 +151,9 @@ func (e *engine) programCall(p progSpec, s *expr.Scope) (*plugin.Call, error) {
 		if p.unit.record != nil {
 			unit.StateKey = p.unit.record.StateKey
 		}
+		if p.plugin != nil {
+			unit.State, unit.StateDir = p.plugin.state, p.plugin.stateDir
+		}
 	}
 	c := &plugin.Call{Shell: p.shell, Base: p.base, Dir: dir, Env: env, Pass: pass, Stdin: stdin, Stop: stop,
 		Task: p.task, Reason: "requested", Unit: unit, Inputs: p.inputs, Outputs: p.outputs}

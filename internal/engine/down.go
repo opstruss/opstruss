@@ -309,6 +309,10 @@ func (e *engine) downOne(ctx context.Context, l *leftover) string {
 	if err := e.store.Delete(addr, etag); err != nil {
 		return fail(err)
 	}
+	// The tool's own state goes with the record it belongs to.
+	if err := e.store.RemoveTool(addr); err != nil {
+		e.warn(addr, "could not remove the tool's state: %v", err)
+	}
 	_ = os.RemoveAll(e.workdir(addr))
 	if rec.Down == nil {
 		e.say("unit", addr, "forgotten without a down program")
@@ -386,6 +390,9 @@ func (e *engine) runDown(ctx context.Context, addr, stateKey string, c *state.At
 		if call.Inputs == nil {
 			call.Inputs = map[string]any{}
 		}
+	}
+	if d.Tool {
+		call.Unit.StateDir, _ = e.store.ToolDir(addr)
 	}
 	res, err := e.run.Exec(ctx, call)
 	if err != nil {

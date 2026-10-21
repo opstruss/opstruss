@@ -66,6 +66,10 @@
           "description": "the plugin whose program this is, relative to the project root",
           "type": "string"
         },
+        "tool": {
+          "description": "the tool keeps its own state in tool/, which the program gets as OPSTRUSS_STATE_DIR",
+          "type": "boolean"
+        },
         "env_files": {
           "description": "env values that the program gets as the path of a temporary file",
           "type": "object",

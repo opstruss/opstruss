@@ -93,6 +93,11 @@ func (a *API) Down(ctx context.Context, r Request) (*Result, error) {
 	return result(engine.Down(ctx, a.options(r)))
 }
 
+// Status runs status of the units of the request.
+func (a *API) StatusUnits(ctx context.Context, r Request) (*Result, error) {
+	return result(engine.StatusUnits(ctx, a.options(r)))
+}
+
 // Run runs the task of the request with its inputs.
 func (a *API) Run(ctx context.Context, r Request) (*Result, error) {
 	return result(engine.Task(ctx, a.options(r), r.Task, r.With))

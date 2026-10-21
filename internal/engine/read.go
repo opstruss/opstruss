@@ -99,6 +99,9 @@ func List(opts Options) (*Status, error) {
 	}
 	for _, inst := range e.insts {
 		u := &UnitStatus{Address: inst.address, Kind: "run", State: "absent"}
+		if inst.def.Target != nil {
+			u.Kind = inst.def.Target.Kind
+		}
 		if rec := inst.record; rec != nil && rec.Tombstone == nil {
 			u.State, u.Run, u.Outputs = "up", rec.Run, rec.Outputs
 			if rec.Pending != nil {

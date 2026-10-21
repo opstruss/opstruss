@@ -205,7 +205,9 @@ func (s *Store) Inventory() ([]string, error) {
 	var addrs []string
 	for _, k := range keys {
 		rest := strings.TrimPrefix(k, s.Stack+"/")
-		if strings.HasPrefix(rest, "_") || !strings.HasSuffix(k, "/state.json") {
+		// tool/ holds the tool's own files, whatever their names; no unit
+		// is named tool.
+		if strings.HasPrefix(rest, "_") || !strings.HasSuffix(k, "/state.json") || strings.Contains("/"+rest, "/tool/") {
 			continue
 		}
 		addrs = append(addrs, strings.TrimSuffix(k, "/state.json"))
@@ -279,6 +281,25 @@ func (s *Store) MoveTool(from, to string) error {
 		return err
 	}
 	return os.Rename(src, dst)
+}
+
+// ToolDir is tool/ of address, the directory where a plugin with state:
+// tool keeps the tool's own state; only the local backend has one.
+func (s *Store) ToolDir(address string) (string, bool) {
+	l, ok := s.Backend.(*Local)
+	if !ok {
+		return "", false
+	}
+	return filepath.Join(l.root, filepath.FromSlash(address), "tool"), true
+}
+
+// RemoveTool removes tool/ of address, once down took the unit away.
+func (s *Store) RemoveTool(address string) error {
+	dir, ok := s.ToolDir(address)
+	if !ok {
+		return nil
+	}
+	return os.RemoveAll(dir)
 }
 
 // KeyOf names the backend key and lock of a key given to opstruss state:

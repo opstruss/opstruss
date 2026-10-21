@@ -42,6 +42,9 @@ type Call struct {
 	// PluginDir is the directory of the plugin whose program this is:
 	// OPSTRUSS_PLUGIN_DIR, and where a relative program in argv starts.
 	PluginDir string
+	// AnyOutputs keeps every output the program writes, for a plugin with
+	// outputs: tool, whose user's code names them.
+	AnyOutputs bool
 
 	Outputs map[string]*model.Output // a stream that an output reads stays out of the log
 	Stdout  io.Writer                // live log of the streams that no output reads
@@ -56,6 +59,7 @@ type Unit struct {
 	StateKey string
 	Workdir  string
 	State    any
+	StateDir string // tool/, for a plugin with state: tool
 }
 
 // Result is what a program left: its exit code and what it wrote back.

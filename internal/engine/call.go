@@ -91,6 +91,11 @@ type pluginRun struct {
 	env      model.Env
 	requires []string
 	inputs   map[string]*model.Input // of the plugin and the task
+
+	// For a task of a unit's plugin that reads its record without the
+	// lock, as status does: $OPSTRUSS_STATE, and tool/ of state: tool.
+	state    any
+	stateDir string
 }
 
 func pluginRunOf(t *model.Target, p progSpec) *pluginRun {

@@ -316,6 +316,7 @@ func TestRules(t *testing.T) {
 		{"name: app\ntasks:\n  t:\n    run: [x]\n    pass: ['*']\n", ""},
 		{"name: app\ntasks:\n  t:\n    run: [x]\n    inputs:\n      log-level: {type: string}\n      log_level: {type: string}\n", "inputs log-level and log_level are both INPUT_LOG_LEVEL"},
 		{"name: app\nunits:\n  a:\n    run: [x]\n    stop: {signal: SIGFOO}\n", "unknown signal SIGFOO"},
+		{"name: app\nunits:\n  tool:\n    run: [x]\n", "tool is the directory where a plugin with state: tool keeps"},
 		{"name: app\ntasks:\n  t:\n    run: [x]\n    stop: {signal: SIGTERM, grace: 5s}\n", ""},
 	}
 	for _, tt := range tests {

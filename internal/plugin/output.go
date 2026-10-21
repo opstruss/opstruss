@@ -30,13 +30,16 @@ func (r *Run) collect(c *Call, dir string, res *Result, streams map[string]*stre
 		fail("OPSTRUSS_OUTPUT", err)
 	} else {
 		var warnings []string
-		written, warnings, err = ParseOutputFile(raw, c.Outputs)
+		written, warnings, err = ParseOutputFile(raw, c.Outputs, c.AnyOutputs)
 		res.Warnings = append(res.Warnings, warnings...)
 		if err != nil {
 			errs = append(errs, err)
 		}
 	}
 	res.Outputs = map[string]any{}
+	if c.AnyOutputs {
+		maps.Copy(res.Outputs, written)
+	}
 	for _, name := range slices.Sorted(maps.Keys(c.Outputs)) {
 		o := c.Outputs[name]
 		if o.Value != nil {
@@ -104,8 +107,8 @@ func output(c *Call, o *model.Output, written any, streams map[string]*stream) (
 // ParseOutputFile reads OPSTRUSS_OUTPUT: lines name=value and blocks
 // name<<DELIM … DELIM, as $GITHUB_OUTPUT, whose text becomes the type of
 // its output, or one JSON object, whose types are kept. Names that no
-// output declares are left out, with a warning.
-func ParseOutputFile(data []byte, decl map[string]*model.Output) (map[string]any, []string, error) {
+// output declares are left out, with a warning, unless keepAll.
+func ParseOutputFile(data []byte, decl map[string]*model.Output, keepAll bool) (map[string]any, []string, error) {
 	text := strings.ToValidUTF8(string(data), "\uFFFD")
 	values := map[string]any{}
 	var errs []error
@@ -134,7 +137,7 @@ func ParseOutputFile(data []byte, decl map[string]*model.Output) (map[string]any
 	}
 	var warnings []string
 	for _, k := range slices.Sorted(maps.Keys(values)) {
-		if decl[k] == nil {
+		if decl[k] == nil && !keepAll {
 			warnings = append(warnings, fmt.Sprintf("OPSTRUSS_OUTPUT has %s, which no output declares", k))
 			delete(values, k)
 		}

@@ -58,6 +58,7 @@ type Down struct {
 	Shell    string            `json:"shell,omitempty"`
 	Dir      string            `json:"dir,omitempty"`
 	Plugin   string            `json:"plugin,omitempty"` // the plugin's directory, relative to the project root
+	Tool     bool              `json:"tool,omitempty"`   // the tool keeps its state in tool/, OPSTRUSS_STATE_DIR
 	Env      map[string]string `json:"env,omitempty"`
 	EnvFiles map[string]string `json:"env_files,omitempty"`
 	Pass     map[string]string `json:"pass,omitempty"`

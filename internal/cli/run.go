@@ -61,6 +61,8 @@ func (a *app) unitCommands() []*cobra.Command {
 			"run the units named although unchanged", e.Up),
 		command("down", "destroy", "Take the units down with the down contract of their records",
 			"run down although pass values differ from those recorded", e.Down),
+		command("status", "ps", "Show the state of the units: the status task of their plugin, or what their record says", "",
+			e.StatusUnits),
 	}
 }
 

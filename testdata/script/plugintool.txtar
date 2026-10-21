@@ -1,0 +1,86 @@
+# A plugin with state: tool keeps the tool's own state in tool/ of the
+# unit, OPSTRUSS_STATE_DIR; with outputs: tool its outputs are what the
+# tool names. status runs the plugin's status task, or says what the
+# record holds.
+
+env HOME=$WORK/home
+chmod 755 plugins/tool/up.sh
+chmod 755 plugins/tool/down.sh
+chmod 755 plugins/tool/status.sh
+
+exec opstruss up
+stdout '^default/web \| port 8080 tags \["a","b"\]$'
+exists .opstruss/state/default/infra/tool/state.json
+
+# status reads the record and tool/ without the lock; a unit whose plugin
+# has no status task gets what its record says
+exec opstruss status
+stdout '^default/infra \| serial 1 in tool, outputs port 8080$'
+stdout '^default/web: up, from run '
+exec opstruss ps web
+stdout '^default/web: up, from run '
+
+# a backend input while tool/ still holds the state stops at plan
+exec sh -c 'sed "s/name: infra}/name: infra, backend: {bucket: b}}/" opstruss.yaml > o.yaml && mv o.yaml opstruss.yaml'
+! exec opstruss plan
+stdout 'the tool.s state is still in tool/ while input backend names another place'
+
+# down takes tool/ away with the record
+exec sh -c 'sed "s/, backend: {bucket: b}//" opstruss.yaml > o.yaml && mv o.yaml opstruss.yaml'
+exec opstruss down
+! exists .opstruss/state/default/infra/tool
+! exists cloud/infra
+
+# two units that keep the tool's state in one backend are refused
+cp twice.yaml opstruss.yaml
+! exec opstruss plan
+stdout 'default/one and default/two have the same input backend'
+
+-- opstruss.yaml --
+name: app
+units:
+  infra:
+    uses: ./plugins/tool
+    with: {name: infra}
+    approval: auto
+  web:
+    run: [echo, "port ${{ units.infra.outputs.port }} tags ${{ toJSON(units.infra.outputs.tags) }}"]
+    approval: auto
+-- twice.yaml --
+name: app
+units:
+  one:
+    uses: ./plugins/tool
+    with: {name: one, backend: {bucket: b}}
+  two:
+    uses: ./plugins/tool
+    with: {name: two, backend: {bucket: b}}
+-- plugins/tool/opstruss.plugin.yaml --
+name: tool
+state: tool
+outputs: tool
+inputs:
+  name: {type: string, required: true}
+  backend: {type: object}
+tasks:
+  up:
+    run: [./up.sh]
+  down:
+    run: [./down.sh]
+  status:
+    run: [./status.sh]
+-- plugins/tool/up.sh --
+#!/bin/sh
+mkdir -p cloud
+touch "cloud/$INPUT_NAME"
+echo '{"serial": 1}' > "$OPSTRUSS_STATE_DIR/state.json"
+echo '{"port": 8080, "tags": ["a", "b"]}' > "$OPSTRUSS_OUTPUT"
+-- plugins/tool/down.sh --
+#!/bin/sh
+test -f "$OPSTRUSS_STATE_DIR/state.json" || exit 1
+rm -f "cloud/$INPUT_NAME"
+-- plugins/tool/status.sh --
+#!/bin/sh
+serial=$(sed 's/[^0-9]//g' "$OPSTRUSS_STATE_DIR/state.json")
+port=$(sed 's/.*"port": *\([0-9]*\).*/\1/' "$OPSTRUSS_STATE")
+echo "serial $serial in tool, outputs port $port"

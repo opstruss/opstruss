@@ -67,6 +67,11 @@ func (e *engine) unitPass(ctx context.Context, op string, p pass) (map[string]an
 	if op == "plan" {
 		for _, inst := range e.insts {
 			if e.sel.has(inst) {
+				if inst.plan.err != nil {
+					// A unit that cannot be planned fails the plan; one that
+					// another run holds does not.
+					e.exit = max(e.exit, 1)
+				}
 				exact := inst.plan.err == nil && inst.plan.waitFor == "" && inst.plan.locked == "" && !inst.plan.inexact
 				digest := ""
 				if exact {

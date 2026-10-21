@@ -23,6 +23,7 @@ type instance struct {
 	def     *model.Unit
 	dir     string // directory of the file that wrote the unit
 	deps    []*instance
+	backend string // the backend input of a unit whose plugin has state: tool, as JSON
 
 	record   *state.Record
 	plan     plan

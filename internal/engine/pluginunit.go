@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"maps"
+	"os"
 	"path"
 	"path/filepath"
 	"slices"
@@ -27,6 +28,20 @@ type pluginUnit struct {
 	inputs map[string]any // the plugin's inputs, from the declaration's with: and the unit's
 	plan   *model.Command // nil when the plugin has no plan
 	hash   string         // of what the plugin's directory holds, as h1: is
+	tool   string         // tool/, where a plugin with state: tool keeps the tool's state
+	env    model.Env      // the env of the declaration and the unit, evaluated
+}
+
+// unitOf is what the programs of a unit that uses a plugin receive.
+func (e *engine) unitOf(inst *instance, r *resolved, rec *state.Record) *plugin.Unit {
+	u := &plugin.Unit{Address: inst.address, Workdir: e.workdir(inst.address)}
+	if rec != nil {
+		u.StateKey, u.State = rec.StateKey, programState(rec)
+	}
+	if r.plugin != nil {
+		u.StateDir = r.plugin.tool
+	}
+	return u
 }
 
 // resolvePlugin fills r for a unit that uses a plugin: the inputs from
@@ -54,6 +69,11 @@ func (e *engine) resolvePlugin(inst *instance, r *resolved, s *expr.Scope) error
 		return err
 	}
 	pu := &pluginUnit{target: t, dir: t.Package.Dir, inputs: inputs, hash: hash}
+	if pl.State == "tool" {
+		if dir, ok := e.store.ToolDir(inst.address); ok {
+			pu.tool = dir
+		}
+	}
 	ps := e.pluginScope(pu.dir, inputs, inst)
 	up := pl.Tasks["up"]
 	if r.cmd, err = command(up.Run, ps); err != nil {
@@ -82,6 +102,19 @@ func (e *engine) resolvePlugin(inst *instance, r *resolved, s *expr.Scope) error
 		r.dir, r.cwd = filepath.Join(r.dir, d), filepath.Join(r.cwd, d)
 	}
 	// The plugin's env, under the declaration's and the unit's.
+	var allowed []string
+	own := model.Env{}
+	if d := t.Package.Decl; d != nil {
+		for k, v := range d.Env {
+			text, err := expr.EvalText(v.Text, s)
+			if err != nil {
+				return fmt.Errorf("env.%s: %w", k, err)
+			}
+			own[k] = model.EnvValue{Text: text, File: v.File}
+		}
+		allowed = append(allowed, d.Pass...)
+	}
+	maps.Copy(own, r.env)
 	env := map[string]model.EnvValue{}
 	for k, v := range up.Env {
 		text, err := expr.EvalText(v.Text, ps)
@@ -90,19 +123,8 @@ func (e *engine) resolvePlugin(inst *instance, r *resolved, s *expr.Scope) error
 		}
 		env[k] = model.EnvValue{Text: text, File: v.File}
 	}
-	var allowed []string
-	if d := t.Package.Decl; d != nil {
-		for k, v := range d.Env {
-			text, err := expr.EvalText(v.Text, s)
-			if err != nil {
-				return fmt.Errorf("env.%s: %w", k, err)
-			}
-			env[k] = model.EnvValue{Text: text, File: v.File}
-		}
-		allowed = append(allowed, d.Pass...)
-	}
-	maps.Copy(env, r.env)
-	r.env = env
+	maps.Copy(env, own)
+	r.env, pu.env = env, own
 	allowed = append(allowed, u.Pass...)
 	r.pass = map[string]string{}
 	for _, kv := range e.opts.Environ {
@@ -168,6 +190,92 @@ func (e *engine) pluginHash(dir string) (string, error) {
 	return h, nil
 }
 
+// StatusUnits runs status of the units: the plugin's status task for a
+// unit whose plugin has one, without the unit's lock and with its record
+// to read, and otherwise what the record says: up, pending, or absent,
+// with the last run and the outputs.
+func StatusUnits(ctx context.Context, opts Options) (*Result, error) {
+	e, err := open(opts, "status", "")
+	if err != nil {
+		return nil, err
+	}
+	if err := e.statusPass(ctx, opts.Units); err != nil {
+		e.fail("", err)
+	}
+	outcome := map[int]string{0: success, 1: failure, 2: skipped}[e.exit]
+	e.close(outcome, nil)
+	return e.result(), nil
+}
+
+func (e *engine) statusPass(ctx context.Context, patterns []string) error {
+	e.passMu.Lock()
+	e.pass = pass{units: patterns, noDeps: true}
+	e.insts, e.byUnit = nil, map[string][]*instance{}
+	err := e.selectUnits(false)
+	if err == nil {
+		e.previewQuiet()
+	}
+	insts := slices.Clone(e.insts)
+	e.passMu.Unlock()
+	if err != nil {
+		return err
+	}
+	if len(insts) == 0 {
+		e.say("run", "", "no units")
+	}
+	for _, inst := range insts {
+		if !e.sel.has(inst) {
+			continue
+		}
+		if t := inst.def.Target; t != nil && t.Kind == model.TargetPlugin && t.Package.Plugin.Tasks["status"] != nil {
+			r, err := e.resolve(inst, false)
+			if err != nil {
+				e.fail(inst.address, err)
+				continue
+			}
+			run := &pluginRun{name: t.Package.Name, dir: r.plugin.dir, pass: slices.Sorted(maps.Keys(r.pass)), env: r.plugin.env,
+				requires: t.Package.Plugin.Requires, inputs: t.Package.Plugin.Inputs, stateDir: r.plugin.tool}
+			if inst.record != nil {
+				run.state = programState(inst.record)
+			}
+			if res := e.callTask(ctx, "status", t.Package.Plugin.Tasks["status"], inst.dir, r.plugin.inputs,
+				call{unit: inst, plugin: run}); res.outcome == failure {
+				e.exit = max(e.exit, 1)
+			}
+			continue
+		}
+		switch rec := inst.record; {
+		case rec == nil || rec.Tombstone != nil:
+			e.say("unit", inst.address, "absent")
+		case rec.Pending != nil:
+			e.say("unit", inst.address, "pending: %s of run %s did not finish", rec.Pending.Op, rec.Pending.Run)
+		default:
+			e.say("unit", inst.address, "up, from run %s at %s", rec.Run, rec.Updated)
+			if len(rec.Outputs) > 0 {
+				e.say("unit", inst.address, "outputs: %s", expr.JSON(rec.Outputs))
+			}
+		}
+	}
+	return nil
+}
+
+// toolMoved stops a unit whose tool keeps state in tool/ while its input
+// backend names another place: that backend is empty, as terraform init
+// refuses a backend that changed without -migrate-state.
+func (e *engine) toolMoved(inst *instance, r *resolved) error {
+	if r.plugin == nil || r.plugin.tool == "" {
+		return nil
+	}
+	if b := r.plugin.inputs["backend"]; b == nil || b == "" {
+		return nil
+	}
+	if ents, err := os.ReadDir(r.plugin.tool); err != nil || len(ents) == 0 {
+		return nil
+	}
+	short := e.short(inst.address)
+	return fmt.Errorf("the tool's state is still in tool/ while input backend names another place; move it with opstruss exec %s -- <the tool's command that moves state>, then opstruss state rm %s --tool", short, short)
+}
+
 // pluginPlan is what a plugin's plan wrote to $OPSTRUSS_PLAN.
 type pluginPlan struct {
 	Changes []map[string]any `json:"changes"`
@@ -179,10 +287,7 @@ type pluginPlan struct {
 // planPlugin runs the plan of a plugin for inst under its lock, with the
 // work directory that up of the same turn finds again.
 func (e *engine) planPlugin(ctx context.Context, inst *instance, r *resolved, rec *state.Record) (*pluginPlan, error) {
-	u := &plugin.Unit{Address: inst.address, Workdir: e.workdir(inst.address)}
-	if rec != nil {
-		u.StateKey, u.State = rec.StateKey, programState(rec)
-	}
+	u := e.unitOf(inst, r, rec)
 	out := &lineWriter{e: e, addr: inst.address, task: "plan", stream: "stdout"}
 	errw := &lineWriter{e: e, addr: inst.address, task: "plan", stream: "stderr"}
 	defer out.flush()

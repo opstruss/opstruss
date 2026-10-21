@@ -266,7 +266,7 @@ func (e *engine) downContract(inst *instance, r *resolved) *state.Down {
 		rel = r.cwd
 	}
 	d := &state.Down{Run: cmdValue(*r.down), Shell: r.shell, Dir: filepath.ToSlash(rel), Plugin: e.pluginOf(r),
-		Pass: r.fingerprints(), Timeout: inst.def.Timeout}
+		Tool: r.plugin != nil && r.plugin.tool != "", Pass: r.fingerprints(), Timeout: inst.def.Timeout}
 	for k, v := range r.env {
 		if v.File {
 			if d.EnvFiles == nil {
