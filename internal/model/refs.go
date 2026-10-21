@@ -22,7 +22,7 @@ var planFacts = []string{"project", "os", "arch", "host"}
 
 // place is where an expression is written, which decides what it may read.
 type place struct {
-	kind  string // unit, cond, local, task, check, output
+	kind  string // unit, until, cond, local, task, check, output
 	each  bool
 	task  *Task
 	steps map[string]bool
@@ -30,6 +30,7 @@ type place struct {
 
 var readable = map[string][]string{
 	"unit":   {"inputs", "locals", "units", "stack", "each", "secrets", "opstruss"},
+	"until":  {"inputs", "locals", "units", "stack", "each", "secrets", "opstruss", "outputs"},
 	"cond":   {"inputs", "locals", "units", "stack", "each", "opstruss"},
 	"local":  {"inputs", "locals", "stack", "secrets", "opstruss"},
 	"task":   {"inputs", "locals", "units", "tasks", "steps", "secrets", "stack", "each", "event", "opstruss"},
@@ -38,7 +39,7 @@ var readable = map[string][]string{
 }
 
 var placeNames = map[string]string{
-	"unit": "a unit", "cond": "if and for_each of a unit", "local": "locals",
+	"unit": "a unit", "until": "retry.until of a unit", "cond": "if and for_each of a unit", "local": "locals",
 	"task": "a task", "check": "failed_when, changed_when, and retry.until", "output": "project outputs",
 }
 
@@ -121,7 +122,7 @@ func (c *checker) fact(path []string, name string, r expr.Ref, pl place) {
 		c.add(path, "opstruss has no fact %s (in ${{ %s }})", name, r.Expr)
 	case (pl.kind == "cond" || pl.kind == "local") && !slices.Contains(planFacts, name):
 		c.add(path, "%s read only facts known at plan, %s; not opstruss.%s (in ${{ %s }})", placeNames[pl.kind], "opstruss.project, .os, .arch, and .host", name, r.Expr)
-	case pl.kind == "unit" && slices.Contains([]string{"cwd", "artifacts", "temp", "state_key", "reason"}, name):
+	case (pl.kind == "unit" || pl.kind == "until") && slices.Contains([]string{"cwd", "artifacts", "temp", "state_key", "reason"}, name):
 		c.add(path, "a unit cannot read opstruss.%s, which changes with each run or place (in ${{ %s }})", name, r.Expr)
 	case (pl.kind == "task" || pl.kind == "check") && (name == "state_key" || name == "reason"):
 		c.add(path, "opstruss.%s is only in a task that a unit uses (in ${{ %s }})", name, r.Expr)
@@ -217,10 +218,11 @@ func (c *checker) references() {
 		pl := place{kind: "unit", each: u.ForEach != nil}
 		var deps []string
 		for key, v := range map[string]any{"with": u.With, "env": envValues(u.Env), "run": argv(u.Run),
-			"service": argv(u.Service), "down": argv(u.Down), "revision": u.Revision, "requires": requiresValue(u.Requires)} {
+			"service": argv(u.Service), "down": argv(u.Down), "dir": u.Dir, "revision": u.Revision, "requires": requiresValue(u.Requires)} {
 			deps = append(deps, c.refs(at(path, key), v, pl)...)
 		}
 		deps = append(deps, c.refs(at(path, "stdin", "value"), stdinValue(u.Stdin), pl)...)
+		deps = append(deps, c.refs(at(path, "retry", "until"), retryUntil(u.Retry), place{kind: "until", each: u.ForEach != nil})...)
 		deps = append(deps, c.refs(at(path, "if"), condition(u.If), place{kind: "cond", each: u.ForEach != nil})...)
 		deps = append(deps, c.refs(at(path, "for_each"), u.ForEach, place{kind: "cond"})...)
 		for _, n := range u.Needs {

@@ -34,6 +34,16 @@ stderr '^opstruss.yaml:4:5: units.site.run: there is no unit db \(in \$\{\{ unit
 stdout '"valid": false'
 stdout '"path": "units.site.run"'
 
+# dir and retry.until of a unit are checked like its other keys, and the
+# units they read come first
+cp unitkeys.yaml opstruss.yaml
+exec opstruss explain
+stdout '^order:\n  - zone\n  - app\n  - web$'
+cp badkeys.yaml opstruss.yaml
+! exec opstruss validate
+stderr '^opstruss.yaml:5:5: units.app.dir: there is no unit nope \(in \$\{\{ units.nope.outputs.dir \}\}\)$'
+stderr '^opstruss.yaml:8:7: units.app.retry.until: retry.until of a unit cannot read tasks '
+
 -- opstruss.yaml --
 name: app
 include: [tasks/*.yaml]
@@ -61,6 +71,32 @@ name: app
 units:
   site:
     run: [deploy, "${{ units.db.outputs.url }}"]
+-- unitkeys.yaml --
+name: app
+units:
+  app:
+    run: ["true"]
+    dir: ${{ units.zone.outputs.dir }}
+  web:
+    run: [./check.sh]
+    outputs:
+      ready: {from: stdout}
+    retry:
+      attempts: 2
+      until: ${{ outputs.ready == 'yes' && units.zone.outputs.dir != '' }}
+  zone:
+    run: [pwd]
+    outputs:
+      dir: {from: stdout}
+-- badkeys.yaml --
+name: app
+units:
+  app:
+    run: ["true"]
+    dir: ${{ units.nope.outputs.dir }}
+    retry:
+      attempts: 2
+      until: ${{ tasks.x.outcome == 'success' }}
 -- tasks/release.yaml --
 tasks:
   release:
