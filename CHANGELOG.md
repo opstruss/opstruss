@@ -110,6 +110,16 @@ minor release can change what a project, a component, or a plugin relies on.
   unit's plugin without the unit's lock, with its record to read, and for
   other units says what the record holds: up with its last run and
   outputs, pending, or absent.
+- `opstruss init` sets up the project in its directory, adding only what
+  is missing: `opstruss.yaml` with `opstruss:` and a `name` made from the
+  directory's name (or `--name`), `.opstruss/` in `.gitignore`, and a rule
+  in `.sops.yaml` for the `_meta` of every stack. The rule goes after the
+  rules already there, which sops tries first, and names the operator's
+  age key, from `$SOPS_AGE_KEY` or the file sops reads
+  (`$SOPS_AGE_KEY_FILE`, or `sops/age/keys.txt` in the user's
+  configuration directory), where init makes one when there is none. With
+  `--stack`, it also makes that stack's `_meta`; `--json` prints what it
+  wrote.
 - `plan` exits 1 when a unit cannot be planned; a unit that another run
   holds still leaves it at 0.
 - `plan` fails a unit whose `requires:` names a program that is not in

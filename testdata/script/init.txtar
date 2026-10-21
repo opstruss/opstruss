@@ -1,0 +1,155 @@
+# opstruss init sets up a project, adding only what is missing: opstruss.yaml,
+# .opstruss/ in .gitignore, and a rule in .sops.yaml for the _meta of every
+# stack, with an age key in the file sops reads when there is none.
+
+env HOME=$WORK/home
+env SOPS_AGE_KEY_FILE=$WORK/age/keys.txt
+
+# a new project takes its name from the directory
+mkdir 'My_App 2'
+exec opstruss -C 'My_App 2' init
+stdout '^wrote opstruss.yaml$'
+stdout '^wrote .gitignore$'
+stdout '^wrote .sops.yaml$'
+stdout '^made the age key age1[a-z0-9]+ in .*/age/keys.txt; back it up'
+cmp 'My_App 2/opstruss.yaml' want/opstruss.yaml
+cmp 'My_App 2/.gitignore' want/gitignore
+exec sh -c 'sed "s/age1[a-z0-9]*/AGE1/" "My_App 2/.sops.yaml"'
+cmp stdout want/sops.yaml
+exec sh -c 'grep -q "age: $(sed -n "s/^# public key: //p" "$SOPS_AGE_KEY_FILE")" "My_App 2/.sops.yaml"'
+grep '^AGE-SECRET-KEY-1' age/keys.txt
+
+# sops wraps a _meta with the rule and opens it with the key
+cd 'My_App 2'
+stdin $WORK/meta.json
+exec sops encrypt --filename-override dev/_meta --input-type json --output-type json --encrypted-regex '^key$'
+cp stdout meta.enc
+grep '"key": "ENC\[AES256_GCM' meta.enc
+grep '"project": "x"' meta.enc
+stdin meta.enc
+exec sops decrypt --filename-override dev/_meta --input-type json --output-type json
+stdout '"key": "a2V5"'
+rm meta.enc
+cd $WORK
+
+# init again changes nothing, and --name only names a new project
+exec opstruss -C 'My_App 2' init
+stdout '^nothing to do: the project is set up$'
+cmp 'My_App 2/opstruss.yaml' want/opstruss.yaml
+! exec opstruss -C 'My_App 2' init --name other
+stderr 'already has opstruss.yaml'
+
+# a name that cannot come from the directory comes from --name
+mkdir 123
+! exec opstruss -C 123 init
+stderr 'cannot make a project name from "123"; give one with --name'
+! exists 123/opstruss.yaml
+! exec opstruss -C 123 init --name Bad
+stderr '--name Bad'
+exec opstruss -C 123 init --name ops
+grep '^name: ops$' 123/opstruss.yaml
+stdout 'the rule for _meta uses the age key age1'
+! stdout 'made the age key'
+
+# a rule of the user's stays first, with its comments; init adds its own at
+# the end for the _meta that no rule matches, and leaves .gitignore alone
+# when it already ignores .opstruss
+mkdir mine
+cp mine.sops.yaml mine/.sops.yaml
+cp mine.gitignore mine/.gitignore
+exec opstruss -C mine init --name mine
+stdout '^wrote .sops.yaml$'
+! stdout 'wrote .gitignore'
+exec sh -c 'sed "s/age1[a-z0-9]*/AGE1/" mine/.sops.yaml'
+cmp stdout want/mine.sops.yaml
+cmp mine/.gitignore mine.gitignore
+
+# a rule that already matches every _meta is left alone, so no age key is
+# needed; a .gitignore without a final newline gets one
+mkdir kms
+cp kms.sops.yaml kms/.sops.yaml
+exec sh -c 'printf dist/ > kms/.gitignore'
+env SOPS_AGE_KEY_FILE=$WORK/none/keys.txt
+exec opstruss -C kms init --name kms
+! stdout 'sops'
+! exists none/keys.txt
+cmp kms/.sops.yaml kms.sops.yaml
+cmp kms/.gitignore want/nonl.gitignore
+
+# without $SOPS_AGE_KEY_FILE, the key goes where sops reads it; an identity
+# in $SOPS_AGE_KEY is used instead of a new one
+env SOPS_AGE_KEY_FILE=
+mkdir p1 p2 p3
+env HOME=$WORK/home1
+exec opstruss -C p1 init --name one
+[darwin] exists 'home1/Library/Application Support/sops/age/keys.txt'
+[linux] exists home1/.config/sops/age/keys.txt
+env XDG_CONFIG_HOME=$WORK/xdg
+exec opstruss -C p2 init --name two
+exists xdg/sops/age/keys.txt
+env XDG_CONFIG_HOME=
+env HOME=$WORK/home2
+exec sh -c 'SOPS_AGE_KEY="$(cat $WORK/age/keys.txt)" opstruss -C p3 init --name three'
+stdout 'the rule for _meta uses the age key'
+! exists home2
+
+# --stack also makes that stack's _meta; --json says what changed
+env HOME=$WORK/home
+env SOPS_AGE_KEY_FILE=$WORK/age/keys.txt
+mkdir stacks
+cp stacks.yaml stacks/opstruss.yaml
+exec opstruss -C stacks init --stack dev --json
+stdout '"wrote": \['
+stdout '"\.sops\.yaml"'
+stdout '"dev/_meta"'
+stdout '"recipient": "age1'
+stdout '"created": false'
+exec opstruss -C stacks state pull _meta --stack dev
+stdout '"project": "stacks"'
+! exists stacks/.opstruss/state/prod/_meta
+exec opstruss -C stacks init --stack dev
+stdout 'nothing to do'
+! exec opstruss -C stacks init --stack qa
+stderr 'qa'
+
+-- meta.json --
+{"version": 1, "project": "x", "key": "a2V5"}
+-- want/opstruss.yaml --
+opstruss: "0.1"
+name: my_app-2
+-- want/gitignore --
+.opstruss/
+-- want/sops.yaml --
+creation_rules:
+  # The data key of each OpsTruss stack, in <stack>/_meta.
+  - path_regex: (^|/)_meta$
+    age: AGE1
+-- mine.sops.yaml --
+# Keys of the team.
+creation_rules:
+  # Files of the apps.
+  - path_regex: \.enc\.yaml$
+    age: age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq # ops
+-- want/mine.sops.yaml --
+# Keys of the team.
+creation_rules:
+  # Files of the apps.
+  - path_regex: \.enc\.yaml$
+    age: AGE1 # ops
+  # The data key of each OpsTruss stack, in <stack>/_meta.
+  - path_regex: (^|/)_meta$
+    age: AGE1
+-- mine.gitignore --
+node_modules/
+/.opstruss
+-- kms.sops.yaml --
+creation_rules:
+  - kms: arn:aws:kms:eu-west-1:111122223333:key/ops
+-- want/nonl.gitignore --
+dist/
+.opstruss/
+-- stacks.yaml --
+name: stacks
+stacks:
+  dev: {}
+  prod: {}
