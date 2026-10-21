@@ -2,7 +2,9 @@ package model
 
 import (
 	"cmp"
+	"fmt"
 	"maps"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"slices"
@@ -48,19 +50,30 @@ var keywords = func() map[string]bool {
 	return k
 }()
 
+// checker collects the problems of a project, or of a plugin file when
+// plugin is set; then paths are in doc, and its tasks read only their
+// inputs and steps.
 type checker struct {
-	p     *Project
-	probs Problems
+	p      *Project
+	plugin *Plugin
+	doc    *document
+	pkgs   map[string]*Package // read packages, by directory
+	probs  Problems
 }
 
 func (c *checker) add(path []string, format string, args ...any) {
+	if c.doc != nil {
+		c.probs = append(c.probs, c.doc.problem(path, format, args...))
+		return
+	}
 	c.probs = append(c.probs, c.p.problem(path, format, args...))
 }
 
 func at(path []string, more ...string) []string { return append(slices.Clone(path), more...) }
 
 func (p *Project) check() Problems {
-	c := &checker{p: p}
+	p.Packages = map[string]*Package{}
+	c := &checker{p: p, pkgs: map[string]*Package{}}
 	c.root()
 	c.uses()
 	c.stacks()
@@ -109,21 +122,37 @@ func (c *checker) uses() {
 		case strings.HasPrefix(name, "x-"):
 			c.add(path, "names in uses: do not start with x-")
 		}
-		c.environment(path, c.p.Uses[name].Env, c.p.Uses[name].Pass)
-		src := c.p.Uses[name].Source
+		decl := c.p.Uses[name]
+		c.environment(path, decl.Env, decl.Pass)
+		src := decl.Source
+		var pkg *Package
 		switch {
-		case strings.HasPrefix(src, "./") || strings.HasPrefix(src, "../"):
-		case strings.HasPrefix(src, "opstruss."):
-			if !slices.Contains(BuiltinTasks, strings.TrimPrefix(src, "opstruss.")) {
-				c.add(path, "there is no built-in task %s", strings.TrimPrefix(src, "opstruss."))
+		case localPath(src):
+			var err error
+			if pkg, err = c.pkg(name, decl, filepath.Join(c.p.DirOf("uses."+name), src)); err != nil {
+				c.add(path, "%v", err)
+				continue
 			}
+			c.packageNames(path, pkg)
+		case strings.HasPrefix(src, "opstruss."):
+			if Builtin(strings.TrimPrefix(src, "opstruss.")) == nil {
+				c.add(path, "there is no built-in task %s", strings.TrimPrefix(src, "opstruss."))
+				continue
+			}
+			pkg = &Package{Name: name, Decl: decl, Builtin: strings.TrimPrefix(src, "opstruss.")}
 		case strings.HasPrefix(src, "github.com/"):
 			if !gitSource.MatchString(src) {
 				c.add(path, "a git source is github.com/opstruss/<repo>[/<path>]@<ref>")
+			} else {
+				c.add(path, "git sources are not supported yet")
 			}
+			continue
 		default:
 			c.add(path, "a source is ./<path>, ../<path>, github.com/opstruss/<repo>@<ref>, or opstruss.<task>")
+			continue
 		}
+		c.declaredWith(path, pkg)
+		c.p.Packages[name] = pkg
 	}
 }
 
@@ -151,6 +180,9 @@ const scriptExpr = "${{ }} is not allowed in a script; pass values through env:,
 // environment rejects env: and pass: on the variables of the program
 // contract.
 func (c *checker) environment(path []string, env Env, pass []string) {
+	if c.plugin != nil && len(pass) > 0 {
+		c.add(at(path, "pass"), "pass: is not in %s: a plugin asks for variables with env:, and the project lets them through with pass:", PluginFile)
+	}
 	for _, k := range slices.Sorted(maps.Keys(env)) {
 		if ReservedEnv(k) {
 			c.add(at(path, "env", k), "OPSTRUSS_ and INPUT_ variables come from OpsTruss; env: cannot set them")
@@ -202,6 +234,11 @@ func (c *checker) units() {
 				c.add(at(path, "generates"), "generates is for run units and units that use a task")
 			}
 		}
+		if u.Uses != "" {
+			c.unitUses(path, name, u)
+		} else if u.With != nil {
+			c.add(at(path, "with"), "with is for units that use a plugin, task, or component")
+		}
 		if len(u.Outputs) > 0 && u.Run == nil {
 			c.add(at(path, "outputs"), "outputs: is for run units; other units get their outputs from what they run")
 		}
@@ -225,6 +262,27 @@ func (c *checker) units() {
 			c.task(tp, u.Tasks[tn], false)
 		}
 	}
+}
+
+// unitUses finds what a unit uses and checks the inputs it gives.
+func (c *checker) unitUses(path []string, name string, u *Unit) {
+	var t *Target
+	var err error
+	if localPath(u.Uses) {
+		var pkg *Package
+		if pkg, err = c.pkg(u.Uses, nil, filepath.Join(c.p.DirOf("units."+name), u.Uses)); err == nil {
+			c.packageNames(at(path, "uses"), pkg)
+			t, err = unitTarget(u.Uses, pkg)
+		}
+	} else {
+		t, err = c.p.resolve(u.Uses, true)
+	}
+	if err != nil {
+		c.add(at(path, "uses"), "%v", err)
+		return
+	}
+	u.Target = t
+	c.with(at(path, "with"), at(path, "uses"), t, u.With)
 }
 
 func (c *checker) tasks() {
@@ -268,6 +326,7 @@ func (c *checker) task(path []string, t *Task, project bool) {
 		kinds++
 	}
 	c.hints(path, t.Calls)
+	c.calls(path, t.Calls)
 	switch {
 	case len(t.Calls) > 1:
 		c.add(path, "a task calls one task; found %s", callNames(t.Calls))
@@ -300,6 +359,9 @@ func (c *checker) task(path []string, t *Task, project bool) {
 		}
 	}
 	for i, n := range t.Needs {
+		if c.plugin != nil {
+			break // pluginRules rejects needs
+		}
 		np := at(path, "needs", strconv.Itoa(i))
 		dep := c.p.Tasks[n]
 		if dep == nil {
@@ -326,6 +388,35 @@ func (c *checker) hints(path []string, calls Calls) {
 	}
 }
 
+// calls finds what each call of a task by name runs and checks its
+// inputs.
+func (c *checker) calls(path []string, calls Calls) {
+	for _, name := range slices.Sorted(maps.Keys(calls)) {
+		if _, hinted := ansible[name]; hinted {
+			continue
+		}
+		t, err := c.call(name)
+		if err != nil {
+			c.add(at(path, name), "%v", err)
+			continue
+		}
+		c.with(at(path, name), at(path, name), t, calls[name])
+	}
+}
+
+// call finds what a call runs; a plugin, which has no uses:, calls only
+// built-in tasks.
+func (c *checker) call(name string) (*Target, error) {
+	if c.plugin == nil {
+		return c.p.Resolve(name)
+	}
+	short := strings.TrimPrefix(name, "opstruss.")
+	if Builtin(short) == nil {
+		return nil, fmt.Errorf("a plugin task calls only built-in tasks; there is no built-in task %s", name)
+	}
+	return &Target{Name: name, Kind: TargetBuiltin, Task: short}, nil
+}
+
 func ansibleHint(key string) (string, bool) {
 	instead, ok := ansible[key]
 	switch {
@@ -347,6 +438,10 @@ func (c *checker) steps(path []string, steps []*Step, ids map[string]bool) {
 			}
 		}
 		c.hints(sp, s.Calls)
+		c.calls(sp, s.Calls)
+		if c.plugin != nil && s.Task != "" {
+			c.add(at(sp, "task"), "a plugin task calls no task: chains belong to the project, and a plugin that needs one brings a component")
+		}
 		switch {
 		case len(s.Calls) > 1:
 			c.add(sp, "a step calls one task; found %s", callNames(s.Calls))
@@ -433,9 +528,6 @@ func unitOf(addr string) string {
 // the schema already.
 func (c *checker) unsupported() {
 	p := c.p
-	if len(p.Uses) > 0 {
-		c.add([]string{"uses"}, "not supported yet")
-	}
 	if len(p.Secrets) > 0 {
 		c.add([]string{"secrets"}, "not supported yet")
 	}
@@ -453,7 +545,7 @@ func (c *checker) unsupported() {
 	}
 	for _, name := range slices.Sorted(maps.Keys(p.Units)) {
 		u, path := p.Units[name], []string{"units", name}
-		if u.Uses != "" {
+		if u.Target != nil {
 			c.add(at(path, "uses"), "units that use a plugin, task, or component are not supported yet")
 		}
 		if u.Service != nil {
@@ -492,7 +584,10 @@ func (c *checker) unsupportedTask(path []string, t *Task) {
 
 func (c *checker) unsupportedCalls(path []string, calls Calls) {
 	for _, name := range slices.Sorted(maps.Keys(calls)) {
-		if _, hinted := ansible[name]; !hinted {
+		if _, hinted := ansible[name]; hinted {
+			continue
+		}
+		if _, err := c.p.Resolve(name); err == nil {
 			c.add(at(path, name), "calling a task by name is not supported yet; write run, or task: for a task of this project")
 		}
 	}

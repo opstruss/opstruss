@@ -300,7 +300,8 @@ func TestRules(t *testing.T) {
 		{"name: app\ntasks:\n  t:\n    run: [x]\n    needs: [n]\n  n:\n    inputs:\n      v: {type: string, required: true}\n    run: [y]\n", "task n needs input v"},
 		{"name: app\ntasks:\n  t:\n    http: {url: x}\n", "calling a task by name is not supported yet"},
 		{"name: app\ntasks:\n  t:\n    run: [x]\n    on: {every: 30s}\n", "triggers are not supported yet"},
-		{"name: app\nuses:\n  d: ./plugins/d\n", "opstruss.yaml:2:1: uses: not supported yet"},
+		{"name: app\nuses:\n  d: ./plugins/d\n", "opstruss.yaml:3:3: uses.d: plugins/d does not exist"},
+		{"name: app\nuses:\n  d: github.com/opstruss/plugins/d@v1\n", "git sources are not supported yet"},
 		{"name: app\nuses:\n  http: ./plugins/d\n", "http is a built-in task"},
 		{"name: app\nuses:\n  d: github.com/other/d@v1\n", "a git source is github.com/opstruss/<repo>[/<path>]@<ref>"},
 		{"name: app\nuses:\n  d: github.com/opstruss/plugins/d\n", "a git source is github.com/opstruss/<repo>[/<path>]@<ref>"},
@@ -458,4 +459,88 @@ func mustRead(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return string(b)
+}
+
+func TestUses(t *testing.T) {
+	plugin := "name: a\ninputs:\n  file: {type: string, required: true}\ntasks:\n  up:\n    run: [./up.sh]\n  exec:\n    run: [./exec.sh]\n  build:\n    inputs:\n      tag: {type: string}\n    run: [./build.sh]\n"
+	files := func(project string, more ...string) map[string]string {
+		m := map[string]string{"opstruss.yaml": "name: app\nuses:\n  a: ./plugins/a\n  fetch: opstruss.http\n" + project,
+			"plugins/a/opstruss.plugin.yaml": plugin}
+		for i := 0; i+1 < len(more); i += 2 {
+			m[more[i]] = more[i+1]
+		}
+		return m
+	}
+	gh := func(tasks string) []string {
+		return []string{"plugins/gh/opstruss.plugin.yaml", "name: gh\ninputs:\n  repo: {type: string}\ntasks:\n" + tasks}
+	}
+	tests := []struct {
+		files map[string]string
+		want  string
+	}{
+		// what a unit uses
+		{files("units:\n  db:\n    uses: a\n    with: {file: x.yaml}\n"), "units that use a plugin, task, or component are not supported yet"},
+		{files("units:\n  db:\n    uses: ./plugins/a\n    with: {file: x.yaml}\n"), "units that use a plugin, task, or component are not supported yet"},
+		{files("units:\n  img:\n    uses: a.build\n    with: {file: x, tag: v1}\n"), "units that use a plugin, task, or component are not supported yet"},
+		{files("units:\n  img:\n    uses: build\ntasks:\n  build:\n    run: [x]\n"), "units that use a plugin, task, or component are not supported yet"},
+		{files("units:\n  db:\n    uses: nope\n"), "opstruss.yaml:7:5: units.db.uses: there is no plugin, component, or task nope"},
+		{files("units:\n  db:\n    uses: a.up\n"), "a.up runs through a unit that uses a; write uses: a"},
+		{files("units:\n  db:\n    uses: a.x.y\n"), "names of three parts or more are reserved"},
+		{files("units:\n  db:\n    uses: b.x\n"), "uses: declares no b"},
+		{files("units:\n  db:\n    uses: a\n"), "a needs input file"},
+		{files("units:\n  db:\n    uses: a\n    with: {file: x, nope: 1}\n"), "units.db.with.nope: a has no input nope"},
+		{files("units:\n  db:\n    run: [x]\n    with: {file: x}\n"), "with is for units that use a plugin, task, or component"},
+		{files("  gh: ./plugins/gh\nunits:\n  db:\n    uses: gh\n", gh("  comment:\n    run: [x]\n")...), "plugin gh has no up, so a unit uses one of its tasks, as uses: gh.<task>"},
+		// calls of tasks by name
+		{files("tasks:\n  t:\n    steps:\n      - fetch: {url: x}\n      - http: {url: x}\n      - opstruss.log: {msg: hi}\n      - a.build: {file: x}\n"), "calling a task by name is not supported yet"},
+		{files("tasks:\n  t:\n    nope: {}\n"), "tasks.t.nope: there is no task nope"},
+		{files("tasks:\n  t:\n    http: {bogus: 1}\n"), "tasks.t.http.bogus: http has no input bogus"},
+		{files("tasks:\n  t:\n    http: {}\n"), "tasks.t.http: http needs input url"},
+		{files("tasks:\n  t:\n    a.up: {}\n"), "a.up runs only through a unit: write uses: a in a unit, then opstruss up <unit> or task: up"},
+		{files("tasks:\n  t:\n    a.exec: {}\n"), "a.exec is a hook that only opstruss exec calls"},
+		{files("tasks:\n  t:\n    a: {}\n"), "a is not a task; call a task of it, as a.<task>"},
+		{files("tasks:\n  t:\n    t2: {}\n  t2:\n    run: [x]\n"), "t2 is a task of this project; call it with task: t2"},
+		{files("tasks:\n  t:\n    steps:\n      - http: {url: \"${{ inputs.nope }}\"}\n"), "there is no input nope"},
+		// declarations
+		{files("  b:\n    source: ./plugins/a\n    with: {tag: v1, nope: 1}\n"), "uses.b.with.nope: b has no input nope"},
+		{files("", "plugins/a/components/build/opstruss.yaml", "name: build\n"), "a has a task and a component named build"},
+		{files("  infra: ./vendor/infra\nunits:\n  dns:\n    uses: infra.dns\n", "vendor/infra/components/dns/opstruss.yaml", "name: dns\n"), "units that use a plugin, task, or component are not supported yet"},
+		{files("  empty: ./vendor/empty\n", "vendor/empty/README.md", "x"), "vendor/empty has no opstruss.plugin.yaml, opstruss.yaml, or components/"},
+		// the rules of a plugin file
+		{files("  gh: ./plugins/gh\n", gh("  status:\n    run: [x]\n")...), "plugins/gh/opstruss.plugin.yaml:5:3: tasks.status: status runs only through a unit"},
+		{files("  gh: ./plugins/gh\n", gh("  migrate:\n    run: [x]\n")...), "migrate is reserved"},
+		{files("  gh: ./plugins/gh\n", gh("  c:\n    run: [x]\n    pass: [GH_TOKEN]\n")...), "pass: is not in opstruss.plugin.yaml"},
+		{files("  gh: ./plugins/gh\n", gh("  c:\n    inputs:\n      repo: {type: string}\n    run: [x]\n")...), "repo is an input of the plugin already"},
+		{files("  gh: ./plugins/gh\n", gh("  c:\n    needs: [d]\n    run: [x]\n  d:\n    run: [y]\n")...), "needs is for the tasks of a project"},
+		{files("  gh: ./plugins/gh\n", gh("  c:\n    steps:\n      - task: d\n  d:\n    run: [y]\n")...), "a plugin task calls no task"},
+		{files("  gh: ./plugins/gh\n", gh("  c:\n    approval: auto\n    run: [x]\n")...), "approval: auto is for the project to choose"},
+		{files("  gh: ./plugins/gh\n", gh("  c:\n    run: [x, \"${{ units.db.outputs.x }}\"]\n")...), "a plugin task cannot read units"},
+		{files("  gh: ./plugins/gh\n", gh("  c:\n    steps:\n      - a.build: {}\n")...), "a plugin task calls only built-in tasks"},
+		{files("  gh: ./plugins/gh\n", gh("  c:\n    steps:\n      - http: {url: \"${{ inputs.repo }}\"}\n        failed_when: outputs.status == 404\n")...), ""},
+		{files("  gh: ./plugins/gh\n", "plugins/gh/opstruss.plugin.yaml", "name: gh\ninputs:\n  token: {type: string, env: GH_TOKEN}\n"), "env: of an input is for the files of the project"},
+		{files("  gh: ./plugins/gh\n", "plugins/gh/opstruss.plugin.yaml", "name: gh\ninputs:\n  force: {type: boolean}\ntasks:\n  up:\n    run: [x]\n"), "force is an argument of the tasks of a unit"},
+	}
+	for _, tt := range tests {
+		got := problems(t, write(t, tt.files), "")
+		if tt.want == "" {
+			if len(got) > 0 {
+				t.Errorf("%q: unexpected problems:\n%s", tt.files["opstruss.yaml"], strings.Join(got, "\n"))
+			}
+			continue
+		}
+		if !slices.ContainsFunc(got, func(s string) bool { return strings.Contains(s, tt.want) }) {
+			t.Errorf("%q: want %q, got:\n%s", tt.files["opstruss.yaml"], tt.want, strings.Join(got, "\n"))
+		}
+	}
+}
+
+func TestBuiltins(t *testing.T) {
+	for _, name := range BuiltinTasks {
+		if Builtin(name) == nil {
+			t.Errorf("builtin.yaml has no task %s", name)
+		}
+	}
+	if n := len(builtins()); n != len(BuiltinTasks) {
+		t.Errorf("builtin.yaml has %d tasks, BuiltinTasks %d", n, len(BuiltinTasks))
+	}
 }

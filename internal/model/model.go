@@ -201,6 +201,9 @@ type Unit struct {
 	Timeout     string             `json:"timeout,omitempty"`
 	Protect     bool               `json:"protect,omitempty"`
 	Retry       *Retry             `json:"retry,omitempty"`
+
+	// Target is what uses: names, once the project is checked.
+	Target *Target `json:"-"`
 }
 
 // Calls holds the keys of a task, step, secret source, or watch source that

@@ -19,6 +19,15 @@ minor release can change what a project, a component, or a plugin relies on.
   it is written, and that units, task calls, and locals form no cycle. It
   names the file, line, and column of each problem; `--json` prints one
   document.
+- `uses:` names local plugins (`./<path>` with `opstruss.plugin.yaml`),
+  components, directories of components, and built-in tasks under another
+  name. `opstruss validate` reads the `opstruss.plugin.yaml` of each and
+  checks it: standard tasks and hooks only in a plugin with `up`, no
+  `pass:` and no `env:` on inputs, and tasks that are one operation each,
+  which read only their inputs and steps and call only built-in tasks. It
+  also checks what each unit's `uses:` and each call of a task by name
+  stand for, and the inputs given to them. Git sources, units that use
+  something, and calls by name do not run yet.
 - `opstruss explain` prints the project of one stack as read: include files
   and stack overrides merged, each project input with where its value came
   from (`--input`, the stack, `env`, or `default`), the value of each local,

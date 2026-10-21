@@ -22,25 +22,28 @@ var planFacts = []string{"project", "os", "arch", "host"}
 
 // place is where an expression is written, which decides what it may read.
 type place struct {
-	kind  string // unit, until, cond, local, task, check, output
+	kind  string // unit, until, cond, local, task, check, plugin, plugin-check, output
 	each  bool
 	task  *Task
 	steps map[string]bool
 }
 
 var readable = map[string][]string{
-	"unit":   {"inputs", "locals", "units", "stack", "each", "secrets", "opstruss"},
-	"until":  {"inputs", "locals", "units", "stack", "each", "secrets", "opstruss", "outputs"},
-	"cond":   {"inputs", "locals", "units", "stack", "each", "opstruss"},
-	"local":  {"inputs", "locals", "stack", "secrets", "opstruss"},
-	"task":   {"inputs", "locals", "units", "tasks", "steps", "secrets", "stack", "each", "event", "opstruss"},
-	"check":  {"inputs", "locals", "units", "tasks", "steps", "secrets", "stack", "each", "event", "opstruss", "outputs"},
-	"output": {"inputs", "locals", "units", "stack", "opstruss"},
+	"unit":         {"inputs", "locals", "units", "stack", "each", "secrets", "opstruss"},
+	"until":        {"inputs", "locals", "units", "stack", "each", "secrets", "opstruss", "outputs"},
+	"cond":         {"inputs", "locals", "units", "stack", "each", "opstruss"},
+	"local":        {"inputs", "locals", "stack", "secrets", "opstruss"},
+	"task":         {"inputs", "locals", "units", "tasks", "steps", "secrets", "stack", "each", "event", "opstruss"},
+	"check":        {"inputs", "locals", "units", "tasks", "steps", "secrets", "stack", "each", "event", "opstruss", "outputs"},
+	"plugin":       {"inputs", "steps", "each", "opstruss"},
+	"plugin-check": {"inputs", "steps", "each", "opstruss", "outputs"},
+	"output":       {"inputs", "locals", "units", "stack", "opstruss"},
 }
 
 var placeNames = map[string]string{
 	"unit": "a unit", "until": "retry.until of a unit", "cond": "if and for_each of a unit", "local": "locals",
 	"task": "a task", "check": "failed_when, changed_when, and retry.until", "output": "project outputs",
+	"plugin": "a plugin task", "plugin-check": "failed_when, changed_when, and retry.until of a plugin task",
 }
 
 // refs checks the expressions in v, written at path, and returns the units
@@ -70,7 +73,7 @@ func (c *checker) refs(path []string, v any, pl place) []string {
 		}
 		switch root {
 		case "inputs":
-			if name != "" && c.p.Inputs[name] == nil && (pl.task == nil || pl.task.Inputs[name] == nil) {
+			if name != "" && !c.hasInput(name, pl) {
 				c.add(path, "there is no input %s (in ${{ %s }})", name, r.Expr)
 			}
 		case "locals":
@@ -112,6 +115,25 @@ func (c *checker) refs(path []string, v any, pl place) []string {
 		}
 	}
 	return units
+}
+
+// hasInput says whether an expression at pl reads an input that exists:
+// of its task, or of the project, or of the plugin in a plugin file.
+func (c *checker) hasInput(name string, pl place) bool {
+	switch {
+	case pl.task != nil && pl.task.Inputs[name] != nil:
+		return true
+	case c.plugin != nil:
+		return c.plugin.Inputs[name] != nil
+	}
+	return c.p.Inputs[name] != nil
+}
+
+// checkPlace is where failed_when, changed_when, and retry.until of
+// something at pl are, which also read outputs.
+func checkPlace(pl place) place {
+	pl.kind = map[string]string{"task": "check", "plugin": "plugin-check"}[pl.kind]
+	return pl
 }
 
 func (c *checker) fact(path []string, name string, r expr.Ref, pl place) {
@@ -272,8 +294,10 @@ func walkSteps(steps []*Step, fn func(*Step)) {
 
 func (c *checker) taskRefs(path []string, t *Task) {
 	pl := place{kind: "task", each: t.ForEach != nil, task: t, steps: map[string]bool{}}
-	check := pl
-	check.kind = "check"
+	if c.plugin != nil {
+		pl.kind = "plugin"
+	}
+	check := checkPlace(pl)
 	for key, v := range map[string]any{"run": argv(t.Run), "env": envValues(t.Env), "requires": requiresValue(t.Requires),
 		"if": condition(t.If), "for_each": t.ForEach} {
 		c.refs(at(path, key), v, pl)
@@ -285,6 +309,9 @@ func (c *checker) taskRefs(path []string, t *Task) {
 	c.refs(at(path, "failed_when"), condition(t.FailedWhen), check)
 	c.refs(at(path, "changed_when"), condition(t.ChangedWhen), check)
 	c.refs(at(path, "retry", "until"), retryUntil(t.Retry), check)
+	for _, name := range slices.Sorted(maps.Keys(t.Calls)) {
+		c.refs(at(path, name), t.Calls[name], pl)
+	}
 	c.stepRefs(at(path, "steps"), t.Steps, pl)
 	for _, name := range slices.Sorted(maps.Keys(t.Outputs)) {
 		c.refs(at(path, "outputs", name, "value"), t.Outputs[name].Value, pl)
@@ -297,8 +324,7 @@ func (c *checker) stepRefs(path []string, steps []*Step, pl place) {
 		sp := at(path, strconv.Itoa(i))
 		sl := pl
 		sl.each = pl.each || s.ForEach != nil
-		check := sl
-		check.kind = "check"
+		check := checkPlace(sl)
 		c.refs(at(sp, "if"), condition(s.If), sl)
 		for key, v := range map[string]any{"run": argv(s.Run), "with": s.With, "env": envValues(s.Env)} {
 			c.refs(at(sp, key), v, sl)
@@ -308,6 +334,9 @@ func (c *checker) stepRefs(path []string, steps []*Step, pl place) {
 			units[j] = u
 		}
 		c.refs(at(sp, "units"), units, sl)
+		for _, name := range slices.Sorted(maps.Keys(s.Calls)) {
+			c.refs(at(sp, name), s.Calls[name], sl)
+		}
 		c.refs(at(sp, "stdin", "value"), stdinValue(s.Stdin), sl)
 		c.refs(at(sp, "for_each"), s.ForEach, pl)
 		c.refs(at(sp, "failed_when"), condition(s.FailedWhen), check)
@@ -316,7 +345,7 @@ func (c *checker) stepRefs(path []string, steps []*Step, pl place) {
 		c.stepRefs(at(sp, "block"), s.Block, sl)
 		c.stepRefs(at(sp, "rescue"), s.Rescue, sl)
 		c.stepRefs(at(sp, "always"), s.Always, sl)
-		if s.Task != "" && c.p.Tasks[s.Task] == nil && !slices.Contains(StandardTasks, s.Task) && !c.unitTask(s.Task) {
+		if c.plugin == nil && s.Task != "" && c.p.Tasks[s.Task] == nil && !slices.Contains(StandardTasks, s.Task) && !c.unitTask(s.Task) {
 			c.add(at(sp, "task"), "there is no task %s", s.Task)
 		}
 		if s.ID != "" {

@@ -1,0 +1,72 @@
+# The inputs and outputs of the built-in tasks, written as the tasks of
+# opstruss.plugin.yaml are; internal/builtin runs them.
+command:
+  description: Run a program, from argv or a script
+  inputs:
+    argv: {type: array, items: {type: string}}
+    script: {type: string, literal: true}
+    shell: {type: string}
+    stdin: {}
+  outputs:
+    stdout: {type: string}
+    stderr: {type: string}
+    exit_code: {type: integer}
+http:
+  description: Send one HTTP request
+  inputs:
+    url: {type: string, required: true}
+    method: {type: string, default: GET}
+    headers: {type: object}
+    body: {}
+    status_code: {default: 2xx}
+    timeout: {type: string}
+    ca: {type: string}
+  outputs:
+    status: {type: integer}
+    headers: {type: object}
+    body: {}
+    tls: {type: object}
+read:
+  description: Read a file
+  inputs:
+    path: {type: string, required: true}
+    format: {type: string, enum: [text, json, yaml, lines, dotenv], default: text}
+  outputs:
+    content: {}
+write:
+  description: Write a file when its content differs
+  inputs:
+    path: {type: string, required: true}
+    content: {required: true}
+    format: {type: string, enum: [text, json, yaml, lines, dotenv], default: text}
+    mode: {type: string, pattern: '^0[0-7]{3}$'}
+  outputs:
+    path: {type: string}
+set:
+  description: Shape values without a program; its inputs are its outputs
+assert:
+  description: Stop when a condition is false
+  inputs:
+    that: {required: true}
+    msg: {type: string}
+wait:
+  description: Wait for a time, a port, or a URL
+  inputs:
+    seconds: {type: number, minimum: 0}
+    tcp: {type: string}
+    http: {type: string}
+    timeout: {type: string}
+log:
+  description: Write a message to the log and the events of the run
+  inputs:
+    msg: {required: true}
+    level: {type: string, enum: [debug, info, warn, error], default: info}
+kv:
+  description: Read or write a value kept for the stack between runs
+  inputs:
+    key: {type: string, required: true}
+    value: {}
+    ttl: {type: string}
+    expect: {}
+  outputs:
+    value: {}

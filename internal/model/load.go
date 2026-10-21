@@ -37,6 +37,9 @@ type Project struct {
 	Order []string
 	Deps  map[string][]string
 
+	// Packages are the names in uses: that stand for something.
+	Packages map[string]*Package
+
 	// doc is the merged document, for explain; origins says which file
 	// and path wrote each entry, for messages.
 	doc     map[string]any
