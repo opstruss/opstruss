@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/opstruss/opstruss/internal/expr"
 	"github.com/opstruss/opstruss/internal/graph"
@@ -101,6 +102,10 @@ func (c *checker) refs(path []string, v any, pl place) []string {
 				c.add(path, "there is no step %s before this one (in ${{ %s }})", name, r.Expr)
 			}
 		case "secrets":
+			if c.p != nil && c.p.component {
+				c.add(path, "a component reads no secrets; give it the value through one of its inputs (in ${{ %s }})", r.Expr)
+				continue
+			}
 			if r.Dynamic && len(r.Path) == 1 {
 				c.add(path, "secrets are read by name, as secrets.<name> (in ${{ %s }})", r.Expr)
 			}
@@ -149,15 +154,18 @@ func (c *checker) fact(path []string, name string, r expr.Ref, pl place) {
 	}
 }
 
-// hasOutput says whether unit u may have output k: a run unit and a unit
-// of a plugin have the outputs they declare, a plugin with outputs: tool
-// any, and other units are checked when they run.
+// hasOutput says whether unit u may have output k: a run unit, a unit of
+// a plugin, and a unit that uses a component have the outputs they
+// declare, a plugin with outputs: tool any, and other units are checked
+// when they run.
 func hasOutput(u *Unit, k string) bool {
-	switch {
+	switch t := u.Target; {
 	case u.Run != nil:
 		return u.Outputs[k] != nil
-	case u.Target != nil && u.Target.Kind == TargetPlugin && !u.Target.Package.Plugin.Outputs.Tool:
-		return u.Target.Package.Plugin.Outputs.Declared[k] != nil
+	case t != nil && t.Kind == TargetPlugin && !t.Package.Plugin.Outputs.Tool:
+		return t.Package.Plugin.Outputs.Declared[k] != nil
+	case t != nil && t.Kind == TargetComponent && t.Component != nil:
+		return t.Component.Outputs[k] != nil
 	}
 	return true
 }
@@ -223,8 +231,16 @@ func retryUntil(r *Retry) any {
 	return condition(r.Until)
 }
 
-// references checks every expression and builds the graph of units, the
-// graph of task calls, and the graph of locals.
+// unitValues are the keys of a unit whose expressions read other units.
+func unitValues(u *Unit) map[string]any {
+	return map[string]any{"with": u.With, "env": envValues(u.Env), "run": argv(u.Run), "service": argv(u.Service),
+		"down": argv(u.Down), "dir": u.Dir, "revision": u.Revision, "requires": requiresValue(u.Requires),
+		"stdin.value": stdinValue(u.Stdin), "retry.until": retryUntil(u.Retry), "if": condition(u.If), "for_each": u.ForEach}
+}
+
+// references checks every expression, and builds the graph of task calls
+// and the graph of locals; the graph of units goes through components,
+// so the project builds it once every file is checked.
 func (c *checker) references() {
 	p := c.p
 	localDeps := map[string][]string{}
@@ -245,34 +261,24 @@ func (c *checker) references() {
 		c.add([]string{"locals"}, "%v", err)
 	}
 
-	unitDeps := map[string][]string{}
 	for _, name := range slices.Sorted(maps.Keys(p.Units)) {
 		u, path := p.Units[name], []string{"units", name}
-		pl := place{kind: "unit", each: u.ForEach != nil}
-		var deps []string
-		for key, v := range map[string]any{"with": u.With, "env": envValues(u.Env), "run": argv(u.Run),
-			"service": argv(u.Service), "down": argv(u.Down), "dir": u.Dir, "revision": u.Revision, "requires": requiresValue(u.Requires)} {
-			deps = append(deps, c.refs(at(path, key), v, pl)...)
-		}
-		deps = append(deps, c.refs(at(path, "stdin", "value"), stdinValue(u.Stdin), pl)...)
-		deps = append(deps, c.refs(at(path, "retry", "until"), retryUntil(u.Retry), place{kind: "until", each: u.ForEach != nil})...)
-		deps = append(deps, c.refs(at(path, "if"), condition(u.If), place{kind: "cond", each: u.ForEach != nil})...)
-		deps = append(deps, c.refs(at(path, "for_each"), u.ForEach, place{kind: "cond"})...)
-		for _, n := range u.Needs {
-			if p.Units[n] != nil {
-				deps = append(deps, n)
+		each := u.ForEach != nil
+		for key, v := range unitValues(u) {
+			pl := place{kind: "unit", each: each}
+			switch key {
+			case "retry.until":
+				pl.kind = "until"
+			case "if":
+				pl.kind = "cond"
+			case "for_each":
+				pl = place{kind: "cond"}
 			}
+			c.refs(at(path, strings.Split(key, ".")...), v, pl)
 		}
-		unitDeps[name] = deps
 		for _, tn := range slices.Sorted(maps.Keys(u.Tasks)) {
 			c.taskRefs(at(path, "tasks", tn), u.Tasks[tn])
 		}
-	}
-	g, err := graph.Build("units", unitDeps)
-	if err != nil {
-		c.add([]string{"units"}, "%v", err)
-	} else {
-		p.Order, p.Deps = g.Order, g.Deps
 	}
 
 	calls := map[string][]string{}
@@ -418,6 +424,21 @@ func (c *checker) unitTask(name string) bool {
 // kv. A local that reads what is only known in a run, a secret, or kv()
 // without kv, stays as written.
 func (p *Project) EvalLocals(inputs map[string]any, kv func(string) (any, error)) (map[string]any, error) {
+	return p.evalLocals(p.Name, inputs, kv, false)
+}
+
+// ComponentLocals evaluates the locals of a component with its inputs, in
+// the project named project. A local that fails, as one that reads an
+// input with no value yet, fails only the expressions that read it.
+func (p *Project) ComponentLocals(project string, inputs map[string]any, kv func(string) (any, error)) map[string]any {
+	out, err := p.evalLocals(project, inputs, kv, true)
+	if err != nil {
+		return map[string]any{}
+	}
+	return out
+}
+
+func (p *Project) evalLocals(project string, inputs map[string]any, kv func(string) (any, error), lenient bool) (map[string]any, error) {
 	deps := map[string][]string{}
 	uses := map[string]*expr.Use{}
 	for name, v := range p.Locals {
@@ -458,13 +479,14 @@ func (p *Project) EvalLocals(inputs map[string]any, kv func(string) (any, error)
 		}
 		s := &expr.Scope{Dir: p.DirOf("locals." + name), KV: kv, Vars: map[string]any{
 			"inputs": inputs, "locals": out, "stack": p.StackName,
-			"opstruss": map[string]any{"project": p.Name, "os": runtime.GOOS, "arch": runtime.GOARCH, "host": hostname()},
+			"opstruss": map[string]any{"project": project, "os": runtime.GOOS, "arch": runtime.GOARCH, "host": hostname()},
 		}}
 		v, err := expr.EvalValue(p.Locals[name], s)
 		switch {
-		case err != nil && readsKV[name]:
-			// What kv() reads changes after the files are checked, so a
-			// local that fails on it fails what reads the local instead.
+		case err != nil && (readsKV[name] || lenient):
+			// What kv() reads changes after the files are checked, as the
+			// inputs of a component do during a run, so a local that fails
+			// on it fails what reads the local instead.
 			out[name] = expr.Broken(fmt.Errorf("local %s: %w", name, err))
 		case err != nil:
 			return nil, fmt.Errorf("local %s: %w", name, err)
@@ -479,7 +501,7 @@ func (p *Project) EvalLocals(inputs map[string]any, kv func(string) (any, error)
 // relative paths and file() read from.
 func (p *Project) DirOf(key string) string {
 	if o, ok := p.origins[key]; ok {
-		return filepath.Join(p.Dir, filepath.Dir(o.doc.file))
+		return filepath.Join(p.base, filepath.Dir(o.doc.file))
 	}
 	return p.Dir
 }

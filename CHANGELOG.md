@@ -26,8 +26,7 @@ minor release can change what a project, a component, or a plugin relies on.
   `pass:` and no `env:` on inputs, and tasks that are one operation each,
   which read only their inputs and steps and call only built-in tasks. It
   also checks what each unit's `uses:` and each call of a task by name
-  stand for, and the inputs given to them. Git sources and units that use
-  a component do not run yet.
+  stand for, and the inputs given to them. Git sources do not run yet.
 - A task of a plugin is called by name, as `<name>.<task>: {…}`: its
   inputs are those of the plugin and the task, filled by the call and the
   declaration's `with:`; a program in argv starts from the plugin's
@@ -65,6 +64,28 @@ minor release can change what a project, a component, or a plugin relies on.
   it away. Its definition holds the task as written, the tasks it calls,
   and the programs they name by a relative path. A task that runs `plan`,
   `up`, or `down` of units cannot be used by a unit.
+- A unit that uses a component (`uses: ./components/dns`, or
+  `<name>.<component>` from a directory of components) runs the units
+  inside at addresses under its own, such as `prod/dns/zone` and
+  `prod/site[eu]/db`, and each instance keeps a record of its own with its
+  source and inputs, which goes once nothing inside has a record. The
+  component's files are read and checked on their own: the names in its
+  `uses:` are its own, `stacks`, `secrets`, `backend`, `runtime`, and
+  `mcp` are left out, and `secrets.*` is refused, so values come in
+  through its inputs: the unit's `with:`, then their `env:` and
+  `default:`. Units outside read only the component's `outputs`, and
+  `units.<name>` also holds the outcome, changed, and plan of everything
+  inside; the graph goes through the component, so a unit depends only on
+  the units inside whose values it reads. `protect`, `approval`, `env`,
+  `pass`, and `needs` of the unit reach every unit inside, with `protect`
+  and `approval: ask` from any level, while `timeout`, `retry`, and `stop`
+  are their defaults and `if` and `for_each` make instances; keys that
+  only a program has are refused. A name on the command line or in
+  `units:` picks every unit inside a component, one instance
+  (`site[eu]`), or a unit inside (`site/db`); `moved:` moves an instance
+  with everything inside, and `removed:` decides for everything inside a
+  component unit that left the files. The tasks of a component, and
+  `moved:` and `removed:` in one, do not run yet.
 - `opstruss status [unit]...` (also `ps`) runs the `status` task of each
   unit's plugin without the unit's lock, with its record to read, and for
   other units says what the record holds: up with its last run and

@@ -48,13 +48,19 @@ func (e *engine) resolve(inst *instance, preview bool) (*resolved, error) {
 	r := &resolved{shell: u.Shell, timeout: DefaultTimeout}
 	if preview {
 		for _, v := range []any{argvOf(u.Run), argvOf(u.Down), envOf(u.Env), u.Dir, stdinOf(u.Stdin), u.Revision, anyMap(u.With)} {
-			if up := e.changing(v); up != "" {
+			if up := e.changing(v, inst.frame); up != "" {
+				r.waitFor = up
+				return r, nil
+			}
+		}
+		for f := inst.frame; f.node != nil; f = f.parent {
+			if up := e.changing(envOf(f.node.Unit.Env), f.parent); up != "" {
 				r.waitFor = up
 				return r, nil
 			}
 		}
 	}
-	s := e.scope(inst.unit, inst, inst.dir)
+	s := e.scope(inst)
 	var err error
 	if r.cmd, err = command(u.Run, s); err != nil {
 		return nil, fmt.Errorf("run: %w", err)
@@ -74,6 +80,9 @@ func (e *engine) resolve(inst *instance, preview bool) (*resolved, error) {
 		r.cwd = r.dir
 	}
 	r.env = map[string]model.EnvValue{}
+	if err := e.frameEnv(inst.frame, r.env); err != nil {
+		return nil, err
+	}
 	for k, v := range u.Env {
 		text, err := expr.EvalText(v.Text, s)
 		if err != nil {

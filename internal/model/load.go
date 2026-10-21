@@ -25,26 +25,33 @@ const DefaultStack = "default"
 
 // Project is a project read for one stack: opstruss.yaml merged with the
 // include files of the project and of the stack, with the stack's
-// overrides applied.
+// overrides applied. A component that units use is read into one too,
+// without what only a project has.
 type Project struct {
 	File
 	Dir       string
 	StackName string
 	Stack     *Stack
 
-	// Order is the units in an order where each comes after the units it
-	// reads or needs, and Deps those units for each.
+	// Order is the paths of the units that run, through the components
+	// that units use, in an order where each comes after the units it
+	// reads or needs, and Deps those units for each; Nodes holds every
+	// unit by its path. Only the project has them.
 	Order []string
 	Deps  map[string][]string
+	Nodes map[string]*Node
 
 	// Packages are the names in uses: that stand for something.
 	Packages map[string]*Package
 
 	// doc is the merged document, for explain; origins says which file
-	// and path wrote each entry, for messages.
-	doc     map[string]any
-	root    *document
-	origins map[string]origin
+	// and path wrote each entry, for messages, by its name relative to
+	// base, the directory of the project.
+	doc       map[string]any
+	root      *document
+	origins   map[string]origin
+	base      string
+	component bool
 }
 
 type origin struct {
@@ -111,7 +118,7 @@ func Load(dir, stack string) (*Project, error) {
 	case !slices.Contains(names, stack):
 		return nil, fmt.Errorf("the project has no stack %s; it has %s", stack, strings.Join(names, ", "))
 	}
-	p := &Project{Dir: dir, StackName: stack, doc: map[string]any{}, root: root, origins: map[string]origin{}}
+	p := &Project{Dir: dir, StackName: stack, doc: map[string]any{}, root: root, origins: map[string]origin{}, base: dir}
 	for k, v := range root.value {
 		if k == "include" || k == "stacks" || strings.HasPrefix(k, "x-") {
 			continue
@@ -144,6 +151,42 @@ func Load(dir, stack string) (*Project, error) {
 		return nil, probs
 	}
 	return p, nil
+}
+
+// projectOnly are the keys that a component leaves out: they belong to the
+// project, and the file keeps them for when it runs as a project of its
+// own.
+var projectOnly = []string{"stacks", "secrets", "backend", "runtime", "mcp"}
+
+// readComponent reads the component in dir for a project in base: its
+// opstruss.yaml merged with its include files, without what only a
+// project has.
+func readComponent(base, dir, stack string) (*Project, Problems, error) {
+	rel, err := filepath.Rel(base, filepath.Join(dir, FileName))
+	if err != nil {
+		return nil, nil, err
+	}
+	root, probs, err := readDocument(base, rel, schema.Project)
+	if err != nil {
+		return nil, nil, err
+	}
+	p := &Project{Dir: dir, StackName: stack, doc: map[string]any{}, root: root, origins: map[string]origin{}, base: base,
+		component: true}
+	for k, v := range root.value {
+		if k == "include" || strings.HasPrefix(k, "x-") || slices.Contains(projectOnly, k) {
+			continue
+		}
+		p.doc[k] = v
+		p.originsOf(root, []string{k}, v)
+	}
+	probs = append(probs, p.include(root, []string{"include"})...)
+	if len(probs) > 0 {
+		return nil, probs, nil
+	}
+	if err := decodeValue(p.doc, &p.File); err != nil {
+		return nil, nil, err
+	}
+	return p, nil, nil
 }
 
 // Validate loads every stack of the project in dir and returns all
@@ -259,7 +302,7 @@ func (p *Project) include(d *document, path []string) Problems {
 		}
 		slices.Sort(matches)
 		for _, m := range matches {
-			inc, ip, err := readDocument(p.Dir, filepath.FromSlash(m), schema.Include)
+			inc, ip, err := readDocument(p.base, filepath.Join(p.rel(), filepath.FromSlash(m)), schema.Include)
 			var pp Problems
 			switch {
 			case errors.As(err, &pp):
@@ -274,6 +317,16 @@ func (p *Project) include(d *document, path []string) Problems {
 		}
 	}
 	return probs
+}
+
+// rel is the directory of the project or component, relative to the
+// project.
+func (p *Project) rel() string {
+	r, err := filepath.Rel(p.base, p.Dir)
+	if err != nil {
+		return "."
+	}
+	return r
 }
 
 func (p *Project) merge(inc *document) Problems {

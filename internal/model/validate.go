@@ -59,7 +59,17 @@ type checker struct {
 	plugin *Plugin
 	doc    *document
 	pkgs   map[string]*Package // read packages, by directory
+	comps  *components
 	probs  Problems
+}
+
+// components are the components read for a project, by directory, shared
+// by the checkers of its files; a component whose files have problems is
+// nil, and reading holds those being read, so a component that uses
+// itself is found.
+type components struct {
+	read    map[string]*Project
+	reading map[string]bool
 }
 
 func (c *checker) add(path []string, format string, args ...any) {
@@ -73,8 +83,18 @@ func (c *checker) add(path []string, format string, args ...any) {
 func at(path []string, more ...string) []string { return append(slices.Clone(path), more...) }
 
 func (p *Project) check() Problems {
-	p.Packages = map[string]*Package{}
-	c := &checker{p: p, pkgs: map[string]*Package{}}
+	c := &checker{p: p, pkgs: map[string]*Package{}, comps: &components{read: map[string]*Project{}, reading: map[string]bool{}}}
+	c.file()
+	c.graph()
+	slices.SortStableFunc(c.probs, func(a, b Problem) int {
+		return cmp.Or(cmp.Compare(a.File, b.File), cmp.Compare(a.Line, b.Line), cmp.Compare(a.Column, b.Column))
+	})
+	return c.probs
+}
+
+// file checks the files of the project or of one component.
+func (c *checker) file() {
+	c.p.Packages = map[string]*Package{}
 	c.root()
 	c.uses()
 	c.stacks()
@@ -83,14 +103,46 @@ func (p *Project) check() Problems {
 	c.moves()
 	c.references()
 	c.unsupported()
-	slices.SortStableFunc(c.probs, func(a, b Problem) int {
-		return cmp.Or(cmp.Compare(a.File, b.File), cmp.Compare(a.Line, b.Line), cmp.Compare(a.Column, b.Column))
-	})
-	return c.probs
+}
+
+// component reads the component in dir once and checks its files as a
+// file of their own: the names in its uses: are its own, and what it
+// reads comes in through its inputs.
+func (c *checker) component(dir string) (*Project, error) {
+	cs := c.comps
+	if cs.reading[dir] {
+		return nil, fmt.Errorf("%s uses itself, through the components it uses", c.rel(dir))
+	}
+	if p, ok := cs.read[dir]; ok {
+		if p == nil {
+			return nil, errBroken
+		}
+		return p, nil
+	}
+	cs.reading[dir] = true
+	defer delete(cs.reading, dir)
+	p, probs, err := readComponent(c.p.base, dir, c.p.StackName)
+	var pp Problems
+	if errors.As(err, &pp) {
+		probs, err = pp, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if len(probs) > 0 {
+		c.probs = append(c.probs, probs...)
+		cs.read[dir] = nil
+		return nil, errBroken
+	}
+	cc := &checker{p: p, pkgs: c.pkgs, comps: cs}
+	cc.file()
+	c.probs = append(c.probs, cc.probs...)
+	cs.read[dir] = p
+	return p, nil
 }
 
 func (c *checker) root() {
-	if c.p.Name == "" {
+	if c.p.Name == "" && !c.p.component {
 		c.add([]string{"name"}, "a project needs a name")
 	}
 	if c.p.Level != "" && newerLevel(c.p.Level, Level) {
@@ -158,6 +210,9 @@ func (c *checker) uses() {
 }
 
 func (c *checker) stacks() {
+	if c.p.component {
+		return
+	}
 	for _, s := range slices.Sorted(maps.Keys(c.p.Stacks)) {
 		for _, k := range slices.Sorted(maps.Keys(c.p.Stacks[s].With)) {
 			if c.p.Inputs[k] == nil {
@@ -287,12 +342,44 @@ func (c *checker) unitUses(path []string, name string, u *Unit) {
 		}
 		return
 	}
+	if t.Kind == TargetComponent {
+		comp, err := c.component(t.Dir)
+		if err != nil {
+			if !errors.Is(err, errBroken) {
+				c.add(at(path, "uses"), "%v", err)
+			}
+			return
+		}
+		t.Component = comp
+		c.componentKeys(path, u)
+	}
 	u.Target = t
 	c.with(at(path, "with"), at(path, "uses"), t, u.With)
 	if t.Kind == TargetProject {
 		if cycle := c.unitTaskCycle(t.Task, map[string]bool{}); cycle != "" {
 			c.add(at(path, "uses"), "%s, so a unit that uses it would run units at its own turn", cycle)
 		}
+	}
+}
+
+// componentKeys rejects what a unit that uses a component does not take:
+// the units inside have their own programs, and the unit gives them only
+// what the table of keys of a component unit says.
+func (c *checker) componentKeys(path []string, u *Unit) {
+	for _, k := range []struct {
+		key string
+		set bool
+	}{{"requires", u.Requires != nil}, {"shell", u.Shell != ""}, {"dir", u.Dir != ""}, {"stdin", u.Stdin != nil},
+		{"sources", len(u.Sources) > 0}, {"generates", len(u.Generates) > 0}, {"revision", u.Revision != ""}, {"down", u.Down != nil}} {
+		if k.set {
+			c.add(at(path, k.key), "%s is not for a unit that uses a component; the units inside have their own", k.key)
+		}
+	}
+	if len(u.Tasks) > 0 {
+		c.add(at(path, "tasks"), "a unit that uses a component has the component's tasks; write them in the component")
+	}
+	if u.Retry != nil && u.Retry.Until != nil {
+		c.add(at(path, "retry", "until"), "retry.until judges the outputs of one program; write it in the units inside")
 	}
 }
 
@@ -303,7 +390,7 @@ func (c *checker) tasks() {
 		if slices.Contains(Commands, name) || slices.Contains(StandardTasks, name) {
 			c.add(path, "%s is a built-in command or a standard task; give the task another name", name)
 		}
-		c.task(path, t, true)
+		c.task(path, t, !c.p.component)
 		if t.On == nil {
 			continue
 		}
@@ -508,14 +595,14 @@ func (c *checker) moves() {
 				c.add(at(mp, k), "%s is not an address such as web, image[lxc], or dns/zone", a)
 			}
 		}
-		if c.p.Units[m.From] != nil {
+		if !strings.Contains(m.From, "[") && c.p.unitAt(m.From) {
 			c.add(at(mp, "from"), "%s is still a unit; moved: is for addresses that left the file", m.From)
 		}
 		if m.From == m.To {
 			c.add(mp, "from and to are the same address")
 		}
 		chained := slices.ContainsFunc(c.p.Moved[i+1:], func(n *Move) bool { return n.From == m.To })
-		if c.p.Units[unitOf(m.To)] == nil && !chained {
+		if !c.p.unitAt(m.To) && !chained {
 			c.add(at(mp, "to"), "there is no unit %s, and no later moved: entry starts at it", m.To)
 		}
 		if seen[m.From] {
@@ -530,17 +617,22 @@ func (c *checker) moves() {
 	}
 }
 
-// unitOf returns the unit name at the start of an address.
-func unitOf(addr string) string {
-	name, _, _ := strings.Cut(addr, "/")
-	name, _, _ = strings.Cut(name, "[")
-	return name
-}
-
 // unsupported rejects what later versions of OpsTruss run; the keys are in
 // the schema already.
 func (c *checker) unsupported() {
 	p := c.p
+	if p.component {
+		// Until then a component has units only.
+		if len(p.Tasks) > 0 {
+			c.add([]string{"tasks"}, "the tasks of a component are not supported yet")
+		}
+		if len(p.Moved) > 0 {
+			c.add([]string{"moved"}, "moved: in a component is not supported yet")
+		}
+		if len(p.Removed) > 0 {
+			c.add([]string{"removed"}, "removed: in a component is not supported yet")
+		}
+	}
 	if len(p.Secrets) > 0 {
 		c.add([]string{"secrets"}, "not supported yet")
 	}
@@ -558,8 +650,8 @@ func (c *checker) unsupported() {
 	}
 	for _, name := range slices.Sorted(maps.Keys(p.Units)) {
 		u, path := p.Units[name], []string{"units", name}
-		if u.Target != nil && u.Target.Kind == TargetComponent {
-			c.add(at(path, "uses"), "units that use a component are not supported yet")
+		if p.component && len(u.Tasks) > 0 {
+			c.add(at(path, "tasks"), "the tasks of a unit in a component are not supported yet")
 		}
 		if u.Service != nil {
 			c.add(at(path, "service"), "service units are not supported yet")

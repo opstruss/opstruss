@@ -101,7 +101,8 @@ func (a *app) stateList() *cobra.Command {
 				if r.Pending != nil {
 					e.Pending = r.Pending.Op
 				}
-				e.Orphan = r.Tombstone == nil && p.Units[unitName(p.StackName, addr)] == nil
+				n := p.NodeAt(strings.TrimPrefix(addr, p.StackName+"/"))
+				e.Orphan = r.Tombstone == nil && (n == nil || (n.Component() != nil) != (r.Kind == "component"))
 				entries = append(entries, e)
 			}
 			if a.json {
@@ -113,14 +114,6 @@ func (a *app) stateList() *cobra.Command {
 			return nil
 		},
 	}
-}
-
-// unitName returns the unit at the start of an address in stack.
-func unitName(stack, addr string) string {
-	rest := strings.TrimPrefix(addr, stack+"/")
-	name, _, _ := strings.Cut(rest, "/")
-	name, _, _ = strings.Cut(name, "[")
-	return name
 }
 
 func (a *app) statePull() *cobra.Command {

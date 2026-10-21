@@ -1,0 +1,195 @@
+# A unit that uses a component runs the units inside at addresses under
+# its own: the graph goes through the component, the units inside read the
+# inputs it gives, units outside read its outputs, and each instance has a
+# record of its own.
+
+env HOME=$WORK/home
+chmod 755 components/dns/zone.sh
+
+# db inside runs before app outside, which web inside reads
+exec opstruss plan
+stdout '^default/site\[eu\]/db: will run: new$'
+stdout '^default/app: planned after default/site\[eu\]/db$'
+stdout '^default/site\[eu\]/web: planned after default/app$'
+exec opstruss up
+stdout '^default/dns/zone \| zone example.com token abc at default/dns/zone$'
+stdout '^default/site\[us\]/web \| web us app http://app db.eu$'
+stdout '^default/report \| records r-example.com$'
+exec opstruss state list
+stdout '^default/dns\tok$'
+stdout '^default/site\[eu\]\tok$'
+grep '"kind": "component"' '.opstruss/state/default/site[eu]/state.json'
+grep '"region": "eu"' '.opstruss/state/default/site[eu]/state.json'
+exec opstruss outputs
+stdout '^db: db.eu$'
+exec opstruss plan
+! stdout 'will run'
+
+# a name picks a component, one instance, or a unit inside
+exec opstruss plan 'site[eu]' --no-deps
+stdout '^default/site\[eu\]/web: unchanged$'
+! stdout 'site\[us\]'
+exec opstruss up --force 'site[us]/web' --no-deps
+stdout '^default/site\[us\]/web: up: done$'
+! stdout 'site\[eu\]'
+! exec opstruss plan nope/db
+stderr 'no unit matches nope/db'
+
+# protect: true of the component unit holds every unit inside
+! exec opstruss down dns --yes
+stderr '^default/dns/zone: protect: true refuses down'
+exists .opstruss/state/default/dns/zone/state.json
+
+# an instance gone from for_each takes the units inside down, then its
+# record goes
+cp one.yaml opstruss.yaml
+exec opstruss up
+stdout '^default/site\[us\]/web: will go down: its instance is no longer in if or for_each$'
+stdout '^default/site\[us\]: the instance has no units left; its record is gone$'
+! exists '.opstruss/state/default/site[us]/state.json'
+
+# moved: moves an instance with every unit inside, and removed: decides
+# for every unit inside a component unit that left the files
+cp moved.yaml opstruss.yaml
+exec opstruss up --yes
+stdout '^default/portal\[eu\]/db: moved from default/site\[eu\]/db$'
+! stdout 'portal\[eu\]/db: up'
+stdout '^default/dns/zone: will go down: removed: with destroy: true$'
+stdout '^default/dns: the instance has no units left; its record is gone$'
+exec opstruss state list
+stdout '^default/site\[eu\]\tmoved to default/portal\[eu\]$'
+! stdout '^default/dns'
+
+# down takes everything down, and the records of instances go last
+exec opstruss down --yes
+stdout '^default/portal\[eu\]: the instance has no units left; its record is gone$'
+exec opstruss state list
+! stdout '\tok$'
+
+-- opstruss.yaml --
+name: app
+units:
+  net:
+    run: [sh, -c, 'echo "zone=example.com" >> "$OPSTRUSS_OUTPUT"']
+    outputs:
+      zone: {}
+    approval: auto
+  dns:
+    uses: ./components/dns
+    with:
+      zone: ${{ units.net.outputs.zone }}
+    env:
+      TOKEN: abc
+    approval: auto
+    protect: true
+  site:
+    uses: ./components/site
+    for_each: [eu, us]
+    with:
+      region: ${{ each.key }}
+      app_url: ${{ units.app.outputs.url }}
+    approval: auto
+  app:
+    run: [sh, -c, 'echo "url=http://app $DB" >> "$OPSTRUSS_OUTPUT"']
+    env:
+      DB: ${{ units.site['eu'].outputs.db_url }}
+    outputs:
+      url: {}
+    approval: auto
+  report:
+    run: [echo, "records ${{ units.dns.outputs.id }}"]
+    approval: auto
+outputs:
+  db: ${{ units.site['eu'].outputs.db_url }}
+-- one.yaml --
+name: app
+units:
+  net:
+    run: [sh, -c, 'echo "zone=example.com" >> "$OPSTRUSS_OUTPUT"']
+    outputs:
+      zone: {}
+    approval: auto
+  dns:
+    uses: ./components/dns
+    with:
+      zone: ${{ units.net.outputs.zone }}
+    env:
+      TOKEN: abc
+    approval: auto
+    protect: true
+  site:
+    uses: ./components/site
+    for_each: [eu]
+    with:
+      region: ${{ each.key }}
+      app_url: ${{ units.app.outputs.url }}
+    approval: auto
+  app:
+    run: [sh, -c, 'echo "url=http://app $DB" >> "$OPSTRUSS_OUTPUT"']
+    env:
+      DB: ${{ units.site['eu'].outputs.db_url }}
+    outputs:
+      url: {}
+    approval: auto
+  report:
+    run: [echo, "records ${{ units.dns.outputs.id }}"]
+    approval: auto
+-- moved.yaml --
+name: app
+units:
+  net:
+    run: [sh, -c, 'echo "zone=example.com" >> "$OPSTRUSS_OUTPUT"']
+    outputs:
+      zone: {}
+    approval: auto
+  portal:
+    uses: ./components/site
+    for_each: [eu]
+    with:
+      region: ${{ each.key }}
+      app_url: ${{ units.app.outputs.url }}
+    approval: auto
+  app:
+    run: [sh, -c, 'echo "url=http://app $DB" >> "$OPSTRUSS_OUTPUT"']
+    env:
+      DB: ${{ units.portal['eu'].outputs.db_url }}
+    outputs:
+      url: {}
+    approval: auto
+moved:
+  - from: site[eu]
+    to: portal[eu]
+removed:
+  - from: dns
+    destroy: true
+  - from: report
+    destroy: true
+-- components/dns/opstruss.yaml --
+inputs:
+  zone: {type: string, required: true}
+outputs:
+  id: ${{ units.records.outputs.id }}
+units:
+  zone:
+    run: [./zone.sh, "${{ inputs.zone }}"]
+  records:
+    run: [sh, -c, 'echo "id=r-${{ inputs.zone }}" >> "$OPSTRUSS_OUTPUT"']
+    needs: [zone]
+    outputs:
+      id: {}
+-- components/dns/zone.sh --
+#!/bin/sh
+echo "zone $1 token $TOKEN at $OPSTRUSS_ADDRESS"
+-- components/site/opstruss.yaml --
+inputs:
+  region: {type: string, required: true}
+  app_url: {type: string}
+outputs:
+  db_url: ${{ units.db.outputs.url }}
+units:
+  db:
+    run: [sh, -c, 'echo "url=db.${{ inputs.region }}" >> "$OPSTRUSS_OUTPUT"']
+    outputs:
+      url: {}
+  web:
+    run: [echo, "web ${{ inputs.region }} app ${{ inputs.app_url }}"]

@@ -210,7 +210,7 @@ func StatusUnits(ctx context.Context, opts Options) (*Result, error) {
 func (e *engine) statusPass(ctx context.Context, patterns []string) error {
 	e.passMu.Lock()
 	e.pass = pass{units: patterns, noDeps: true}
-	e.insts, e.byUnit = nil, map[string][]*instance{}
+	e.resetUnits()
 	err := e.selectUnits(false)
 	if err == nil {
 		e.previewQuiet()

@@ -24,7 +24,7 @@ func Outputs(opts Options) (map[string]any, error) {
 	}
 	out := map[string]any{}
 	for _, name := range slices.Sorted(maps.Keys(e.p.Outputs)) {
-		s := e.scope("", nil, e.p.DirOf("outputs."+name))
+		s := e.frameScope(e.top, e.rootUnits(), e.p.DirOf("outputs."+name), "", nil)
 		v, err := expr.EvalValue(e.p.Outputs[name].Value, s)
 		if err != nil {
 			return nil, fmt.Errorf("output %s: %w", name, err)

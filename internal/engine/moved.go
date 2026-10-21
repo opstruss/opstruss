@@ -3,6 +3,9 @@ package engine
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/opstruss/opstruss/internal/failpoint"
@@ -16,6 +19,37 @@ func movingHere(r *state.Record, peer string) bool {
 }
 
 func (e *engine) moveAddr(id string) string { return e.p.StackName + "/" + id }
+
+// movePair is one record that moved: moves, from one address to another.
+type movePair struct{ from, to string }
+
+// movePairs are the records that the entries of moved: move, in order: the
+// record at the address and those under it, as an instance of a component
+// moves with the units inside.
+func (e *engine) movePairs() []movePair {
+	addrs, _ := e.store.Inventory()
+	have := map[string]bool{}
+	for _, a := range addrs {
+		have[a] = true
+	}
+	var out []movePair
+	for _, m := range e.p.Moved {
+		from, to := e.moveAddr(m.From), e.moveAddr(m.To)
+		out = append(out, movePair{from, to})
+		for _, a := range slices.Sorted(maps.Keys(have)) {
+			if rest, ok := strings.CutPrefix(a, from+"/"); ok {
+				out = append(out, movePair{a, to + "/" + rest})
+				delete(have, a)
+				have[to+"/"+rest] = true
+			}
+		}
+		if have[from] {
+			delete(have, from)
+			have[to] = true
+		}
+	}
+	return out
+}
 
 // pendingMove is the mark of a move that did not finish at rec, which only
 // files with that entry of moved: may finish; nothing else changes the
@@ -35,8 +69,9 @@ func (e *engine) previewMoves() {
 	e.moveFrom = map[string]*state.Record{}
 	e.moveFailed = map[string]error{}
 	e.moving = map[string]bool{}
-	for _, m := range e.p.Moved {
-		from, to := e.moveAddr(m.From), e.moveAddr(m.To)
+	e.pairs = e.movePairs()
+	for _, m := range e.pairs {
+		from, to := m.from, m.to
 		e.moving[from] = true
 		if err := e.moveFailed[from]; err != nil {
 			e.moveFailed[to] = err
@@ -82,8 +117,8 @@ func (e *engine) previewMoves() {
 // applyMoves runs the moves of moved: in order, before any turn, so a
 // chain of entries carries a record from its first address to its last.
 func (e *engine) applyMoves(ctx context.Context) {
-	for _, m := range e.p.Moved {
-		from, to := e.moveAddr(m.From), e.moveAddr(m.To)
+	for _, m := range e.pairs {
+		from, to := m.from, m.to
 		if e.moveFailed[to] != nil {
 			continue
 		}

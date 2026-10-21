@@ -53,15 +53,14 @@ func runCommand(ctx context.Context, opts Options, op string) (*Result, error) {
 // previewAll expands and plans every unit in graph order, so a unit knows
 // whether this run changes the units it reads before it is planned.
 func (e *engine) previewAll(ctx context.Context) {
-	for _, name := range e.p.Order {
-		insts, err := e.expand(name)
+	for _, path := range e.p.Order {
+		insts, err := e.expand(path)
 		if err != nil {
-			insts = []*instance{{unit: name, id: name, address: e.p.StackName + "/" + name, def: e.p.Units[name],
-				dir: e.p.DirOf("units." + name), done: make(chan struct{}), plan: plan{err: err}}}
+			insts = []*instance{e.broken(path, err)}
 		}
 		for _, inst := range insts {
-			for _, d := range e.p.Deps[name] {
-				inst.deps = append(inst.deps, e.byUnit[d]...)
+			for _, d := range e.p.Deps[path] {
+				inst.deps = append(inst.deps, e.depsOf(inst, d)...)
 			}
 			if err == nil {
 				e.preview(ctx, inst)
@@ -70,9 +69,12 @@ func (e *engine) previewAll(ctx context.Context) {
 				e.say("plan", inst.address, "%s", inst.plan.summary())
 			}
 		}
-		e.byUnit[name] = insts
+		e.mu.Lock()
+		e.byUnit[path] = insts
+		e.mu.Unlock()
 		e.insts = append(e.insts, insts...)
 	}
+	e.expandComponents()
 	// Two units that keep the tool's state in one backend overwrite each
 	// other's.
 	first := map[string]*instance{}
@@ -92,6 +94,14 @@ func (e *engine) previewAll(ctx context.Context) {
 		}
 		first[inst.backend] = inst
 	}
+}
+
+// broken stands for the instances of the unit at path, which could not be
+// found, at its address without keys.
+func (e *engine) broken(path string, err error) *instance {
+	n := e.p.Nodes[path]
+	return &instance{unit: path, keys: make([]string, strings.Count(path, "/")+1), address: e.p.StackName + "/" + path, node: n,
+		frame: e.top, def: n.Def(), dir: n.Dir(), done: make(chan struct{}), plan: plan{err: err}}
 }
 
 func (e *engine) preview(ctx context.Context, inst *instance) {
@@ -186,7 +196,12 @@ func (e *engine) runsBefore(inst *instance) string {
 	return ""
 }
 
+// tombstoned says why a unit cannot take the address of rec: a move or a
+// forget left it, or an instance of a component has it.
 func tombstoned(rec *state.Record) error {
+	if rec != nil && rec.Tombstone == nil && rec.Kind == "component" {
+		return errors.New("an instance of a component has this address; take what is inside down with the files that still use the component first")
+	}
 	if rec == nil || rec.Tombstone == nil {
 		return nil
 	}
@@ -262,7 +277,7 @@ func (e *engine) decide(ctx context.Context, inst *instance, r *resolved, rec *s
 }
 
 func (e *engine) forced(inst *instance) bool {
-	return e.pass.force && (e.sel.all || e.sel.named[inst.unit])
+	return e.pass.force && e.sel.named(inst)
 }
 
 // changedPass names the pass variables whose values differ from those
@@ -465,8 +480,15 @@ func (e *engine) turn(ctx context.Context, inst *instance) {
 		failed(fmt.Errorf("the record has no room for outputs of %d bytes", plugin.MaxOutputs))
 		return
 	}
+	release, err := e.holdFrames(ctx, inst)
+	if err != nil {
+		failed(err)
+		return
+	}
 	failpoint.Hit("up-before-pending")
-	if etag, err = e.store.Put(addr, next, etag); err != nil {
+	etag, err = e.store.Put(addr, next, etag)
+	release()
+	if err != nil {
 		failed(err)
 		return
 	}
@@ -596,7 +618,7 @@ func (e *engine) attempts(ctx context.Context, inst *instance, r *resolved, rec 
 		ferr := outcomeErr(res)
 		done := ferr == nil
 		if retry != nil && retry.Until != nil {
-			s := e.scope(inst.unit, inst, inst.dir)
+			s := e.scope(inst)
 			s.Vars["outputs"] = res.Outputs
 			ok, err := expr.EvalCondition(retry.Until, s)
 			if err != nil {

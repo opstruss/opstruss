@@ -61,12 +61,25 @@ func (k *kvMemory) get(key string) (any, error) {
 	return v, nil
 }
 
-// scope gives s this memory: kv() reads through it, and the locals that
-// read kv() are evaluated with it.
+// scope gives s this memory: kv() reads through it, and the locals of the
+// project that read kv() are evaluated with it.
 func (k *kvMemory) scope(s *expr.Scope) *expr.Scope {
 	s = s.WithKV(k.get)
 	if !k.e.kvLocals {
 		return s
+	}
+	return s.With("locals", k.localsOf(k.e.top, k.e.inputs))
+}
+
+// localsOf is locals.<name> in f with this memory: those of the project,
+// with the ones that read kv() evaluated with it once, or those of the
+// component, evaluated with inputs, its inputs as they are now.
+func (k *kvMemory) localsOf(f *frame, inputs map[string]any) map[string]any {
+	if f.node != nil {
+		return f.in.ComponentLocals(k.e.p.Name, inputs, k.get)
+	}
+	if !k.e.kvLocals {
+		return k.e.locals
 	}
 	k.once.Do(func() {
 		var err error
@@ -74,7 +87,7 @@ func (k *kvMemory) scope(s *expr.Scope) *expr.Scope {
 			k.locals = k.e.locals
 		}
 	})
-	return s.With("locals", k.locals)
+	return k.locals
 }
 
 // kvCall reads a name of the memory of the stack, or with write sets it to

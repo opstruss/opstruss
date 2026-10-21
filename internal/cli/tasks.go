@@ -38,8 +38,8 @@ func (a *app) taskCommands(root *cobra.Command) {
 			defs[name] = t
 		}
 	}
-	for _, name := range p.Order {
-		for tn, t := range p.Units[name].Tasks {
+	for _, path := range p.Order {
+		for tn, t := range p.Nodes[path].Unit.Tasks {
 			if defs[tn] == nil {
 				defs[tn] = t
 			}

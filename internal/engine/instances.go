@@ -13,15 +13,18 @@ import (
 )
 
 // instance is one instance of a unit: the unit itself, or one key of its
-// for_each, and what the run found and did there.
+// for_each, in the project or in an instance of a component, and what the
+// run found and did there.
 type instance struct {
-	unit    string
+	unit    string // the path of the unit, such as web or site/db
 	key     string
+	keys    []string // those of the instances of the components it is in, outermost first, and its own
 	each    any
-	id      string // name, or name[key]
-	address string // <stack>/<id>
-	def     *model.Unit
-	dir     string // directory of the file that wrote the unit
+	address string // <frame address>/<name>, or <frame address>/<name>[<key>]
+	node    *model.Node
+	frame   *frame
+	def     *model.Unit // the unit as it runs, with what the components it is in give it
+	dir     string      // directory of the file that wrote the unit
 	deps    []*instance
 	backend string // the backend input of a unit whose plugin has state: tool, as JSON
 
@@ -82,34 +85,71 @@ var forEachKey = regexp.MustCompile(`^[a-z0-9._-]+$`)
 
 // selection is the units a run is about: those named and, unless
 // --no-deps, the units they depend on, or for down those that depend on
-// them.
+// them. A name picks by the segments of an address: site picks a unit, or
+// every unit inside a component, site[eu] one instance, and site/db a unit
+// inside; * matches any text in a segment.
 type selection struct {
 	all   bool
-	units map[string]bool
-	keys  map[string][]string // patterns of the keys named, for a unit named as name[key]
-	named map[string]bool     // units named rather than reached as dependencies
+	picks map[string][]pick // by the path of a unit that runs
 }
 
-// selectUnits reads the names and patterns: * matches any text, and
-// name[key] picks one instance.
+// pick is how a unit is picked: patterns of the keys of the components it
+// is in and of its own, one per segment of its path, and whether a name
+// picked it rather than a dependency.
+type pick struct {
+	keys  []string
+	named bool
+}
+
+// selectUnits reads the names and patterns, then follows the graph: a
+// dependency inside the same instances of components as the unit that
+// needs it is picked in those instances only.
 func (e *engine) selectUnits(down bool) error {
-	s := &selection{units: map[string]bool{}, keys: map[string][]string{}, named: map[string]bool{}}
+	s := &selection{picks: map[string][]pick{}}
 	e.sel = s
 	if len(e.pass.units) == 0 {
 		s.all = true
 		return nil
 	}
+	type item struct {
+		path string
+		pick pick
+	}
+	var todo []item
+	seen := map[string]bool{}
+	add := func(path string, pk pick) {
+		k := path + " " + strings.Join(pk.keys, " ") + map[bool]string{true: " named"}[pk.named]
+		if !seen[k] {
+			seen[k] = true
+			s.picks[path] = append(s.picks[path], pk)
+			todo = append(todo, item{path, pk})
+		}
+	}
 	for _, pat := range e.pass.units {
-		name, key, hasKey := strings.Cut(strings.TrimSuffix(pat, "]"), "[")
+		segs := model.ParseAddress(pat)
 		found := false
-		for _, u := range slices.Sorted(maps.Keys(e.p.Units)) {
-			if !match(name, u) {
+		for _, path := range slices.Sorted(maps.Keys(e.p.Nodes)) {
+			names := strings.Split(path, "/")
+			if len(names) != len(segs) {
+				continue
+			}
+			ok := true
+			for i, sg := range segs {
+				ok = ok && match(sg.Unit, names[i])
+			}
+			if !ok {
 				continue
 			}
 			found = true
-			s.units[u], s.named[u] = true, true
-			if hasKey {
-				s.keys[u] = append(s.keys[u], key)
+			for _, leaf := range e.p.Leaves(path) {
+				keys := make([]string, strings.Count(leaf, "/")+1)
+				for i := range keys {
+					keys[i] = "*"
+					if i < len(segs) && segs[i].Key != "" {
+						keys[i] = segs[i].Key
+					}
+				}
+				add(leaf, pick{keys: keys, named: true})
 			}
 		}
 		if !found {
@@ -128,17 +168,33 @@ func (e *engine) selectUnits(down bool) error {
 			}
 		}
 	}
-	for todo := slices.Collect(maps.Keys(s.units)); len(todo) > 0; {
-		u := todo[0]
+	for len(todo) > 0 {
+		it := todo[0]
 		todo = todo[1:]
-		for _, d := range next[u] {
-			if !s.units[d] {
-				s.units[d] = true
-				todo = append(todo, d)
+		for _, d := range next[it.path] {
+			j := sharedDepth(it.path, d)
+			keys := make([]string, strings.Count(d, "/")+1)
+			for i := range keys {
+				keys[i] = "*"
+				if i < j {
+					keys[i] = it.pick.keys[i]
+				}
 			}
+			add(d, pick{keys: keys})
 		}
 	}
 	return nil
+}
+
+// sharedDepth is how many components the units at paths a and b are both
+// in.
+func sharedDepth(a, b string) int {
+	x, y := strings.Split(a, "/"), strings.Split(b, "/")
+	n := 0
+	for n < len(x)-1 && n < len(y)-1 && x[n] == y[n] {
+		n++
+	}
+	return n
 }
 
 func match(pattern, s string) bool {
@@ -150,49 +206,90 @@ func match(pattern, s string) bool {
 	return ok
 }
 
-func (s *selection) has(inst *instance) bool {
+func (s *selection) has(inst *instance) bool { return s.picked(inst.unit, inst.keys, false) }
+
+// named says whether a name picked inst, not a dependency.
+func (s *selection) named(inst *instance) bool { return s.picked(inst.unit, inst.keys, true) }
+
+// picked says whether the unit at path, in the instances with keys, is
+// picked, by a name when named is set.
+func (s *selection) picked(path string, keys []string, named bool) bool {
 	if s.all {
 		return true
 	}
-	if !s.units[inst.unit] {
-		return false
+	for _, pk := range s.picks[path] {
+		if named && !pk.named {
+			continue
+		}
+		ok := len(pk.keys) == len(keys)
+		for i := 0; ok && i < len(keys); i++ {
+			ok = match(pk.keys[i], keys[i])
+		}
+		if ok {
+			return true
+		}
 	}
-	keys := s.keys[inst.unit]
-	return len(keys) == 0 || slices.ContainsFunc(keys, func(k string) bool { return match(k, inst.key) })
+	return false
 }
 
-// expand finds the instances of unit name: if says whether it is there,
-// and for_each makes one per key. Both read only what is known when the
-// run starts, so the outputs they read come from units this run leaves as
-// they are.
-func (e *engine) expand(name string) ([]*instance, error) {
-	u := e.p.Units[name]
-	dir := e.p.DirOf("units." + name)
+// expand finds the instances of the unit at path, in every instance of
+// the components it is in: if says whether it is there, and for_each makes
+// one per key.
+func (e *engine) expand(path string) ([]*instance, error) {
+	n := e.p.Nodes[path]
+	frames, err := e.framesOf(n.Parent)
+	if err != nil {
+		return nil, err
+	}
+	def := n.Def()
+	var out []*instance
+	for _, f := range frames {
+		keys, items, err := e.keysOf(f, n)
+		if err != nil {
+			return nil, err
+		}
+		for _, k := range keys {
+			id := n.Name
+			if n.Unit.ForEach != nil {
+				id += "[" + k + "]"
+			}
+			out = append(out, &instance{unit: path, key: k, keys: append(f.keys(), k), each: items[k], address: f.address + "/" + id,
+				node: n, frame: f, def: def, dir: n.Dir(), done: make(chan struct{})})
+		}
+	}
+	return out, nil
+}
+
+// keysOf evaluates if and for_each of n in f: no keys when if is false,
+// one empty key without for_each, and one per item with it, in key order.
+// Both read only what is known when the run starts, so the outputs they
+// read come from units this run leaves as they are.
+func (e *engine) keysOf(f *frame, n *model.Node) ([]string, map[string]any, error) {
+	u := n.Unit
 	for _, v := range []any{u.If, u.ForEach} {
 		if v == nil {
 			continue
 		}
-		if up := e.changing(v); up != "" {
-			return nil, fmt.Errorf("if and for_each of %s are known when the run starts, but this run changes %s first; run opstruss up %s, then this", name, up, up)
+		if up := e.changing(v, f); up != "" {
+			return nil, nil, fmt.Errorf("if and for_each of %s are known when the run starts, but this run changes %s first; run opstruss up %s, then this", n.Path, up, up)
 		}
 	}
-	scope := e.scope(name, nil, dir)
+	scope := e.scopeOf(f, n, "", nil)
 	if u.If != nil {
 		ok, err := expr.EvalCondition(u.If, scope)
 		if err != nil {
-			return nil, fmt.Errorf("if: %w", err)
+			return nil, nil, fmt.Errorf("if: %w", err)
 		}
 		if !ok {
-			return nil, nil
+			return nil, nil, nil
 		}
 	}
-	addr := e.p.StackName + "/" + name
 	if u.ForEach == nil {
-		return []*instance{{unit: name, id: name, address: addr, def: u, dir: dir, done: make(chan struct{})}}, nil
+		return []string{""}, nil, nil
 	}
 	v, err := expr.EvalValue(u.ForEach, scope)
 	if err != nil {
-		return nil, fmt.Errorf("for_each: %w", err)
+		return nil, nil, fmt.Errorf("for_each: %w", err)
 	}
 	items := map[string]any{}
 	switch x := v.(type) {
@@ -202,132 +299,21 @@ func (e *engine) expand(name string) ([]*instance, error) {
 		for _, it := range x {
 			k, ok := it.(string)
 			if !ok {
-				return nil, fmt.Errorf("for_each of a unit takes strings or a map, not %s; build a map with keys of your own", model.TypeName(it))
+				return nil, nil, fmt.Errorf("for_each of a unit takes strings or a map, not %s; build a map with keys of your own", model.TypeName(it))
 			}
 			if _, dup := items[k]; dup {
-				return nil, fmt.Errorf("for_each has %s twice", k)
+				return nil, nil, fmt.Errorf("for_each has %s twice", k)
 			}
 			items[k] = k
 		}
 	default:
-		return nil, fmt.Errorf("for_each takes a list or a map, not %s", model.TypeName(v))
+		return nil, nil, fmt.Errorf("for_each takes a list or a map, not %s", model.TypeName(v))
 	}
-	var out []*instance
-	for _, k := range slices.Sorted(maps.Keys(items)) {
+	keys := slices.Sorted(maps.Keys(items))
+	for _, k := range keys {
 		if !forEachKey.MatchString(k) {
-			return nil, fmt.Errorf("for_each key %q has more than lower-case letters, digits, '.', '-', and '_'", k)
-		}
-		id := name + "[" + k + "]"
-		out = append(out, &instance{unit: name, key: k, each: items[k], id: id, address: e.p.StackName + "/" + id,
-			def: u, dir: dir, done: make(chan struct{})})
-	}
-	return out, nil
-}
-
-// changing returns the first unit whose outputs v reads and that this run
-// changes or plans later.
-func (e *engine) changing(v any) string {
-	use, err := expr.AnalyzeValue(v)
-	if err != nil {
-		return ""
-	}
-	for _, r := range use.Refs {
-		if len(r.Path) < 2 || r.Path[0] != "units" {
-			continue
-		}
-		for _, up := range e.byUnit[r.Path[1]] {
-			if (up.plan.run || up.plan.waitFor != "") && e.sel.has(up) {
-				return up.unit
-			}
+			return nil, nil, fmt.Errorf("for_each key %q has more than lower-case letters, digits, '.', '-', and '_'", k)
 		}
 	}
-	return ""
-}
-
-// scope is what the expressions of unit read, which holds only the units
-// it depends on, or of the project outputs when unit is "": inst is nil
-// for if and for_each, which come before the instances.
-func (e *engine) scope(unit string, inst *instance, dir string) *expr.Scope {
-	names := e.p.Order
-	if unit != "" {
-		names = e.p.Deps[unit]
-	}
-	vars := map[string]any{"stack": e.p.StackName, "inputs": e.inputs, "locals": e.locals,
-		"opstruss": e.facts(inst), "units": e.unitsView(names)}
-	if inst != nil && inst.def.ForEach != nil {
-		vars["each"] = map[string]any{"key": inst.key, "value": inst.each}
-	}
-	return e.passKV().scope(&expr.Scope{Dir: dir, Vars: vars})
-}
-
-// unitsView is units.<name>: the outputs of this run for the units it ran,
-// and the stored ones for the others, with outcome, changed, and plan
-// once a pass of this run reached them; a unit with for_each is a map of
-// its instances. It holds the units in names.
-func (e *engine) unitsView(names []string) map[string]any {
-	e.mu.Lock()
-	views := map[string]map[string]any{}
-	for _, name := range names {
-		insts, ok := e.byUnit[name]
-		if !ok {
-			continue
-		}
-		byKey := map[string]any{}
-		for _, inst := range insts {
-			v := map[string]any{"outputs": inst.outputsNow()}
-			if inst.outcome != "" {
-				v["outcome"], v["changed"] = inst.outcome, inst.changed
-			}
-			if inst.plan.digest != "" || inst.plan.waitFor != "" {
-				v["plan"] = inst.plan.view(inst.plan.err == nil && inst.plan.waitFor == "" && inst.plan.locked == "")
-			}
-			byKey[inst.key] = v
-		}
-		views[name] = byKey
-	}
-	inPass := e.inPass
-	e.mu.Unlock()
-	// Outside a pass, as in a step of a task, units that no pass of this run
-	// expanded read their records. Inside one, units are expanded in graph
-	// order, so the units an expression may read are expanded already.
-	if !inPass {
-		var addrs []string
-		for _, name := range names {
-			if views[name] != nil {
-				continue
-			}
-			if addrs == nil {
-				addrs, _ = e.store.Inventory()
-			}
-			byKey := map[string]any{}
-			for _, a := range addrs {
-				id := strings.TrimPrefix(a, e.p.StackName+"/")
-				unit, key, _ := strings.Cut(strings.TrimSuffix(id, "]"), "[")
-				if unit != name {
-					continue
-				}
-				if rec, _, err := e.store.Get(a); err == nil && rec != nil && rec.Tombstone == nil {
-					out := rec.Outputs
-					if out == nil {
-						out = map[string]any{}
-					}
-					byKey[key] = map[string]any{"outputs": out}
-				}
-			}
-			views[name] = byKey
-		}
-	}
-	view := map[string]any{}
-	for name, byKey := range views {
-		if e.p.Units[name].ForEach == nil {
-			if v, ok := byKey[""]; ok {
-				view[name] = v
-			} else {
-				view[name] = map[string]any{"outputs": map[string]any{}}
-			}
-		} else {
-			view[name] = byKey
-		}
-	}
-	return view
+	return keys, items, nil
 }

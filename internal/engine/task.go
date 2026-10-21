@@ -130,7 +130,7 @@ func Task(ctx context.Context, opts Options, name string, inputs map[string]any)
 func (e *engine) unitTasks(ctx context.Context, name string, patterns []string, inputs map[string]any, c call) (*taskResult, error) {
 	e.passMu.Lock()
 	e.pass = pass{units: patterns, noDeps: true}
-	e.insts, e.byUnit = nil, map[string][]*instance{}
+	e.resetUnits()
 	err := e.selectUnits(false)
 	if err == nil {
 		e.previewQuiet()
@@ -168,8 +168,8 @@ func (e *engine) unitTasks(ctx context.Context, name string, patterns []string, 
 // previewQuiet expands the units and reads their records, for the tasks of
 // units, which do not plan them.
 func (e *engine) previewQuiet() {
-	for _, name := range e.p.Order {
-		insts, err := e.expand(name)
+	for _, path := range e.p.Order {
+		insts, err := e.expand(path)
 		if err != nil {
 			continue
 		}
@@ -178,9 +178,12 @@ func (e *engine) previewQuiet() {
 				inst.record = rec
 			}
 		}
-		e.byUnit[name] = insts
+		e.mu.Lock()
+		e.byUnit[path] = insts
+		e.mu.Unlock()
 		e.insts = append(e.insts, insts...)
 	}
+	e.expandComponents()
 }
 
 // callTask runs one call of a task: its inputs from given and their
@@ -460,7 +463,7 @@ func (tc *taskCtx) scopeNow() *expr.Scope {
 	if tc.c.plugin != nil {
 		return s.WithKV(tc.e.newKV().get)
 	}
-	return tc.e.newKV().scope(s.With("units", tc.e.unitsView(tc.e.p.Order)))
+	return tc.e.newKV().scope(s.With("units", tc.e.unitsView(tc.e.top, tc.e.rootUnits())))
 }
 
 func (tc *taskCtx) record(id string, v any) {
@@ -782,5 +785,5 @@ func (e *engine) taskScope(dir string, inputs, tasks map[string]any, unit *insta
 	facts["dir"], facts["artifacts"], facts["temp"] = dir, e.run.Artifacts, e.run.Temp
 	facts["cwd"] = e.opts.Cwd
 	return e.newKV().scope(&expr.Scope{Dir: dir, Vars: map[string]any{"stack": e.p.StackName, "inputs": all, "locals": e.locals,
-		"opstruss": facts, "units": e.unitsView(e.p.Order), "tasks": tasks, "steps": map[string]any{}}})
+		"opstruss": facts, "units": e.unitsView(e.top, e.rootUnits()), "tasks": tasks, "steps": map[string]any{}}})
 }

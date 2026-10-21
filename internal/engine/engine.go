@@ -106,12 +106,16 @@ type engine struct {
 	needed   map[string]*taskOnce               // tasks of needs, which run once per run
 	holders  map[string]context.CancelCauseFunc // concurrency locks this process holds
 
-	insts  []*instance // in graph order
-	byUnit map[string][]*instance
+	insts  []*instance            // in graph order
+	byUnit map[string][]*instance // by the path of the unit
+	top    *frame                 // the project, where its units are
+	frames map[string]*frameSet   // instances of components, by the path of the unit that uses each
 
 	moveFrom   map[string]*state.Record // the record a target of moved: starts from
 	moveFailed map[string]error         // targets whose move cannot happen
 	moving     map[string]bool          // addresses that moved: moves away from
+	pairs      []movePair               // the records that moved: moves, in order
+	stale      []string                 // records of instances of components that the pass did not find
 
 	mu       sync.Mutex
 	exit     int
@@ -155,7 +159,8 @@ func load(opts Options) (*engine, error) {
 	e := &engine{opts: opts, p: p, inputs: inputs, locals: locals, root: filepath.Join(p.Dir, ".opstruss"),
 		started: time.Now().UTC(), parallel: DefaultParallel, byUnit: map[string][]*instance{},
 		read: map[string]string{}, needed: map[string]*taskOnce{}, holders: map[string]context.CancelCauseFunc{},
-		touched: map[string]*record.Unit{}, hashes: map[string]string{}}
+		touched: map[string]*record.Unit{}, hashes: map[string]string{}, frames: map[string]*frameSet{}}
+	e.top = &frame{in: p, address: p.StackName}
 	for _, v := range p.Locals {
 		if use, err := expr.AnalyzeValue(v); err == nil && slices.Contains(use.Funcs, "kv") {
 			e.kvLocals = true
@@ -281,6 +286,14 @@ func (e *engine) cleanTemp() {
 	}
 }
 
+// resetUnits forgets the instances of the units and components that the
+// last pass found, for a pass that finds them again.
+func (e *engine) resetUnits() {
+	e.mu.Lock()
+	e.insts, e.byUnit, e.frames = nil, map[string][]*instance{}, map[string]*frameSet{}
+	e.mu.Unlock()
+}
+
 // touch notes what the run did to a unit, for its record.
 func (e *engine) touch(addr string, u *record.Unit) {
 	e.mu.Lock()
@@ -383,6 +396,17 @@ func (w *lineWriter) flush() {
 // that a run this one is nested in holds fails at once, since that run
 // waits for this one.
 func (e *engine) lock(ctx context.Context, addr string) (string, error) {
+	return e.waitLock(ctx, addr, false)
+}
+
+// briefLock takes the lock of the record of an instance of a component,
+// which every run holds only for a moment, also a run this one is nested
+// in, so it waits for it too.
+func (e *engine) briefLock(ctx context.Context, addr string) (string, error) {
+	return e.waitLock(ctx, addr, true)
+}
+
+func (e *engine) waitLock(ctx context.Context, addr string, brief bool) (string, error) {
 	var last string
 	for delay := 20 * time.Millisecond; ; delay = min(2*delay, time.Second) {
 		token, err := e.store.Lock(addr, e.holder)
@@ -393,11 +417,11 @@ func (e *engine) lock(ctx context.Context, addr string) (string, error) {
 		// The holder writes who it is just after it takes the lock.
 		if h := le.Holder; h.Run != "" {
 			for _, p := range e.parents {
-				if p == h.Run {
+				if p == h.Run && !brief {
 					return "", fmt.Errorf("the lock is held by run %s, which this run is nested in", h.Run)
 				}
 			}
-			if h.Run != last {
+			if h.Run != last && h.Run != e.runID {
 				e.say("unit", addr, "waiting for the lock held by %s", h)
 				last = h.Run
 			}

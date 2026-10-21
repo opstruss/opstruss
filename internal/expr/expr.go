@@ -236,6 +236,12 @@ func (s *Scope) activation() map[string]any {
 // Broken is a value that fails each expression that reads it, with err.
 func Broken(err error) any { return types.NewErr("%v", err) }
 
+// IsBroken says whether v is a value that Broken made.
+func IsBroken(v any) bool {
+	_, ok := v.(*types.Err)
+	return ok
+}
+
 // kvVar is the variable through which kv() reaches the reader of its
 // scope.
 const kvVar = "__kv"

@@ -49,6 +49,10 @@ type Target struct {
 	Task    string   // the task it runs: built-in, of the plugin, or of the project
 	Dir     string   // the directory of a component
 
+	// Component is the component in Dir, read; nil while its files have
+	// problems.
+	Component *Project
+
 	project *Task // the task of the project, for TargetProject
 }
 
@@ -171,6 +175,10 @@ func (t *Target) Inputs() (map[string]*Input, bool) {
 		return t.Package.Plugin.Inputs, true
 	case TargetProject:
 		return t.project.Inputs, true
+	case TargetComponent:
+		if t.Component != nil {
+			return t.Component.Inputs, true
+		}
 	}
 	return nil, false
 }
@@ -224,7 +232,7 @@ func (c *checker) readPackage(dir string) (*Package, error) {
 	}
 	switch {
 	case plugin:
-		pl, probs, err := readPlugin(c.p.Dir, dir)
+		pl, probs, err := readPlugin(c.p.base, dir)
 		if err != nil {
 			return nil, err
 		}
@@ -243,7 +251,7 @@ func (c *checker) readPackage(dir string) (*Package, error) {
 
 // rel is dir as the project names it.
 func (c *checker) rel(dir string) string {
-	if r, err := filepath.Rel(c.p.Dir, dir); err == nil {
+	if r, err := filepath.Rel(c.p.base, dir); err == nil {
 		return filepath.ToSlash(r)
 	}
 	return dir

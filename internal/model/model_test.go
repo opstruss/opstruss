@@ -500,7 +500,7 @@ func TestUses(t *testing.T) {
 		// declarations
 		{files("  b:\n    source: ./plugins/a\n    with: {tag: v1, nope: 1}\n"), "uses.b.with.nope: b has no input nope"},
 		{files("", "plugins/a/components/build/opstruss.yaml", "name: build\n"), "a has a task and a component named build"},
-		{files("  infra: ./vendor/infra\nunits:\n  dns:\n    uses: infra.dns\n", "vendor/infra/components/dns/opstruss.yaml", "name: dns\n"), "units that use a component are not supported yet"},
+		{files("  infra: ./vendor/infra\nunits:\n  dns:\n    uses: infra.dns\n", "vendor/infra/components/dns/opstruss.yaml", "name: dns\n"), ""},
 		{files("  empty: ./vendor/empty\n", "vendor/empty/README.md", "x"), "vendor/empty has no opstruss.plugin.yaml, opstruss.yaml, or components/"},
 		// the rules of a plugin file
 		{files("  gh: ./plugins/gh\n", gh("  up:\n    steps:\n      - run: [x]\n")...), "tasks.up: up of a plugin runs one program, written as run"},
@@ -551,5 +551,71 @@ func TestBuiltins(t *testing.T) {
 	}
 	if n := len(builtins()); n != len(BuiltinTasks) {
 		t.Errorf("builtin.yaml has %d tasks, BuiltinTasks %d", n, len(BuiltinTasks))
+	}
+}
+
+func TestComponents(t *testing.T) {
+	site := "inputs:\n  region: {type: string, required: true}\n  app_url: {type: string}\noutputs:\n  db: ${{ units.db.outputs.url }}\n" +
+		"units:\n  db:\n    run: [x]\n    outputs: {url: {}}\n    timeout: 1m\n  web:\n    run: [y, \"${{ inputs.app_url }}\"]\n    approval: auto\n    pass: [B]\n"
+	dir := write(t, map[string]string{
+		"opstruss.yaml": "name: app\nunits:\n  site:\n    uses: ./components/site\n    with: {region: eu, app_url: \"${{ units.app.outputs.url }}\"}\n" +
+			"    approval: ask\n    protect: true\n    timeout: 5m\n    pass: [A]\n" +
+			"  app:\n    run: [z, \"${{ units.site.outputs.db }}\"]\n    outputs: {url: {}}\n",
+		"components/site/opstruss.yaml": site,
+	})
+	p, err := Load(dir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Through the component, app reads db and web reads app: no cycle.
+	if want := []string{"site/db", "app", "site/web"}; !slices.Equal(p.Order, want) {
+		t.Errorf("order %v, want %v", p.Order, want)
+	}
+	if got := p.Deps["site/web"]; !slices.Equal(got, []string{"app"}) {
+		t.Errorf("site/web depends on %v", got)
+	}
+	db, web := p.Nodes["site/db"].Def(), p.Nodes["site/web"].Def()
+	if !db.Protect || !web.Protect {
+		t.Error("protect of the component unit reaches the units inside")
+	}
+	if db.Approval != "ask" || web.Approval != "ask" {
+		t.Errorf("approval %q and %q; ask of the component unit wins", db.Approval, web.Approval)
+	}
+	if db.Timeout != "1m" || web.Timeout != "5m" {
+		t.Errorf("timeout %q and %q; the unit's own, then the component unit's", db.Timeout, web.Timeout)
+	}
+	if !slices.Equal(web.Pass, []string{"B", "A"}) {
+		t.Errorf("pass %v", web.Pass)
+	}
+	if n := p.NodeAt("site[eu]/db"); n == nil || n.Path != "site/db" {
+		t.Errorf("NodeAt gives %v", n)
+	}
+
+	comp := func(project, component string) []string {
+		return problems(t, write(t, map[string]string{"opstruss.yaml": "name: app\nunits:\n" + project,
+			"components/c/opstruss.yaml": component}), "")
+	}
+	use := "  c:\n    uses: ./components/c\n"
+	tests := []struct {
+		project, component, want string
+	}{
+		{use, "inputs:\n  n: {type: string, required: true}\n", "opstruss.yaml:4:5: units.c.uses: ./components/c needs input n"},
+		{use + "    with: {nope: 1}\n", "units: {}\n", "units.c.with.nope: ./components/c has no input nope"},
+		{use + "    dir: ./x\n", "units: {}\n", "dir is not for a unit that uses a component"},
+		{use + "    tasks:\n      t: {run: [x]}\n", "units: {}\n", "a unit that uses a component has the component's tasks"},
+		{use + "    retry: {attempts: 2, until: outputs.ok}\n", "units: {}\n", "retry.until judges the outputs of one program"},
+		{use, "secrets:\n  s: {env: S}\nunits:\n  x:\n    run: [echo, \"${{ secrets.s }}\"]\n", "components/c/opstruss.yaml:5:5: units.x.run: a component reads no secrets"},
+		{use, "units:\n  x:\n    uses: ../c\n", "components/c uses itself"},
+		{use, "tasks:\n  t: {run: [x]}\n", "the tasks of a component are not supported yet"},
+		{use, "moved:\n  - from: a\n    to: b\nunits:\n  b: {run: [x]}\n", "moved: in a component is not supported yet"},
+		{use, "units:\n  x:\n    run: [\"${{ units.y.outputs.v }}\"]\n", "there is no unit y"},
+		{use + "  d:\n    run: [\"${{ units.c.outputs.nope }}\"]\n", "outputs:\n  v: \"1\"\n", "unit c has no output nope"},
+		{use + "  d:\n    run: [x]\nmoved:\n  - from: c/x\n    to: d\n", "units:\n  x: {run: [x]}\n", "c/x is still a unit"},
+	}
+	for _, tt := range tests {
+		got := comp(tt.project, tt.component)
+		if !slices.ContainsFunc(got, func(s string) bool { return strings.Contains(s, tt.want) }) {
+			t.Errorf("%q with %q: want %q, got:\n%s", tt.project, tt.component, tt.want, strings.Join(got, "\n"))
+		}
 	}
 }

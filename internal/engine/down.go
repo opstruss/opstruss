@@ -24,8 +24,8 @@ import (
 // unit that removed: decides.
 type leftover struct {
 	address string
-	unit    string
-	key     string
+	unit    string   // the path of its unit, as the address names it
+	keys    []string // the keys of its address, one per segment
 	record  *state.Record
 	forget  bool
 	reason  string
@@ -47,11 +47,12 @@ func (e *engine) downPass(ctx context.Context) ([]*leftover, error) {
 	var items []*leftover
 	for _, l := range records {
 		switch {
+		case l.record.Kind == "component":
 		case l.def == nil:
 			if e.sel.all {
 				e.warn(l.address, "orphan: its unit is no longer in the files; decide with removed:")
 			}
-		case e.sel.has(&instance{unit: l.unit, key: l.key}):
+		case e.sel.picked(l.unit, l.keys, false):
 			l.reason = "requested"
 			items = append(items, l)
 			e.say("plan", l.address, "will go down")
@@ -72,8 +73,21 @@ func (e *engine) downPass(ctx context.Context) ([]*leftover, error) {
 	}
 	if !protected {
 		e.downAll(ctx, items)
+		e.dropFrames(ctx, framesOfDown(e, items))
 	}
 	return items, nil
+}
+
+// framesOfDown are the instances of components that the items which went
+// down or were forgotten were in.
+func framesOfDown(e *engine, items []*leftover) []string {
+	var out []string
+	for _, l := range items {
+		if l.outcome == success || l.forget {
+			out = append(out, e.frameAddresses(l.address)...)
+		}
+	}
+	return out
 }
 
 // records reads every record of the stack, tombstones left out.
@@ -94,9 +108,16 @@ func (e *engine) records(skip map[string]bool) ([]*leftover, error) {
 		if rec == nil || rec.Tombstone != nil {
 			continue
 		}
-		id := strings.TrimPrefix(addr, e.p.StackName+"/")
-		unit, key, _ := strings.Cut(strings.TrimSuffix(id, "]"), "[")
-		out = append(out, &leftover{address: addr, unit: unit, key: key, record: rec, def: e.p.Units[unit], done: make(chan struct{})})
+		l := &leftover{address: addr, record: rec, done: make(chan struct{})}
+		var names []string
+		for _, s := range model.ParseAddress(e.short(addr)) {
+			names, l.keys = append(names, s.Unit), append(l.keys, s.Key)
+		}
+		l.unit = strings.Join(names, "/")
+		if n := e.p.Nodes[l.unit]; n != nil && n.Component() == nil && rec.Kind != "component" {
+			l.def = n.Def()
+		}
+		out = append(out, l)
 	}
 	return out, nil
 }
@@ -115,20 +136,34 @@ func (e *engine) previewLeftovers() []*leftover {
 		e.fail("", err)
 		return nil
 	}
+	current := map[string]bool{}
+	for _, fs := range e.frames {
+		for _, f := range fs.frames {
+			current[f.address] = true
+		}
+	}
+	e.stale = nil
 	var out []*leftover
 	for _, l := range records {
-		if planned[l.address] || e.moving[l.address] {
+		if l.record.Kind == "component" && !current[l.address] && !e.moving[l.address] {
+			// An instance that this pass did not find drops once nothing
+			// inside has a record.
+			e.stale = append(e.stale, l.address)
+		}
+		if planned[l.address] || e.moving[l.address] || l.record.Kind == "component" {
 			continue
 		}
+		// removed: names a unit of the project, and decides for all that a
+		// component unit had inside.
 		var rm *model.Removed
 		for _, r := range e.p.Removed {
-			if r.From == l.unit {
+			if root, _, _ := strings.Cut(l.unit, "/"); r.From == root {
 				rm = r
 			}
 		}
 		switch {
 		case l.def != nil:
-			if !e.sel.all && !e.sel.units[l.unit] {
+			if !e.sel.all && len(e.sel.picks[l.unit]) == 0 {
 				continue
 			}
 			if l.def.Protect {
@@ -165,11 +200,13 @@ func (e *engine) settle(ctx context.Context, items []*leftover) {
 		}
 		if err := e.forget(ctx, l.address); err != nil {
 			e.fail(l.address, err)
+			l.forget = false
 			continue
 		}
 		e.say("unit", l.address, "forgotten; a tombstone stays at the address")
 	}
 	e.downAll(ctx, downs)
+	e.dropFrames(ctx, append(framesOfDown(e, items), e.stale...))
 }
 
 func (e *engine) forget(ctx context.Context, addr string) error {

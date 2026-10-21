@@ -33,7 +33,7 @@ func (e *engine) unitPass(ctx context.Context, op string, p pass) (map[string]an
 	e.kv = e.newKV()
 	e.mu.Unlock()
 	e.pass = p
-	e.insts, e.byUnit = nil, map[string][]*instance{}
+	e.resetUnits()
 	if op == "down" {
 		items, err := e.downPass(ctx)
 		if err != nil {

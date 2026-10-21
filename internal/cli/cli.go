@@ -351,8 +351,11 @@ func explain(p *model.Project, inputs map[string]model.InputValue, locals map[st
 			return
 		}
 		pickedUnits[n] = units[n]
-		for _, d := range p.Deps[n] {
-			addUnit(d)
+		for _, leaf := range p.Leaves(n) {
+			for _, d := range p.Deps[leaf] {
+				root, _, _ := strings.Cut(d, "/")
+				addUnit(root)
+			}
 		}
 	}
 	var addTask func(string)
@@ -380,7 +383,10 @@ func explain(p *model.Project, inputs map[string]model.InputValue, locals map[st
 		}
 	}
 	out["units"], out["tasks"] = pickedUnits, pickedTasks
-	out["order"] = slices.DeleteFunc(slices.Clone(p.Order), func(u string) bool { return !hasUnit(pickedUnits, u) })
+	out["order"] = slices.DeleteFunc(slices.Clone(p.Order), func(u string) bool {
+		root, _, _ := strings.Cut(u, "/")
+		return !hasUnit(pickedUnits, root)
+	})
 	return out, nil
 }
 
