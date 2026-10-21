@@ -31,8 +31,9 @@ type progSpec struct {
 	failedWhen  any
 	changedWhen any
 	stop        *model.Stop
-	unit        *instance // for the task of a unit
-	call        bool      // a call of command, whose outputs are its streams
+	unit        *instance  // for the task of a unit
+	call        bool       // a call of command, whose outputs are its streams
+	plugin      *pluginRun // for the programs of a plugin task
 }
 
 // program runs the program of a task or a step as often as retry allows;
@@ -151,8 +152,12 @@ func (e *engine) programCall(p progSpec, s *expr.Scope) (*plugin.Call, error) {
 			unit.StateKey = p.unit.record.StateKey
 		}
 	}
-	return &plugin.Call{Shell: p.shell, Base: p.base, Dir: dir, Env: env, Pass: pass, Stdin: stdin, Stop: stop,
-		Task: p.task, Reason: "requested", Unit: unit, Inputs: p.inputs, Outputs: p.outputs}, nil
+	c := &plugin.Call{Shell: p.shell, Base: p.base, Dir: dir, Env: env, Pass: pass, Stdin: stdin, Stop: stop,
+		Task: p.task, Reason: "requested", Unit: unit, Inputs: p.inputs, Outputs: p.outputs}
+	if p.plugin != nil {
+		c.PluginDir = p.plugin.dir
+	}
+	return c, nil
 }
 
 // execProgram runs c once: its streams go to the log, and the outputs it

@@ -1,0 +1,65 @@
+# A task of a plugin is called by name: its program starts from the
+# plugin's directory and runs in the caller's, with the inputs of the
+# plugin and the task, and only the variables it asks for that the project
+# lets through.
+
+env HOME=$WORK/home
+env GREET_TOKEN=t1
+env OTHER=o1
+env UNASKED=u1
+chmod 755 plugins/greet/hello.sh
+
+exec opstruss hi
+stdout '^  msg: hello Ana loud=true cwd=project plugin=greet token=t1 other=none unasked=none$'
+stdout '^  dir: .*plugins/greet$'
+
+# a program that requires: names and PATH lacks fails before it runs
+! exec opstruss broken
+stderr 'plugin greet requires no-such-program, which is not in PATH'
+
+-- opstruss.yaml --
+name: app
+uses:
+  greet:
+    source: ./plugins/greet
+    with: {who: Ana}
+    pass: [GREET_*, UNASKED]
+tasks:
+  hi:
+    steps:
+      - id: h
+        greet.hello: {loud: true}
+      - id: i
+        greet.info: {}
+    outputs:
+      msg: {value: "${{ steps.h.outputs.msg }}"}
+      dir: {value: "${{ steps.i.outputs.dir }}"}
+  broken:
+    greet.missing: {}
+-- plugins/greet/opstruss.plugin.yaml --
+name: greet
+requires: [sh]
+env: [GREET_TOKEN, OTHER]
+inputs:
+  who: {type: string, required: true}
+tasks:
+  hello:
+    inputs:
+      loud: {type: boolean, default: false}
+    run: [./hello.sh]
+    outputs:
+      msg: {from: stdout}
+  info:
+    steps:
+      - id: s
+        set: {dir: "${{ opstruss.dir }}"}
+    outputs:
+      dir: {value: "${{ steps.s.outputs.dir }}"}
+  missing:
+    requires: [no-such-program]
+    run: ["true"]
+-- plugins/greet/hello.sh --
+#!/bin/sh
+cwd=elsewhere
+test -f opstruss.yaml && cwd=project
+echo "hello $INPUT_WHO loud=$INPUT_LOUD cwd=$cwd plugin=$(basename "$OPSTRUSS_PLUGIN_DIR") token=${GREET_TOKEN:-none} other=${OTHER:-none} unasked=${UNASKED:-none}"

@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"path"
 	"path/filepath"
+	"slices"
 
 	"github.com/opstruss/opstruss/internal/builtin"
 	"github.com/opstruss/opstruss/internal/expr"
@@ -45,7 +47,7 @@ func (e *engine) callByName(ctx context.Context, p progSpec, name string, args m
 		if err != nil {
 			return nil, nil, fmt.Errorf("%s: %w", name, err)
 		}
-		if t.Task == "command" {
+		if t.Kind == model.TargetBuiltin && t.Task == "command" {
 			return e.commandCall(ctx, p, in, s)
 		}
 		dir, err := expr.EvalText(p.dir, s)
@@ -54,6 +56,10 @@ func (e *engine) callByName(ctx context.Context, p progSpec, name string, args m
 		}
 		if !filepath.IsAbs(dir) {
 			dir = filepath.Join(p.base, dir)
+		}
+		if t.Kind == model.TargetTask {
+			r := e.callTask(ctx, name, t.Package.Plugin.Tasks[t.Task], dir, in, call{unit: p.unit, plugin: pluginRunOf(t, p)})
+			return r, r.outputs, nil
 		}
 		var res *builtin.Result
 		if t.Task == "kv" {
@@ -72,6 +78,63 @@ func (e *engine) callByName(ctx context.Context, p progSpec, name string, args m
 		}
 		return r, res.Outputs, nil
 	})
+}
+
+// pluginRun is what the programs of a plugin task run with: the plugin's
+// directory, which relative programs in argv start from, the variables it
+// asks for in env: that the project lets through with pass:, and the env
+// of the call, over the plugin's own.
+type pluginRun struct {
+	name     string // in uses:
+	dir      string
+	pass     []string
+	env      model.Env
+	requires []string
+	inputs   map[string]*model.Input // of the plugin and the task
+}
+
+func pluginRunOf(t *model.Target, p progSpec) *pluginRun {
+	pl := t.Package.Plugin
+	inputs, _ := t.Inputs()
+	run := &pluginRun{name: t.Package.Name, dir: t.Package.Dir, env: p.env, requires: pl.Requires, inputs: inputs}
+	for _, n := range pl.Env {
+		for _, pat := range p.pass {
+			if ok, _ := path.Match(pat, n); ok {
+				run.pass = append(run.pass, n)
+				break
+			}
+		}
+	}
+	return run
+}
+
+// pluginScope is what the expressions of a plugin task read: its inputs,
+// its steps, and the facts, with opstruss.dir the plugin's directory.
+func (e *engine) pluginScope(dir string, inputs map[string]any, unit *instance) *expr.Scope {
+	facts := e.facts(unit)
+	facts["dir"], facts["artifacts"], facts["temp"], facts["cwd"] = dir, e.run.Artifacts, e.run.Temp, e.opts.Cwd
+	return (&expr.Scope{Dir: dir, Vars: map[string]any{"inputs": inputs, "opstruss": facts, "steps": map[string]any{}}}).WithKV(e.newKV().get)
+}
+
+// checkRequires fails a task whose programs are not in PATH: those of its
+// requires:, and for a task of a plugin those of the plugin.
+func (e *engine) checkRequires(t *model.Task, c call, s *expr.Scope) error {
+	names, err := requires(t.Requires, s)
+	if err != nil {
+		return fmt.Errorf("requires: %w", err)
+	}
+	if c.plugin != nil {
+		names = append(slices.Clone(c.plugin.requires), names...)
+	}
+	for _, n := range names {
+		if _, err := plugin.LookPath(n, e.path()); err != nil {
+			if c.plugin != nil {
+				return fmt.Errorf("plugin %s requires %s, which is not in PATH", c.plugin.name, n)
+			}
+			return fmt.Errorf("requires: %w", err)
+		}
+	}
+	return nil
 }
 
 // callInputs gives a call its inputs: those of the declaration's with:

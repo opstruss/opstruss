@@ -484,7 +484,7 @@ func TestUses(t *testing.T) {
 		{files("units:\n  db:\n    run: [x]\n    with: {file: x}\n"), "with is for units that use a plugin, task, or component"},
 		{files("  gh: ./plugins/gh\nunits:\n  db:\n    uses: gh\n", gh("  comment:\n    run: [x]\n")...), "plugin gh has no up, so a unit uses one of its tasks, as uses: gh.<task>"},
 		// calls of tasks by name
-		{files("tasks:\n  t:\n    steps:\n      - fetch: {url: x}\n      - http: {url: x}\n      - opstruss.log: {msg: hi}\n      - a.build: {file: x}\n"), "tasks.t.steps[3].a.build: calling a task of a plugin is not supported yet"},
+		{files("tasks:\n  t:\n    steps:\n      - fetch: {url: x}\n      - http: {url: x}\n      - opstruss.log: {msg: hi}\n      - a.build: {file: x}\n"), ""},
 		{files("tasks:\n  t:\n    command: {script: \"echo ${{ inputs.x }}\"}\n"), "script is taken as written; ${{ }} is not allowed in it"},
 		{files("tasks:\n  t:\n    nope: {}\n"), "tasks.t.nope: there is no task nope"},
 		{files("tasks:\n  t:\n    http: {bogus: 1}\n"), "tasks.t.http.bogus: http has no input bogus"},
@@ -524,6 +524,18 @@ func TestUses(t *testing.T) {
 		if !slices.ContainsFunc(got, func(s string) bool { return strings.Contains(s, tt.want) }) {
 			t.Errorf("%q: want %q, got:\n%s", tt.files["opstruss.yaml"], tt.want, strings.Join(got, "\n"))
 		}
+	}
+}
+
+func TestBrokenPlugin(t *testing.T) {
+	// The problems of a plugin file are reported in it, not again where
+	// the plugin is used.
+	got := problems(t, write(t, map[string]string{
+		"opstruss.yaml":                  "name: app\nuses:\n  a: ./plugins/a\nunits:\n  db:\n    uses: a\ntasks:\n  t:\n    a.build: {}\n",
+		"plugins/a/opstruss.plugin.yaml": "name: a\ntasks:\n  up:\n    run: [true]\n",
+	}), "")
+	if len(got) != 1 || !strings.HasPrefix(got[0], "plugins/a/opstruss.plugin.yaml:4:11:") {
+		t.Errorf("got:\n%s", strings.Join(got, "\n"))
 	}
 }
 

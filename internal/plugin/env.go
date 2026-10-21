@@ -122,6 +122,9 @@ func (r *Run) environment(c *Call, dir string) (map[string]string, error) {
 	if c.Digest != "" {
 		env["OPSTRUSS_DIGEST"] = c.Digest
 	}
+	if c.PluginDir != "" {
+		env["OPSTRUSS_PLUGIN_DIR"] = c.PluginDir
+	}
 	if u := c.Unit; u != nil {
 		env["OPSTRUSS_ADDRESS"] = u.Address
 		env["OPSTRUSS_STATE_KEY"] = u.StateKey

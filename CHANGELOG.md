@@ -26,8 +26,17 @@ minor release can change what a project, a component, or a plugin relies on.
   `pass:` and no `env:` on inputs, and tasks that are one operation each,
   which read only their inputs and steps and call only built-in tasks. It
   also checks what each unit's `uses:` and each call of a task by name
-  stand for, and the inputs given to them. Git sources, units that use
-  something, and calls of plugin tasks do not run yet.
+  stand for, and the inputs given to them. Git sources and units that
+  use something do not run yet.
+- A task of a plugin is called by name, as `<name>.<task>: {…}`: its
+  inputs are those of the plugin and the task, filled by the call and the
+  declaration's `with:`; a program in argv starts from the plugin's
+  directory (`OPSTRUSS_PLUGIN_DIR`) and runs in the caller's; it gets only
+  the variables its `env:` asks for that `pass:` of the step, task, or
+  declaration lets through; and its expressions read only its inputs,
+  steps, and the facts.
+- `requires:` of a task, and of the plugin of a task, is checked before
+  it runs: a program that is not in `PATH` fails the task with its name.
 - Built-in tasks, called by name in a step (`http: {…}`) or as the one
   call of a task, which passes its outputs on: `command` (`argv` or
   `script`, `shell`, `stdin`), `http` (JSON bodies parsed, lower-case

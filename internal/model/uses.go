@@ -24,7 +24,13 @@ type Package struct {
 	Component  bool    // the directory is a component: it has opstruss.yaml and no plugin
 	Components []string
 	Builtin    string // the built-in task that the name stands for
+
+	broken bool // its opstruss.plugin.yaml has problems, reported once
 }
+
+// errBroken is what a name resolves to in a plugin whose file has
+// problems: they are reported in the file, not again where it is used.
+var errBroken = errors.New("the plugin has problems")
 
 // What a target is.
 const (
@@ -101,6 +107,9 @@ func (p *Project) resolve(name string, unit bool) (*Target, error) {
 // item finds <package>.<item>: a task of the plugin, or for a unit a
 // component in its components/.
 func item(name string, pkg *Package, it string, unit bool) (*Target, error) {
+	if pkg.broken {
+		return nil, errBroken
+	}
 	if pkg.Builtin != "" {
 		return nil, fmt.Errorf("%s is the built-in task %s, which has no %s", pkg.Name, pkg.Builtin, it)
 	}
@@ -129,6 +138,8 @@ func item(name string, pkg *Package, it string, unit bool) (*Target, error) {
 // unitTarget is what a unit that uses pkg itself runs.
 func unitTarget(name string, pkg *Package) (*Target, error) {
 	switch {
+	case pkg.broken:
+		return nil, errBroken
 	case pkg.Builtin != "":
 		return &Target{Name: name, Kind: TargetBuiltin, Package: pkg, Task: pkg.Builtin}, nil
 	case pkg.Plugin != nil && pkg.Plugin.Tasks["up"] == nil:
@@ -218,7 +229,7 @@ func (c *checker) readPackage(dir string) (*Package, error) {
 			return nil, err
 		}
 		c.probs = append(c.probs, probs...)
-		pkg.Plugin = pl
+		pkg.Plugin, pkg.broken = pl, pl == nil
 	default:
 		if pkg.Component, err = has(FileName); err != nil {
 			return nil, err
@@ -256,7 +267,7 @@ func (c *checker) packageNames(path []string, pkg *Package) {
 // plugin or its tasks, or of the built-in task.
 func (c *checker) declaredWith(path []string, pkg *Package) {
 	with := pkg.Decl.With
-	if len(with) == 0 {
+	if len(with) == 0 || pkg.broken {
 		return
 	}
 	if pkg.Plugin == nil && pkg.Builtin == "" {

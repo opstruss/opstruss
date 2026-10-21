@@ -39,6 +39,10 @@ type Call struct {
 	Inputs map[string]any // INPUT_* and OPSTRUSS_INPUTS, for the program of a task or plugin
 	Plan   bool           // asks for OPSTRUSS_PLAN
 
+	// PluginDir is the directory of the plugin whose program this is:
+	// OPSTRUSS_PLUGIN_DIR, and where a relative program in argv starts.
+	PluginDir string
+
 	Outputs map[string]*model.Output // a stream that an output reads stays out of the log
 	Stdout  io.Writer                // live log of the streams that no output reads
 	Stderr  io.Writer
@@ -191,6 +195,9 @@ func (r *Run) Exec(ctx context.Context, c *Call) (*Result, error) {
 	args, err := argv(c.Command, c.Shell)
 	if err != nil {
 		return nil, err
+	}
+	if c.PluginDir != "" && c.Command.Script == "" && strings.Contains(args[0], "/") {
+		args[0] = resolve(c.PluginDir, args[0])
 	}
 	path, err := LookPath(args[0], env["PATH"])
 	if err != nil {

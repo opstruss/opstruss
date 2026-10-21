@@ -2,6 +2,7 @@ package model
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"maps"
 	"path/filepath"
@@ -278,7 +279,9 @@ func (c *checker) unitUses(path []string, name string, u *Unit) {
 		t, err = c.p.resolve(u.Uses, true)
 	}
 	if err != nil {
-		c.add(at(path, "uses"), "%v", err)
+		if !errors.Is(err, errBroken) {
+			c.add(at(path, "uses"), "%v", err)
+		}
 		return
 	}
 	u.Target = t
@@ -397,7 +400,9 @@ func (c *checker) calls(path []string, calls Calls) {
 		}
 		t, err := c.call(name)
 		if err != nil {
-			c.add(at(path, name), "%v", err)
+			if !errors.Is(err, errBroken) {
+				c.add(at(path, name), "%v", err)
+			}
 			continue
 		}
 		c.with(at(path, name), at(path, name), t, calls[name])
@@ -565,14 +570,12 @@ func (c *checker) unsupportedTask(path []string, t *Task) {
 	if t.On != nil {
 		c.add(at(path, "on"), "triggers are not supported yet")
 	}
-	c.unsupportedCalls(path, t.Calls)
 	c.sensitiveInputs(at(path, "inputs"), t.Inputs)
 	c.sensitiveOutputs(at(path, "outputs"), t.Outputs)
 	var walk func([]string, []*Step)
 	walk = func(path []string, steps []*Step) {
 		for i, s := range steps {
 			sp := at(path, strconv.Itoa(i))
-			c.unsupportedCalls(sp, s.Calls)
 			c.sensitiveOutputs(at(sp, "outputs"), s.Outputs)
 			walk(at(sp, "block"), s.Block)
 			walk(at(sp, "rescue"), s.Rescue)
@@ -580,20 +583,6 @@ func (c *checker) unsupportedTask(path []string, t *Task) {
 		}
 	}
 	walk(at(path, "steps"), t.Steps)
-}
-
-func (c *checker) unsupportedCalls(path []string, calls Calls) {
-	for _, name := range slices.Sorted(maps.Keys(calls)) {
-		if _, hinted := ansible[name]; hinted {
-			continue
-		}
-		t, err := c.p.Resolve(name)
-		switch {
-		case err != nil:
-		case t.Kind != TargetBuiltin:
-			c.add(at(path, name), "calling a task of a plugin is not supported yet")
-		}
-	}
 }
 
 func (c *checker) sensitiveInputs(path []string, inputs map[string]*Input) {

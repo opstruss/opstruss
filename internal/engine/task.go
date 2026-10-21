@@ -74,9 +74,25 @@ func aggregate(results map[string]*taskResult) *taskResult {
 
 // call is what the caller of a task gives it besides inputs.
 type call struct {
-	yes    bool      // --yes, or yes: true on the step that calls it
-	source string    // what yes is, for the record
-	unit   *instance // the unit, for the task of a unit
+	yes    bool       // --yes, or yes: true on the step that calls it
+	source string     // what yes is, for the record
+	unit   *instance  // the unit, for the task of a unit
+	plugin *pluginRun // the plugin, for a task of a plugin
+}
+
+// envPass is the env and pass that the programs of t start from: its own,
+// and for a task of a plugin the env of the call over its own, and the
+// variables it asks for that the project lets through.
+func (c call) envPass(t *model.Task) (model.Env, []string) {
+	if c.plugin == nil {
+		return t.Env, t.Pass
+	}
+	env := maps.Clone(t.Env)
+	if env == nil {
+		env = model.Env{}
+	}
+	maps.Copy(env, c.plugin.env)
+	return env, c.plugin.pass
 }
 
 // Task runs the project task name, or the task name of each unit that has
@@ -178,7 +194,11 @@ func (e *engine) callTask(ctx context.Context, name string, t *model.Task, dir s
 		e.emit(Event{Type: "task", Level: "error", Task: label, Message: err.Error()})
 		return failed(err)
 	}
-	if e.opts.Ask != nil {
+	decl := t.Inputs
+	if c.plugin != nil {
+		decl = c.plugin.inputs
+	}
+	if e.opts.Ask != nil && c.plugin == nil {
 		// A required input without a value is asked for at the terminal.
 		for _, k := range slices.Sorted(maps.Keys(t.Inputs)) {
 			in := t.Inputs[k]
@@ -199,7 +219,7 @@ func (e *engine) callTask(ctx context.Context, name string, t *model.Task, dir s
 			given[k] = v
 		}
 	}
-	inputs, err := conform(t.Inputs, given)
+	inputs, err := conform(decl, given)
 	if err != nil {
 		return fail(err)
 	}
@@ -213,6 +233,12 @@ func (e *engine) callTask(ctx context.Context, name string, t *model.Task, dir s
 		}
 	}
 	scope := e.taskScope(dir, inputs, tasks, c.unit)
+	if c.plugin != nil {
+		scope = e.pluginScope(c.plugin.dir, inputs, c.unit)
+	}
+	if err := e.checkRequires(t, c, scope); err != nil {
+		return fail(err)
+	}
 	if t.If != nil {
 		ok, err := expr.EvalCondition(t.If, scope)
 		if err != nil {
@@ -312,17 +338,18 @@ func (e *engine) taskOnce(ctx context.Context, name, label string, t *model.Task
 	defer cancel()
 	e.sayTask(label, "", "started")
 	var res *taskResult
+	env, pass := c.envPass(t)
 	switch {
 	case t.Run != nil:
 		res = e.program(ctx, progSpec{label: label, task: name, cmd: t.Run, shell: t.Shell, dir: t.Dir, base: dir,
-			env: t.Env, pass: t.Pass, stdin: t.Stdin, inputs: scope.Vars["inputs"].(map[string]any), outputs: t.Outputs,
-			retry: t.Retry, failedWhen: t.FailedWhen, changedWhen: t.ChangedWhen, stop: t.Stop, unit: c.unit}, scope)
+			env: env, pass: pass, stdin: t.Stdin, inputs: scope.Vars["inputs"].(map[string]any), outputs: t.Outputs,
+			retry: t.Retry, failedWhen: t.FailedWhen, changedWhen: t.ChangedWhen, stop: t.Stop, unit: c.unit, plugin: c.plugin}, scope)
 	case len(t.Calls) == 1:
 		// A task that calls one task passes on its outputs.
 		for callee, args := range t.Calls {
-			res = e.callByName(ctx, progSpec{label: label, task: name, shell: t.Shell, dir: t.Dir, base: dir, env: t.Env,
-				pass: t.Pass, stdin: t.Stdin, retry: t.Retry, failedWhen: t.FailedWhen, changedWhen: t.ChangedWhen,
-				stop: t.Stop, unit: c.unit}, callee, args, scope)
+			res = e.callByName(ctx, progSpec{label: label, task: name, shell: t.Shell, dir: t.Dir, base: dir, env: env,
+				pass: pass, stdin: t.Stdin, retry: t.Retry, failedWhen: t.FailedWhen, changedWhen: t.ChangedWhen,
+				stop: t.Stop, unit: c.unit, plugin: c.plugin}, callee, args, scope)
 		}
 	default:
 		res = e.stepsWithRetry(ctx, name, label, t, dir, scope, c)
@@ -357,7 +384,8 @@ func (e *engine) stepsWithRetry(ctx context.Context, name, label string, t *mode
 	}
 	for i := 1; ; i++ {
 		tc := &taskCtx{e: e, name: name, label: label, dir: dir, scope: scope, steps: map[string]any{}, c: c}
-		res := tc.run(ctx, t.Steps, defaults{shell: t.Shell, dir: t.Dir, env: t.Env, pass: t.Pass})
+		env, pass := c.envPass(t)
+		res := tc.run(ctx, t.Steps, defaults{shell: t.Shell, dir: t.Dir, env: env, pass: pass})
 		res.outputs = tc.values(t.Outputs)
 		js := tc.scopeNow().With("outputs", res.outputs)
 		res = judge(res, t.FailedWhen, t.ChangedWhen, js)
@@ -423,6 +451,9 @@ func (tc *taskCtx) scopeNow() *expr.Scope {
 	tc.mu.Lock()
 	defer tc.mu.Unlock()
 	s := tc.scope.With("steps", maps.Clone(tc.steps))
+	if tc.c.plugin != nil {
+		return s.WithKV(tc.e.newKV().get)
+	}
 	return tc.e.newKV().scope(s.With("units", tc.e.unitsView(tc.e.p.Order)))
 }
 
@@ -531,13 +562,13 @@ func (tc *taskCtx) stepOnce(ctx context.Context, s *model.Step, label string, d 
 		d := d.with(s.Shell, s.Dir, s.Env, s.Pass)
 		res = tc.e.program(ctx, progSpec{label: tc.label, step: label, task: tc.name, cmd: s.Run, shell: d.shell, dir: d.dir, base: tc.dir,
 			env: d.env, pass: d.pass, stdin: s.Stdin, outputs: s.Outputs, retry: s.Retry,
-			failedWhen: s.FailedWhen, changedWhen: s.ChangedWhen, unit: tc.c.unit}, scope)
+			failedWhen: s.FailedWhen, changedWhen: s.ChangedWhen, unit: tc.c.unit, plugin: tc.c.plugin}, scope)
 	case len(s.Calls) == 1:
 		d := d.with(s.Shell, s.Dir, s.Env, s.Pass)
 		for callee, args := range s.Calls {
 			res = tc.e.callByName(ctx, progSpec{label: tc.label, step: label, task: tc.name, shell: d.shell, dir: d.dir,
 				base: tc.dir, env: d.env, pass: d.pass, stdin: s.Stdin, retry: s.Retry, failedWhen: s.FailedWhen,
-				changedWhen: s.ChangedWhen, unit: tc.c.unit}, callee, args, scope)
+				changedWhen: s.ChangedWhen, unit: tc.c.unit, plugin: tc.c.plugin}, callee, args, scope)
 		}
 	case s.Task != "":
 		res = tc.callStep(ctx, s, label, scope)
