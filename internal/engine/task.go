@@ -77,8 +77,21 @@ type call struct {
 	yes     bool       // --yes, or yes: true on the step that calls it
 	source  string     // what yes is, for the record
 	unit    *instance  // the unit, for the task of a unit
+	frame   *frame     // the instance of a component whose task it is
 	plugin  *pluginRun // the plugin, for a task of a plugin
 	unitRun *unitRun   // what the unit gives, for a task that runs for it
+}
+
+// where is the instance of a component whose files write the task, or the
+// project.
+func (c call) where(e *engine) *frame {
+	switch {
+	case c.frame != nil:
+		return c.frame
+	case c.unit != nil:
+		return c.unit.frame
+	}
+	return e.top
 }
 
 // envPass is the env and pass that the programs of t start from: its own,
@@ -132,8 +145,10 @@ func (e *engine) unitTasks(ctx context.Context, name string, patterns []string, 
 	e.pass = pass{units: patterns, noDeps: true}
 	e.resetUnits()
 	err := e.selectUnits(false)
+	var frames []*frame
 	if err == nil {
 		e.previewQuiet()
+		frames = e.allFrames()
 	}
 	insts := slices.Clone(e.insts)
 	e.passMu.Unlock()
@@ -148,6 +163,15 @@ func (e *engine) unitTasks(ctx context.Context, name string, patterns []string, 
 		}
 		c.unit = inst
 		results[e.short(inst.address)] = e.callTask(ctx, name, t, inst.dir, inputs, c)
+	}
+	// An instance of a component has the tasks of the component.
+	for _, f := range frames {
+		t := f.in.Tasks[name]
+		if t == nil || t.Internal || !e.sel.hasFrame(f) {
+			continue
+		}
+		c.unit, c.frame = nil, f
+		results[e.short(f.address)] = e.callTask(ctx, name, t, f.in.DirOf("tasks."+name), inputs, c)
 	}
 	if len(results) == 0 {
 		if len(e.p.Units) == 0 {
@@ -191,8 +215,11 @@ func (e *engine) previewQuiet() {
 // its program or steps.
 func (e *engine) callTask(ctx context.Context, name string, t *model.Task, dir string, given map[string]any, c call) *taskResult {
 	label := name
-	if c.unit != nil {
-		label = c.unit.address + " " + name
+	switch f := c.where(e); {
+	case c.unit != nil:
+		label = c.unit.address + "/" + name
+	case f.node != nil:
+		label = f.address + "/" + name
 	}
 	fail := func(err error) *taskResult {
 		e.emit(Event{Type: "task", Level: "error", Task: label, Message: err.Error()})
@@ -229,14 +256,14 @@ func (e *engine) callTask(ctx context.Context, name string, t *model.Task, dir s
 	}
 	tasks := map[string]any{}
 	for _, n := range t.Needs {
-		r := e.need(ctx, n)
+		r := e.need(ctx, n, c.where(e))
 		tasks[n] = r.view()
 		if r.outcome != success {
 			e.sayTask(label, "", "skipped: task %s it needs is %s", n, r.outcome)
 			return &taskResult{outcome: skipped, outputs: map[string]any{}, approval: r.approval}
 		}
 	}
-	scope := e.taskScope(dir, inputs, tasks, c.unit)
+	scope := e.taskScope(dir, inputs, tasks, c)
 	if c.plugin != nil {
 		scope = e.pluginScope(c.plugin.dir, inputs, c.unit)
 	}
@@ -270,7 +297,12 @@ func (e *engine) callTask(ctx context.Context, name string, t *model.Task, dir s
 			return &taskResult{outcome: skipped, outputs: map[string]any{}, approval: true}
 		}
 	}
-	ctx, release, skip, err := e.taskLock(ctx, name, t, scope)
+	lock := name
+	if f := c.where(e); f.node != nil && c.plugin == nil {
+		// The task of an instance of a component has a lock of its own.
+		lock = e.short(f.address) + "/" + name
+	}
+	ctx, release, skip, err := e.taskLock(ctx, lock, t, scope)
 	if err != nil {
 		return fail(err)
 	}
@@ -312,17 +344,23 @@ func (e *engine) callTask(ctx context.Context, name string, t *model.Task, dir s
 }
 
 // need runs a task of needs at most once per run, without inputs from the
-// task that needs it.
-func (e *engine) need(ctx context.Context, name string) *taskResult {
+// task that needs it: a task of the project, or of the instance of a
+// component f.
+func (e *engine) need(ctx context.Context, name string, f *frame) *taskResult {
+	key := f.address + " " + name
 	e.mu.Lock()
-	o := e.needed[name]
+	o := e.needed[key]
 	if o == nil {
 		o = &taskOnce{}
-		e.needed[name] = o
+		e.needed[key] = o
 	}
 	e.mu.Unlock()
 	o.once.Do(func() {
-		o.res = e.callTask(ctx, name, e.p.Tasks[name], e.p.DirOf("tasks."+name), nil, call{yes: e.pass.yes})
+		c := call{yes: e.pass.yes}
+		if f.node != nil {
+			c.frame = f
+		}
+		o.res = e.callTask(ctx, name, f.in.Tasks[name], f.in.DirOf("tasks."+name), nil, c)
 	})
 	return o.res
 }
@@ -463,7 +501,12 @@ func (tc *taskCtx) scopeNow() *expr.Scope {
 	if tc.c.plugin != nil {
 		return s.WithKV(tc.e.newKV().get)
 	}
-	return tc.e.newKV().scope(s.With("units", tc.e.unitsView(tc.e.top, tc.e.rootUnits())))
+	f, k := tc.c.where(tc.e), tc.e.newKV()
+	s = s.With("units", tc.e.unitsView(f, slices.Sorted(maps.Keys(f.in.Units))))
+	if f.node == nil {
+		return k.scope(s)
+	}
+	return s.With("locals", k.localsOf(f, tc.e.inputsOf(f))).WithKV(k.get)
 }
 
 func (tc *taskCtx) record(id string, v any) {
@@ -633,12 +676,15 @@ func (tc *taskCtx) callStep(ctx context.Context, s *model.Step, label string, sc
 	if err != nil {
 		return tc.fail(label, err)
 	}
+	f := tc.c.where(e)
+	units = e.within(f, units)
 	switch s.Task {
 	case "plan", "up", "down":
 		got, err := e.unitPass(ctx, s.Task, pass{units: units, yes: yes, force: s.Force, source: source})
 		if err != nil {
 			return tc.fail(label, err)
 		}
+		got = e.relative(f, got)
 		res := &taskResult{outcome: success, outputs: map[string]any{}, units: got, approval: true}
 		for _, v := range got {
 			u := v.(map[string]any)
@@ -661,8 +707,11 @@ func (tc *taskCtx) callStep(ctx context.Context, s *model.Step, label string, sc
 	}
 	given, _ := with.(map[string]any)
 	c := call{yes: yes, source: source}
-	if t := e.p.Tasks[s.Task]; t != nil {
-		r := e.callTask(ctx, s.Task, t, e.p.DirOf("tasks."+s.Task), given, c)
+	if t := f.in.Tasks[s.Task]; t != nil {
+		if f.node != nil {
+			c.frame = f
+		}
+		r := e.callTask(ctx, s.Task, t, f.in.DirOf("tasks."+s.Task), given, c)
 		r.soft = t.ContinueOnError
 		if r.outcome == skipped && r.approval {
 			// What stopped for approval did not run, so the step that called
@@ -675,7 +724,40 @@ func (tc *taskCtx) callStep(ctx context.Context, s *model.Step, label string, sc
 	if err != nil {
 		return tc.fail(label, err)
 	}
+	r.units = e.relative(f, r.units)
 	return r
+}
+
+// within makes the names of units in a task of an instance of a component
+// name the units inside that instance, and no names all of them, so a
+// component means the same wherever it is used.
+func (e *engine) within(f *frame, patterns []string) []string {
+	if f.node == nil {
+		return patterns
+	}
+	at := e.short(f.address)
+	if len(patterns) == 0 {
+		return []string{at}
+	}
+	out := make([]string, len(patterns))
+	for i, p := range patterns {
+		out[i] = at + "/" + p
+	}
+	return out
+}
+
+// relative names the units inside the instance of a component f by their
+// addresses in it, in results of a task of that instance.
+func (e *engine) relative(f *frame, units map[string]any) map[string]any {
+	if f.node == nil || units == nil {
+		return units
+	}
+	at := e.short(f.address) + "/"
+	out := map[string]any{}
+	for k, v := range units {
+		out[strings.TrimPrefix(k, at)] = v
+	}
+	return out
 }
 
 // unitPatterns reads units: patterns written in the file stay patterns,
@@ -777,13 +859,21 @@ func conform(decl map[string]*model.Input, given map[string]any) (map[string]any
 	return out, nil
 }
 
-// taskScope is what the expressions of a task read.
-func (e *engine) taskScope(dir string, inputs, tasks map[string]any, unit *instance) *expr.Scope {
-	all := maps.Clone(e.inputs)
+// taskScope is what the expressions of a task read: its inputs with those
+// of the project, or of the instance of a component whose task it is, and
+// the locals and units there.
+func (e *engine) taskScope(dir string, inputs, tasks map[string]any, c call) *expr.Scope {
+	f, k := c.where(e), e.newKV()
+	own := e.inputsOf(f)
+	all := maps.Clone(own)
 	maps.Copy(all, inputs)
-	facts := e.facts(unit)
+	facts := e.facts(c.unit)
+	if c.unit == nil && f.node != nil {
+		facts["address"] = f.address
+	}
 	facts["dir"], facts["artifacts"], facts["temp"] = dir, e.run.Artifacts, e.run.Temp
 	facts["cwd"] = e.opts.Cwd
-	return e.newKV().scope(&expr.Scope{Dir: dir, Vars: map[string]any{"stack": e.p.StackName, "inputs": all, "locals": e.locals,
-		"opstruss": facts, "units": e.unitsView(e.top, e.rootUnits()), "tasks": tasks, "steps": map[string]any{}}})
+	s := &expr.Scope{Dir: dir, Vars: map[string]any{"stack": e.p.StackName, "inputs": all, "locals": k.localsOf(f, own),
+		"opstruss": facts, "units": e.unitsView(f, slices.Sorted(maps.Keys(f.in.Units))), "tasks": tasks, "steps": map[string]any{}}}
+	return s.WithKV(k.get)
 }

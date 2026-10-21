@@ -606,8 +606,11 @@ func TestComponents(t *testing.T) {
 		{use + "    retry: {attempts: 2, until: outputs.ok}\n", "units: {}\n", "retry.until judges the outputs of one program"},
 		{use, "secrets:\n  s: {env: S}\nunits:\n  x:\n    run: [echo, \"${{ secrets.s }}\"]\n", "components/c/opstruss.yaml:5:5: units.x.run: a component reads no secrets"},
 		{use, "units:\n  x:\n    uses: ../c\n", "components/c uses itself"},
-		{use, "tasks:\n  t: {run: [x]}\n", "the tasks of a component are not supported yet"},
-		{use, "moved:\n  - from: a\n    to: b\nunits:\n  b: {run: [x]}\n", "moved: in a component is not supported yet"},
+		{use, "inputs:\n  n: {type: string}\ntasks:\n  t:\n    inputs:\n      n: {type: string}\n    run: [x]\n", "n is an input of the component already"},
+		{use, "tasks:\n  t:\n    on: {every: 1h}\n    run: [x]\n", "on: is only in project tasks"},
+		{use + "tasks:\n  all:\n    steps:\n      - task: nope\n", "tasks:\n  check: {run: [x]}\n", "there is no task nope"},
+		{use, "moved:\n  - from: b\n    to: b2\nunits:\n  b: {run: [x]}\n  b2: {run: [x]}\n", "b is still a unit"},
+		{use, "removed:\n  - from: b\n    destroy: true\nunits:\n  b: {run: [x]}\n", "b is still a unit; removed:"},
 		{use, "units:\n  x:\n    run: [\"${{ units.y.outputs.v }}\"]\n", "there is no unit y"},
 		{use + "  d:\n    run: [\"${{ units.c.outputs.nope }}\"]\n", "outputs:\n  v: \"1\"\n", "unit c has no output nope"},
 		{use + "  d:\n    run: [x]\nmoved:\n  - from: c/x\n    to: d\n", "units:\n  x: {run: [x]}\n", "c/x is still a unit"},
@@ -618,4 +621,11 @@ func TestComponents(t *testing.T) {
 			t.Errorf("%q with %q: want %q, got:\n%s", tt.project, tt.component, tt.want, strings.Join(got, "\n"))
 		}
 	}
+	// The task of an instance is a task of the units, which a project task
+	// calls by name; an internal one is not.
+	if got := comp(use+"tasks:\n  all:\n    steps:\n      - task: check\n", "tasks:\n  check: {run: [x]}\n"); len(got) > 0 {
+		t.Errorf("unexpected problems:\n%s", strings.Join(got, "\n"))
+	}
+	got := comp(use+"tasks:\n  all:\n    steps:\n      - task: help\n", "tasks:\n  help: {internal: true, run: [x]}\n")
+	contains(t, got, "there is no task help")
 }

@@ -96,20 +96,20 @@ func (e *engine) resolveTask(inst *instance, r *resolved, s *expr.Scope) error {
 // taskSource is what a unit that uses the task name of the project runs:
 // the task as written, with the tasks it calls through task: and needs,
 // and the programs that they name by a relative path.
-func (e *engine) taskSource(name string, out map[string]any) error {
-	if _, seen := out[name]; seen || e.p.Tasks[name] == nil {
+func (e *engine) taskSource(in *model.Project, name string, out map[string]any) error {
+	if _, seen := out[name]; seen || in.Tasks[name] == nil {
 		return nil
 	}
-	tasks, _ := e.p.Doc()["tasks"].(map[string]any)
+	tasks, _ := in.Doc()["tasks"].(map[string]any)
 	out[name] = tasks[name]
-	t, dir := e.p.Tasks[name], e.p.DirOf("tasks."+name)
+	t, dir := in.Tasks[name], in.DirOf("tasks."+name)
 	runs := []*model.Command{t.Run}
 	var called []string
 	var walk func([]*model.Step)
 	walk = func(steps []*model.Step) {
 		for _, s := range steps {
 			runs = append(runs, s.Run)
-			if e.p.Tasks[s.Task] != nil {
+			if in.Tasks[s.Task] != nil {
 				called = append(called, s.Task)
 			}
 			walk(s.Block)
@@ -133,7 +133,7 @@ func (e *engine) taskSource(name string, out map[string]any) error {
 		out["program "+name+" "+c.Argv[0]] = sum
 	}
 	for _, n := range append(called, t.Needs...) {
-		if err := e.taskSource(n, out); err != nil {
+		if err := e.taskSource(in, n, out); err != nil {
 			return err
 		}
 	}
@@ -152,7 +152,8 @@ func (e *engine) execTask(ctx context.Context, inst *instance, r *resolved, rec 
 	var res *taskResult
 	switch t.Kind {
 	case model.TargetProject:
-		res = e.callTask(ctx, t.Task, e.p.Tasks[t.Task], e.p.DirOf("tasks."+t.Task), r.task.inputs, c)
+		in := inst.node.In
+		res = e.callTask(ctx, t.Task, in.Tasks[t.Task], in.DirOf("tasks."+t.Task), r.task.inputs, c)
 	case model.TargetTask:
 		inputs, _ := t.Inputs()
 		c.plugin = &pluginRun{name: t.Package.Name, dir: t.Package.Dir, requires: t.Package.Plugin.Requires, inputs: inputs}

@@ -115,6 +115,8 @@ type engine struct {
 	moveFailed map[string]error         // targets whose move cannot happen
 	moving     map[string]bool          // addresses that moved: moves away from
 	pairs      []movePair               // the records that moved: moves, in order
+	have       map[string]bool          // the addresses with records, as the moves of the pass leave them
+	collect    bool                     // the pass previews the moves of the instances of components it finds
 	stale      []string                 // records of instances of components that the pass did not find
 
 	mu       sync.Mutex

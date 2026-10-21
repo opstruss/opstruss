@@ -1,0 +1,126 @@
+# The tasks of a component are tasks of each of its instances: they read
+# the component's inputs and units of their instance, their task: steps
+# name the units of that instance, and a unit inside may use one. moved:
+# and removed: in a component name units inside it, in every instance.
+
+env HOME=$WORK/home
+
+exec opstruss up
+stdout '^default/site\[eu\]/db \| building db-eu in eu$'
+stdout '^default/site\[us\]/db: up: done$'
+
+# opstruss <task> runs it in every instance, or in the ones named, after
+# what it needs in that instance; its inputs are flags
+exec opstruss check --deep
+stdout '^default/site\[eu\]/prep \| prep eu$'
+stdout '^default/site\[eu\]/check: .* \| check eu deep true url https://db-eu at default/site\[eu\]$'
+stdout '^default/site\[us\]/check: .* \| check us deep true url https://db-us at default/site\[us\]$'
+exec opstruss check 'site[us]'
+stdout 'check us deep false'
+! stdout 'check eu'
+! exec opstruss build
+stderr 'unknown command "build"'
+
+# the task of a unit inside runs as the task of any unit does
+exec opstruss backup
+stdout '^default/site\[eu\]/db \| backup of https://db-eu$'
+stdout '^default/site\[us\]/db/backup: success$'
+
+# a task: step names the units of its instance, and so does the result
+exec opstruss redeploy 'site[eu]'
+stdout '^default/site\[eu\]/db: will run: forced$'
+stdout '\| redeploy eu db success changed true$'
+! stdout 'site\[us\]/db'
+
+# a task of the project calls the task of an instance by name
+exec opstruss all
+stdout '\| check eu success$'
+
+# moved: and removed: in a component apply in every instance
+cp moved.yaml site/opstruss.yaml
+exec opstruss up --yes
+stdout '^default/site\[eu\]/database: moved from default/site\[eu\]/db$'
+stdout '^default/site\[us\]/database: moved from default/site\[us\]/db$'
+stdout '^default/site\[eu\]/old: will go down: removed: with destroy: true$'
+! stdout 'database: up'
+exec opstruss state list
+stdout '^default/site\[us\]/db\tmoved to default/site\[us\]/database$'
+! stdout 'old'
+
+-- opstruss.yaml --
+name: app
+units:
+  site:
+    uses: ./site
+    for_each: [eu, us]
+    with: {region: "${{ each.key }}"}
+    approval: auto
+tasks:
+  all:
+    steps:
+      - id: c
+        task: check
+        units: ['site[eu]']
+      - run: [echo, "check eu ${{ steps.c.units['site[eu]'].outcome }}"]
+-- site/opstruss.yaml --
+inputs:
+  region: {type: string, required: true}
+units:
+  db:
+    uses: build
+    with: {name: "db-${{ inputs.region }}"}
+    tasks:
+      backup:
+        run: [echo, "backup of ${{ units.db.outputs.url }}"]
+  old:
+    run: [echo, old]
+tasks:
+  build:
+    internal: true
+    inputs:
+      name: {type: string, required: true}
+    steps:
+      - run: [echo, "building ${{ inputs.name }} in ${{ inputs.region }}"]
+    outputs:
+      url: {value: "https://${{ inputs.name }}"}
+  check:
+    needs: [prep]
+    inputs:
+      deep: {type: boolean, default: false}
+    steps:
+      - run: [echo, "check ${{ inputs.region }} deep ${{ inputs.deep }} url ${{ units.db.outputs.url }} at ${{ opstruss.address }}"]
+  prep:
+    internal: true
+    run: [echo, "prep ${{ inputs.region }}"]
+  redeploy:
+    steps:
+      - id: u
+        task: up
+        units: [db]
+        force: true
+        yes: true
+      - run: [echo, "redeploy ${{ inputs.region }} db ${{ steps.u.units['db'].outcome }} changed ${{ steps.u.units['db'].changed }}"]
+-- moved.yaml --
+inputs:
+  region: {type: string, required: true}
+units:
+  database:
+    uses: build
+    with: {name: "db-${{ inputs.region }}"}
+tasks:
+  build:
+    internal: true
+    inputs:
+      name: {type: string, required: true}
+    steps:
+      - run: [echo, "building ${{ inputs.name }} in ${{ inputs.region }}"]
+    outputs:
+      url: {value: "https://${{ inputs.name }}"}
+  check:
+    run: [echo, "check ${{ units.database.outputs.url }}"]
+moved:
+  - from: db
+    to: database
+removed:
+  - from: old
+    destroy: true

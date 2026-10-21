@@ -84,8 +84,17 @@ minor release can change what a project, a component, or a plugin relies on.
   `units:` picks every unit inside a component, one instance
   (`site[eu]`), or a unit inside (`site/db`); `moved:` moves an instance
   with everything inside, and `removed:` decides for everything inside a
-  component unit that left the files. The tasks of a component, and
-  `moved:` and `removed:` in one, do not run yet.
+  component unit that left the files.
+- The tasks of a component are tasks of each of its instances:
+  `opstruss check site` runs `check` in every instance of `site`, with
+  the component's inputs, locals, and units of that instance, `needs`
+  once per instance, and a `concurrency` lock of each instance. Their
+  `task:` steps name the units and tasks of that instance, also in
+  `steps.<id>.units`, and a unit inside may use one; `internal` ones are
+  only called inside. `moved:` and `removed:` in a component name units
+  inside it and apply in every instance. The events of the task of a
+  unit or of an instance name it `<address>/<task>`, and the inputs of a
+  task take names other than those of its project or component.
 - `opstruss status [unit]...` (also `ps`) runs the `status` task of each
   unit's plugin without the unit's lock, with its record to read, and for
   other units says what the record holds: up with its last run and

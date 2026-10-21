@@ -330,7 +330,7 @@ func (e *engine) digest(inst *instance, r *resolved) (string, []string, error) {
 		switch t.Kind {
 		case model.TargetProject:
 			src := map[string]any{}
-			if err := e.taskSource(t.Task, src); err != nil {
+			if err := e.taskSource(inst.node.In, t.Task, src); err != nil {
 				return "", nil, err
 			}
 			def["source"] = src

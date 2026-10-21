@@ -441,6 +441,10 @@ func (c *checker) task(path []string, t *Task, project bool) {
 	c.stop(path, t.Stop)
 	vars := map[string]string{}
 	for _, name := range slices.Sorted(maps.Keys(t.Inputs)) {
+		if c.plugin == nil && c.p.Inputs[name] != nil {
+			c.add(at(path, "inputs", name), "%s is an input of the %s already; a task adds inputs of other names", name,
+				map[bool]string{true: "component", false: "project"}[c.p.component])
+		}
 		v := InputEnv(name)
 		if other, dup := vars[v]; dup {
 			c.add(at(path, "inputs", name), "inputs %s and %s are both %s for the program; rename one", other, name, v)
@@ -621,18 +625,6 @@ func (c *checker) moves() {
 // the schema already.
 func (c *checker) unsupported() {
 	p := c.p
-	if p.component {
-		// Until then a component has units only.
-		if len(p.Tasks) > 0 {
-			c.add([]string{"tasks"}, "the tasks of a component are not supported yet")
-		}
-		if len(p.Moved) > 0 {
-			c.add([]string{"moved"}, "moved: in a component is not supported yet")
-		}
-		if len(p.Removed) > 0 {
-			c.add([]string{"removed"}, "removed: in a component is not supported yet")
-		}
-	}
 	if len(p.Secrets) > 0 {
 		c.add([]string{"secrets"}, "not supported yet")
 	}
@@ -650,9 +642,6 @@ func (c *checker) unsupported() {
 	}
 	for _, name := range slices.Sorted(maps.Keys(p.Units)) {
 		u, path := p.Units[name], []string{"units", name}
-		if p.component && len(u.Tasks) > 0 {
-			c.add(at(path, "tasks"), "the tasks of a unit in a component are not supported yet")
-		}
 		if u.Service != nil {
 			c.add(at(path, "service"), "service units are not supported yet")
 		}

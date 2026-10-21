@@ -153,14 +153,7 @@ func (e *engine) previewLeftovers() []*leftover {
 		if planned[l.address] || e.moving[l.address] || l.record.Kind == "component" {
 			continue
 		}
-		// removed: names a unit of the project, and decides for all that a
-		// component unit had inside.
-		var rm *model.Removed
-		for _, r := range e.p.Removed {
-			if root, _, _ := strings.Cut(l.unit, "/"); r.From == root {
-				rm = r
-			}
-		}
+		rm := e.removal(l)
 		switch {
 		case l.def != nil:
 			if !e.sel.all && len(e.sel.picks[l.unit]) == 0 {
@@ -187,6 +180,31 @@ func (e *engine) previewLeftovers() []*leftover {
 		out = append(out, l)
 	}
 	return out
+}
+
+// removal is the entry of removed: that decides for a record whose unit
+// left the files: in the files of the innermost component unit around it
+// that the files still have, or of the project, the entry of the unit
+// under it, which decides for all that unit had inside, in every instance.
+func (e *engine) removal(l *leftover) *model.Removed {
+	names := strings.Split(l.unit, "/")
+	for depth := len(names) - 1; depth >= 0; depth-- {
+		in := e.p
+		if depth > 0 {
+			n := e.p.Nodes[strings.Join(names[:depth], "/")]
+			if n == nil || n.Component() == nil {
+				continue
+			}
+			in = n.Component()
+		}
+		for _, r := range in.Removed {
+			if r.From == names[depth] {
+				return r
+			}
+		}
+		return nil
+	}
+	return nil
 }
 
 // settle takes down and forgets the leftovers of up, once every turn is

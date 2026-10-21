@@ -50,7 +50,9 @@ func (e *engine) unitPass(ctx context.Context, op string, p pass) (map[string]an
 		return nil, err
 	}
 	e.previewMoves()
+	e.setCollect(true)
 	e.previewAll(ctx)
+	e.setCollect(false)
 	leftovers := e.previewLeftovers()
 	if len(e.p.Units) == 0 {
 		e.say("run", "", "no units")
@@ -131,6 +133,14 @@ func (e *engine) approves(ctx context.Context, q Question, digest string) (sourc
 		return "", "the answer was no", waited
 	}
 	return "terminal", "", waited
+}
+
+// setCollect says whether the instances of components that the pass finds
+// preview their moves.
+func (e *engine) setCollect(v bool) {
+	e.mu.Lock()
+	e.collect = v
+	e.mu.Unlock()
 }
 
 func (e *engine) setInPass(v bool) {

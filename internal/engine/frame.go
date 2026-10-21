@@ -103,7 +103,15 @@ func (e *engine) framesOf(n *model.Node) ([]*frame, error) {
 	} else {
 		e.frames[n.Path] = fs
 	}
+	collect := e.collect
 	e.mu.Unlock()
+	if collect && fs.err == nil {
+		// Found in the preview of a pass, before any unit inside, which
+		// then plans from the records its moves give it.
+		for _, g := range fs.frames {
+			e.addMoves(g)
+		}
+	}
 	return fs.frames, fs.err
 }
 
@@ -115,6 +123,19 @@ func (e *engine) expandComponents() {
 			_, _ = e.framesOf(n)
 		}
 	}
+}
+
+// allFrames are the instances of every component unit that the pass
+// found, outer ones first.
+func (e *engine) allFrames() []*frame {
+	var out []*frame
+	for _, path := range slices.Sorted(maps.Keys(e.p.Nodes)) {
+		if n := e.p.Nodes[path]; n.Component() != nil {
+			fs, _ := e.framesOf(n)
+			out = append(out, fs...)
+		}
+	}
+	return out
 }
 
 // scope is what the expressions of inst read.

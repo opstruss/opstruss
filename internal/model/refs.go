@@ -411,10 +411,24 @@ func (c *checker) unitTaskCycle(name string, seen map[string]bool) string {
 	return found
 }
 
-func (c *checker) unitTask(name string) bool {
-	for _, u := range c.p.Units {
+// unitTask says whether a unit of these files, or of the components they
+// use, has the task name; an instance of a component has the tasks of the
+// component that are not internal.
+func (c *checker) unitTask(name string) bool { return hasUnitTask(c.p, name, map[*Project]bool{}) }
+
+func hasUnitTask(p *Project, name string, seen map[*Project]bool) bool {
+	if seen[p] {
+		return false
+	}
+	seen[p] = true
+	for _, u := range p.Units {
 		if u.Tasks[name] != nil {
 			return true
+		}
+		if t := u.Target; t != nil && t.Component != nil {
+			if ct := t.Component.Tasks[name]; ct != nil && !ct.Internal || hasUnitTask(t.Component, name, seen) {
+				return true
+			}
 		}
 	}
 	return false

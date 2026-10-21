@@ -45,6 +45,16 @@ func (a *app) taskCommands(root *cobra.Command) {
 			}
 		}
 	}
+	// An instance of a component has the tasks of the component.
+	for _, path := range slices.Sorted(maps.Keys(p.Nodes)) {
+		if comp := p.Nodes[path].Component(); comp != nil {
+			for tn, t := range comp.Tasks {
+				if defs[tn] == nil && !t.Internal {
+					defs[tn] = t
+				}
+			}
+		}
+	}
 	for _, name := range slices.Sorted(maps.Keys(defs)) {
 		_, unitTask := p.Tasks[name]
 		run.AddCommand(a.taskCommand(name, defs[name], !unitTask))

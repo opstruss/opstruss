@@ -89,8 +89,9 @@ var forEachKey = regexp.MustCompile(`^[a-z0-9._-]+$`)
 // every unit inside a component, site[eu] one instance, and site/db a unit
 // inside; * matches any text in a segment.
 type selection struct {
-	all   bool
-	picks map[string][]pick // by the path of a unit that runs
+	all    bool
+	picks  map[string][]pick // by the path of a unit that runs
+	frames map[string][]pick // the instances of components picked by name, by the path of the unit that uses each
 }
 
 // pick is how a unit is picked: patterns of the keys of the components it
@@ -105,7 +106,7 @@ type pick struct {
 // dependency inside the same instances of components as the unit that
 // needs it is picked in those instances only.
 func (e *engine) selectUnits(down bool) error {
-	s := &selection{picks: map[string][]pick{}}
+	s := &selection{picks: map[string][]pick{}, frames: map[string][]pick{}}
 	e.sel = s
 	if len(e.pass.units) == 0 {
 		s.all = true
@@ -141,15 +142,23 @@ func (e *engine) selectUnits(down bool) error {
 				continue
 			}
 			found = true
-			for _, leaf := range e.p.Leaves(path) {
-				keys := make([]string, strings.Count(leaf, "/")+1)
+			keysOf := func(p string) []string {
+				keys := make([]string, strings.Count(p, "/")+1)
 				for i := range keys {
 					keys[i] = "*"
 					if i < len(segs) && segs[i].Key != "" {
 						keys[i] = segs[i].Key
 					}
 				}
-				add(leaf, pick{keys: keys, named: true})
+				return keys
+			}
+			for _, leaf := range e.p.Leaves(path) {
+				add(leaf, pick{keys: keysOf(leaf), named: true})
+			}
+			for _, p := range slices.Sorted(maps.Keys(e.p.Nodes)) {
+				if (p == path || strings.HasPrefix(p, path+"/")) && e.p.Nodes[p].Component() != nil {
+					s.frames[p] = append(s.frames[p], pick{keys: keysOf(p), named: true})
+				}
 			}
 		}
 		if !found {
@@ -218,18 +227,33 @@ func (s *selection) picked(path string, keys []string, named bool) bool {
 		return true
 	}
 	for _, pk := range s.picks[path] {
-		if named && !pk.named {
-			continue
-		}
-		ok := len(pk.keys) == len(keys)
-		for i := 0; ok && i < len(keys); i++ {
-			ok = match(pk.keys[i], keys[i])
-		}
-		if ok {
+		if (!named || pk.named) && pk.matches(keys) {
 			return true
 		}
 	}
 	return false
+}
+
+// hasFrame says whether a name picked the instance of a component f, whose
+// tasks then run.
+func (s *selection) hasFrame(f *frame) bool {
+	if s.all {
+		return true
+	}
+	for _, pk := range s.frames[f.node.Path] {
+		if pk.matches(f.keys()) {
+			return true
+		}
+	}
+	return false
+}
+
+func (pk pick) matches(keys []string) bool {
+	ok := len(pk.keys) == len(keys)
+	for i := 0; ok && i < len(keys); i++ {
+		ok = match(pk.keys[i], keys[i])
+	}
+	return ok
 }
 
 // expand finds the instances of the unit at path, in every instance of

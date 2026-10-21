@@ -18,37 +18,35 @@ func movingHere(r *state.Record, peer string) bool {
 	return r != nil && r.Pending != nil && r.Pending.Op == "moved" && r.Pending.Peer == peer
 }
 
-func (e *engine) moveAddr(id string) string { return e.p.StackName + "/" + id }
-
 // movePair is one record that moved: moves, from one address to another.
 type movePair struct{ from, to string }
 
-// movePairs are the records that the entries of moved: move, in order: the
-// record at the address and those under it, as an instance of a component
-// moves with the units inside.
-func (e *engine) movePairs() []movePair {
-	addrs, _ := e.store.Inventory()
-	have := map[string]bool{}
-	for _, a := range addrs {
-		have[a] = true
-	}
-	var out []movePair
-	for _, m := range e.p.Moved {
-		from, to := e.moveAddr(m.From), e.moveAddr(m.To)
-		out = append(out, movePair{from, to})
-		for _, a := range slices.Sorted(maps.Keys(have)) {
+// addMoves previews the entries of moved: in the files of f, the project
+// or an instance of a component, whose entries name units inside it and
+// come once a pass finds the instance. Each entry moves the record at its
+// address and those under it, as an instance of a component moves with
+// the units inside; have holds the addresses with records as the moves
+// before leave them.
+func (e *engine) addMoves(f *frame) {
+	for _, m := range f.in.Moved {
+		from, to := f.address+"/"+m.From, f.address+"/"+m.To
+		pairs := []movePair{{from, to}}
+		for _, a := range slices.Sorted(maps.Keys(e.have)) {
 			if rest, ok := strings.CutPrefix(a, from+"/"); ok {
-				out = append(out, movePair{a, to + "/" + rest})
-				delete(have, a)
-				have[to+"/"+rest] = true
+				pairs = append(pairs, movePair{a, to + "/" + rest})
+				delete(e.have, a)
+				e.have[to+"/"+rest] = true
 			}
 		}
-		if have[from] {
-			delete(have, from)
-			have[to] = true
+		if e.have[from] {
+			delete(e.have, from)
+			e.have[to] = true
 		}
+		for _, pr := range pairs {
+			e.previewMove(pr.from, pr.to)
+		}
+		e.pairs = append(e.pairs, pairs...)
 	}
-	return out
 }
 
 // pendingMove is the mark of a move that did not finish at rec, which only
@@ -64,54 +62,62 @@ func pendingMove(rec *state.Record) *state.Attempt {
 // previewMoves shows the entries of moved: in order and gives each target
 // the record it starts from, so a rename plans as the unit it was, not as
 // a new one. A move that cannot happen fails its target, which then never
-// runs as new.
+// runs as new. The entries of components come as the pass finds their
+// instances.
 func (e *engine) previewMoves() {
 	e.moveFrom = map[string]*state.Record{}
 	e.moveFailed = map[string]error{}
 	e.moving = map[string]bool{}
-	e.pairs = e.movePairs()
-	for _, m := range e.pairs {
-		from, to := m.from, m.to
-		e.moving[from] = true
-		if err := e.moveFailed[from]; err != nil {
-			e.moveFailed[to] = err
-			continue
-		}
-		fr, _, err := e.store.Get(from)
-		var tr *state.Record
-		if err == nil {
-			tr, _, err = e.store.Get(to)
-		}
-		src := e.moveFrom[from]
-		if src == nil && fr != nil && fr.Tombstone == nil {
-			src = fr
-		}
-		switch {
-		case err != nil:
-		case fr != nil && fr.Tombstone != nil && fr.Tombstone.MovedTo == to:
-			if movingHere(tr, from) {
-				cp := *tr
-				cp.Pending = nil
-				e.moveFrom[to] = &cp
-				e.say("plan", to, "will finish the move from %s", from)
-			}
-			continue
-		case src == nil:
-			continue
-		case tr != nil && !movingHere(tr, from):
-			err = fmt.Errorf("moved: %s has a record already, so %s cannot move there", to, from)
-		case src.Pending != nil && src.Pending.Op != "moved":
-			err = fmt.Errorf("moved: the %s of %s at %s did not finish; finish it with files that still have that unit, then move it", src.Pending.Op, src.Pending.Holder, from)
-		default:
-			cp := *src
+	e.pairs = nil
+	addrs, _ := e.store.Inventory()
+	e.have = map[string]bool{}
+	for _, a := range addrs {
+		e.have[a] = true
+	}
+	e.addMoves(e.top)
+}
+
+// previewMove previews moving the record at from to to.
+func (e *engine) previewMove(from, to string) {
+	e.moving[from] = true
+	if err := e.moveFailed[from]; err != nil {
+		e.moveFailed[to] = err
+		return
+	}
+	fr, _, err := e.store.Get(from)
+	var tr *state.Record
+	if err == nil {
+		tr, _, err = e.store.Get(to)
+	}
+	src := e.moveFrom[from]
+	if src == nil && fr != nil && fr.Tombstone == nil {
+		src = fr
+	}
+	switch {
+	case err != nil:
+	case fr != nil && fr.Tombstone != nil && fr.Tombstone.MovedTo == to:
+		if movingHere(tr, from) {
+			cp := *tr
 			cp.Pending = nil
 			e.moveFrom[to] = &cp
-			e.say("plan", to, "will move from %s", from)
-			continue
+			e.say("plan", to, "will finish the move from %s", from)
 		}
-		e.moveFailed[to] = err
-		e.fail(to, err)
+		return
+	case src == nil:
+		return
+	case tr != nil && !movingHere(tr, from):
+		err = fmt.Errorf("moved: %s has a record already, so %s cannot move there", to, from)
+	case src.Pending != nil && src.Pending.Op != "moved":
+		err = fmt.Errorf("moved: the %s of %s at %s did not finish; finish it with files that still have that unit, then move it", src.Pending.Op, src.Pending.Holder, from)
+	default:
+		cp := *src
+		cp.Pending = nil
+		e.moveFrom[to] = &cp
+		e.say("plan", to, "will move from %s", from)
+		return
 	}
+	e.moveFailed[to] = err
+	e.fail(to, err)
 }
 
 // applyMoves runs the moves of moved: in order, before any turn, so a
