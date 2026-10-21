@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
@@ -195,4 +196,35 @@ func (s *Sops) exec(stdin io.Reader, args ...string) ([]byte, string, error) {
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	return out, strings.TrimSpace(stderr.String()), err
+}
+
+// MinSops is the oldest sops that OpsTruss works with: sops 3.10.0
+// encrypts and decrypts what comes on stdin, which is how _meta goes to
+// it, and 3.9.0 brought --filename-override.
+const MinSops = "3.10.0"
+
+var sopsVersion = regexp.MustCompile(`(?m)^sops (\d+)\.(\d+)\.(\d+)`)
+
+// SopsVersion asks the sops at path for its version, without asking the
+// network for the latest one, and reports whether it is older than
+// MinSops.
+func SopsVersion(path string, environ []string) (version string, old bool, err error) {
+	cmd := exec.Command(path, "--version", "--disable-version-check")
+	cmd.Env = environ
+	out, err := cmd.Output()
+	m := sopsVersion.FindStringSubmatch(string(out))
+	if m == nil {
+		// Before 3.8.0, sops does not know --disable-version-check.
+		return "", true, fmt.Errorf("%s --version gives no version it knows (%v)", path, cmp.Or(err, errors.New("no sops x.y.z line")))
+	}
+	version = m[1] + "." + m[2] + "." + m[3]
+	min := sopsVersion.FindStringSubmatch("sops " + MinSops)
+	for i := 1; i <= 3; i++ {
+		a, _ := strconv.Atoi(m[i])
+		b, _ := strconv.Atoi(min[i])
+		if a != b {
+			return version, a < b, nil
+		}
+	}
+	return version, false, nil
 }

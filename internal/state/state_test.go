@@ -228,3 +228,9 @@ func TestSchema(t *testing.T) {
 		}
 	}
 }
+
+func TestNetworkFS(t *testing.T) {
+	if fs, network, err := NetworkFS(t.TempDir()); err != nil || network {
+		t.Errorf("a temporary directory is on %q, network %v, %v", fs, network, err)
+	}
+}

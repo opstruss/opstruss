@@ -117,6 +117,11 @@ func (a *API) Outputs(_ context.Context, r Request) (map[string]any, error) {
 	return engine.Outputs(a.options(r))
 }
 
+// Doctor checks what a run of the stack needs on this machine.
+func (a *API) Doctor(_ context.Context, r Request) (*engine.Report, error) {
+	return engine.Doctor(a.options(r))
+}
+
 // Status returns the tasks and units of the stack.
 func (a *API) Status(_ context.Context, r Request) (*engine.Status, error) {
 	return engine.List(a.options(r))

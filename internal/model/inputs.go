@@ -74,3 +74,46 @@ func lookup(lookupEnv func(string) (string, bool), name string) (string, bool) {
 	}
 	return lookupEnv(name)
 }
+
+// HasSensitive reports whether the project has a secret, or declares a
+// sensitive input or output: of itself, its tasks and units, the
+// components they use, and its plugins. A stack of such a project needs
+// its data key.
+func (p *Project) HasSensitive() bool {
+	return len(p.Secrets) > 0 || p.declaresSensitive(map[*Project]bool{})
+}
+
+func (p *Project) declaresSensitive(seen map[*Project]bool) bool {
+	if seen[p] {
+		return false
+	}
+	seen[p] = true
+	if slices.ContainsFunc(slices.Collect(maps.Values(p.Outputs)), func(o *ProjectOutput) bool { return o.Sensitive }) ||
+		sensitiveIO(p.Inputs, nil) {
+		return true
+	}
+	tasks := slices.Collect(maps.Values(p.Tasks))
+	for _, u := range p.Units {
+		if sensitiveIO(nil, u.Outputs) {
+			return true
+		}
+		tasks = append(tasks, slices.Collect(maps.Values(u.Tasks))...)
+		if t := u.Target; t != nil && t.Component != nil && t.Component.declaresSensitive(seen) {
+			return true
+		}
+	}
+	for _, pkg := range p.Packages {
+		if pl := pkg.Plugin; pl != nil {
+			if sensitiveIO(pl.Inputs, pl.Outputs.Declared) {
+				return true
+			}
+			tasks = append(tasks, slices.Collect(maps.Values(pl.Tasks))...)
+		}
+	}
+	return slices.ContainsFunc(tasks, func(t *Task) bool { return sensitiveIO(t.Inputs, t.Outputs) })
+}
+
+func sensitiveIO(inputs map[string]*Input, outputs map[string]*Output) bool {
+	return slices.ContainsFunc(slices.Collect(maps.Values(inputs)), func(in *Input) bool { return in.Sensitive }) ||
+		slices.ContainsFunc(slices.Collect(maps.Values(outputs)), func(o *Output) bool { return o.Sensitive })
+}

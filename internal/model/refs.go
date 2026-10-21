@@ -219,7 +219,8 @@ func argv(cmd *Command) any {
 	return out
 }
 
-func requiresValue(r *Requires) any {
+// Value is r as written: its expression, or its list.
+func (r *Requires) Value() any {
 	switch {
 	case r == nil:
 		return nil
@@ -259,7 +260,7 @@ func retryUntil(r *Retry) any {
 // unitValues are the keys of a unit whose expressions read other units.
 func unitValues(u *Unit) map[string]any {
 	return map[string]any{"with": u.With, "env": envValues(u.Env), "run": argv(u.Run), "service": argv(u.Service),
-		"down": argv(u.Down), "dir": u.Dir, "revision": u.Revision, "requires": requiresValue(u.Requires),
+		"down": argv(u.Down), "dir": u.Dir, "revision": u.Revision, "requires": u.Requires.Value(),
 		"stdin.value": stdinValue(u.Stdin), "retry.until": retryUntil(u.Retry), "if": condition(u.If), "for_each": u.ForEach}
 }
 
@@ -335,6 +336,26 @@ func (c *checker) references() {
 	}
 }
 
+// CallNames are the names of the tasks that t calls by name, itself or in
+// its steps.
+func CallNames(t *Task) []string {
+	names := slices.Collect(maps.Keys(t.Calls))
+	walkSteps(t.Steps, func(s *Step) {
+		for name := range s.Calls {
+			names = append(names, name)
+		}
+	})
+	slices.Sort(names)
+	return slices.Compact(names)
+}
+
+// PassesOf are the pass: patterns of t and of its steps.
+func PassesOf(t *Task) []string {
+	passes := slices.Clone(t.Pass)
+	walkSteps(t.Steps, func(s *Step) { passes = append(passes, s.Pass...) })
+	return passes
+}
+
 func walkSteps(steps []*Step, fn func(*Step)) {
 	for _, s := range steps {
 		fn(s)
@@ -350,7 +371,7 @@ func (c *checker) taskRefs(path []string, t *Task) {
 		pl.kind = "plugin"
 	}
 	check := checkPlace(pl)
-	for key, v := range map[string]any{"run": argv(t.Run), "env": envValues(t.Env), "requires": requiresValue(t.Requires),
+	for key, v := range map[string]any{"run": argv(t.Run), "env": envValues(t.Env), "requires": t.Requires.Value(),
 		"if": condition(t.If), "for_each": t.ForEach} {
 		c.refs(at(path, key), v, pl)
 	}

@@ -143,6 +143,15 @@ minor release can change what a project, a component, or a plugin relies on.
   on the pulled `_meta`, pushed back with `state push`.
 - `opstruss outputs` prints sensitive outputs as `***`, and as they are
   with `--show-sensitive`; `status` and `list` hide them too.
+- `opstruss doctor` checks that this machine has what a run of the stack
+  needs, without running anything or resolving a secret: each program
+  that `requires:` names for an instance of a unit or a task, with its
+  path; sops 3.10.0 or newer and the data key of the stack, which opens,
+  or which a rule in `.sops.yaml` can make, when the stack needs one; the
+  variables that a plugin asks for and no `pass:` lets through; and
+  whether `.opstruss/` is on a network filesystem. Each finding is `ok`,
+  `skip`, `warn`, or `error`, and only an `error`, which fails a run,
+  makes it exit 1; `--json` prints one document.
 - `secrets:` names where each secret of the project comes from: a sops
   file, whole or one `field` of it; a variable of the environment
   (`env: <NAME>`); what a program prints (`run:`); or the output `value`

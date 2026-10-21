@@ -1,0 +1,86 @@
+# doctor checks what a run of the stack needs on this machine: the
+# programs of requires: with their paths, sops and the data key, the
+# variables plugins ask for, and where .opstruss is. It exits 1 only for
+# what fails a run, and never resolves a secret.
+
+env HOME=$WORK/home
+env SOPS_AGE_KEY_FILE=$WORK/age/keys.txt
+env TOKEN=s3cr3t-token-value
+
+# without a rule in .sops.yaml, the stack cannot make its data key
+! exec opstruss doctor
+stdout '^ok     sh at .*/sh, for unit default/deploy, unit default/web$'
+stdout '^error  not-a-program-xyz is not in PATH, for unit default/web$'
+stdout '^skip   the programs that task build requires depend on its inputs, so each call checks them$'
+stdout '^ok     sops 3\.[0-9]+\.[0-9]+ at .*sops$'
+stdout '^error  no rule in \.sops\.yaml matches default/_meta'
+stdout '^warn   plugin tool asks for TOOL_TOKEN, and no pass: of what uses it lets it through'
+! stdout TOOL_REGION
+stdout '^ok     the project is on a local filesystem'
+! exists ran-secret
+
+# what a unit requires follows its inputs, per instance
+exec opstruss init
+exec opstruss doctor --input extra=sh
+stdout '^ok     stack default has no data key yet; the first value that needs one makes it'
+! stdout '^error'
+
+# --json is one document, and keeps the exit code
+! exec opstruss doctor --json
+stdout '"stack": "default"'
+stdout '"check": "program"'
+stdout '"name": "not-a-program-xyz"'
+stdout '"status": "error"'
+
+# once a value made the data key, doctor opens it
+exec opstruss up secret --yes --input extra=sh
+exec opstruss doctor --input extra=sh
+stdout '^ok     the data key of stack default opens with sops$'
+! exists ran-secret
+
+# sops older than 3.10.0 cannot take _meta on stdin
+chmod 755 oldsops/sops
+env PATH=$WORK/oldsops:$PATH
+! exec opstruss doctor --input extra=sh
+stdout '^error  sops 3\.9\.4 at .*oldsops/sops is older than 3\.10\.0, which OpsTruss needs$'
+
+-- opstruss.yaml --
+name: app
+inputs:
+  token: {type: string, sensitive: true, env: TOKEN}
+  extra: {type: string, default: not-a-program-xyz}
+uses:
+  tool: ./plugins/tool
+secrets:
+  marked:
+    run: touch ran-secret && echo marked-value
+units:
+  web:
+    run: [sh, -c, 'echo web']
+    requires: [sh, '${{ inputs.extra }}']
+  deploy:
+    uses: tool
+    pass: [TOOL_REGION]
+  secret:
+    run: echo "with $T"
+    env: {T: '${{ inputs.token }}'}
+  never:
+    run: echo "$M"
+    env: {M: '${{ secrets.marked }}'}
+tasks:
+  build:
+    inputs:
+      cli: {type: string, default: docker}
+    requires: ['${{ inputs.cli }}']
+    run: [echo, build]
+-- plugins/tool/opstruss.plugin.yaml --
+name: tool
+description: A tool that needs sh and two variables
+requires: [sh]
+env: [TOOL_TOKEN, TOOL_REGION]
+tasks:
+  up:
+    run: [sh, -c, 'echo up']
+-- oldsops/sops --
+#!/bin/sh
+echo "sops 3.9.4"

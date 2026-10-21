@@ -178,7 +178,7 @@ func (a *app) root() *cobra.Command {
 	root.Flags().StringVar(&a.completion, "completion", "", "print a completion script for bash, zsh, or fish")
 	root.AddCommand(a.versionCommand(), a.initCommand(), a.validateCommand(), a.explainCommand(), a.stateCommand())
 	root.AddCommand(a.unitCommands()...)
-	root.AddCommand(a.listCommand(), a.outputsCommand(), a.runsCommand(), a.execCommand())
+	root.AddCommand(a.listCommand(), a.outputsCommand(), a.runsCommand(), a.execCommand(), a.doctorCommand())
 	a.taskCommands(root)
 	return root
 }

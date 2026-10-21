@@ -54,6 +54,35 @@ func (a *app) listCommand() *cobra.Command {
 	}
 }
 
+func (a *app) doctorCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "doctor",
+		Short: "Check that this machine has what a run of the stack needs, without running it",
+		Args:  cobra.NoArgs,
+		RunE: func(*cobra.Command, []string) error {
+			req, err := a.request(nil)
+			if err != nil {
+				return err
+			}
+			rep, err := a.api().Doctor(context.Background(), req)
+			if err != nil {
+				return err
+			}
+			if a.json {
+				err = a.printJSON(rep)
+			} else {
+				for _, c := range rep.Checks {
+					fmt.Fprintf(a.stdout, "%-5s  %s\n", c.Status, c.Message)
+				}
+			}
+			if err == nil && rep.Failed() {
+				return &exitError{1}
+			}
+			return err
+		},
+	}
+}
+
 func (a *app) outputsCommand() *cobra.Command {
 	var show bool
 	cmd := &cobra.Command{
