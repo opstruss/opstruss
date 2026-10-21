@@ -311,7 +311,7 @@ func (a *app) explainCommand() *cobra.Command {
 					inputs[k] = v
 				}
 			}
-			locals, err := p.EvalLocals(values, nil)
+			locals, err := p.EvalLocals(values, nil, nil)
 			if err != nil {
 				return red.Err(err)
 			}

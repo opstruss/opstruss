@@ -92,7 +92,7 @@ func (k *kvMemory) scope(s *expr.Scope) *expr.Scope {
 	if !k.e.kvLocals {
 		return s
 	}
-	return s.With("locals", k.localsOf(k.e.top, k.e.inputs))
+	return s.WithMarks("locals", k.localsOf(k.e.top, k.e.inputs), s.Marks["locals"])
 }
 
 // localsOf is locals.<name> in f with this memory: those of the project,
@@ -107,7 +107,7 @@ func (k *kvMemory) localsOf(f *frame, inputs map[string]any) map[string]any {
 	}
 	k.once.Do(func() {
 		var err error
-		if k.locals, err = k.e.p.EvalLocals(k.e.inputs, k.get); err != nil {
+		if k.locals, err = k.e.evalLocals(k.get); err != nil {
 			k.locals = k.e.locals
 		}
 	})

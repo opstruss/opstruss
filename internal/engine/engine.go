@@ -86,6 +86,7 @@ const DefaultParallel = 10
 const DefaultTimeout = 6 * time.Hour
 
 type engine struct {
+	ctx      context.Context // the run's, for the programs of secrets, which an expression starts without one of its own
 	opts     Options
 	p        *model.Project
 	inputs   map[string]any
@@ -133,8 +134,12 @@ type engine struct {
 
 	redact     *secret.Redactor // hides the sensitive values the run knows in what it writes out
 	inputMarks map[string]any   // the sensitive inputs of the project
-	localMarks map[string]any   // the locals that read them
+	localMarks map[string]any   // the locals that read them, or a secret
 	tooShort   []string         // sensitive values too short to hide, by name, for a warning once the run starts
+
+	secrets   map[string]any // secrets.<name>, each resolved when an expression of the run first reads it
+	sopsMu    sync.Mutex
+	sopsFiles map[string]any // the sops files of secrets, by path, each decrypted once a run
 
 	keyOnce sync.Once
 	key     []byte // the data key of the stack, once a value needed it
@@ -145,11 +150,12 @@ type engine struct {
 // open reads the project and the state of its stack, marks the runs that
 // a crash left running, and starts the record of a run of command, or of
 // the task with that name.
-func open(opts Options, command, task string) (*engine, error) {
+func open(ctx context.Context, opts Options, command, task string) (*engine, error) {
 	e, err := load(opts)
 	if err != nil {
 		return nil, err
 	}
+	e.ctx = ctx
 	return e, e.start(command, task)
 }
 
@@ -180,19 +186,17 @@ func load(opts Options) (*engine, error) {
 			inputMarks[k] = true
 		}
 	}
-	locals, err := p.EvalLocals(inputs, nil)
-	if err != nil {
-		return nil, red.Err(err)
-	}
-	localMarks := p.LocalMarks(map[string]any{"inputs": inputMarks}, nil)
-	for k := range localMarks {
-		red.AddDerived(locals[k])
-	}
-	e := &engine{opts: opts, p: p, inputs: inputs, locals: locals, root: filepath.Join(p.Dir, ".opstruss"),
-		redact: red, inputMarks: inputMarks, localMarks: localMarks, tooShort: short,
+	e := &engine{opts: opts, p: p, inputs: inputs, root: filepath.Join(p.Dir, ".opstruss"),
+		redact: red, inputMarks: inputMarks, tooShort: short,
 		started: time.Now().UTC(), parallel: DefaultParallel, byUnit: map[string][]*instance{},
 		read: map[string]string{}, needed: map[string]*taskOnce{}, holders: map[string]context.CancelCauseFunc{},
-		touched: map[string]*record.Unit{}, hashes: map[string]string{}, frames: map[string]*frameSet{}}
+		touched: map[string]*record.Unit{}, hashes: map[string]string{}, frames: map[string]*frameSet{},
+		sopsFiles: map[string]any{}}
+	e.secrets = e.secretValues()
+	e.localMarks = p.LocalMarks(e.projectMarks(inputMarks), nil)
+	if e.locals, err = e.evalLocals(nil); err != nil {
+		return nil, red.Err(err)
+	}
 	e.top = &frame{in: p, address: p.StackName}
 	for _, v := range p.Locals {
 		if use, err := expr.AnalyzeValue(v); err == nil && slices.Contains(use.Funcs, "kv") {
@@ -471,6 +475,40 @@ func (e *engine) facts(inst *instance) map[string]any {
 		f["dir"], f["address"] = inst.dir, inst.address
 	}
 	return f
+}
+
+// projectMarks are the marks of what the expressions in the files of the
+// project read: its inputs that inputMarks marks, and every secret.
+func (e *engine) projectMarks(inputMarks map[string]any) map[string]any {
+	marks := map[string]any{"inputs": inputMarks}
+	if len(e.secrets) > 0 {
+		marks["secrets"] = true
+	}
+	return marks
+}
+
+// evalLocals evaluates the locals of the project, with kv() through kv; a
+// sensitive one is hidden in what the run writes out once it is made.
+func (e *engine) evalLocals(kv func(string) (any, error)) (map[string]any, error) {
+	locals, err := e.p.EvalLocals(e.inputs, kv, e.secrets)
+	if err != nil {
+		return nil, err
+	}
+	for k := range e.localMarks {
+		v := locals[k]
+		if !expr.IsLater(v) {
+			e.redact.AddDerived(v)
+			continue
+		}
+		locals[k] = expr.Later(func() (any, error) {
+			made, err := expr.Made(v)
+			if err == nil {
+				e.redact.AddDerived(made)
+			}
+			return made, err
+		})
+	}
+	return locals, nil
 }
 
 // lineWriter turns the output of a program into log events, one per line.

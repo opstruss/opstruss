@@ -38,7 +38,7 @@ func Up(ctx context.Context, opts Options) (*Result, error) { return runCommand(
 func Down(ctx context.Context, opts Options) (*Result, error) { return runCommand(ctx, opts, "down") }
 
 func runCommand(ctx context.Context, opts Options, op string) (*Result, error) {
-	e, err := open(opts, op, "")
+	e, err := open(ctx, opts, op, "")
 	if err != nil {
 		return nil, err
 	}

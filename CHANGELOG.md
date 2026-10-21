@@ -143,6 +143,20 @@ minor release can change what a project, a component, or a plugin relies on.
   on the pulled `_meta`, pushed back with `state push`.
 - `opstruss outputs` prints sensitive outputs as `***`, and as they are
   with `--show-sensitive`; `status` and `list` hide them too.
+- `secrets:` names where each secret of the project comes from: a sops
+  file, whole or one `field` of it; a variable of the environment
+  (`env: <NAME>`); what a program prints (`run:`); or the output `value`
+  of a task of a plugin, called by name. A run resolves a secret only when
+  an expression of a unit or task it runs reads it, `plan` included, once
+  a run, and decrypts each sops file once; a source that fails fails what
+  reads it, with its name, and the rest runs. Values computed from a
+  secret, in locals and in the inputs and outputs of components, wait as
+  long. A secret is sensitive, a stack overrides it by name, and commands
+  that only read never resolve one. `validate` checks that each has one
+  source, whose expressions read the stack, the project's inputs, locals
+  that read no secret, and the facts known at plan, and that `if`,
+  `for_each`, and the outputs of the project read no local that reads a
+  secret.
 - A task input with `env:` takes its value from that variable when the
   call gives none, before the default.
 - `opstruss init` sets up the project in its directory, adding only what

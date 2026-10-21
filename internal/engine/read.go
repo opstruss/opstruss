@@ -29,6 +29,12 @@ func Outputs(opts Options) (map[string]any, error) {
 	out, marks := map[string]any{}, map[string]any{}
 	for _, name := range slices.Sorted(maps.Keys(e.p.Outputs)) {
 		s := e.frameScope(e.top, e.rootUnits(), e.p.DirOf("outputs."+name), "", nil, nil)
+		if o := e.p.Outputs[name]; !opts.ShowSensitive && (o.Sensitive || expr.MarksOf(o.Value, s) != nil) {
+			// It shows as *** anyway, and what it reads may need a secret,
+			// which only a run resolves.
+			out[name], marks[name] = nil, true
+			continue
+		}
 		v, m, err := expr.EvalMarked(e.p.Outputs[name].Value, s)
 		if err != nil {
 			return nil, e.redact.Err(fmt.Errorf("output %s: %w", name, err))

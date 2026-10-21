@@ -61,6 +61,12 @@ func (a adapter) NativeToValue(v any) ref.Val {
 		return types.NewDynamicList(a, x)
 	case time.Time:
 		return types.Timestamp{Time: x}
+	case *later:
+		w, err := x.get()
+		if err != nil {
+			return types.NewErr("%v", err)
+		}
+		return a.NativeToValue(w)
 	}
 	return types.DefaultTypeAdapter.NativeToValue(v)
 }

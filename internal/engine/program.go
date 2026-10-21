@@ -36,6 +36,7 @@ type progSpec struct {
 	call        bool       // a call of command, whose outputs are its streams
 	plugin      *pluginRun // for the programs of a plugin task
 	unitRun     *unitRun   // for the programs of a task that runs for a unit
+	secret      bool       // the program of a secret source, or the call of one
 }
 
 // program runs the program of a task or a step as often as retry allows;
@@ -173,11 +174,18 @@ func (e *engine) programCall(p progSpec, s *expr.Scope) (*plugin.Call, error) {
 		}
 		reason = cmp.Or(u.reason, reason)
 	}
+	// The inputs of a component, which a task of it gets too, may read a
+	// secret, made now.
+	inputs, err := expr.Made(p.inputs)
+	if err != nil {
+		return nil, fmt.Errorf("inputs: %w", err)
+	}
 	c := &plugin.Call{Shell: p.shell, Base: p.base, Dir: dir, Env: env, Pass: pass, Stdin: stdin, Stop: stop,
-		Task: p.task, Reason: reason, Unit: unit, Inputs: p.inputs, Outputs: p.outputs}
+		Task: p.task, Reason: reason, Unit: unit, Inputs: inputs.(map[string]any), Outputs: p.outputs}
 	if p.plugin != nil {
 		c.PluginDir = p.plugin.dir
 	}
+	c.Secret = p.secret || p.plugin != nil && p.plugin.secret
 	return c, nil
 }
 

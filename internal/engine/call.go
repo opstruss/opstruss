@@ -101,6 +101,7 @@ type pluginRun struct {
 	env      model.Env
 	requires []string
 	inputs   map[string]*model.Input // of the plugin and the task
+	secret   bool                    // the task gives a secret
 }
 
 // unitRun is what the programs of a task that runs for a unit get from it:
@@ -120,7 +121,7 @@ type unitRun struct {
 func pluginRunOf(t *model.Target, p progSpec) *pluginRun {
 	pl := t.Package.Plugin
 	inputs, _ := t.Inputs()
-	run := &pluginRun{name: t.Package.Name, dir: t.Package.Dir, env: p.env, requires: pl.Requires, inputs: inputs}
+	run := &pluginRun{name: t.Package.Name, dir: t.Package.Dir, env: p.env, requires: pl.Requires, inputs: inputs, secret: p.secret}
 	for _, n := range pl.Env {
 		for _, pat := range p.pass {
 			if ok, _ := path.Match(pat, n); ok {

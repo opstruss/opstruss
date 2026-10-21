@@ -46,6 +46,9 @@ type Call struct {
 	// AnyOutputs keeps every output the program writes, for a plugin with
 	// outputs: tool, whose user's code names them.
 	AnyOutputs bool
+	// Secret marks the program of a secret source, which gets no
+	// OPSTRUSS_ARTIFACTS, where the secret would stay with the run.
+	Secret bool
 
 	Outputs map[string]*model.Output // a stream that an output reads stays out of the log
 	Stdout  io.Writer                // live log of the streams that no output reads

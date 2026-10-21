@@ -118,7 +118,9 @@ func (r *Run) environment(c *Call, dir string) (map[string]string, error) {
 	env["OPSTRUSS_TASK"] = c.Task
 	env["OPSTRUSS_REASON"] = c.Reason
 	env["OPSTRUSS_TEMP"] = r.Temp
-	env["OPSTRUSS_ARTIFACTS"] = r.Artifacts
+	if !c.Secret {
+		env["OPSTRUSS_ARTIFACTS"] = r.Artifacts
+	}
 	if c.Digest != "" {
 		env["OPSTRUSS_DIGEST"] = c.Digest
 	}

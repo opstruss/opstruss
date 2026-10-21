@@ -40,12 +40,14 @@ var readable = map[string][]string{
 	"plugin":       {"inputs", "steps", "each", "opstruss"},
 	"plugin-check": {"inputs", "steps", "each", "opstruss", "outputs"},
 	"output":       {"inputs", "locals", "units", "stack", "opstruss"},
+	"secret":       {"inputs", "locals", "stack", "opstruss"},
 }
 
 var placeNames = map[string]string{
 	"unit": "a unit", "until": "retry.until of a unit", "cond": "if and for_each of a unit", "local": "locals",
 	"task": "a task", "check": "failed_when, changed_when, and retry.until", "output": "project outputs",
 	"plugin": "a plugin task", "plugin-check": "failed_when, changed_when, and retry.until of a plugin task",
+	"secret": "secret sources",
 }
 
 // refs checks the expressions in v, written at path, and returns the units
@@ -76,8 +78,15 @@ func (c *checker) refs(path []string, v any, pl place) []string {
 				c.add(path, "there is no input %s (in ${{ %s }})", name, r.Expr)
 			}
 		case "locals":
-			if name != "" && !hasKey(c.p.Locals, name) {
+			switch {
+			case name != "" && !hasKey(c.p.Locals, name):
 				c.add(path, "there is no local %s (in ${{ %s }})", name, r.Expr)
+			case slices.Contains(readable[pl.kind], "secrets"):
+				// What reads secrets reads the locals that do as well.
+			case name != "" && c.secretLocal(name):
+				c.add(path, "%s cannot read local %s, which reads a secret (in ${{ %s }})", placeNames[pl.kind], name, r.Expr)
+			case name == "" && c.secretLocal(""):
+				c.add(path, "%s read locals by name, as locals.<name>, since a local reads a secret (in ${{ %s }})", placeNames[pl.kind], r.Expr)
 			}
 		case "units":
 			if name == "" {
@@ -106,8 +115,11 @@ func (c *checker) refs(path []string, v any, pl place) []string {
 				c.add(path, "a component reads no secrets; give it the value through one of its inputs (in ${{ %s }})", r.Expr)
 				continue
 			}
-			if r.Dynamic && len(r.Path) == 1 {
+			switch {
+			case len(r.Path) == 1:
 				c.add(path, "secrets are read by name, as secrets.<name> (in ${{ %s }})", r.Expr)
+			case name != "" && c.p.Secrets[name] == nil:
+				c.add(path, "there is no secret %s (in ${{ %s }})", name, r.Expr)
 			}
 		case "each":
 			if !pl.each {
@@ -132,6 +144,19 @@ func (c *checker) hasInput(name string, pl place) bool {
 	return c.p.Inputs[name] != nil
 }
 
+// secretLocal says whether local name reads a secret, itself or through
+// other locals, or for "", whether a local does: only what may read
+// secrets may read it.
+func (c *checker) secretLocal(name string) bool {
+	if c.readsSecret == nil {
+		c.readsSecret = c.p.LocalMarks(map[string]any{"secrets": true}, nil)
+	}
+	if name == "" {
+		return len(c.readsSecret) > 0
+	}
+	return c.readsSecret[name] != nil
+}
+
 // checkPlace is where failed_when, changed_when, and retry.until of
 // something at pl are, which also read outputs.
 func checkPlace(pl place) place {
@@ -145,7 +170,7 @@ func (c *checker) fact(path []string, name string, r expr.Ref, pl place) {
 		c.add(path, "read one fact, such as opstruss.project (in ${{ %s }})", r.Expr)
 	case !slices.Contains(Facts, name):
 		c.add(path, "opstruss has no fact %s (in ${{ %s }})", name, r.Expr)
-	case (pl.kind == "cond" || pl.kind == "local") && !slices.Contains(planFacts, name):
+	case (pl.kind == "cond" || pl.kind == "local" || pl.kind == "secret") && !slices.Contains(planFacts, name):
 		c.add(path, "%s read only facts known at plan, %s; not opstruss.%s (in ${{ %s }})", placeNames[pl.kind], "opstruss.project, .os, .arch, and .host", name, r.Expr)
 	case (pl.kind == "unit" || pl.kind == "until") && slices.Contains([]string{"cwd", "artifacts", "temp", "state_key", "reason"}, name):
 		c.add(path, "a unit cannot read opstruss.%s, which changes with each run or place (in ${{ %s }})", name, r.Expr)
@@ -298,6 +323,16 @@ func (c *checker) references() {
 	for _, name := range slices.Sorted(maps.Keys(p.Outputs)) {
 		c.refs([]string{"outputs", name}, p.Outputs[name].Value, place{kind: "output"})
 	}
+	for _, name := range slices.Sorted(maps.Keys(p.Secrets)) {
+		s, path := p.Secrets[name], []string{"secrets", name}
+		values := map[string]any{"sops": s.Sops, "field": s.Field, "env": envValues(s.Env), "run": argv(s.Run), "dir": s.Dir}
+		for _, key := range slices.Sorted(maps.Keys(values)) {
+			c.refs(at(path, key), values[key], place{kind: "secret"})
+		}
+		for _, callee := range slices.Sorted(maps.Keys(s.Calls)) {
+			c.refs(at(path, callee), s.Calls[callee], place{kind: "secret"})
+		}
+	}
 }
 
 func walkSteps(steps []*Step, fn func(*Step)) {
@@ -434,11 +469,13 @@ func hasUnitTask(p *Project, name string, seen map[*Project]bool) bool {
 	return false
 }
 
-// EvalLocals evaluates the locals with the project inputs, and kv() through
-// kv. A local that reads what is only known in a run, a secret, or kv()
+// EvalLocals evaluates the locals with the project inputs, kv() through
+// kv, and secrets.<name> through secrets, whose values Later makes. A
+// local that reads a value Later makes is one itself, made when an
+// expression reads it; without secrets, a local that reads one, or kv()
 // without kv, stays as written.
-func (p *Project) EvalLocals(inputs map[string]any, kv func(string) (any, error)) (map[string]any, error) {
-	return p.evalLocals(p.Name, inputs, kv, false)
+func (p *Project) EvalLocals(inputs map[string]any, kv func(string) (any, error), secrets map[string]any) (map[string]any, error) {
+	return p.evalLocals(p.Name, inputs, kv, secrets, false)
 }
 
 // LocalMarks says which locals are sensitive, given the marks of what they
@@ -483,14 +520,14 @@ func (p *Project) LocalMarks(marks map[string]any, kvMarked func(string) bool) m
 // the project named project. A local that fails, as one that reads an
 // input with no value yet, fails only the expressions that read it.
 func (p *Project) ComponentLocals(project string, inputs map[string]any, kv func(string) (any, error)) map[string]any {
-	out, err := p.evalLocals(project, inputs, kv, true)
+	out, err := p.evalLocals(project, inputs, kv, nil, true)
 	if err != nil {
 		return map[string]any{}
 	}
 	return out
 }
 
-func (p *Project) evalLocals(project string, inputs map[string]any, kv func(string) (any, error), lenient bool) (map[string]any, error) {
+func (p *Project) evalLocals(project string, inputs map[string]any, kv func(string) (any, error), secrets map[string]any, lenient bool) (map[string]any, error) {
 	deps := map[string][]string{}
 	uses := map[string]*expr.Use{}
 	for name, v := range p.Locals {
@@ -522,7 +559,7 @@ func (p *Project) evalLocals(project string, inputs map[string]any, kv func(stri
 				readsKV[name] = readsKV[name] || readsKV[r.Path[1]]
 				later = later || deferred[r.Path[1]]
 			}
-			later = later || r.Path[0] == "secrets"
+			later = later || r.Path[0] == "secrets" && secrets == nil
 		}
 		if later || kv == nil && readsKV[name] {
 			deferred[name] = true
@@ -530,9 +567,21 @@ func (p *Project) evalLocals(project string, inputs map[string]any, kv func(stri
 			continue
 		}
 		s := &expr.Scope{Dir: p.DirOf("locals." + name), KV: kv, Vars: map[string]any{
-			"inputs": inputs, "locals": out, "stack": p.StackName,
+			"inputs": inputs, "locals": out, "stack": p.StackName, "secrets": secrets,
 			"opstruss": map[string]any{"project": project, "os": runtime.GOOS, "arch": runtime.GOARCH, "host": hostname()},
 		}}
+		if expr.ReadsLater(p.Locals[name], s) {
+			// The locals that come after go in out too, which s reads.
+			src := p.Locals[name]
+			out[name] = expr.Later(func() (any, error) {
+				v, err := expr.EvalValue(src, s)
+				if err != nil {
+					return nil, fmt.Errorf("local %s: %w", name, err)
+				}
+				return v, nil
+			})
+			continue
+		}
 		v, err := expr.EvalValue(p.Locals[name], s)
 		switch {
 		case err != nil && (readsKV[name] || lenient):

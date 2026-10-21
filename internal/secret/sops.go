@@ -5,11 +5,13 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
@@ -125,10 +127,10 @@ func AddMetaRule(dir, recipient string) error {
 func str(s string) *yaml.Node { return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: s} }
 
 // Sops runs the sops program on the _meta of a stack, which holds its
-// data key: from the project root, where sops finds .sops.yaml, with the
-// operator's whole environment, as for git, since sops needs the keys and
-// credentials that open it. OpsTruss names what is encrypted itself, so a
-// rule needs only the keys.
+// data key, and on the files of secrets: from the project root, where sops
+// finds .sops.yaml, with the operator's whole environment, as for git,
+// since sops needs the keys and credentials that open them. OpsTruss names
+// what is encrypted in _meta itself, so a rule needs only the keys.
 type Sops struct {
 	Dir     string   // the project root
 	Environ []string // the operator's environment
@@ -149,20 +151,48 @@ func (s *Sops) Unwrap(wrapped []byte) ([]byte, error) {
 func (s *Sops) run(stdin []byte, args ...string) ([]byte, error) {
 	name := MetaName(s.Stack)
 	args = append(args, "--filename-override", name, "--input-type", "json", "--output-type", "json")
-	cmd := exec.Command("sops", args...)
-	cmd.Dir, cmd.Env, cmd.Stdin = s.Dir, s.Environ, bytes.NewReader(stdin)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
-	if errors.Is(err, exec.ErrNotFound) {
+	out, msg, err := s.exec(bytes.NewReader(stdin), args...)
+	switch {
+	case errors.Is(err, exec.ErrNotFound):
 		return nil, errors.New("sops is not in PATH, and the data key of the stack is kept by sops; install it, for example with mise use sops")
-	}
-	if err != nil {
-		msg := strings.TrimSpace(stderr.String())
-		if strings.Contains(msg, "no matching creation rules found") || strings.Contains(msg, "has no creation rules") {
-			return nil, fmt.Errorf("no rule in %s matches %s, which holds the data key of the stack; opstruss init adds one", SopsConfig, name)
-		}
+	case err != nil && (strings.Contains(msg, "no matching creation rules found") || strings.Contains(msg, "has no creation rules")):
+		return nil, fmt.Errorf("no rule in %s matches %s, which holds the data key of the stack; opstruss init adds one", SopsConfig, name)
+	case err != nil:
 		return nil, fmt.Errorf("sops %s %s: %s", args[0], name, cmp.Or(msg, err.Error()))
 	}
 	return out, nil
+}
+
+// treeFormats are the extensions of the files that sops reads as a tree
+// of values rather than as one value of bytes.
+var treeFormats = []string{".yaml", ".yml", ".json", ".env", ".ini"}
+
+// Decrypt decrypts the sops file at path, named file in what it says, for
+// a secret: a file of a format that sops reads as a tree (YAML, JSON,
+// dotenv, or INI, by its extension) as JSON, and any other as its bytes.
+func (s *Sops) Decrypt(path, file string) (data []byte, tree bool, err error) {
+	tree = slices.Contains(treeFormats, filepath.Ext(path))
+	args := []string{"decrypt"}
+	if tree {
+		args = append(args, "--output-type", "json")
+	}
+	out, msg, err := s.exec(nil, append(args, path)...)
+	switch {
+	case errors.Is(err, exec.ErrNotFound):
+		return nil, false, errors.New("sops is not in PATH, and it decrypts the secret; install it, for example with mise use sops")
+	case err != nil:
+		return nil, false, fmt.Errorf("sops decrypt %s: %s", file, cmp.Or(msg, err.Error()))
+	}
+	return out, tree, nil
+}
+
+// exec runs sops, and returns what it printed, and when it failed, what it
+// printed to stderr.
+func (s *Sops) exec(stdin io.Reader, args ...string) ([]byte, string, error) {
+	cmd := exec.Command("sops", args...)
+	cmd.Dir, cmd.Env, cmd.Stdin = s.Dir, s.Environ, stdin
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	return out, strings.TrimSpace(stderr.String()), err
 }

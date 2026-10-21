@@ -62,6 +62,8 @@ type checker struct {
 	pkgs   map[string]*Package // read packages, by directory
 	comps  *components
 	probs  Problems
+
+	readsSecret map[string]any // the locals that read a secret, once asked
 }
 
 // components are the components read for a project, by directory, shared
@@ -101,6 +103,7 @@ func (c *checker) file() {
 	c.stacks()
 	c.units()
 	c.tasks()
+	c.secrets()
 	c.moves()
 	c.references()
 	c.unsupported()
@@ -592,6 +595,56 @@ func (c *checker) steps(path []string, steps []*Step, ids map[string]bool) {
 	}
 }
 
+// secrets checks each source of a secret: exactly one of sops, env, run,
+// or a call of a task of a plugin that gives the output value, each with
+// the keys that belong to it.
+func (c *checker) secrets() {
+	for _, name := range slices.Sorted(maps.Keys(c.p.Secrets)) {
+		s, path := c.p.Secrets[name], []string{"secrets", name}
+		kinds := len(s.Calls)
+		for _, set := range []bool{s.Sops != "", s.EnvName != "", s.Run != nil} {
+			if set {
+				kinds++
+			}
+		}
+		c.hints(path, s.Calls)
+		c.calls(path, s.Calls)
+		switch {
+		case len(s.Calls) > 1:
+			c.add(path, "a secret calls one task; found %s", callNames(s.Calls))
+		case kinds != 1:
+			c.add(path, "a secret has exactly one source: sops, env, run, or one call of a task of a plugin")
+		}
+		if s.Field != "" && s.Sops == "" {
+			c.add(at(path, "field"), "field: reads one field of a sops file")
+		}
+		if s.Run == nil && len(s.Calls) == 0 {
+			if len(s.Env) > 0 {
+				c.add(at(path, "env"), "env: as variables is for the program of run or of a call; env: <NAME> reads a variable")
+			}
+			if len(s.Pass) > 0 {
+				c.add(at(path, "pass"), "pass: is for the program of run or of a call")
+			}
+		}
+		if s.Run == nil && (s.Dir != "" || s.Shell != "") {
+			c.add(path, "dir: and shell: are for run")
+		}
+		if hasExpr(s.Run) {
+			c.add(at(path, "run"), scriptExpr)
+		}
+		c.environment(path, s.Env, s.Pass)
+		for _, callee := range slices.Sorted(maps.Keys(s.Calls)) {
+			t, err := c.call(callee)
+			if err != nil {
+				continue // calls reported it
+			}
+			if t.Kind != TargetTask || t.Package.Plugin.Tasks[t.Task].Outputs["value"] == nil {
+				c.add(at(path, callee), "a secret comes from a task of a plugin with the output value, and %s is not one", callee)
+			}
+		}
+	}
+}
+
 func (c *checker) moves() {
 	seen := map[string]bool{}
 	for i, m := range c.p.Moved {
@@ -627,9 +680,6 @@ func (c *checker) moves() {
 // the schema already.
 func (c *checker) unsupported() {
 	p := c.p
-	if len(p.Secrets) > 0 {
-		c.add([]string{"secrets"}, "not supported yet")
-	}
 	if p.Backend != nil && !p.Backend.Local {
 		c.add([]string{"backend"}, "plugin backends are not supported yet")
 	}
@@ -683,6 +733,11 @@ func (c *checker) sensitiveValues() {
 	}
 	for _, name := range slices.Sorted(maps.Keys(p.Tasks)) {
 		c.argvSensitive([]string{"tasks", name}, p.Tasks[name], marks)
+	}
+	for _, name := range slices.Sorted(maps.Keys(p.Secrets)) {
+		if reads(argv(p.Secrets[name].Run), marks) {
+			c.add([]string{"secrets", name, "run"}, "%s", argvMessage)
+		}
 	}
 }
 

@@ -37,7 +37,7 @@ func Exec(ctx context.Context, opts Options, argv []string, tty Stdio) (*Result,
 	}
 	unit := opts.Units[0]
 	opts.Units = append([]string{unit, "--"}, argv...)
-	e, err := open(opts, "exec", unit+"/exec")
+	e, err := open(ctx, opts, "exec", unit+"/exec")
 	if err != nil {
 		return nil, err
 	}

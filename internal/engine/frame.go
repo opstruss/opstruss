@@ -170,11 +170,14 @@ func (e *engine) frameScope(f *frame, names []string, dir, address string, each 
 	}
 	units, unitMarks := e.unitsView(f, names)
 	vars := map[string]any{"stack": e.p.StackName, "inputs": inputs, "locals": k.localsOf(f, inputs), "opstruss": facts,
-		"units": units}
+		"units": units, "secrets": e.secrets}
 	if each != nil {
 		vars["each"] = each
 	}
 	marks := map[string]any{}
+	if len(e.secrets) > 0 {
+		marks["secrets"] = true
+	}
 	for name, m := range map[string]map[string]any{"inputs": inputMarks, "locals": e.localMarksOf(f, inputMarks, k), "units": unitMarks} {
 		if len(m) > 0 {
 			marks[name] = m
@@ -207,35 +210,51 @@ func (e *engine) inputsAndMarks(f *frame) (map[string]any, map[string]any) {
 	out, marks := map[string]any{}, map[string]any{}
 	for _, name := range slices.Sorted(maps.Keys(f.in.Inputs)) {
 		in := f.in.Inputs[name]
-		var v any
-		var err error
-		if w, ok := f.node.Unit.With[name]; ok {
-			var m any
-			if v, m, err = expr.EvalMarked(w, s); err == nil && m != nil {
-				e.hide(v, true)
-				marks[name] = true
-			}
-		}
-		if err == nil && v == nil && in.Env != "" {
-			if text, ok := e.opts.LookupEnv(in.Env); ok {
-				if in.Sensitive {
-					e.known("input "+name+" of "+e.short(f.address), text)
+		w, given := f.node.Unit.With[name]
+		value := func() (v any, sensitive bool, err error) {
+			if given {
+				var m any
+				if v, m, err = expr.EvalMarked(w, s); err == nil && m != nil {
+					e.hide(v, true)
+					sensitive = true
 				}
-				v, err = model.ParseText(text, in.Type)
 			}
-		}
-		if in.Sensitive {
-			marks[name] = true
-			if err == nil && v != nil {
+			if err == nil && v == nil && in.Env != "" {
+				if text, ok := e.opts.LookupEnv(in.Env); ok {
+					if in.Sensitive {
+						e.known("input "+name+" of "+e.short(f.address), text)
+					}
+					v, err = model.ParseText(text, in.Type)
+				}
+			}
+			if in.Sensitive && err == nil && v != nil {
 				e.known("input "+name+" of "+e.short(f.address), v)
 			}
+			if err == nil {
+				v, err = in.Conform(v)
+			}
+			if err != nil {
+				err = fmt.Errorf("input %s of %s: %w", name, e.short(f.address), err)
+			}
+			return v, sensitive, err
 		}
-		if err == nil {
-			v, err = in.Conform(v)
+		// A value that reads a secret waits until an expression reads it,
+		// so the instances of a component that do not run resolve none.
+		if given && len(e.secrets) > 0 && expr.ReadsLater(w, s) {
+			marks[name] = true
+			out[name] = expr.Later(func() (any, error) {
+				v, _, err := value()
+				return v, err
+			})
+			continue
+		}
+		v, sensitive, err := value()
+		if sensitive || in.Sensitive {
+			marks[name] = true
 		}
 		switch {
 		case err != nil:
-			out[name] = expr.Broken(fmt.Errorf("input %s of %s: %w", name, e.short(f.address), err))
+			out[name] = expr.Broken(err)
 		case v != nil:
 			out[name] = v
 		}
@@ -248,6 +267,9 @@ func (e *engine) inputsAndMarks(f *frame) (map[string]any, map[string]any) {
 func (e *engine) localMarksOf(f *frame, inputMarks map[string]any, k *kvMemory) map[string]any {
 	if f.node == nil && !e.kvLocals {
 		return e.localMarks
+	}
+	if f.node == nil {
+		return f.in.LocalMarks(e.projectMarks(inputMarks), k.marked)
 	}
 	return f.in.LocalMarks(map[string]any{"inputs": inputMarks}, k.marked)
 }
@@ -434,6 +456,18 @@ func (e *engine) componentView(g *frame) (map[string]any, any) {
 	for _, k := range slices.Sorted(maps.Keys(g.in.Outputs)) {
 		so := *s
 		so.Dir = g.in.DirOf("outputs." + k)
+		if src := g.in.Outputs[k].Value; len(e.secrets) > 0 && expr.ReadsLater(src, &so) {
+			outMarks[k] = true
+			outputs[k] = expr.Later(func() (any, error) {
+				v, _, err := expr.EvalMarked(src, &so)
+				if err != nil {
+					return nil, fmt.Errorf("output %s of %s: %w", k, e.short(g.address), err)
+				}
+				e.hide(v, true)
+				return v, nil
+			})
+			continue
+		}
 		v, m, err := expr.EvalMarked(g.in.Outputs[k].Value, &so)
 		if err != nil {
 			v = expr.Broken(fmt.Errorf("output %s of %s: %w", k, e.short(g.address), err))
@@ -663,7 +697,7 @@ func (e *engine) writeFrame(f *frame) error {
 	inputs, hidden := map[string]any{}, []string(nil)
 	all, marks := e.inputsAndMarks(f)
 	for k, v := range all {
-		if !expr.IsBroken(v) {
+		if v, err := expr.Made(v); err == nil && !expr.IsBroken(v) {
 			inputs[k] = v
 			if marks[k] != nil {
 				hidden = append(hidden, k)

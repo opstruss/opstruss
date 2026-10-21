@@ -313,7 +313,22 @@ func TestRules(t *testing.T) {
 		{"name: app\ntasks:\n  t:\n    inputs:\n      key: {type: string, sensitive: true}\n    steps:\n      - command: {argv: ['${{ inputs.key }}']}\n      - run: [x]\n        env: {KEY: '${{ inputs.key }}'}\n", "tasks.t.steps[0].command.argv: a sensitive value cannot be an item of argv"},
 		{"name: app\ntasks:\n  t:\n    inputs:\n      key: {type: string, sensitive: true}\n    run: [x]\n    env: {KEY: '${{ inputs.key }}'}\n    outputs:\n      o: {type: string, sensitive: true}\n", ""},
 		{"name: app\noutputs:\n  o: {value: x, sensitive: true}\n", ""},
-		{"name: app\nsecrets:\n  s: {env: S}\n", "secrets: not supported yet"},
+		{"name: app\nsecrets:\n  s: {env: S}\nunits:\n  a:\n    run: [x]\n    env: {A: '${{ secrets.s }}'}\n", ""},
+		{"name: app\nsecrets:\n  s: {env: S, sops: a.yaml}\n", "a secret has exactly one source"},
+		{"name: app\nsecrets:\n  s: {env: S, field: a}\n", "field: reads one field of a sops file"},
+		{"name: app\nsecrets:\n  s: {env: S, pass: [X]}\n", "pass: is for the program of run or of a call"},
+		{"name: app\nsecrets:\n  s: {sops: a.yaml, dir: x}\n", "dir: and shell: are for run"},
+		{"name: app\nsecrets:\n  s: {run: 'echo ${{ stack }}'}\n", "${{ }} is not allowed in a script"},
+		{"name: app\nsecrets:\n  s: {kv: {key: x}}\n", "a secret comes from a task of a plugin with the output value, and kv is not one"},
+		{"name: app\nsecrets:\n  s: {sops: '${{ secrets.t }}.yaml'}\n  t: {env: T}\n", "secret sources cannot read secrets"},
+		{"name: app\nsecrets:\n  s: {sops: '${{ opstruss.run }}.yaml'}\n", "secret sources read only facts known at plan"},
+		{"name: app\ninputs:\n  t: {type: string, sensitive: true}\nsecrets:\n  s: {run: [op, '${{ inputs.t }}']}\n", "secrets.s.run: a sensitive value cannot be an item of argv"},
+		{"name: app\nunits:\n  a:\n    run: [x]\n    env: {A: '${{ secrets.nope }}'}\n", "there is no secret nope"},
+		{"name: app\nsecrets:\n  s: {env: S}\nunits:\n  a:\n    run: [x]\n    env: {A: '${{ toJSON(secrets) }}'}\n", "secrets are read by name"},
+		{"name: app\ninputs:\n  k: {type: string, default: l}\nsecrets:\n  s: {env: S}\nlocals:\n  l: '${{ secrets.s }}'\nunits:\n  a:\n    run: [x]\n    if: ${{ locals[inputs.k] == 'x' }}\n", "if and for_each of a unit read locals by name, as locals.<name>, since a local reads a secret"},
+		{"name: app\nsecrets:\n  s: {env: S}\nlocals:\n  l: '${{ secrets.s }}'\nunits:\n  a:\n    run: [x]\n    if: ${{ locals.l == 'x' }}\n", "if and for_each of a unit cannot read local l, which reads a secret"},
+		{"name: app\nsecrets:\n  s: {env: S}\nlocals:\n  l: '${{ secrets.s }}'\n  m: '${{ locals.l }}-x'\noutputs:\n  o: ${{ locals.m }}\n", "project outputs cannot read local m, which reads a secret"},
+		{"name: app\nsecrets:\n  s: {env: S}\nlocals:\n  l: '${{ secrets.s }}'\nunits:\n  a:\n    run: [x]\n    env: {A: '${{ locals.l }}'}\n", ""},
 		{"name: app\nunits:\n  web:\n    run: [x]\nmoved:\n  - {from: web, to: site}\n", "web is still a unit"},
 		{"name: app\nunits:\n  site:\n    run: [x]\nmoved:\n  - {from: old, to: new}\n", "there is no unit new"},
 		{"name: app\nunits:\n  c:\n    run: [x]\nmoved:\n  - {from: a, to: b}\n  - {from: b, to: c}\n", ""},
@@ -445,7 +460,7 @@ units:
 	if want := []string{"db", "dns", "web"}; !slices.Equal(p.Order, want) {
 		t.Fatalf("order %v, want %v", p.Order, want)
 	}
-	locals, err := p.EvalLocals(map[string]any{"domain": "example.dev"}, nil)
+	locals, err := p.EvalLocals(map[string]any{"domain": "example.dev"}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -454,7 +469,7 @@ units:
 	if !reflect.DeepEqual(locals, want) {
 		t.Fatalf("locals %v, want %v", locals, want)
 	}
-	locals, err = p.EvalLocals(map[string]any{"domain": "example.dev"}, func(string) (any, error) { return int64(9), nil })
+	locals, err = p.EvalLocals(map[string]any{"domain": "example.dev"}, func(string) (any, error) { return int64(9), nil }, nil)
 	if err != nil || locals["later"] != int64(9) {
 		t.Fatalf("later = %v, %v", locals["later"], err)
 	}

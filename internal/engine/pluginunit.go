@@ -224,7 +224,7 @@ func (e *engine) pluginHash(dir string) (string, error) {
 // to read, and otherwise what the record says: up, pending, or absent,
 // with the last run and the outputs.
 func StatusUnits(ctx context.Context, opts Options) (*Result, error) {
-	e, err := open(opts, "status", "")
+	e, err := open(ctx, opts, "status", "")
 	if err != nil {
 		return nil, err
 	}

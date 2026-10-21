@@ -1,6 +1,7 @@
 package expr
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -192,5 +193,56 @@ func TestMarks(t *testing.T) {
 	}
 	if s.With("inputs", map[string]any{}).Marks["inputs"] != nil {
 		t.Error("With keeps no marks for the name it sets")
+	}
+}
+
+func TestLater(t *testing.T) {
+	made := map[string]int{}
+	value := func(name string, v any, err error) any {
+		return Later(func() (any, error) {
+			made[name]++
+			return v, err
+		})
+	}
+	s := &Scope{Vars: map[string]any{
+		"secrets": map[string]any{
+			"token":  value("token", "t0k3n", nil),
+			"restic": value("restic", map[string]any{"s3": "k1", "b2": "k2"}, nil),
+			"broken": value("broken", nil, errors.New("sops: no key")),
+			"unread": value("unread", "x", nil),
+		},
+		"inputs": map[string]any{"to": "b2"},
+	}}
+	for src, want := range map[string]any{
+		"${{ secrets.token }}":                 "t0k3n",
+		"Bearer ${{ secrets.token }}":          "Bearer t0k3n",
+		"${{ secrets.restic[inputs.to] }}":     "k2",
+		"${{ secrets['restic'].s3 }}":          "k1",
+		"${{ has(secrets.token) }}":            true,
+		"${{ size(secrets.token) }}":           int64(5),
+		"${{ toJSON(secrets.restic) }}":        `{"b2":"k2","s3":"k1"}`,
+		"${{ secrets.token == 't0k3n' }}":      true,
+		"${{ [secrets.token, 'x'].join('') }}": "t0k3nx",
+	} {
+		got, err := EvalString(src, s)
+		if err != nil || !reflect.DeepEqual(got, want) {
+			t.Errorf("%s: got %#v, %v; want %#v", src, got, err, want)
+		}
+	}
+	if _, err := EvalString("${{ secrets.broken }}", s); err == nil || !strings.Contains(err.Error(), "sops: no key") {
+		t.Errorf("a value that fails to be made fails what reads it: %v", err)
+	}
+	if made["token"] != 1 || made["restic"] != 1 || made["unread"] != 0 {
+		t.Errorf("each value is made once, and only when read: %v", made)
+	}
+	if !ReadsLater("${{ secrets.token }}", s) || ReadsLater("${{ inputs.to }}", s) || !ReadsLater(map[string]any{"a": "${{ secrets }}"}, s) {
+		t.Error("ReadsLater")
+	}
+	v, err := Made(map[string]any{"a": []any{s.Vars["secrets"].(map[string]any)["token"]}, "b": "plain"})
+	if err != nil || !reflect.DeepEqual(v, map[string]any{"a": []any{"t0k3n"}, "b": "plain"}) {
+		t.Errorf("Made: %v %v", v, err)
+	}
+	if _, err := Made(s.Vars["secrets"]); err == nil {
+		t.Error("Made fails with the value that fails")
 	}
 }

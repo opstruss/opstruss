@@ -142,7 +142,7 @@ func (c call) envPass(t *model.Task) (model.Env, []string) {
 // Task runs the project task name, or the task name of each unit that has
 // it, as one run whose exit code follows the outcome of that call.
 func Task(ctx context.Context, opts Options, name string, inputs map[string]any) (*Result, error) {
-	e, err := open(opts, "task", name)
+	e, err := open(ctx, opts, "task", name)
 	if err != nil {
 		return nil, err
 	}
@@ -342,6 +342,10 @@ func (e *engine) callTask(ctx context.Context, name string, t *model.Task, dir s
 	scope := e.taskScope(dir, inputs, marks, tasks, taskMarks, c)
 	if c.plugin != nil {
 		scope = e.pluginScope(c.plugin.dir, inputs, marks, c.unit)
+		if c.plugin.secret {
+			// A secret's task writes no artifacts, which the run keeps.
+			delete(scope.Vars["opstruss"].(map[string]any), "artifacts")
+		}
 	}
 	if u := c.unitRun; u != nil {
 		facts := scope.Vars["opstruss"].(map[string]any)
@@ -585,7 +589,7 @@ func (tc *taskCtx) scopeNow() *expr.Scope {
 	if f.node == nil {
 		return k.scope(s)
 	}
-	return s.With("locals", k.localsOf(f, tc.e.inputsOf(f))).WithKV(k.get, k.marked)
+	return s.WithMarks("locals", k.localsOf(f, tc.e.inputsOf(f)), s.Marks["locals"]).WithKV(k.get, k.marked)
 }
 
 func (tc *taskCtx) record(id string, r *taskResult) {
@@ -997,8 +1001,11 @@ func (e *engine) taskScope(dir string, inputs, marks, tasks, taskMarks map[strin
 	facts["cwd"] = e.opts.Cwd
 	units, unitMarks := e.unitsView(f, slices.Sorted(maps.Keys(f.in.Units)))
 	s := &expr.Scope{Dir: dir, Vars: map[string]any{"stack": e.p.StackName, "inputs": all, "locals": k.localsOf(f, own),
-		"opstruss": facts, "units": units, "tasks": tasks, "steps": map[string]any{}},
+		"opstruss": facts, "units": units, "tasks": tasks, "steps": map[string]any{}, "secrets": e.secrets},
 		Marks: map[string]any{}}
+	if len(e.secrets) > 0 {
+		s.Marks["secrets"] = true
+	}
 	for name, m := range map[string]map[string]any{"inputs": inputMarks, "locals": localMarks, "tasks": taskMarks, "units": unitMarks} {
 		if len(m) > 0 {
 			s.Marks[name] = m
