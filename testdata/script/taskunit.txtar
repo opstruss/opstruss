@@ -1,0 +1,81 @@
+# A unit that uses a task runs it at up with its with: as inputs: a task
+# of the project, of a plugin, or a built-in task. Its outputs become the
+# unit's, its programs are the unit's, and down: of the unit takes it away.
+
+env HOME=$WORK/home
+chmod 755 build.sh
+chmod 755 plugins/stamp/stamp.sh
+
+exec opstruss up
+stdout '^default/image \| building v1 for default/image key default/image\.[0-9a-f]+ reason changed workdir yes$'
+stdout '^default/site \| image app:v1 stamp stamped s1 config written$'
+grep '^port: 80$' config.yaml
+exec opstruss plan
+stdout '^default/image: unchanged$'
+stdout '^default/config: unchanged$'
+
+# the task and the programs it names are its definition
+exec sh -c 'echo "# changed" >> build.sh'
+exec opstruss plan
+stdout '^default/image: will run: definition changed$'
+exec sh -c 'sed s/v1/v2/ opstruss.yaml > o.yaml && mv o.yaml opstruss.yaml'
+exec opstruss plan
+stdout '^default/image: will run: definition changed$'
+exec opstruss up
+stdout 'building v2'
+
+# down: of a unit that uses a task takes it away; one without is forgotten
+exec opstruss down
+stdout 'removed image'
+exec opstruss state list
+! stdout default
+
+-- opstruss.yaml --
+name: app
+uses:
+  stamp: ./plugins/stamp
+tasks:
+  build:
+    inputs:
+      tag: {type: string, required: true}
+    steps:
+      - id: b
+        run: [./build.sh, "${{ inputs.tag }}", "${{ opstruss.state_key }}", "${{ opstruss.reason }}"]
+    outputs:
+      image: {value: "app:${{ inputs.tag }}"}
+units:
+  image:
+    uses: build
+    with: {tag: v1}
+    down: [sh, -c, 'echo removed image']
+    approval: auto
+  mark:
+    uses: stamp.make
+    with: {id: s1}
+    approval: auto
+  config:
+    uses: write
+    with: {path: config.yaml, content: {port: 80}, format: yaml}
+    approval: auto
+  site:
+    uses: command
+    with:
+      argv: [echo, "image ${{ units.image.outputs.image }} stamp ${{ units.mark.outputs.text }} config ${{ units.config.outputs.path != '' ? 'written' : 'none' }}"]
+    approval: auto
+-- build.sh --
+#!/bin/sh
+wd=no
+test -d "$OPSTRUSS_WORKDIR" && wd=yes
+echo "building $1 for $OPSTRUSS_ADDRESS key $2 reason $3 workdir $wd"
+-- plugins/stamp/opstruss.plugin.yaml --
+name: stamp
+tasks:
+  make:
+    inputs:
+      id: {type: string, required: true}
+    run: [./stamp.sh]
+    outputs:
+      text: {from: stdout}
+-- plugins/stamp/stamp.sh --
+#!/bin/sh
+echo "stamped $INPUT_ID"

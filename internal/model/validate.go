@@ -289,6 +289,11 @@ func (c *checker) unitUses(path []string, name string, u *Unit) {
 	}
 	u.Target = t
 	c.with(at(path, "with"), at(path, "uses"), t, u.With)
+	if t.Kind == TargetProject {
+		if cycle := c.unitTaskCycle(t.Task, map[string]bool{}); cycle != "" {
+			c.add(at(path, "uses"), "%s, so a unit that uses it would run units at its own turn", cycle)
+		}
+	}
 }
 
 func (c *checker) tasks() {
@@ -553,10 +558,8 @@ func (c *checker) unsupported() {
 	}
 	for _, name := range slices.Sorted(maps.Keys(p.Units)) {
 		u, path := p.Units[name], []string{"units", name}
-		switch {
-		case u.Target == nil:
-		case u.Target.Kind != TargetPlugin:
-			c.add(at(path, "uses"), "units that use a task or component are not supported yet")
+		if u.Target != nil && u.Target.Kind == TargetComponent {
+			c.add(at(path, "uses"), "units that use a component are not supported yet")
 		}
 		if u.Service != nil {
 			c.add(at(path, "service"), "service units are not supported yet")

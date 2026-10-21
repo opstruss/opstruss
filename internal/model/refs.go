@@ -22,10 +22,11 @@ var planFacts = []string{"project", "os", "arch", "host"}
 
 // place is where an expression is written, which decides what it may read.
 type place struct {
-	kind  string // unit, until, cond, local, task, check, plugin, plugin-check, output
-	each  bool
-	task  *Task
-	steps map[string]bool
+	kind    string // unit, until, cond, local, task, check, plugin, plugin-check, output
+	each    bool
+	task    *Task
+	steps   map[string]bool
+	forUnit bool // a task that a unit uses, whose expressions read state_key and reason
 }
 
 var readable = map[string][]string{
@@ -143,7 +144,7 @@ func (c *checker) fact(path []string, name string, r expr.Ref, pl place) {
 		c.add(path, "%s read only facts known at plan, %s; not opstruss.%s (in ${{ %s }})", placeNames[pl.kind], "opstruss.project, .os, .arch, and .host", name, r.Expr)
 	case (pl.kind == "unit" || pl.kind == "until") && slices.Contains([]string{"cwd", "artifacts", "temp", "state_key", "reason"}, name):
 		c.add(path, "a unit cannot read opstruss.%s, which changes with each run or place (in ${{ %s }})", name, r.Expr)
-	case (pl.kind == "task" || pl.kind == "check") && (name == "state_key" || name == "reason"):
+	case (pl.kind == "task" || pl.kind == "check") && !pl.forUnit && (name == "state_key" || name == "reason"):
 		c.add(path, "opstruss.%s is only in a task that a unit uses (in ${{ %s }})", name, r.Expr)
 	}
 }
@@ -303,7 +304,7 @@ func walkSteps(steps []*Step, fn func(*Step)) {
 }
 
 func (c *checker) taskRefs(path []string, t *Task) {
-	pl := place{kind: "task", each: t.ForEach != nil, task: t, steps: map[string]bool{}}
+	pl := place{kind: "task", each: t.ForEach != nil, task: t, steps: map[string]bool{}, forUnit: c.usedByUnit(path)}
 	if c.plugin != nil {
 		pl.kind = "plugin"
 	}
@@ -362,6 +363,46 @@ func (c *checker) stepRefs(path []string, steps []*Step, pl place) {
 			pl.steps[s.ID] = true
 		}
 	}
+}
+
+// usedByUnit says whether the task at path is one that a unit uses.
+func (c *checker) usedByUnit(path []string) bool {
+	if c.p == nil || len(path) != 2 || path[0] != "tasks" {
+		return false
+	}
+	for _, u := range c.p.Units {
+		if t := u.Target; t != nil && t.Kind == TargetProject && t.Task == path[1] {
+			return true
+		}
+	}
+	return false
+}
+
+// unitTaskCycle names a step that runs plan, up, or down of units in the
+// task name or a task it calls, which a unit that uses name cannot run
+// at its turn.
+func (c *checker) unitTaskCycle(name string, seen map[string]bool) string {
+	if seen[name] || c.p.Tasks[name] == nil {
+		return ""
+	}
+	seen[name] = true
+	t := c.p.Tasks[name]
+	found := ""
+	walkSteps(t.Steps, func(s *Step) {
+		switch {
+		case found != "":
+		case slices.Contains([]string{"plan", "up", "down"}, s.Task):
+			found = "task " + name + " runs task: " + s.Task
+		case s.Task != "":
+			found = c.unitTaskCycle(s.Task, seen)
+		}
+	})
+	for _, n := range t.Needs {
+		if found == "" {
+			found = c.unitTaskCycle(n, seen)
+		}
+	}
+	return found
 }
 
 func (c *checker) unitTask(name string) bool {

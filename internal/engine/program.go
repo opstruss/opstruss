@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"maps"
@@ -34,6 +35,7 @@ type progSpec struct {
 	unit        *instance  // for the task of a unit
 	call        bool       // a call of command, whose outputs are its streams
 	plugin      *pluginRun // for the programs of a plugin task
+	unitRun     *unitRun   // for the programs of a task that runs for a unit
 }
 
 // program runs the program of a task or a step as often as retry allows;
@@ -151,12 +153,24 @@ func (e *engine) programCall(p progSpec, s *expr.Scope) (*plugin.Call, error) {
 		if p.unit.record != nil {
 			unit.StateKey = p.unit.record.StateKey
 		}
-		if p.plugin != nil {
-			unit.State, unit.StateDir = p.plugin.state, p.plugin.stateDir
+	}
+	reason := "requested"
+	if u := p.unitRun; u != nil {
+		// What the unit gives was evaluated with it, so it is set as it is.
+		maps.Copy(env, u.env)
+		for _, k := range u.pass {
+			if !slices.Contains(pass, k) {
+				pass = append(pass, k)
+			}
 		}
+		if unit != nil {
+			unit.StateKey = cmp.Or(u.stateKey, unit.StateKey)
+			unit.Workdir, unit.State, unit.StateDir = u.workdir, u.state, u.stateDir
+		}
+		reason = cmp.Or(u.reason, reason)
 	}
 	c := &plugin.Call{Shell: p.shell, Base: p.base, Dir: dir, Env: env, Pass: pass, Stdin: stdin, Stop: stop,
-		Task: p.task, Reason: "requested", Unit: unit, Inputs: p.inputs, Outputs: p.outputs}
+		Task: p.task, Reason: reason, Unit: unit, Inputs: p.inputs, Outputs: p.outputs}
 	if p.plugin != nil {
 		c.PluginDir = p.plugin.dir
 	}

@@ -58,7 +58,7 @@ func (e *engine) callByName(ctx context.Context, p progSpec, name string, args m
 			dir = filepath.Join(p.base, dir)
 		}
 		if t.Kind == model.TargetTask {
-			r := e.callTask(ctx, name, t.Package.Plugin.Tasks[t.Task], dir, in, call{unit: p.unit, plugin: pluginRunOf(t, p)})
+			r := e.callTask(ctx, name, t.Package.Plugin.Tasks[t.Task], dir, in, call{unit: p.unit, plugin: pluginRunOf(t, p), unitRun: p.unitRun})
 			return r, r.outputs, nil
 		}
 		var res *builtin.Result
@@ -91,9 +91,18 @@ type pluginRun struct {
 	env      model.Env
 	requires []string
 	inputs   map[string]*model.Input // of the plugin and the task
+}
 
-	// For a task of a unit's plugin that reads its record without the
-	// lock, as status does: $OPSTRUSS_STATE, and tool/ of state: tool.
+// unitRun is what the programs of a task that runs for a unit get from it:
+// its env and the variables it lets through, evaluated already; its state
+// key and why it runs; and, under its lock, its work directory, or its
+// record to read as $OPSTRUSS_STATE and tool/ of state: tool.
+type unitRun struct {
+	env      map[string]model.EnvValue
+	pass     []string
+	stateKey string
+	reason   string
+	workdir  string
 	state    any
 	stateDir string
 }

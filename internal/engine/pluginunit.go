@@ -233,13 +233,13 @@ func (e *engine) statusPass(ctx context.Context, patterns []string) error {
 				e.fail(inst.address, err)
 				continue
 			}
-			run := &pluginRun{name: t.Package.Name, dir: r.plugin.dir, pass: slices.Sorted(maps.Keys(r.pass)), env: r.plugin.env,
-				requires: t.Package.Plugin.Requires, inputs: t.Package.Plugin.Inputs, stateDir: r.plugin.tool}
+			run := &pluginRun{name: t.Package.Name, dir: r.plugin.dir, requires: t.Package.Plugin.Requires, inputs: t.Package.Plugin.Inputs}
+			ur := &unitRun{env: r.plugin.env, pass: slices.Sorted(maps.Keys(r.pass)), stateDir: r.plugin.tool}
 			if inst.record != nil {
-				run.state = programState(inst.record)
+				ur.state = programState(inst.record)
 			}
 			if res := e.callTask(ctx, "status", t.Package.Plugin.Tasks["status"], inst.dir, r.plugin.inputs,
-				call{unit: inst, plugin: run}); res.outcome == failure {
+				call{unit: inst, plugin: run, unitRun: ur}); res.outcome == failure {
 				e.exit = max(e.exit, 1)
 			}
 			continue

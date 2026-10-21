@@ -26,8 +26,8 @@ minor release can change what a project, a component, or a plugin relies on.
   `pass:` and no `env:` on inputs, and tasks that are one operation each,
   which read only their inputs and steps and call only built-in tasks. It
   also checks what each unit's `uses:` and each call of a task by name
-  stand for, and the inputs given to them. Git sources, units that use a
-  task or a component do not run yet.
+  stand for, and the inputs given to them. Git sources and units that use
+  a component do not run yet.
 - A task of a plugin is called by name, as `<name>.<task>: {…}`: its
   inputs are those of the plugin and the task, filled by the call and the
   declaration's `with:`; a program in argv starts from the plugin's
@@ -56,6 +56,15 @@ minor release can change what a project, a component, or a plugin relies on.
   units with the same `backend` are refused. A plugin with `outputs: tool`
   gives every output its tool writes to `$OPSTRUSS_OUTPUT`, with their
   types. A unit cannot be named `tool`.
+- A unit that uses a task, of the project (`uses: build`), of a plugin
+  (`uses: docker.build`), or built in (`uses: write`), runs it at `up`
+  with its `with:` as inputs, as a `run` unit runs its program: the
+  task's outputs become the unit's, its programs and steps are the unit's
+  (with `OPSTRUSS_WORKDIR` and `$OPSTRUSS_STATE`, and `opstruss.state_key`
+  and `opstruss.reason` in its expressions), and the unit's `down:` takes
+  it away. Its definition holds the task as written, the tasks it calls,
+  and the programs they name by a relative path. A task that runs `plan`,
+  `up`, or `down` of units cannot be used by a unit.
 - `opstruss status [unit]...` (also `ps`) runs the `status` task of each
   unit's plugin without the unit's lock, with its record to read, and for
   other units says what the record holds: up with its last run and

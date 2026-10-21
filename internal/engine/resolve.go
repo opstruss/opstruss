@@ -37,6 +37,7 @@ type resolved struct {
 	stop     plugin.Stop
 	waitFor  string
 	plugin   *pluginUnit // for a unit that uses a plugin
+	task     *taskUnit   // for a unit that uses a task
 }
 
 // resolve evaluates the expressions of inst. In a preview, a unit that
@@ -111,8 +112,14 @@ func (e *engine) resolve(inst *instance, preview bool) (*resolved, error) {
 	if r.stop, err = plugin.StopOf(u.Stop); err != nil {
 		return nil, err
 	}
-	if t := u.Target; t != nil && t.Kind == model.TargetPlugin {
+	switch t := u.Target; {
+	case t == nil:
+	case t.Kind == model.TargetPlugin:
 		if err := e.resolvePlugin(inst, r, s); err != nil {
+			return nil, err
+		}
+	case t.Kind != model.TargetComponent:
+		if err := e.resolveTask(inst, r, s); err != nil {
 			return nil, err
 		}
 	}
@@ -215,8 +222,11 @@ func cmdValue(c model.Command) any {
 
 // kind is what the record says the unit is.
 func (r *resolved) kind() string {
-	if r.plugin != nil {
+	switch {
+	case r.plugin != nil:
 		return "plugin"
+	case r.task != nil:
+		return "task"
 	}
 	return "run"
 }
@@ -224,18 +234,24 @@ func (r *resolved) kind() string {
 // inputs are the plugin's inputs, which the record keeps for down and
 // $OPSTRUSS_STATE.
 func (r *resolved) inputs() map[string]any {
-	if r.plugin == nil {
-		return nil
+	switch {
+	case r.plugin != nil:
+		return r.plugin.inputs
+	case r.task != nil:
+		return r.task.inputs
 	}
-	return r.plugin.inputs
+	return nil
 }
 
 // source is where the programs of a unit that uses a plugin come from.
 func (r *resolved) source(inst *instance) *state.Source {
-	if r.plugin == nil {
-		return nil
+	switch {
+	case r.plugin != nil:
+		return &state.Source{Uses: inst.def.Uses, Hash: r.plugin.hash}
+	case r.task != nil:
+		return &state.Source{Uses: inst.def.Uses, Hash: r.task.hash}
 	}
-	return &state.Source{Uses: inst.def.Uses, Hash: r.plugin.hash}
+	return nil
 }
 
 // fingerprint is the sha256 of a pass value, which down compares with the
@@ -298,6 +314,20 @@ func (e *engine) digest(inst *instance, r *resolved) (string, []string, error) {
 	def := map[string]any{"kind": "run", "run": cmdValue(r.cmd)}
 	if r.plugin != nil {
 		def["kind"], def["uses"], def["source"], def["with"] = "plugin", inst.def.Uses, r.plugin.hash, r.plugin.inputs
+	}
+	if r.task != nil {
+		t := r.task.target
+		def["kind"], def["uses"], def["with"], def["task"] = "task", inst.def.Uses, r.task.inputs, t.Task
+		switch t.Kind {
+		case model.TargetProject:
+			src := map[string]any{}
+			if err := e.taskSource(t.Task, src); err != nil {
+				return "", nil, err
+			}
+			def["source"] = src
+		case model.TargetTask:
+			def["source"] = r.task.hash
+		}
 	}
 	add := func(k string, v any, empty bool) {
 		if !empty {

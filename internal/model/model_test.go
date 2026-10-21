@@ -474,8 +474,10 @@ func TestUses(t *testing.T) {
 		// what a unit uses
 		{files("units:\n  db:\n    uses: a\n    with: {file: x.yaml}\n"), ""},
 		{files("units:\n  db:\n    uses: ./plugins/a\n    with: {file: x.yaml}\n"), ""},
-		{files("units:\n  img:\n    uses: a.build\n    with: {file: x, tag: v1}\n"), "units that use a task or component are not supported yet"},
-		{files("units:\n  img:\n    uses: build\ntasks:\n  build:\n    run: [x]\n"), "units that use a task or component are not supported yet"},
+		{files("units:\n  img:\n    uses: a.build\n    with: {file: x, tag: v1}\n"), ""},
+		{files("units:\n  img:\n    uses: build\ntasks:\n  build:\n    run: [x]\n"), ""},
+		{files("units:\n  img:\n    uses: build\ntasks:\n  build:\n    steps:\n      - task: up\n"), "task build runs task: up, so a unit that uses it would run units at its own turn"},
+		{files("units:\n  img:\n    uses: build\ntasks:\n  build:\n    run: [x, \"${{ opstruss.state_key }}\"]\n  other:\n    run: [x, \"${{ opstruss.reason }}\"]\n"), "tasks.other.run: opstruss.reason is only in a task that a unit uses"},
 		{files("units:\n  db:\n    uses: nope\n"), "opstruss.yaml:7:5: units.db.uses: there is no plugin, component, or task nope"},
 		{files("units:\n  db:\n    uses: a.up\n"), "a.up runs through a unit that uses a; write uses: a"},
 		{files("units:\n  db:\n    uses: a.x.y\n"), "names of three parts or more are reserved"},
@@ -498,7 +500,7 @@ func TestUses(t *testing.T) {
 		// declarations
 		{files("  b:\n    source: ./plugins/a\n    with: {tag: v1, nope: 1}\n"), "uses.b.with.nope: b has no input nope"},
 		{files("", "plugins/a/components/build/opstruss.yaml", "name: build\n"), "a has a task and a component named build"},
-		{files("  infra: ./vendor/infra\nunits:\n  dns:\n    uses: infra.dns\n", "vendor/infra/components/dns/opstruss.yaml", "name: dns\n"), "units that use a task or component are not supported yet"},
+		{files("  infra: ./vendor/infra\nunits:\n  dns:\n    uses: infra.dns\n", "vendor/infra/components/dns/opstruss.yaml", "name: dns\n"), "units that use a component are not supported yet"},
 		{files("  empty: ./vendor/empty\n", "vendor/empty/README.md", "x"), "vendor/empty has no opstruss.plugin.yaml, opstruss.yaml, or components/"},
 		// the rules of a plugin file
 		{files("  gh: ./plugins/gh\n", gh("  up:\n    steps:\n      - run: [x]\n")...), "tasks.up: up of a plugin runs one program, written as run"},

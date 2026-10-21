@@ -17,6 +17,7 @@ import (
 
 	"github.com/opstruss/opstruss/internal/expr"
 	"github.com/opstruss/opstruss/internal/failpoint"
+	"github.com/opstruss/opstruss/internal/model"
 	"github.com/opstruss/opstruss/internal/plugin"
 	"github.com/opstruss/opstruss/internal/state"
 )
@@ -639,8 +640,13 @@ func outcomeErr(res *plugin.Result) error {
 	return nil
 }
 
-// exec runs the program of up for inst.
+// exec runs the program of up for inst, or the task of a unit that uses
+// one.
 func (e *engine) exec(ctx context.Context, inst *instance, r *resolved, rec *state.Record, reason, digest string) (*plugin.Result, error) {
+	command := r.task != nil && r.task.target.Kind == model.TargetBuiltin && r.task.target.Task == "command"
+	if r.task != nil && !command {
+		return e.execTask(ctx, inst, r, rec, reason), nil
+	}
 	out := &lineWriter{e: e, addr: inst.address, task: "up", stream: "stdout"}
 	errw := &lineWriter{e: e, addr: inst.address, task: "up", stream: "stderr"}
 	defer out.flush()
@@ -658,6 +664,10 @@ func (e *engine) exec(ctx context.Context, inst *instance, r *resolved, rec *sta
 	}
 	for _, w := range res.Warnings {
 		e.warn(inst.address, "%s", w)
+	}
+	if command {
+		// A unit that uses command has its outputs.
+		res.Outputs = map[string]any{"stdout": res.Stdout, "stderr": res.Stderr, "exit_code": int64(res.ExitCode)}
 	}
 	return res, nil
 }
