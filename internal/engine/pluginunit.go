@@ -30,6 +30,7 @@ type pluginUnit struct {
 	hash   string         // of what the plugin's directory holds, as h1: is
 	tool   string         // tool/, where a plugin with state: tool keeps the tool's state
 	env    model.Env      // the env of the declaration and the unit, evaluated
+	base   string         // the unit's working directory, relative to its file, before dir: of up
 }
 
 // unitOf is what the programs of a unit that uses a plugin receive.
@@ -94,6 +95,7 @@ func (e *engine) resolvePlugin(inst *instance, r *resolved, s *expr.Scope) error
 		}
 		pu.plan = &cmd
 	}
+	pu.base = r.dir
 	if up.Dir != "" {
 		d, err := expr.EvalText(up.Dir, ps)
 		if err != nil {

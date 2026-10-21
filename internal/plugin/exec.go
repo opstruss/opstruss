@@ -24,6 +24,7 @@ import (
 // Call is one program and what its kind of program receives.
 type Call struct {
 	Command model.Command
+	Args    []string // after the arguments of Command, for the exec hook: the argv of opstruss exec
 	Shell   string
 	Base    string                    // directory of the file that defines the program
 	Dir     string                    // working directory, relative to Base
@@ -89,18 +90,24 @@ var shells = map[string][]string{
 	"pwsh":   {"pwsh", "-NoProfile", "-NonInteractive", "-Command"},
 }
 
-func argv(cmd model.Command, shell string) ([]string, error) {
+// argv is the program of cmd with args after its own arguments: for a
+// script of sh or bash, they are its "$@".
+func argv(cmd model.Command, shell string, args []string) ([]string, error) {
 	if cmd.Script == "" {
 		if len(cmd.Argv) == 0 {
 			return nil, errors.New("there is no program to run")
 		}
-		return cmd.Argv, nil
+		return append(slices.Clone(cmd.Argv), args...), nil
 	}
 	s, ok := shells[shell]
 	if !ok {
 		return nil, fmt.Errorf("unknown shell %s", shell)
 	}
-	return append(slices.Clone(s), cmd.Script), nil
+	out := append(slices.Clone(s), cmd.Script)
+	if len(args) > 0 && (shell == "" || shell == "sh" || shell == "bash") {
+		out = append(out, "opstruss") // $0
+	}
+	return append(out, args...), nil
 }
 
 // LookPath finds a program: a path as written, relative to the working
@@ -196,7 +203,7 @@ func (r *Run) Exec(ctx context.Context, c *Call) (*Result, error) {
 	if info, err := os.Stat(cwd); err != nil || !info.IsDir() {
 		return nil, fmt.Errorf("the directory %s does not exist", cwd)
 	}
-	args, err := argv(c.Command, c.Shell)
+	args, err := argv(c.Command, c.Shell, c.Args)
 	if err != nil {
 		return nil, err
 	}
@@ -313,6 +320,53 @@ func (r *Run) Exec(ctx context.Context, c *Call) (*Result, error) {
 	res.Stdout, res.Stderr = streams["stdout"].tail(), streams["stderr"].tail()
 	r.collect(c, dir, res, streams)
 	return res, nil
+}
+
+// Attach runs one program under the contract on the terminal of the
+// caller, with stdin, stdout, and stderr as they are, for a program that
+// an operator works in: it stays in the caller's process group, which the
+// terminal reaches, and none of its output is read. It returns the
+// program's exit code once the program ended; until then nothing stops it,
+// since the terminal reaches it.
+func (r *Run) Attach(c *Call, stdin io.Reader, stdout, stderr io.Writer) (int, error) {
+	dir := filepath.Join(r.Temp, ".calls", strconv.FormatInt(r.calls.Add(1), 10))
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return 0, err
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+	env, err := r.environment(c, dir)
+	if err != nil {
+		return 0, err
+	}
+	cwd := resolve(c.Base, c.Dir)
+	if info, err := os.Stat(cwd); err != nil || !info.IsDir() {
+		return 0, fmt.Errorf("the directory %s does not exist", cwd)
+	}
+	args, err := argv(c.Command, c.Shell, c.Args)
+	if err != nil {
+		return 0, err
+	}
+	if c.PluginDir != "" && c.Command.Script == "" && strings.Contains(args[0], "/") {
+		args[0] = resolve(c.PluginDir, args[0])
+	}
+	path, err := LookPath(args[0], env["PATH"])
+	if err != nil {
+		return 0, err
+	}
+	cmd := &exec.Cmd{Path: path, Args: args, Dir: cwd, Stdin: stdin, Stdout: stdout, Stderr: stderr,
+		ExtraFiles: []*os.File{r.tracker.File()}}
+	for _, k := range slices.Sorted(maps.Keys(env)) {
+		cmd.Env = append(cmd.Env, k+"="+env[k])
+	}
+	var exit *exec.ExitError
+	if err := cmd.Run(); err != nil && !errors.As(err, &exit) {
+		return 0, err
+	}
+	ws := cmd.ProcessState.Sys().(syscall.WaitStatus)
+	if ws.Signaled() {
+		return 128 + int(ws.Signal()), nil
+	}
+	return ws.ExitStatus(), nil
 }
 
 // drain waits up to d for the streams to end, then closes them; it reports

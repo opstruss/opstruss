@@ -98,6 +98,13 @@ func (a *API) StatusUnits(ctx context.Context, r Request) (*Result, error) {
 	return result(engine.StatusUnits(ctx, a.options(r)))
 }
 
+// Exec runs argv, a program of the operator, for the one unit of the
+// request, attached to the terminal tty; it stays in this process, since
+// the terminal does not cross a socket.
+func (a *API) Exec(ctx context.Context, r Request, argv []string, tty engine.Stdio) (*Result, error) {
+	return result(engine.Exec(ctx, a.options(r), argv, tty))
+}
+
 // Run runs the task of the request with its inputs.
 func (a *API) Run(ctx context.Context, r Request) (*Result, error) {
 	return result(engine.Task(ctx, a.options(r), r.Task, r.With))

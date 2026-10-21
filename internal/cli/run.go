@@ -3,7 +3,9 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"os"
 	"os/signal"
@@ -144,19 +146,56 @@ func (a *app) readLine(ctx context.Context) (string, error) {
 	}
 }
 
+// execCommand is opstruss exec <unit> -- <program>: the program runs with
+// what the programs of the unit get, on this terminal, while the events of
+// the run go to stderr, so its output stays its own.
+func (a *app) execCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "exec <unit> -- <program> [arg]...",
+		Short: "Run a program with what the programs of one unit get, under its lock, on this terminal",
+		Args: func(cmd *cobra.Command, args []string) error {
+			if cmd.ArgsLenAtDash() != 1 || len(args) < 2 {
+				return errors.New("write opstruss exec <unit> -- <program>, with the arguments of the program after it")
+			}
+			return nil
+		},
+		RunE: func(_ *cobra.Command, args []string) error {
+			req, err := a.request(args[:1])
+			if err != nil {
+				return err
+			}
+			e := api.New(api.Handlers{Event: a.renderTo(a.stderr)})
+			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
+			res, err := e.Exec(ctx, req, args[1:], engine.Stdio{In: a.in, Out: a.stdout, Err: a.stderr})
+			if err != nil {
+				return err
+			}
+			if res.ExitCode != 0 {
+				return &exitError{res.ExitCode}
+			}
+			return nil
+		},
+	}
+}
+
 // render prints events: with --json one per line, otherwise a line per
 // event led by its address, and program output after "| ".
-func (a *app) render() func(engine.Event) {
+func (a *app) render() func(engine.Event) { return a.renderTo(a.stdout) }
+
+// renderTo is render with the events that are not warnings or errors on
+// out.
+func (a *app) renderTo(out io.Writer) func(engine.Event) {
 	var mu sync.Mutex
 	return func(ev engine.Event) {
 		mu.Lock()
 		defer mu.Unlock()
 		if a.json {
 			data, _ := json.Marshal(ev)
-			fmt.Fprintf(a.stdout, "%s\n", data)
+			fmt.Fprintf(out, "%s\n", data)
 			return
 		}
-		w := a.stdout
+		w := out
 		if ev.Level != "info" {
 			w = a.stderr
 		}

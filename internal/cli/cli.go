@@ -33,6 +33,7 @@ type app struct {
 	stdout, stderr io.Writer
 	args           []string
 	stdin          *bufio.Reader
+	in             io.Reader // stdin as it is, for a program that opstruss exec attaches
 	terminal       bool
 	environ        []string
 	env            map[string]string
@@ -60,7 +61,7 @@ func run(args []string, stdout, stderr io.Writer, environ []string) int {
 func start(args []string, stdin io.Reader, terminal bool, stdout, stderr io.Writer, environ []string) int {
 	a := &app{stdout: stdout, stderr: stderr, terminal: terminal, environ: environ, env: map[string]string{}}
 	if stdin != nil {
-		a.stdin = bufio.NewReader(stdin)
+		a.in, a.stdin = stdin, bufio.NewReader(stdin)
 	}
 	a.cwd, _ = os.Getwd()
 	for _, kv := range environ {
@@ -176,7 +177,7 @@ func (a *app) root() *cobra.Command {
 	root.Flags().StringVar(&a.completion, "completion", "", "print a completion script for bash, zsh, or fish")
 	root.AddCommand(a.versionCommand(), a.validateCommand(), a.explainCommand(), a.stateCommand())
 	root.AddCommand(a.unitCommands()...)
-	root.AddCommand(a.listCommand(), a.outputsCommand(), a.runsCommand())
+	root.AddCommand(a.listCommand(), a.outputsCommand(), a.runsCommand(), a.execCommand())
 	a.taskCommands(root)
 	return root
 }

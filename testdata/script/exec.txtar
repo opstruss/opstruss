@@ -1,0 +1,88 @@
+# opstruss exec runs a program of the operator with what the programs of
+# one unit get, under its lock and on the terminal: through the exec hook
+# of the unit's plugin, which gets the program after its own arguments, or
+# as it is. Its exit code is the run's, and the record names it.
+
+env HOME=$WORK/home
+chmod 755 plugins/tf/prepare.sh
+exec opstruss up
+
+# a run unit: its env and working directory, and the facts of a unit
+exec opstruss exec web -- sh -c 'echo "$FOO $(basename "$PWD") $OPSTRUSS_ADDRESS $OPSTRUSS_TASK $OPSTRUSS_REASON"'
+stdout '^bar app default/web exec requested$'
+! stdout 'web:'
+
+# a plugin with an exec hook prepares the tool, then runs the program
+exec opstruss exec zone -- sh -c 'echo "in the tool with $1"' sh arg1
+stdout '^prepared z1 with state up and TF_LOG=info$'
+stdout '^in the tool with arg1$'
+
+# a plugin without one: the program gets the unit's inputs
+exec opstruss exec plain -- sh -c 'echo "size $INPUT_SIZE"'
+stdout '^size 3$'
+
+# a unit inside a component, by its address
+exec opstruss exec site/db -- sh -c 'echo "role $ROLE at $OPSTRUSS_ADDRESS"'
+stdout '^role db at default/site/db$'
+
+# the program's exit code is the run's, and the record keeps it
+! exec opstruss exec web -- sh -c 'exit 3'
+exec opstruss runs --json
+stdout '"task": "web/exec"'
+stdout '"exit_code": 3'
+
+# exec runs for one unit
+! exec opstruss exec site -- true
+stderr 'site uses a component; exec runs for one unit inside it, as site/<unit>'
+! exec opstruss exec 'web*' -- true
+stderr 'exec runs for one unit'
+! exec opstruss exec web
+stderr 'write opstruss exec <unit> -- <program>'
+
+-- opstruss.yaml --
+name: app
+units:
+  web:
+    run: [echo, web]
+    dir: ./app
+    env: {FOO: bar}
+    approval: auto
+  zone:
+    uses: ./plugins/tf
+    with: {name: z1}
+    env: {TF_LOG: info}
+    approval: auto
+  plain:
+    uses: ./plugins/plain
+    with: {size: 3}
+    approval: auto
+  site:
+    uses: ./c
+    approval: auto
+-- app/.keep --
+-- plugins/tf/opstruss.plugin.yaml --
+name: tf
+state: tool
+inputs:
+  name: {type: string, required: true}
+tasks:
+  up:
+    run: [sh, -c, 'echo up > "$OPSTRUSS_STATE_DIR/state"']
+  exec:
+    run: [./prepare.sh]
+-- plugins/tf/prepare.sh --
+#!/bin/sh
+echo "prepared $INPUT_NAME with state $(cat "$OPSTRUSS_STATE_DIR/state") and TF_LOG=$TF_LOG"
+exec "$@"
+-- plugins/plain/opstruss.plugin.yaml --
+name: plain
+inputs:
+  size: {type: integer}
+tasks:
+  up:
+    run: ["true"]
+-- c/opstruss.yaml --
+units:
+  db:
+    run: [echo, db]
+    env: {ROLE: db}

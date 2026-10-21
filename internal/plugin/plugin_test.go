@@ -334,9 +334,17 @@ func TestShells(t *testing.T) {
 		"node":   {"node", "-e", "x"},
 		"pwsh":   {"pwsh", "-NoProfile", "-NonInteractive", "-Command", "x"},
 	} {
-		if got, err := argv(script("x"), shell); err != nil || !slices.Equal(got, want) {
+		if got, err := argv(script("x"), shell, nil); err != nil || !slices.Equal(got, want) {
 			t.Errorf("%s: %q %v", shell, got, err)
 		}
+	}
+	// The argv of opstruss exec follows the program's own arguments; a
+	// script of sh gets it as "$@".
+	if got, _ := argv(model.Command{Argv: []string{"./x", "a"}}, "", []string{"b"}); !slices.Equal(got, []string{"./x", "a", "b"}) {
+		t.Errorf("argv: %q", got)
+	}
+	if got, _ := argv(script("x"), "", []string{"b"}); !slices.Equal(got, []string{"sh", "-e", "-c", "x", "opstruss", "b"}) {
+		t.Errorf("script: %q", got)
 	}
 	r := newRun(t)
 	// sh -e stops at the first command that fails.

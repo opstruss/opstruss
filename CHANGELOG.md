@@ -95,6 +95,17 @@ minor release can change what a project, a component, or a plugin relies on.
   inside it and apply in every instance. The events of the task of a
   unit or of an instance name it `<address>/<task>`, and the inputs of a
   task take names other than those of its project or component.
+- `opstruss exec <unit> -- <program> [arg]...` runs a program of the
+  operator with what the programs of one unit get (its env and pass, the
+  inputs of its plugin or task as `INPUT_*`, its working directory, and
+  `OPSTRUSS_WORKDIR`, `OPSTRUSS_STATE`, and `OPSTRUSS_STATE_DIR`), under
+  the unit's lock and on the terminal, such as
+  `opstruss exec dns/zone -- tofu state list`. A plugin with an `exec`
+  hook prepares the tool first and gets the program after its own
+  arguments, for `exec "$@"`. No plan, approval, or `protect` applies;
+  the program's output stays its own, the events of the run go to
+  stderr, and the program's exit code is the run's, which the record
+  names `<unit>/exec` with its argv.
 - `opstruss status [unit]...` (also `ps`) runs the `status` task of each
   unit's plugin without the unit's lock, with its record to read, and for
   other units says what the record holds: up with its last run and
