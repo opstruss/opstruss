@@ -1,0 +1,138 @@
+# Approval: a change injected between approval and up is always refused;
+# yes: true over a plan read in the run that was not exact, also of a unit
+# another run held at task: plan, always stops; 100 plans without a change
+# give one digest, also with inputs from a map.
+
+[!failpoints] skip 'needs a build with -tags failpoints'
+env HOME=$WORK/home
+chmod 755 plugins/planned/plan.sh
+chmod 755 plugins/planned/up.sh
+cp v1 config
+exec opstruss up --yes
+grep v1 default_m.applied
+
+# a change made while up waits after its approval: the plugin's up gets
+# the digest of the plan that was approved and refuses the new content
+cp v2 config
+env OPSTRUSS_FAILPOINT=up-before-program=pause
+env OPSTRUSS_FAILPOINT_PAUSE=$WORK/paused
+! exec opstruss up m --yes &
+waitfile paused
+cp v3 config
+rm paused
+wait
+stdout 'default/m \| the plan changed since it was approved$'
+grep v1 default_m.applied
+env OPSTRUSS_FAILPOINT=
+exec opstruss plan m
+stdout '^default/m: will run: .*plan: update config$'
+exec opstruss up m --yes
+grep v3 default_m.applied
+
+# yes: true does not approve a plan that the run read as not exact
+! exec opstruss review
+stdout '^default/inexact: will run: .*; the plan read earlier in this run was not exact, so yes does not approve it, stopped at plan$'
+
+# nor one of a unit that another run held while the run read it
+cp v4 config
+env OPSTRUSS_FAILPOINT=up-before-program=pause
+! exec opstruss up m --yes &
+waitfile paused
+env OPSTRUSS_FAILPOINT=
+! exec opstruss held
+stdout '^default/m: locked by run .*; left out$'
+stdout '^default/m: will run: .*; the plan read earlier in this run was not exact, so yes does not approve it, stopped at plan$'
+wait
+grep v3 default_m.applied
+
+# 100 plans of unchanged units give one digest each
+exec opstruss up --yes
+exec sh -c 'for i in $(seq 100); do opstruss digests > /dev/null || exit 1; done; wc -l < digests; sort -u digests | wc -l'
+stdout '^ *100$'
+stdout '^ *1$'
+
+-- v1 --
+v1
+-- v2 --
+v2
+-- v3 --
+v3
+-- v4 --
+v4
+-- v5 --
+v5
+-- other --
+other
+-- opstruss.yaml --
+name: shop
+uses:
+  planned: ./plugins/planned
+locals:
+  vars: {b: 2, a: 1, c: {z: 1, y: 2, x: 3}, d: [3, 2, 1], e: {f: {h: 1, g: 2}}}
+units:
+  m:
+    uses: planned
+    with: {config: config}
+  inexact:
+    uses: planned
+    with: {config: other, exact: false}
+  mapped:
+    uses: planned
+    with: {config: v1, vars: "${{ locals.vars }}"}
+  each:
+    run: [echo, "${{ each.key }}", "${{ toJSON(each.value) }}"]
+    for_each: {x: {b: 1, a: 2, c: {e: 1, d: 2}}, y: {d: 3, c: 4}}
+    env: {VARS: "${{ toJSON(locals.vars) }}"}
+tasks:
+  review:
+    steps:
+      - task: plan
+        units: [inexact]
+      - run: [cp, v5, other]
+      - task: up
+        units: [inexact]
+        yes: true
+  held:
+    steps:
+      - task: plan
+        units: [m]
+      - run: [sh, -c, 'cp v5 config && rm paused']
+      - task: up
+        units: [m]
+        yes: true
+  digests:
+    steps:
+      - id: p
+        task: plan
+        units: [mapped, 'each[x]']
+      - run: [sh, -c, 'echo "$D" >> digests']
+        env:
+          D: "${{ steps.p.units['mapped'].plan.digest }} ${{ steps.p.units['each[x]'].plan.digest }}"
+-- plugins/planned/opstruss.plugin.yaml --
+name: planned
+inputs:
+  config: {type: string, required: true}
+  exact: {type: boolean, default: true}
+  vars: {type: object}
+tasks:
+  plan:
+    run: [./plan.sh]
+  up:
+    run: [./up.sh]
+-- plugins/planned/plan.sh --
+#!/bin/sh
+# The plan copies the config to the unit's applied file; its digest is the
+# config's, so up can tell that the config changed after the approval.
+applied=$(echo "$OPSTRUSS_ADDRESS" | tr '/[]' '___').applied
+digest=$(cksum < "$INPUT_CONFIG" | cut -d' ' -f1)
+changes='[]'
+cmp -s "$INPUT_CONFIG" "$applied" || changes='[{"action": "update", "resource": "config"}]'
+printf '{"changes": %s, "digest": "%s", "exact": %s}\n' "$changes" "$digest" "$INPUT_EXACT" > "$OPSTRUSS_PLAN"
+-- plugins/planned/up.sh --
+#!/bin/sh
+now=$(cksum < "$INPUT_CONFIG" | cut -d' ' -f1)
+if [ "$OPSTRUSS_DIGEST" != "$now" ]; then
+  echo "the plan changed since it was approved"
+  exit 1
+fi
+cp "$INPUT_CONFIG" "$(echo "$OPSTRUSS_ADDRESS" | tr '/[]' '___').applied"

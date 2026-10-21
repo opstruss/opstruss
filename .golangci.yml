@@ -22,8 +22,8 @@ linters:
         linters:
           - errcheck
         text: '`fmt\.Fprint'
-      # The fake programs of the criteria tests write what they report.
-      - path: ^criteria_test\.go$
+      # The fake program of the test plugins writes what it reports.
+      - path: ^fakecloud_test\.go$
         linters:
           - forbidigo
 

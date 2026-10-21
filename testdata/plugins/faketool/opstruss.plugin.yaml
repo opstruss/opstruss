@@ -1,0 +1,16 @@
+name: faketool
+description: fakecloud as a tool that keeps the id of its resource in OPSTRUSS_STATE_DIR
+state: tool
+requires: [fakecloud]
+inputs:
+  cloud: {type: string, default: cloud}
+  rev: {type: string}
+outputs:
+  id: {type: string}
+tasks:
+  up:
+    run: [fakecloud, up, "${{ inputs.cloud }}"]
+  down:
+    run: [fakecloud, down, "${{ inputs.cloud }}"]
+  exec:
+    run: [./exec.sh]

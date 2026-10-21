@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -28,7 +30,10 @@ func TestScripts(t *testing.T) {
 }
 
 func params(dir string) testscript.Params {
-	return testscript.Params{Dir: dir, Condition: func(cond string) (bool, error) {
+	return testscript.Params{Dir: dir, Setup: func(env *testscript.Env) error {
+		// The plugins of the tests, for uses: ./testplugins/<name>.
+		return copyDir("testdata/plugins", filepath.Join(env.WorkDir, "testplugins"))
+	}, Condition: func(cond string) (bool, error) {
 		if cond == "failpoints" {
 			return failpoint.Enabled, nil
 		}
@@ -70,4 +75,30 @@ func params(dir string) testscript.Params {
 			}
 		},
 	}}
+}
+
+// copyDir copies the files under from to to, with their modes.
+func copyDir(from, to string) error {
+	return filepath.WalkDir(from, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(from, p)
+		if err != nil {
+			return err
+		}
+		dst := filepath.Join(to, rel)
+		if d.IsDir() {
+			return os.MkdirAll(dst, 0o755)
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(dst, data, info.Mode().Perm())
+	})
 }

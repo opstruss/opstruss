@@ -1,0 +1,13 @@
+name: fakecloud
+description: A resource as a file in a directory, tagged with the unit's state key
+requires: [fakecloud]
+inputs:
+  cloud: {type: string, default: cloud}
+  rev: {type: string}
+outputs:
+  id: {type: string}
+tasks:
+  up:
+    run: [fakecloud, up, "${{ inputs.cloud }}"]
+  down:
+    run: [fakecloud, down, "${{ inputs.cloud }}"]

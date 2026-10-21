@@ -1,0 +1,170 @@
+# Crash for units that use something: a plugin whose state OpsTruss keeps,
+# a plugin with state: tool, and a task with an http step, each killed at
+# every point of up, down, and moved:, and up after output that does not
+# parse and after a last write that fails: after up again, no resource
+# lacks a record, no unit has two, records read, and every interrupted
+# operation shows in plan.
+
+[!failpoints] skip 'needs a build with -tags failpoints'
+env HOME=$WORK/home
+env OPSTRUSS_FAILPOINT_LOG=$WORK/visited
+! exec fakecloud serve cloud port break-http &api&
+waitfile port
+
+exec opstruss up --yes --input rev=0
+exec fakecloud check cloud .opstruss/state
+stdout '^3 resources, each with a record$'
+exists .opstruss/state/default/t/tool/id
+
+# each unit killed at each point of up, then the next up finishes it
+exec sh -c 'for u in p t h; do for f in up-before-pending up-before-program program-started up-after-program up-before-put; do [ "$u $f" = "h program-started" ] && continue; rev="$u-$f"; if OPSTRUSS_FAILPOINT="$f=kill" opstruss up "$u" --yes --input rev="$rev" > /dev/null 2>&1; then echo "$u lived past $f"; exit 1; fi; opstruss up --yes --input rev="$rev" > /dev/null || exit 1; fakecloud check cloud .opstruss/state || exit 1; done; done'
+stdout '^3 resources, each with a record$'
+! stdout 'lived past'
+
+# the plan after a kill past the pending mark names what did not finish
+env OPSTRUSS_FAILPOINT=up-before-program=kill
+! exec opstruss up t --yes --input rev=10
+! exec opstruss up h --yes --input rev=10
+env OPSTRUSS_FAILPOINT=
+exec opstruss plan --input rev=10
+stdout '^default/t: will run: up of run .* did not finish$'
+stdout '^default/h: will run: up of run .* did not finish$'
+exec opstruss up --yes --input rev=10
+exec fakecloud check cloud .opstruss/state
+stdout '^3 resources, each with a record$'
+
+# output that does not parse keeps what the program wrote in pending, and
+# a body that does not parse leaves the resource for the next up to find
+cp yes break-output
+! exec opstruss up p t --yes --input rev=11
+rm break-output
+exec opstruss state pull t
+stdout '"raw_output": "id=r-'
+cp yes break-http
+! exec opstruss up h --yes --input rev=11
+rm break-http
+exec opstruss up --yes --input rev=11
+exec fakecloud check cloud .opstruss/state
+stdout '^3 resources, each with a record$'
+
+# a last write that fails keeps the record in errored/ and the ids in pending
+env OPSTRUSS_FAILPOINT=up-before-put=fail
+! exec opstruss up --yes --input rev=12
+stderr 'it is kept in .*/\.opstruss/errored/default/t\.json for opstruss state push'
+env OPSTRUSS_FAILPOINT=
+exec opstruss up --yes --input rev=12
+exec fakecloud check cloud .opstruss/state
+stdout '^3 resources, each with a record$'
+
+# the tool's state goes with its record through a move killed at each stage
+cp moved.yaml opstruss.yaml
+env OPSTRUSS_FAILPOINT=moved-after-pending=kill
+! exec opstruss up --yes --input rev=12
+env OPSTRUSS_FAILPOINT=moved-after-copy=kill
+! exec opstruss up --yes --input rev=12
+env OPSTRUSS_FAILPOINT=moved-after-tombstone=kill
+! exec opstruss up --yes --input rev=12
+env OPSTRUSS_FAILPOINT=
+exec opstruss up --yes --input rev=12
+stdout '^default/store: unchanged$'
+exists .opstruss/state/default/store/tool/id
+! exists .opstruss/state/default/t/tool
+exec fakecloud check cloud .opstruss/state
+stdout '^3 resources, each with a record$'
+
+# the exec hook of the tool's plugin reads the tool's state
+exec opstruss exec store --input rev=12 -- true
+stdout '^faketool state: r-'
+
+# down killed before and after its program finishes with the next down
+env OPSTRUSS_FAILPOINT=down-before-program=kill
+! exec opstruss down --yes --input rev=12
+env OPSTRUSS_FAILPOINT=down-after-program=kill
+! exec opstruss down --yes --input rev=12
+env OPSTRUSS_FAILPOINT=
+exec opstruss down --yes --input rev=12
+exec fakecloud check cloud .opstruss/state
+stdout '^0 resources, each with a record$'
+! exists .opstruss/state/default/store/tool
+! exists .opstruss/state/default/store/state.json
+
+# every failpoint was reached
+grep '^up-before-pending$' visited
+grep '^up-before-program$' visited
+grep '^program-started$' visited
+grep '^up-after-program$' visited
+grep '^up-before-put$' visited
+grep '^down-before-program$' visited
+grep '^down-after-program$' visited
+grep '^moved-after-pending$' visited
+grep '^moved-after-copy$' visited
+grep '^moved-after-tombstone$' visited
+kill api
+wait
+
+-- yes --
+yes
+-- opstruss.yaml --
+name: shop
+inputs:
+  rev: {type: string}
+uses:
+  cloudp: ./testplugins/fakecloud
+  toolp: ./testplugins/faketool
+tasks:
+  create:
+    inputs:
+      tag: {type: string}
+    steps:
+      - id: c
+        http:
+          url: "http://127.0.0.1:${{ file('port') }}/resources"
+          method: POST
+          headers: {Idempotency-Key: "${{ opstruss.state_key }}"}
+          body: {tag: "${{ inputs.tag }}"}
+    outputs:
+      id: {value: "${{ steps.c.outputs.body.id }}"}
+units:
+  p:
+    uses: cloudp
+    with: {rev: "${{ inputs.rev }}"}
+  t:
+    uses: toolp
+    with: {rev: "${{ inputs.rev }}"}
+  h:
+    uses: create
+    with: {tag: "${{ inputs.rev }}"}
+    down: [fakecloud, down, cloud]
+-- moved.yaml --
+name: shop
+inputs:
+  rev: {type: string}
+uses:
+  cloudp: ./testplugins/fakecloud
+  toolp: ./testplugins/faketool
+tasks:
+  create:
+    inputs:
+      tag: {type: string}
+    steps:
+      - id: c
+        http:
+          url: "http://127.0.0.1:${{ file('port') }}/resources"
+          method: POST
+          headers: {Idempotency-Key: "${{ opstruss.state_key }}"}
+          body: {tag: "${{ inputs.tag }}"}
+    outputs:
+      id: {value: "${{ steps.c.outputs.body.id }}"}
+units:
+  p:
+    uses: cloudp
+    with: {rev: "${{ inputs.rev }}"}
+  store:
+    uses: toolp
+    with: {rev: "${{ inputs.rev }}"}
+  h:
+    uses: create
+    with: {tag: "${{ inputs.rev }}"}
+    down: [fakecloud, down, cloud]
+moved:
+  - {from: t, to: store}
