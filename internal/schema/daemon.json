@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OpsTruss daemon",
+  "description": "daemon/<stack>.json: how to reach and stop the daemon of one stack. The daemon lives while it holds daemon/<stack>.lock, so the file outlives it. Readers ignore fields they do not know and refuse a newer version.",
+  "type": "object",
+  "properties": {
+    "version": { "type": "integer", "minimum": 1 },
+    "pid": { "type": "integer", "minimum": 1 },
+    "start": { "type": "string", "description": "When the process started, as the system tells it; compared only with itself, on this host." },
+    "started": { "type": "string" },
+    "opstruss": { "type": "string", "description": "The version of OpsTruss that the daemon runs." },
+    "socket": { "type": "string", "description": "The control socket, in daemon/ or, when that path is too long for a Unix socket, under $TMPDIR." }
+  },
+  "required": ["version", "pid", "start", "started", "opstruss", "socket"]
+}

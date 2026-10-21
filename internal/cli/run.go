@@ -26,7 +26,7 @@ import (
 // with the aliases that Terraform and Pulumi users reach for.
 func (a *app) unitCommands() []*cobra.Command {
 	type flags struct{ yes, force, noDeps bool }
-	command := func(use, alias, short, force string, fn func(context.Context, api.Request) (*api.Result, error)) *cobra.Command {
+	command := func(use, alias, short, force string) *cobra.Command {
 		var f flags
 		cmd := &cobra.Command{
 			Use:     use + " [unit]...",
@@ -40,7 +40,7 @@ func (a *app) unitCommands() []*cobra.Command {
 				req.Yes, req.Force, req.NoDeps = f.yes, f.force, f.noDeps
 				ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 				defer stop()
-				res, err := fn(ctx, req)
+				res, err := a.call(ctx, use, req)
 				if err != nil {
 					return err
 				}
@@ -57,15 +57,20 @@ func (a *app) unitCommands() []*cobra.Command {
 		}
 		return cmd
 	}
-	e := a.api()
+	up := command("up", "apply", "Bring the units up: each runs when its definition changed",
+		"run the units named although unchanged")
+	up.Long = up.Short + `.
+
+With -d, up runs in the daemon of the stack, which starts in the background
+when none runs and stays until opstruss stop. While a daemon runs, the runs
+of the command line go to it.`
+	up.Annotations = map[string]string{detachable: "true"}
 	return []*cobra.Command{
-		command("plan", "preview", "Show what up would do and why, without changing anything", "", e.Plan),
-		command("up", "apply", "Bring the units up: each runs when its definition changed",
-			"run the units named although unchanged", e.Up),
+		command("plan", "preview", "Show what up would do and why, without changing anything", ""),
+		up,
 		command("down", "destroy", "Take the units down with the down contract of their records",
-			"run down although pass values differ from those recorded", e.Down),
-		command("status", "ps", "Show the state of the units: the status task of their plugin, or what their record says", "",
-			e.StatusUnits),
+			"run down although pass values differ from those recorded"),
+		command("status", "ps", "Show the state of the units: the status task of their plugin, or what their record says", ""),
 	}
 }
 
@@ -85,15 +90,18 @@ func (a *app) request(units []string) (api.Request, error) {
 		Debug: debug == "debug"}, nil
 }
 
-// api is the engine API of this process: events go to the renderer, and a
+// handlers are the callbacks of a call: events go to the renderer, and a
 // terminal answers the questions of a run.
-func (a *app) api() *api.API {
+func (a *app) handlers() api.Handlers {
 	h := api.Handlers{Event: a.render()}
-	if a.terminal && a.stdin != nil {
+	if a.answers() {
 		h.Approve, h.Ask = a.approve, a.ask
 	}
-	return api.New(h)
+	return h
 }
+
+// answers reports whether a terminal answers the questions of a run.
+func (a *app) answers() bool { return a.terminal && a.stdin != nil }
 
 // approve asks at the terminal whether to apply one change; only y or yes
 // approves it, as the prompt of terraform apply wants yes.

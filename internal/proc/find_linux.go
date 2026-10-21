@@ -2,8 +2,10 @@ package proc
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"syscall"
 )
 
@@ -11,6 +13,24 @@ import (
 func Command(pid int) (string, error) {
 	comm, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/comm")
 	return string(bytes.TrimSpace(comm)), err
+}
+
+// StartTime returns when pid started, in clock ticks since boot, as the
+// starttime field of /proc/<pid>/stat: only for comparing with another
+// StartTime of the same pid, since a pid used again has another one.
+func StartTime(pid int) (string, error) {
+	stat, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
+	if err != nil {
+		return "", err
+	}
+	// The name of the program, in parentheses before the other fields, may
+	// hold spaces and parentheses.
+	i := bytes.LastIndexByte(stat, ')')
+	fields := strings.Fields(string(stat[i+1:]))
+	if i < 0 || len(fields) < 20 {
+		return "", fmt.Errorf("/proc/%d/stat has no start time", pid)
+	}
+	return fields[19], nil
 }
 
 // find reads /proc/<pid>/environ of each process that this user owns. A

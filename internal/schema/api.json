@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OpsTruss engine API",
+  "description": "The params and results of the socket of a daemon, which speaks JSON-RPC 2.0, one message per line. Internal: both ends come from one version of OpsTruss, which initialize checks.",
+  "$defs": {
+    "initialize": {
+      "description": "params and result of initialize: what each end says of itself.",
+      "type": "object",
+      "properties": {
+        "protocol": { "type": "integer", "minimum": 1 },
+        "version": { "type": "string" },
+        "terminal": { "type": "boolean", "description": "The caller answers approve and ask." }
+      },
+      "required": ["protocol", "version"],
+      "additionalProperties": false
+    },
+    "request": {
+      "description": "params of plan, up, down, status, and run: the project, the stack, and what the caller brings.",
+      "type": "object",
+      "properties": {
+        "dir": { "type": "string", "minLength": 1 },
+        "cwd": { "type": "string" },
+        "stack": { "type": "string" },
+        "inputs": { "type": "object", "additionalProperties": { "type": "string" } },
+        "environ": { "type": "array", "items": { "type": "string" } },
+        "units": { "type": "array", "items": { "type": "string" } },
+        "yes": { "type": "boolean" },
+        "force": { "type": "boolean" },
+        "no_deps": { "type": "boolean" },
+        "task": { "type": "string" },
+        "with": { "type": "object" },
+        "run": { "type": "string" },
+        "debug": { "type": "boolean" },
+        "show_sensitive": { "type": "boolean" }
+      },
+      "required": ["dir"],
+      "additionalProperties": false
+    },
+    "result": {
+      "description": "result of plan, up, down, status, and run.",
+      "type": "object",
+      "properties": {
+        "run": { "type": "string" },
+        "exit_code": { "type": "integer" }
+      },
+      "required": ["run", "exit_code"],
+      "additionalProperties": false
+    },
+    "question": {
+      "description": "params of approve, which the daemon asks of a caller with a terminal.",
+      "type": "object",
+      "properties": {
+        "address": { "type": "string" },
+        "task": { "type": "string" },
+        "summary": { "type": "string" }
+      },
+      "required": ["summary"],
+      "additionalProperties": false
+    },
+    "approval": {
+      "description": "result of approve.",
+      "type": "object",
+      "properties": { "approved": { "type": "boolean" } },
+      "required": ["approved"],
+      "additionalProperties": false
+    },
+    "ask": {
+      "description": "params of ask: a required input without a value.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "sensitive": { "type": "boolean" }
+      },
+      "required": ["name"],
+      "additionalProperties": false
+    },
+    "answer": {
+      "description": "result of ask.",
+      "type": "object",
+      "properties": { "value": { "type": "string" } },
+      "required": ["value"],
+      "additionalProperties": false
+    },
+    "event": {
+      "description": "params of event, a notification with one event of the call's run.",
+      "$ref": "event.json"
+    }
+  }
+}

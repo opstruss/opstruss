@@ -26,6 +26,11 @@ type taskHolder struct {
 
 var taskMutexes sync.Map // lock path → *sync.Mutex, for calls in one process
 
+// taskHolders keeps the cancel of each call that holds a task lock in this
+// process, so a call with concurrency: cancel stops it from any run of the
+// process, as the runs of a daemon are.
+var taskHolders sync.Map // lock path → context.CancelCauseFunc
+
 // taskLock takes the concurrency lock of a call of a task in this stack
 // and checkout, .opstruss/tasks/<stack>/<task>.lock, or
 // <task>[<group>].lock with a group, as flock(1) in cron: queue waits for
@@ -109,13 +114,9 @@ func (e *engine) holdTask(ctx context.Context, p string, f *os.File, mu *sync.Mu
 		_, _ = f.WriteAt(data, 0)
 	}
 	ctx, cancel := context.WithCancelCause(ctx)
-	e.mu.Lock()
-	e.holders[p] = cancel
-	e.mu.Unlock()
+	taskHolders.Store(p, cancel)
 	release := func() {
-		e.mu.Lock()
-		delete(e.holders, p)
-		e.mu.Unlock()
+		taskHolders.Delete(p)
 		cancel(nil)
 		_ = f.Truncate(0)
 		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
@@ -130,11 +131,8 @@ func (e *engine) holdTask(ctx context.Context, p string, f *os.File, mu *sync.Mu
 // root task of that run is this task, so a deploy that calls notify does
 // not stop with it.
 func (e *engine) cancelHolder(p string, f *os.File, name string) {
-	e.mu.Lock()
-	cancel := e.holders[p]
-	e.mu.Unlock()
-	if cancel != nil {
-		cancel(errors.New("cancelled by a call with concurrency: cancel"))
+	if cancel, ok := taskHolders.Load(p); ok {
+		cancel.(context.CancelCauseFunc)(errors.New("cancelled by a call with concurrency: cancel"))
 		return
 	}
 	var h taskHolder
@@ -147,8 +145,9 @@ func (e *engine) cancelHolder(p string, f *os.File, name string) {
 		e.warn("", "concurrency: cancel waits for run %s, whose root task is %s, not %s", h.Run, h.Task, name)
 		return
 	}
-	// A pid is reused once its process is gone; the holder is an OpsTruss.
-	if c, err := proc.Command(h.PID); err != nil || c != filepath.Base(os.Args[0]) {
+	// A pid is reused once its process is gone; the holder is an OpsTruss,
+	// and never this one, whose calls are in taskHolders.
+	if c, err := proc.Command(h.PID); err != nil || c != filepath.Base(os.Args[0]) || h.PID == os.Getpid() {
 		return
 	}
 	_ = syscall.Kill(h.PID, syscall.SIGINT)

@@ -31,6 +31,17 @@ const (
 	Meta    Kind = "meta.json"
 	Run     Kind = "run.json"
 	Event   Kind = "event.json"
+	Daemon  Kind = "daemon.json"
+
+	// The params and results of the socket of a daemon.
+	APIInitialize Kind = "api.json#/$defs/initialize"
+	APIRequest    Kind = "api.json#/$defs/request"
+	APIResult     Kind = "api.json#/$defs/result"
+	APIQuestion   Kind = "api.json#/$defs/question"
+	APIApproval   Kind = "api.json#/$defs/approval"
+	APIAsk        Kind = "api.json#/$defs/ask"
+	APIAnswer     Kind = "api.json#/$defs/answer"
+	APIEvent      Kind = "api.json#/$defs/event"
 )
 
 const base = "https://schema.opstruss.invalid/"
@@ -61,7 +72,8 @@ var compiled = sync.OnceValues(func() (map[Kind]*jsonschema.Schema, error) {
 		}
 	}
 	out := map[Kind]*jsonschema.Schema{}
-	for _, k := range []Kind{Project, Include, Plugin, Record, Meta, Run, Event} {
+	for _, k := range []Kind{Project, Include, Plugin, Record, Meta, Run, Event, Daemon,
+		APIInitialize, APIRequest, APIResult, APIQuestion, APIApproval, APIAsk, APIAnswer, APIEvent} {
 		s, err := c.Compile(base + string(k))
 		if err != nil {
 			return nil, err

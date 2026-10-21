@@ -1,0 +1,50 @@
+# up -d starts the daemon of the stack in the background and runs up in
+# it; while it runs, the runs of the command line go to it with the
+# caller's environment; stop ends it.
+
+env HOME=$WORK/home
+
+# up -d starts the daemon and runs up in it
+exec opstruss up -d --yes
+stdout 'default/web \| up $'
+daemonrun default
+exists .opstruss/logs/default/_daemon.jsonl
+grep '"type":"daemon","level":"info","message":"daemon started: pid' .opstruss/logs/default/_daemon.jsonl
+
+# a run of the command line goes to the daemon, with the caller's environment
+env GREETING=hola
+exec opstruss up --yes --force
+stdout 'default/web \| up hola'
+daemonrun default
+exec opstruss hello
+stdout 'hello \| hello hola'
+daemonrun default
+
+# a second up -d finds the daemon that runs
+exec opstruss up -d --yes
+stdout 'default/web: unchanged'
+daemonrun default
+
+# -d is for up and tasks
+! exec opstruss plan -d
+stderr '-d is for up and tasks, which can start a daemon, not for plan'
+
+# stop ends the daemon, and runs stay in their own process again
+exec opstruss stop
+stdout 'stopped the daemon of stack default, pid [0-9]+'
+grep '"message":"daemon stopped"' .opstruss/logs/default/_daemon.jsonl
+exec opstruss stop --json
+stdout '"stopped": false'
+exec opstruss up --yes --force
+! daemonrun default
+
+-- opstruss.yaml --
+name: shop
+units:
+  web:
+    run: echo "up $GREETING"
+    pass: [GREETING]
+tasks:
+  hello:
+    run: echo "hello $GREETING"
+    pass: [GREETING]

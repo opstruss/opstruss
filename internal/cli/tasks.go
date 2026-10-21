@@ -127,7 +127,7 @@ func (a *app) taskCommand(name string, t *model.Task, ofUnits bool) *cobra.Comma
 	if ofUnits {
 		use += " [unit]..."
 	}
-	cmd := &cobra.Command{Use: use, Short: t.Description}
+	cmd := &cobra.Command{Use: use, Short: t.Description, Annotations: map[string]string{detachable: "true"}}
 	argsInput := ""
 	secrets := map[string]*string{}
 	for _, in := range slices.Sorted(maps.Keys(t.Inputs)) {
@@ -232,7 +232,7 @@ func (a *app) taskCommand(name string, t *model.Task, ofUnits bool) *cobra.Comma
 		req.Yes, req.Task, req.With = yes, name, given
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
-		res, err := a.api().Run(ctx, req)
+		res, err := a.call(ctx, "run", req)
 		if err != nil {
 			return err
 		}

@@ -3,6 +3,7 @@ package proc
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -22,6 +23,21 @@ func Command(pid int) (string, error) {
 		return "", os.ErrNotExist
 	}
 	return unix.ByteSliceToString(p.Proc.P_comm[:]), nil
+}
+
+// StartTime returns when pid started, as the p_starttime of sysctl
+// kern.proc.pid: only for comparing with another StartTime of the same pid,
+// since a pid used again has another one.
+func StartTime(pid int) (string, error) {
+	p, err := unix.SysctlKinfoProc("kern.proc.pid", pid)
+	if err != nil {
+		return "", err
+	}
+	if p.Proc.P_pid != int32(pid) {
+		return "", os.ErrNotExist
+	}
+	t := p.Proc.P_starttime
+	return fmt.Sprintf("%d.%06d", t.Sec, t.Usec), nil
 }
 
 // find lists this user's processes with sysctl kern.proc.uid and reads

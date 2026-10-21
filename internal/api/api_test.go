@@ -74,3 +74,46 @@ tasks:
 		t.Fatalf("%+v %v %+v", res, err, last)
 	}
 }
+
+// TestCancelInProcess makes two calls of a task with concurrency: cancel in
+// one process, as the runs of a daemon are: the second stops the first,
+// and no signal reaches the process.
+func TestCancelInProcess(t *testing.T) {
+	req := project(t, `name: shop
+tasks:
+  hold:
+    concurrency: cancel
+    inputs:
+      seconds: {type: number}
+    run: touch started; sleep "$INPUT_SECONDS"
+`)
+	a := New(Handlers{})
+	first := make(chan *Result)
+	go func() {
+		r := req
+		r.Task, r.With = "hold", map[string]any{"seconds": 30.0}
+		res, err := a.Run(context.Background(), r)
+		if err != nil {
+			t.Error(err)
+		}
+		first <- res
+	}()
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		if _, err := os.Stat(filepath.Join(req.Dir, "started")); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the first call did not start")
+		}
+	}
+	r := req
+	r.Task, r.With = "hold", map[string]any{"seconds": 0.0}
+	began := time.Now()
+	res, err := a.Run(context.Background(), r)
+	if err != nil || res.ExitCode != 0 {
+		t.Fatalf("second call: %+v %v", res, err)
+	}
+	if res := <-first; res == nil || res.ExitCode == 0 || time.Since(began) > 20*time.Second {
+		t.Fatalf("first call: %+v after %v", res, time.Since(began))
+	}
+}

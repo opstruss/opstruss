@@ -42,6 +42,7 @@ type app struct {
 	cwd        string // where OpsTruss started, before -C
 	loadErr    error  // why the project's tasks are not commands
 	dir        string
+	detach     bool // -d: run in the daemon of the stack, started when none runs
 	stack      string
 	inputs     []string
 	json       bool
@@ -70,7 +71,7 @@ func start(args []string, stdin io.Reader, terminal bool, stdout, stderr io.Writ
 			a.env[k] = v
 		}
 	}
-	args, err := a.takeDir(args)
+	args, err := a.takeShort(args)
 	a.args = args
 	if err == nil {
 		root := a.root()
@@ -100,9 +101,10 @@ func start(args []string, stdin io.Reader, terminal bool, stdout, stderr io.Writ
 	return 1
 }
 
-// takeDir removes -C <dir> from args, like git -C: each one after the
-// first is relative to the one before.
-func (a *app) takeDir(args []string) ([]string, error) {
+// takeShort removes from args the short flags that are OpsTruss's on every
+// command line, since inputs make only long flags: -C <dir>, like git -C,
+// each one after the first relative to the one before, and -d.
+func (a *app) takeShort(args []string) ([]string, error) {
 	var out []string
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
@@ -117,6 +119,8 @@ func (a *app) takeDir(args []string) ([]string, error) {
 			a.dir = joinDir(a.dir, args[i])
 		case strings.HasPrefix(arg, "-C"):
 			a.dir = joinDir(a.dir, strings.TrimPrefix(arg, "-C"))
+		case arg == "-d":
+			a.detach = true
 		default:
 			// The commands of tasks come from the project of the stack, so
 			// --stack is read before the flags are.
@@ -170,6 +174,12 @@ func (a *app) root() *cobra.Command {
 			}
 			return cmd.Help()
 		},
+		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			if a.detach && cmd.Annotations[detachable] == "" {
+				return fmt.Errorf("-d is for up and tasks, which can start a daemon, not for %s", cmd.Name())
+			}
+			return nil
+		},
 	}
 	pf := root.PersistentFlags()
 	pf.StringVar(&a.stack, "stack", "", "the stack to use; defaults to the only one, or $OPSTRUSS_STACK")
@@ -178,7 +188,8 @@ func (a *app) root() *cobra.Command {
 	root.Flags().StringVar(&a.completion, "completion", "", "print a completion script for bash, zsh, or fish")
 	root.AddCommand(a.versionCommand(), a.initCommand(), a.validateCommand(), a.explainCommand(), a.stateCommand())
 	root.AddCommand(a.unitCommands()...)
-	root.AddCommand(a.listCommand(), a.outputsCommand(), a.runsCommand(), a.execCommand(), a.doctorCommand())
+	root.AddCommand(a.listCommand(), a.outputsCommand(), a.runsCommand(), a.execCommand(), a.doctorCommand(),
+		a.stopCommand(), a.daemonCommand())
 	a.taskCommands(root)
 	return root
 }

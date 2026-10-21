@@ -1,12 +1,12 @@
-// Package api is the engine API: what the command line asks of the
-// engine, and later MCP and the socket of the daemon. Requests and
-// responses are JSON, so a call can cross a socket as it is; the events of
-// a run and the questions that wait for an answer come back through
-// callbacks.
+// Package api is the engine API: what the command line and the socket of
+// a daemon ask of the engine, and later MCP. Requests and responses are
+// JSON, so a call can cross a socket as it is; the events of a run and the
+// questions that wait for an answer come back through callbacks.
 package api
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/opstruss/opstruss/internal/engine"
@@ -78,6 +78,23 @@ func result(res *engine.Result, err error) (*Result, error) {
 		return nil, err
 	}
 	return &Result{Run: res.Run, ExitCode: res.ExitCode}, nil
+}
+
+// Call runs the method of Methods named method.
+func (a *API) Call(ctx context.Context, method string, r Request) (*Result, error) {
+	switch method {
+	case "plan":
+		return a.Plan(ctx, r)
+	case "up":
+		return a.Up(ctx, r)
+	case "down":
+		return a.Down(ctx, r)
+	case "status":
+		return a.StatusUnits(ctx, r)
+	case "run":
+		return a.Run(ctx, r)
+	}
+	return nil, fmt.Errorf("the engine API has no method %q", method)
 }
 
 // Plan previews the units of the request.

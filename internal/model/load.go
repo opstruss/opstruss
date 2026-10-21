@@ -102,6 +102,28 @@ func stackNames(doc map[string]any) []string {
 	return slices.Sorted(maps.Keys(stacks))
 }
 
+// StackOf returns the name of the stack of the project in dir that a
+// command uses: stack, or the only one when stack is empty.
+func StackOf(dir, stack string) (string, error) {
+	names, err := Stacks(dir)
+	if err != nil {
+		return "", err
+	}
+	return chooseStack(names, stack)
+}
+
+func chooseStack(names []string, stack string) (string, error) {
+	switch {
+	case stack == "" && len(names) == 1:
+		return names[0], nil
+	case stack == "":
+		return "", fmt.Errorf("the project has stacks %s; choose one with --stack", strings.Join(names, ", "))
+	case !slices.Contains(names, stack):
+		return "", fmt.Errorf("the project has no stack %s; it has %s", stack, strings.Join(names, ", "))
+	}
+	return stack, nil
+}
+
 // Load reads the project in dir for one stack; an empty stack picks the
 // only one.
 func Load(dir, stack string) (*Project, error) {
@@ -109,14 +131,8 @@ func Load(dir, stack string) (*Project, error) {
 	if err != nil {
 		return nil, err
 	}
-	names := stackNames(root.value)
-	switch {
-	case stack == "" && len(names) == 1:
-		stack = names[0]
-	case stack == "":
-		return nil, fmt.Errorf("the project has stacks %s; choose one with --stack", strings.Join(names, ", "))
-	case !slices.Contains(names, stack):
-		return nil, fmt.Errorf("the project has no stack %s; it has %s", stack, strings.Join(names, ", "))
+	if stack, err = chooseStack(stackNames(root.value), stack); err != nil {
+		return nil, err
 	}
 	p := &Project{Dir: dir, StackName: stack, doc: map[string]any{}, root: root, origins: map[string]origin{}, base: dir}
 	for k, v := range root.value {

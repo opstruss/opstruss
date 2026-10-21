@@ -153,7 +153,7 @@ func (r *Run) Emit(ev Event) {
 	defer r.mu.Unlock()
 	r.seq++
 	ev.V, ev.Seq, ev.Run = EventVersion, r.seq, r.rec.Run
-	ev.Time = time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
+	ev.Time = now()
 	if r.sink != nil {
 		r.sink(ev)
 	}
@@ -200,7 +200,7 @@ func (r *Run) Finish(update func(*Record)) error {
 	defer r.mu.Unlock()
 	if r.gone > 0 {
 		r.seq++
-		r.writeEvent(Event{V: EventVersion, Seq: r.seq, Run: r.rec.Run, Time: time.Now().UTC().Format("2006-01-02T15:04:05.000Z"),
+		r.writeEvent(Event{V: EventVersion, Seq: r.seq, Run: r.rec.Run, Time: now(),
 			Type: "diagnostic", Level: "warn",
 			Message: fmt.Sprintf("%d bytes of program output from the middle of the run were not stored; the run stores %d MiB", r.gone, MaxOutput>>20)})
 	}

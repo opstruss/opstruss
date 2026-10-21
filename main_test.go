@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -50,6 +51,40 @@ func params(dir string) testscript.Params {
 			}
 			ts.Fatalf("%s did not appear", args[0])
 		},
+		// daemonrun fails unless the newest run of a stack ran in its
+		// daemon, or with ! unless it did not: the record of the run names
+		// the pid that daemon/<stack>.json names.
+		"daemonrun": func(ts *testscript.TestScript, neg bool, args []string) {
+			if len(args) != 1 {
+				ts.Fatalf("usage: daemonrun <stack>")
+			}
+			root := ts.MkAbs(".opstruss")
+			var daemon struct {
+				PID int `json:"pid"`
+			}
+			data, err := os.ReadFile(filepath.Join(root, "daemon", args[0]+".json"))
+			ts.Check(err)
+			ts.Check(json.Unmarshal(data, &daemon))
+			recs, err := filepath.Glob(filepath.Join(root, "runs", args[0], "*", "record.json"))
+			ts.Check(err)
+			var newest struct {
+				Run     string `json:"run"`
+				PID     int    `json:"pid"`
+				Started string `json:"started"`
+			}
+			for _, p := range recs {
+				var rec = newest
+				data, err := os.ReadFile(p)
+				ts.Check(err)
+				ts.Check(json.Unmarshal(data, &rec))
+				if t1, t2 := parseTime(rec.Started), parseTime(newest.Started); newest.Run == "" || t1.After(t2) {
+					newest = rec
+				}
+			}
+			if (newest.PID == daemon.PID) == neg {
+				ts.Fatalf("run %s ran in pid %d, the daemon is pid %d", newest.Run, newest.PID, daemon.PID)
+			}
+		},
 		// within runs a command n times and fails when the median takes
 		// longer than a duration, for the load criteria.
 		"within": func(ts *testscript.TestScript, neg bool, args []string) {
@@ -75,6 +110,11 @@ func params(dir string) testscript.Params {
 			}
 		},
 	}}
+}
+
+func parseTime(s string) time.Time {
+	t, _ := time.Parse(time.RFC3339Nano, s)
+	return t
 }
 
 // copyDir copies the files under from to to, with their modes.

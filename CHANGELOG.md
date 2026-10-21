@@ -13,6 +13,18 @@ minor release can change what a project, a component, or a plugin relies on.
 
 ### Added
 
+- `opstruss up -d` runs up in the daemon of the stack, which it starts in
+  the background when none runs; a task takes `-d` as well. The daemon
+  stays until `opstruss stop`, which sends it SIGTERM once its pid and
+  start time match `.opstruss/daemon/<stack>.json`, then waits for it to
+  end. While a daemon runs, `plan`, `up`, `down`, `status`, and tasks run
+  in it with the caller's files and environment and ask at the caller's
+  terminal, so they share its locks and concurrency; Ctrl-C cancels such a
+  run, and one whose caller goes away runs on without answers. The daemon
+  listens on a socket for its own user only, refuses a caller of another
+  protocol with what to do, writes its events to
+  `.opstruss/logs/<stack>/_daemon.jsonl`, which turns over at 10 MiB into
+  `.1` and `.2`, and stops when its lock file is deleted.
 - `opstruss validate` checks `opstruss.yaml`, its include files, and every
   stack against the schema and the rules of the model, among them that
   every `${{ }}` compiles and reads only what exists and may be read where

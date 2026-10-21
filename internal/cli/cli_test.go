@@ -23,6 +23,7 @@ func TestRun(t *testing.T) {
 		{args: []string{"--completion", "zsh"}, stdout: "#compdef opstruss"},
 		{args: []string{"--completion", "csh"}, code: 1, stderr: "--completion takes bash, zsh, or fish"},
 		{args: []string{"-C"}, code: 1, stderr: "-C needs a directory"},
+		{args: []string{"version", "-d"}, code: 1, stderr: "-d is for up and tasks"},
 		{args: []string{"-C", t.TempDir(), "validate"}, code: 1, stderr: "no opstruss.yaml in"},
 	}
 	for _, tt := range tests {
@@ -41,13 +42,13 @@ func TestRun(t *testing.T) {
 	}
 }
 
-func TestTakeDir(t *testing.T) {
+func TestTakeShort(t *testing.T) {
 	a := &app{}
-	args, err := a.takeDir([]string{"-C", "/srv", "-Cops", "explain", "--", "-C", "x"})
+	args, err := a.takeShort([]string{"-C", "/srv", "-Cops", "up", "-d", "web", "--", "-C", "x", "-d"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if a.dir != "/srv/ops" || strings.Join(args, " ") != "explain -- -C x" {
-		t.Fatalf("dir %q, args %q", a.dir, args)
+	if a.dir != "/srv/ops" || !a.detach || strings.Join(args, " ") != "up web -- -C x -d" {
+		t.Fatalf("dir %q, detach %v, args %q", a.dir, a.detach, args)
 	}
 }

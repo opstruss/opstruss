@@ -108,8 +108,7 @@ type engine struct {
 	touched  map[string]*record.Unit
 
 	rootTask string
-	needed   map[string]*taskOnce               // tasks of needs, which run once per run
-	holders  map[string]context.CancelCauseFunc // concurrency locks this process holds
+	needed   map[string]*taskOnce // tasks of needs, which run once per run
 
 	insts  []*instance            // in graph order
 	byUnit map[string][]*instance // by the path of the unit
@@ -189,7 +188,7 @@ func load(opts Options) (*engine, error) {
 	e := &engine{opts: opts, p: p, inputs: inputs, root: filepath.Join(p.Dir, ".opstruss"),
 		redact: red, inputMarks: inputMarks, tooShort: short,
 		started: time.Now().UTC(), parallel: DefaultParallel, byUnit: map[string][]*instance{},
-		read: map[string]string{}, needed: map[string]*taskOnce{}, holders: map[string]context.CancelCauseFunc{},
+		read: map[string]string{}, needed: map[string]*taskOnce{},
 		touched: map[string]*record.Unit{}, hashes: map[string]string{}, frames: map[string]*frameSet{},
 		sopsFiles: map[string]any{}}
 	e.secrets = e.secretValues()
