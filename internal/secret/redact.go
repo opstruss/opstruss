@@ -3,6 +3,7 @@ package secret
 import (
 	"encoding/json"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -66,7 +67,7 @@ func (r *Redactor) add(v any, derived bool) bool {
 				continue
 			}
 			r.addPattern(line)
-			if esc := escaped(line); esc != line {
+			for _, esc := range escapes(line) {
 				r.addPattern(esc)
 			}
 		}
@@ -75,13 +76,17 @@ func (r *Redactor) add(v any, derived bool) bool {
 	return false
 }
 
-// escaped is s as it appears inside a JSON string.
-func escaped(s string) string {
-	b, err := json.Marshal(s)
-	if err != nil {
-		return s
+// escapes are the forms s takes inside a JSON string, and quoted as Go
+// quotes values in error messages, where they differ from s.
+func escapes(s string) []string {
+	var out []string
+	if b, err := json.Marshal(s); err == nil && string(b[1:len(b)-1]) != s {
+		out = append(out, string(b[1:len(b)-1]))
 	}
-	return string(b[1 : len(b)-1])
+	if q := strconv.Quote(s); q[1:len(q)-1] != s && !slices.Contains(out, q[1:len(q)-1]) {
+		out = append(out, q[1:len(q)-1])
+	}
+	return out
 }
 
 func (r *Redactor) addPattern(p string) {

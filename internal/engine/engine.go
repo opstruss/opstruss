@@ -223,6 +223,7 @@ func load(opts Options) (*engine, error) {
 	}
 	e.store.Key = e.dataKey
 	e.store.Known = func(_, _ string, v any) bool { return e.redact.Contains(v) }
+	e.store.Opened = func(v any) { e.redact.Add(v) }
 	if e.host, err = state.HostID(); err != nil {
 		return nil, err
 	}

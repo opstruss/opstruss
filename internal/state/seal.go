@@ -43,10 +43,11 @@ func (a *Attempt) parts() parts {
 // sealer encrypts and decrypts the sensitive values of one record, asking
 // for the data key only when a value needs it.
 type sealer struct {
-	key   func() ([]byte, error)
-	known func(part, name string, v any) bool
-	id    string
-	k     []byte
+	key    func() ([]byte, error)
+	known  func(part, name string, v any) bool
+	opened func(v any)
+	id     string
+	k      []byte
 }
 
 func (s *sealer) dataKey() ([]byte, error) {
@@ -188,6 +189,9 @@ func (s *sealer) open(p parts) error {
 			if err != nil {
 				return fmt.Errorf("sensitive.%s.%s: %w", part, name, err)
 			}
+			if s.opened != nil {
+				s.opened(v)
+			}
 			switch part {
 			case PartInputs, PartOutputs:
 				m := p.inputs
@@ -254,7 +258,7 @@ func (s *Store) openRecord(r *Record) error {
 	if s.Key == nil {
 		return nil
 	}
-	sl := &sealer{key: s.Key, id: r.ID}
+	sl := &sealer{key: s.Key, opened: s.Opened, id: r.ID}
 	if err := sl.open(r.parts()); err != nil {
 		return err
 	}

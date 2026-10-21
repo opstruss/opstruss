@@ -25,6 +25,10 @@ type Store struct {
 	// Known, when set, says whether a value of a record holds a sensitive
 	// value that the run knows, which is then kept encrypted too.
 	Known func(part, name string, v any) bool
+	// Opened, when set, gets each sensitive value that a record gives up
+	// decrypted, so the run hides it in what it writes out, as down prints
+	// what it kept.
+	Opened func(v any)
 
 	mu   sync.Mutex
 	meta *Meta

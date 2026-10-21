@@ -112,8 +112,10 @@ minor release can change what a project, a component, or a plugin relies on.
   outputs, pending, or absent.
 - A sensitive value is hidden as `***` wherever a run writes it: the
   terminal, `--json`, events, `record.json`, error messages, and
-  `explain`, line by line and in its JSON form, also inside values
-  computed from it, such as `base64.encode()`. Inputs with
+  `explain`, line by line, in its JSON form, and quoted as error messages
+  quote values, also inside values computed from it, such as
+  `base64.encode()`, and when a run only reads it back from a record, as
+  `down` does. Inputs with
   `sensitive: true` of the project, a task, or a plugin task are
   sensitive, and so are outputs that are declared so, that a program
   names in `sensitive` of `$OPSTRUSS_RESULT`, or that hold a sensitive

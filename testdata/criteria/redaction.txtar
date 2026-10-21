@@ -1,0 +1,127 @@
+# Redaction: a canary secret, one line with characters that JSON escapes,
+# and one of three lines, goes through the log, a line printed in pieces,
+# --json, records and events, kv, error messages, outputs, down, and the
+# pending and errored copies a failpoint leaves: no plaintext of it shows
+# anywhere OpsTruss writes, only in what programs write themselves (tool/,
+# work/, artifacts/).
+
+[!failpoints] skip 'needs a build with -tags failpoints'
+env HOME=$WORK/home
+env SOPS_AGE_KEY_FILE=$WORK/age/keys.txt
+env 'CANARY=CANARYa1b2c3<"&>CANARYd4e5f6'
+exec opstruss init
+
+# the log, stderr, a line in pieces, three lines, and the outputs
+exec opstruss up app --yes --input rev=1
+stdout '^default/app \| single \*\*\*$'
+stdout '^default/app \| pieces \*\*\*$'
+stdout '^default/app \| \*\*\*$'
+stderr 'output token holds a sensitive value, so it is sensitive'
+! stdout 'CANARY|PEM[a-z]'
+! stderr 'CANARY|PEM[a-z]'
+
+# --json prints events, in which JSON escapes the canary
+exec opstruss up app --yes --input rev=2 --json
+stdout '"message":"single \*\*\*"'
+! stdout 'CANARY|PEM[a-z]'
+! stderr 'CANARY|PEM[a-z]'
+
+# the outputs, as text and as JSON, and the events of a past run
+exec opstruss outputs
+stdout '^token: \*\*\*$'
+exec opstruss outputs --json
+stdout '"token": "\*\*\*"'
+exec opstruss runs
+exec sh -c 'for r in $(opstruss runs | cut -d" " -f1); do opstruss runs "$r"; done'
+stdout 'single \*\*\*'
+! stdout 'CANARY|PEM[a-z]'
+
+# kv keeps it encrypted, and what reads it is hidden
+exec opstruss remember
+exec opstruss recall
+stdout 'recalled \*\*\*'
+! stdout 'CANARY|PEM[a-z]'
+
+# error messages: an assert that names it, an output that is not the type
+# it is declared, and an expression that cannot convert it
+! exec opstruss check
+stderr 'bad \*\*\*'
+! stderr 'CANARY|PEM[a-z]'
+! exec opstruss up typed --yes
+! stdout 'CANARY|PEM[a-z]'
+! stderr 'CANARY|PEM[a-z]'
+! exec opstruss convert
+stderr 'convert'
+! stdout 'CANARY|PEM[a-z]'
+! stderr 'CANARY|PEM[a-z]'
+
+# killed before the last write: pending keeps the outputs, encrypted
+env OPSTRUSS_FAILPOINT=up-before-put=kill
+! exec opstruss up app --yes --input rev=3
+env OPSTRUSS_FAILPOINT=up-before-put=fail
+! exec opstruss up app --yes --input rev=4
+stderr 'it is kept in .*/\.opstruss/errored/default/app\.json'
+env OPSTRUSS_FAILPOINT=
+exists .opstruss/errored/default/app.json
+! stdout 'CANARY|PEM[a-z]'
+! stderr 'CANARY|PEM[a-z]'
+
+# output that does not parse keeps the raw output, encrypted
+cp yes break-output
+! exec opstruss up app --yes --input rev=5
+rm break-output
+exec opstruss state pull app
+stdout '"raw_output": "enc:v1:'
+! stdout 'CANARY|PEM[a-z]'
+
+# down runs with what it kept
+exec opstruss up app --yes --input rev=6
+exec opstruss down app --yes
+stdout '^default/app \| down \*\*\*$'
+! stdout 'CANARY|PEM[a-z]'
+
+# nowhere that OpsTruss writes holds it
+! exec grep -r -l -e CANARYa1b2c3 -e CANARYd4e5f6 -e PEMa1b2c3d4 -e PEMe5f6g7h8 -e PEMi9j0k1l2 --exclude-dir=tool --exclude-dir=work --exclude-dir=artifacts .opstruss
+
+-- yes --
+yes
+-- opstruss.yaml --
+name: canary
+inputs:
+  rev: {type: string, default: '0'}
+secrets:
+  canary: {env: CANARY}
+  pem:
+    run: printf 'PEMa1b2c3d4\nPEMe5f6g7h8\nPEMi9j0k1l2\n'
+outputs:
+  token: ${{ units.app.outputs.token }}
+units:
+  app:
+    run: |
+      echo "single $C"
+      echo "stderr $C" >&2
+      printf 'pieces %s' "$(printf '%s' "$C" | cut -c1-9)"; sleep 0.2; printf '%s\n' "$(printf '%s' "$C" | cut -c10-)"
+      printf '%s\n' "$PEM"
+      printf 'token=%s\n' "$C" >> "$OPSTRUSS_OUTPUT"
+      if [ -e break-output ]; then printf 'not a line %s\n' "$C" >> "$OPSTRUSS_OUTPUT"; fi
+    env:
+      C: ${{ secrets.canary }}
+      PEM: ${{ secrets.pem }}
+    down: echo "down $C"
+    revision: ${{ inputs.rev }}
+    outputs:
+      token: {type: string}
+  typed:
+    run: printf 'n=%s\n' "$C" >> "$OPSTRUSS_OUTPUT"
+    env: {C: '${{ secrets.canary }}'}
+    outputs:
+      n: {type: integer}
+tasks:
+  remember:
+    kv: {key: k, value: '${{ secrets.canary }}'}
+  recall:
+    log: {msg: "recalled ${{ kv('k') }}"}
+  check:
+    assert: {that: false, msg: 'bad ${{ secrets.canary }}'}
+  convert:
+    set: {n: '${{ int(secrets.canary) }}'}
