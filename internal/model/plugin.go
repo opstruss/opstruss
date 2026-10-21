@@ -71,6 +71,11 @@ func (c *checker) pluginRules() {
 		case !unit && (slices.Contains(StandardTasks, name) || slices.Contains(Hooks, name)):
 			c.add(path, "%s runs only through a unit, and a plugin is a unit only when it has up; give the task another name", name)
 		}
+		if unit && (name == "plan" || name == "up" || name == "down") && t.Run == nil {
+			// The record keeps the program of down to take the unit down
+			// without the plugin's file, and up and plan are its peers.
+			c.add(path, "%s of a plugin runs one program, written as run", name)
+		}
 		c.pluginInputs(at(path, "inputs"), t.Inputs)
 		vars := map[string]string{}
 		for _, in := range slices.Sorted(maps.Keys(pl.Inputs)) {

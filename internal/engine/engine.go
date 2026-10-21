@@ -116,9 +116,10 @@ type engine struct {
 	mu       sync.Mutex
 	exit     int
 	promptMu sync.Mutex
-	inPass   bool      // a pass is expanding and planning units
-	kv       *kvMemory // what kv() reads in this pass
-	kvLocals bool      // a local reads kv()
+	inPass   bool              // a pass is expanding and planning units
+	kv       *kvMemory         // what kv() reads in this pass
+	kvLocals bool              // a local reads kv()
+	hashes   map[string]string // of plugin directories, read once a run
 }
 
 // open reads the project and the state of its stack, marks the runs that
@@ -154,7 +155,7 @@ func load(opts Options) (*engine, error) {
 	e := &engine{opts: opts, p: p, inputs: inputs, locals: locals, root: filepath.Join(p.Dir, ".opstruss"),
 		started: time.Now().UTC(), parallel: DefaultParallel, byUnit: map[string][]*instance{},
 		read: map[string]string{}, needed: map[string]*taskOnce{}, holders: map[string]context.CancelCauseFunc{},
-		touched: map[string]*record.Unit{}}
+		touched: map[string]*record.Unit{}, hashes: map[string]string{}}
 	for _, v := range p.Locals {
 		if use, err := expr.AnalyzeValue(v); err == nil && slices.Contains(use.Funcs, "kv") {
 			e.kvLocals = true

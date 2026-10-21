@@ -36,6 +36,7 @@ type resolved struct {
 	timeout  time.Duration
 	stop     plugin.Stop
 	waitFor  string
+	plugin   *pluginUnit // for a unit that uses a plugin
 }
 
 // resolve evaluates the expressions of inst. In a preview, a unit that
@@ -45,7 +46,7 @@ func (e *engine) resolve(inst *instance, preview bool) (*resolved, error) {
 	u := inst.def
 	r := &resolved{shell: u.Shell, timeout: DefaultTimeout}
 	if preview {
-		for _, v := range []any{argvOf(u.Run), argvOf(u.Down), envOf(u.Env), u.Dir, stdinOf(u.Stdin), u.Revision} {
+		for _, v := range []any{argvOf(u.Run), argvOf(u.Down), envOf(u.Env), u.Dir, stdinOf(u.Stdin), u.Revision, anyMap(u.With)} {
 			if up := e.changing(v); up != "" {
 				r.waitFor = up
 				return r, nil
@@ -109,6 +110,11 @@ func (e *engine) resolve(inst *instance, preview bool) (*resolved, error) {
 	}
 	if r.stop, err = plugin.StopOf(u.Stop); err != nil {
 		return nil, err
+	}
+	if t := u.Target; t != nil && t.Kind == model.TargetPlugin {
+		if err := e.resolvePlugin(inst, r, s); err != nil {
+			return nil, err
+		}
 	}
 	return r, nil
 }
@@ -207,6 +213,31 @@ func cmdValue(c model.Command) any {
 	return list
 }
 
+// kind is what the record says the unit is.
+func (r *resolved) kind() string {
+	if r.plugin != nil {
+		return "plugin"
+	}
+	return "run"
+}
+
+// inputs are the plugin's inputs, which the record keeps for down and
+// $OPSTRUSS_STATE.
+func (r *resolved) inputs() map[string]any {
+	if r.plugin == nil {
+		return nil
+	}
+	return r.plugin.inputs
+}
+
+// source is where the programs of a unit that uses a plugin come from.
+func (r *resolved) source(inst *instance) *state.Source {
+	if r.plugin == nil {
+		return nil
+	}
+	return &state.Source{Uses: inst.def.Uses, Hash: r.plugin.hash}
+}
+
 // fingerprint is the sha256 of a pass value, which down compares with the
 // value it then finds.
 func fingerprint(v string) string {
@@ -234,8 +265,8 @@ func (e *engine) downContract(inst *instance, r *resolved) *state.Down {
 	if err != nil {
 		rel = r.cwd
 	}
-	d := &state.Down{Run: cmdValue(*r.down), Shell: r.shell, Dir: filepath.ToSlash(rel), Pass: r.fingerprints(),
-		Timeout: inst.def.Timeout}
+	d := &state.Down{Run: cmdValue(*r.down), Shell: r.shell, Dir: filepath.ToSlash(rel), Plugin: e.pluginOf(r),
+		Pass: r.fingerprints(), Timeout: inst.def.Timeout}
 	for k, v := range r.env {
 		if v.File {
 			if d.EnvFiles == nil {
@@ -265,6 +296,9 @@ func (e *engine) digest(inst *instance, r *resolved) (string, []string, error) {
 		return "", nil, err
 	}
 	def := map[string]any{"kind": "run", "run": cmdValue(r.cmd)}
+	if r.plugin != nil {
+		def["kind"], def["uses"], def["source"], def["with"] = "plugin", inst.def.Uses, r.plugin.hash, r.plugin.inputs
+	}
 	add := func(k string, v any, empty bool) {
 		if !empty {
 			def[k] = v
@@ -299,7 +333,7 @@ func (e *engine) digest(inst *instance, r *resolved) (string, []string, error) {
 		outputs[k] = o
 	}
 	add("outputs", outputs, len(outputs) == 0)
-	if len(r.cmd.Argv) > 0 && strings.Contains(r.cmd.Argv[0], "/") {
+	if len(r.cmd.Argv) > 0 && strings.Contains(r.cmd.Argv[0], "/") && r.plugin == nil {
 		prog := r.cmd.Argv[0]
 		if !filepath.IsAbs(prog) {
 			prog = filepath.Join(r.cwd, prog)

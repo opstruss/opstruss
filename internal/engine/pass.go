@@ -50,7 +50,7 @@ func (e *engine) unitPass(ctx context.Context, op string, p pass) (map[string]an
 		return nil, err
 	}
 	e.previewMoves()
-	e.previewAll()
+	e.previewAll(ctx)
 	leftovers := e.previewLeftovers()
 	if len(e.p.Units) == 0 {
 		e.say("run", "", "no units")
@@ -67,10 +67,10 @@ func (e *engine) unitPass(ctx context.Context, op string, p pass) (map[string]an
 	if op == "plan" {
 		for _, inst := range e.insts {
 			if e.sel.has(inst) {
-				exact := inst.plan.err == nil && inst.plan.waitFor == "" && inst.plan.locked == ""
+				exact := inst.plan.err == nil && inst.plan.waitFor == "" && inst.plan.locked == "" && !inst.plan.inexact
 				digest := ""
 				if exact {
-					digest = inst.plan.digest
+					digest = inst.plan.approval()
 				}
 				e.read[inst.address] = digest
 				out[e.short(inst.address)] = map[string]any{"outcome": success, "changed": false, "outputs": inst.outputsNow(),
@@ -150,11 +150,21 @@ func (inst *instance) outputsNow() map[string]any {
 // whether the plan is exact, with the line the command line shows.
 func (p plan) view(exact bool) map[string]any {
 	changes := []any{}
-	if p.run {
+	switch {
+	case p.changes != nil:
+		for _, c := range p.changes {
+			changes = append(changes, c)
+		}
+	case p.run:
 		changes = append(changes, map[string]any{"action": "run"})
 	}
 	for range p.teardown {
 		changes = append(changes, map[string]any{"action": "delete"})
 	}
-	return map[string]any{"changes": changes, "outputs": []any{}, "exact": exact, "digest": p.digest, "summary": p.summary()}
+	outputs := []any{}
+	for _, o := range p.outputs {
+		outputs = append(outputs, o)
+	}
+	return map[string]any{"changes": changes, "outputs": outputs, "exact": exact && !p.inexact, "digest": p.approval(),
+		"summary": p.summary()}
 }

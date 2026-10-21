@@ -88,7 +88,7 @@ func (c *checker) refs(path []string, v any, pl place) []string {
 				continue
 			}
 			units = append(units, name)
-			if len(r.Path) > 3 && r.Path[2] == "outputs" && u.Run != nil && u.Outputs[r.Path[3]] == nil {
+			if len(r.Path) > 3 && r.Path[2] == "outputs" && !hasOutput(u, r.Path[3]) {
 				c.add(path, "unit %s has no output %s (in ${{ %s }})", name, r.Path[3], r.Expr)
 			}
 		case "tasks":
@@ -146,6 +146,19 @@ func (c *checker) fact(path []string, name string, r expr.Ref, pl place) {
 	case (pl.kind == "task" || pl.kind == "check") && (name == "state_key" || name == "reason"):
 		c.add(path, "opstruss.%s is only in a task that a unit uses (in ${{ %s }})", name, r.Expr)
 	}
+}
+
+// hasOutput says whether unit u may have output k: a run unit and a unit
+// of a plugin have the outputs they declare, a plugin with outputs: tool
+// any, and other units are checked when they run.
+func hasOutput(u *Unit, k string) bool {
+	switch {
+	case u.Run != nil:
+		return u.Outputs[k] != nil
+	case u.Target != nil && u.Target.Kind == TargetPlugin && !u.Target.Package.Plugin.Outputs.Tool:
+		return u.Target.Package.Plugin.Outputs.Declared[k] != nil
+	}
+	return true
 }
 
 func hasKey[V any](m map[string]V, k string) bool {

@@ -49,13 +49,15 @@ type Source struct {
 }
 
 // Down is what down runs, resolved: the program of a run unit or the
-// plugin's task, with its context. Dir is relative to the project root,
-// EnvFiles are env values that the program gets as files, and Pass holds
-// the sha256 fingerprint of each variable passed from the operator.
+// plugin's task, with its context. Dir and Plugin are relative to the
+// project root, EnvFiles are env values that the program gets as files,
+// and Pass holds the sha256 fingerprint of each variable passed from the
+// operator.
 type Down struct {
 	Run      any               `json:"run,omitempty"`
 	Shell    string            `json:"shell,omitempty"`
 	Dir      string            `json:"dir,omitempty"`
+	Plugin   string            `json:"plugin,omitempty"` // the plugin's directory, relative to the project root
 	Env      map[string]string `json:"env,omitempty"`
 	EnvFiles map[string]string `json:"env_files,omitempty"`
 	Pass     map[string]string `json:"pass,omitempty"`

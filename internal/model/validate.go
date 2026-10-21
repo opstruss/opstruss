@@ -550,8 +550,12 @@ func (c *checker) unsupported() {
 	}
 	for _, name := range slices.Sorted(maps.Keys(p.Units)) {
 		u, path := p.Units[name], []string{"units", name}
-		if u.Target != nil {
-			c.add(at(path, "uses"), "units that use a plugin, task, or component are not supported yet")
+		switch {
+		case u.Target == nil:
+		case u.Target.Kind == TargetPlugin && u.Target.Package.Plugin.Outputs.Tool:
+			c.add(at(path, "uses"), "units of a plugin with outputs: tool are not supported yet")
+		case u.Target.Kind != TargetPlugin:
+			c.add(at(path, "uses"), "units that use a task or component are not supported yet")
 		}
 		if u.Service != nil {
 			c.add(at(path, "service"), "service units are not supported yet")

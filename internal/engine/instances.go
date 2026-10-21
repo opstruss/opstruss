@@ -35,14 +35,25 @@ type instance struct {
 
 // plan is what the run will do to an instance.
 type plan struct {
-	run      bool   // up runs its program
-	reason   string // why, when it runs
-	waitFor  string // an upstream unit whose outputs this run changes before this one's turn
-	locked   string // the holder of the address, for another run
-	digest   string
+	run      bool     // up runs its program
+	reason   string   // why, when it runs
+	waitFor  string   // an upstream unit whose outputs this run changes before this one's turn
+	locked   string   // the holder of the address, for another run
+	digest   string   // the digest trigger, which the record keeps
 	teardown []string // runs whose attempts up tears down after it succeeds
 	err      error
+
+	// From the plan of a plugin: its changes, the outputs that change, its
+	// own digest, which up gets, and whether it promised to be exact.
+	changes      []map[string]any
+	outputs      []string
+	pluginDigest string
+	inexact      bool
 }
+
+// approval is the digest that approves the plan: the digest trigger joined
+// with that of the plugin's plan.
+func (p plan) approval() string { return planDigest(p.digest, p.pluginDigest) }
 
 func (p plan) summary() string {
 	old := ""

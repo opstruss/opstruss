@@ -1,0 +1,254 @@
+package engine
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"io/fs"
+	"maps"
+	"path"
+	"path/filepath"
+	"slices"
+	"strings"
+
+	"github.com/opstruss/opstruss/internal/expr"
+	"github.com/opstruss/opstruss/internal/model"
+	"github.com/opstruss/opstruss/internal/plugin"
+	"github.com/opstruss/opstruss/internal/state"
+)
+
+// pluginUnit is what a unit that uses a plugin runs: the plugin's plan,
+// up, and down with the unit's inputs.
+type pluginUnit struct {
+	target *model.Target
+	dir    string         // the plugin's directory
+	inputs map[string]any // the plugin's inputs, from the declaration's with: and the unit's
+	plan   *model.Command // nil when the plugin has no plan
+	hash   string         // of what the plugin's directory holds, as h1: is
+}
+
+// resolvePlugin fills r for a unit that uses a plugin: the inputs from
+// with:, the plugin's programs with them, its env under the unit's, and
+// the variables the plugin asks for that the unit or the declaration lets
+// through.
+func (e *engine) resolvePlugin(inst *instance, r *resolved, s *expr.Scope) error {
+	u, t := inst.def, inst.def.Target
+	pl := t.Package.Plugin
+	given := map[string]any{}
+	if d := t.Package.Decl; d != nil {
+		maps.Copy(given, d.With)
+	}
+	maps.Copy(given, u.With)
+	v, err := expr.EvalValue(given, s)
+	if err != nil {
+		return fmt.Errorf("with: %w", err)
+	}
+	inputs, err := conform(pl.Inputs, v.(map[string]any))
+	if err != nil {
+		return fmt.Errorf("with: %w", err)
+	}
+	hash, err := e.pluginHash(t.Package.Dir)
+	if err != nil {
+		return err
+	}
+	pu := &pluginUnit{target: t, dir: t.Package.Dir, inputs: inputs, hash: hash}
+	ps := e.pluginScope(pu.dir, inputs, inst)
+	up := pl.Tasks["up"]
+	if r.cmd, err = command(up.Run, ps); err != nil {
+		return fmt.Errorf("up: %w", err)
+	}
+	r.shell = up.Shell
+	if d := pl.Tasks["down"]; d != nil {
+		cmd, err := command(d.Run, ps)
+		if err != nil {
+			return fmt.Errorf("down: %w", err)
+		}
+		r.down = &cmd
+	}
+	if p := pl.Tasks["plan"]; p != nil {
+		cmd, err := command(p.Run, ps)
+		if err != nil {
+			return fmt.Errorf("plan: %w", err)
+		}
+		pu.plan = &cmd
+	}
+	if up.Dir != "" {
+		d, err := expr.EvalText(up.Dir, ps)
+		if err != nil {
+			return fmt.Errorf("up: dir: %w", err)
+		}
+		r.dir, r.cwd = filepath.Join(r.dir, d), filepath.Join(r.cwd, d)
+	}
+	// The plugin's env, under the declaration's and the unit's.
+	env := map[string]model.EnvValue{}
+	for k, v := range up.Env {
+		text, err := expr.EvalText(v.Text, ps)
+		if err != nil {
+			return fmt.Errorf("up: env.%s: %w", k, err)
+		}
+		env[k] = model.EnvValue{Text: text, File: v.File}
+	}
+	var allowed []string
+	if d := t.Package.Decl; d != nil {
+		for k, v := range d.Env {
+			text, err := expr.EvalText(v.Text, s)
+			if err != nil {
+				return fmt.Errorf("env.%s: %w", k, err)
+			}
+			env[k] = model.EnvValue{Text: text, File: v.File}
+		}
+		allowed = append(allowed, d.Pass...)
+	}
+	maps.Copy(env, r.env)
+	r.env = env
+	allowed = append(allowed, u.Pass...)
+	r.pass = map[string]string{}
+	for _, kv := range e.opts.Environ {
+		k, v, _ := strings.Cut(kv, "=")
+		if slices.Contains(pl.Env, k) && slices.ContainsFunc(allowed, func(p string) bool { ok, _ := path.Match(p, k); return ok }) {
+			r.pass[k] = v
+		}
+	}
+	reqs, err := requires(up.Requires, ps)
+	if err != nil {
+		return fmt.Errorf("requires: %w", err)
+	}
+	r.requires = append(append(slices.Clone(pl.Requires), reqs...), r.requires...)
+	if u.Stop == nil && up.Stop != nil {
+		if r.stop, err = plugin.StopOf(up.Stop); err != nil {
+			return err
+		}
+	}
+	r.plugin = pu
+	return nil
+}
+
+// pluginHash is the hash of every file in dir, by path and content, read
+// once a run, as the h1: hash of Go modules is: a script that changes
+// changes the definition of the units that use it.
+func (e *engine) pluginHash(dir string) (string, error) {
+	e.mu.Lock()
+	h, ok := e.hashes[dir]
+	e.mu.Unlock()
+	if ok {
+		return h, nil
+	}
+	var lines []string
+	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		switch {
+		case err != nil:
+			return err
+		case d.IsDir() && d.Name() == ".git":
+			return filepath.SkipDir
+		case !d.Type().IsRegular():
+			return nil
+		}
+		sum, err := hashFile(p)
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(dir, p)
+		if err != nil {
+			return err
+		}
+		lines = append(lines, fmt.Sprintf("%s  %s\n", strings.TrimPrefix(sum, "sha256:"), filepath.ToSlash(rel)))
+		return nil
+	})
+	if err != nil {
+		return "", fmt.Errorf("plugin %s: %w", dir, err)
+	}
+	slices.Sort(lines)
+	sum := sha256.Sum256([]byte(strings.Join(lines, "")))
+	h = "h1:" + base64.StdEncoding.EncodeToString(sum[:])
+	e.mu.Lock()
+	e.hashes[dir] = h
+	e.mu.Unlock()
+	return h, nil
+}
+
+// pluginPlan is what a plugin's plan wrote to $OPSTRUSS_PLAN.
+type pluginPlan struct {
+	Changes []map[string]any `json:"changes"`
+	Outputs []string         `json:"outputs"`
+	Digest  string           `json:"digest"`
+	Exact   bool             `json:"exact"`
+}
+
+// planPlugin runs the plan of a plugin for inst under its lock, with the
+// work directory that up of the same turn finds again.
+func (e *engine) planPlugin(ctx context.Context, inst *instance, r *resolved, rec *state.Record) (*pluginPlan, error) {
+	u := &plugin.Unit{Address: inst.address, Workdir: e.workdir(inst.address)}
+	if rec != nil {
+		u.StateKey, u.State = rec.StateKey, programState(rec)
+	}
+	out := &lineWriter{e: e, addr: inst.address, task: "plan", stream: "stdout"}
+	errw := &lineWriter{e: e, addr: inst.address, task: "plan", stream: "stderr"}
+	defer out.flush()
+	defer errw.flush()
+	pl := r.plugin.target.Package.Plugin
+	res, err := e.run.Exec(ctx, &plugin.Call{Command: *r.plugin.plan, Shell: pl.Tasks["plan"].Shell, Base: inst.dir, Dir: r.dir,
+		Env: r.env, Pass: slices.Sorted(maps.Keys(r.pass)), Stop: r.stop, Task: "plan", Reason: "requested", Plan: true,
+		Unit: u, Inputs: r.plugin.inputs, PluginDir: r.plugin.dir, Stdout: out, Stderr: errw})
+	if err != nil {
+		return nil, err
+	}
+	for _, w := range res.Warnings {
+		e.warn(inst.address, "%s", w)
+	}
+	if res.ExitCode != 0 {
+		return nil, fmt.Errorf("plan exited with %d", res.ExitCode)
+	}
+	pp := &pluginPlan{}
+	if len(strings.TrimSpace(string(res.Plan))) == 0 {
+		// A plan that says nothing cannot say that nothing changes.
+		pp.Changes = []map[string]any{{"action": "run"}}
+		return pp, nil
+	}
+	if err := json.Unmarshal(res.Plan, pp); err != nil {
+		return nil, fmt.Errorf("$OPSTRUSS_PLAN: %w", err)
+	}
+	for i, c := range pp.Changes {
+		if a, _ := c["action"].(string); !slices.Contains([]string{"create", "update", "delete", "replace", "run"}, a) {
+			return nil, fmt.Errorf("$OPSTRUSS_PLAN: change %d has action %q, not create, update, delete, replace, or run", i, a)
+		}
+	}
+	return pp, nil
+}
+
+// describe writes the changes of a plan as a plan line does.
+func describe(changes []map[string]any) string {
+	var parts []string
+	for _, c := range changes {
+		part, _ := c["action"].(string)
+		if res, _ := c["resource"].(string); res != "" {
+			part += " " + res
+		}
+		parts = append(parts, part)
+	}
+	return strings.Join(parts, ", ")
+}
+
+// planDigest joins the digest of a plugin's plan to the digest trigger,
+// so a plan approved for one definition never matches another.
+func planDigest(trigger, plugin string) string {
+	if plugin == "" {
+		return trigger
+	}
+	sum := sha256.Sum256([]byte(trigger + "\n" + plugin))
+	return "sha256:v1:" + fmt.Sprintf("%x", sum)
+}
+
+// pluginOf is the plugin's directory relative to the project root, as a
+// down contract keeps it.
+func (e *engine) pluginOf(r *resolved) string {
+	if r.plugin == nil {
+		return ""
+	}
+	rel, err := filepath.Rel(e.p.Dir, r.plugin.dir)
+	if err != nil {
+		return r.plugin.dir
+	}
+	return filepath.ToSlash(rel)
+}

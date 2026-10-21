@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -374,10 +375,19 @@ func (e *engine) runDown(ctx context.Context, addr, stateKey string, c *state.At
 	errw := &lineWriter{e: e, addr: addr, task: "down", stream: "stderr"}
 	defer out.flush()
 	defer errw.flush()
-	res, err := e.run.Exec(ctx, &plugin.Call{Command: cmd, Shell: d.Shell, Base: e.p.Dir, Dir: d.Dir, Env: env,
+	call := &plugin.Call{Command: cmd, Shell: d.Shell, Base: e.p.Dir, Dir: d.Dir, Env: env,
 		Pass: slices.Sorted(maps.Keys(d.Pass)), Stop: stop, Task: "down", Reason: "requested",
 		Unit:   &plugin.Unit{Address: addr, StateKey: stateKey, Workdir: e.workdir(addr), State: map[string]any{"inputs": c.Inputs, "outputs": c.Outputs}},
-		Stdout: out, Stderr: errw})
+		Stdout: out, Stderr: errw}
+	if d.Plugin != "" {
+		// down of a plugin runs from its directory with the inputs it was
+		// written with.
+		call.PluginDir, call.Inputs = filepath.Join(e.p.Dir, filepath.FromSlash(d.Plugin)), c.Inputs
+		if call.Inputs == nil {
+			call.Inputs = map[string]any{}
+		}
+	}
+	res, err := e.run.Exec(ctx, call)
 	if err != nil {
 		return err
 	}

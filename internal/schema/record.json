@@ -62,6 +62,10 @@
         "shell": { "type": "string" },
         "dir": { "type": "string" },
         "env": { "type": "object", "additionalProperties": { "type": "string" } },
+        "plugin": {
+          "description": "the plugin whose program this is, relative to the project root",
+          "type": "string"
+        },
         "env_files": {
           "description": "env values that the program gets as the path of a temporary file",
           "type": "object",

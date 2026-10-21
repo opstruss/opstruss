@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"os"
@@ -50,7 +51,7 @@ func runCommand(ctx context.Context, opts Options, op string) (*Result, error) {
 
 // previewAll expands and plans every unit in graph order, so a unit knows
 // whether this run changes the units it reads before it is planned.
-func (e *engine) previewAll() {
+func (e *engine) previewAll(ctx context.Context) {
 	for _, name := range e.p.Order {
 		insts, err := e.expand(name)
 		if err != nil {
@@ -62,7 +63,7 @@ func (e *engine) previewAll() {
 				inst.deps = append(inst.deps, e.byUnit[d]...)
 			}
 			if err == nil {
-				e.preview(inst)
+				e.preview(ctx, inst)
 			}
 			if e.sel.has(inst) {
 				e.say("plan", inst.address, "%s", inst.plan.summary())
@@ -73,7 +74,7 @@ func (e *engine) previewAll() {
 	}
 }
 
-func (e *engine) preview(inst *instance) {
+func (e *engine) preview(ctx context.Context, inst *instance) {
 	rec, _, err := e.store.Get(inst.address)
 	if err == nil {
 		err = e.moveFailed[inst.address]
@@ -104,11 +105,60 @@ func (e *engine) preview(inst *instance) {
 	switch {
 	case err != nil:
 		inst.plan.err = err
+		return
 	case r.waitFor != "":
 		inst.plan.waitFor = e.p.StackName + "/" + r.waitFor
-	default:
-		inst.plan = e.decide(inst, r, rec)
+		return
 	}
+	if err := e.missing(inst, r); err != nil {
+		// A unit that runs first in this run may install the program.
+		if up := e.runsBefore(inst); up != "" {
+			inst.plan.waitFor = up
+			e.warn(inst.address, "%v; planned at its turn, after %s", err, up)
+			return
+		}
+		inst.plan.err = err
+		return
+	}
+	if r.plugin != nil && r.plugin.plan != nil {
+		// The plan of a plugin reads and may prepare the work directory,
+		// so it runs under the lock, which another run may hold.
+		token, err := e.store.Lock(inst.address, e.holder)
+		var le *state.LockedError
+		switch {
+		case errors.As(err, &le):
+			inst.plan.locked = le.Holder.String()
+			return
+		case err != nil:
+			inst.plan.err = err
+			return
+		}
+		defer func() { _ = e.store.Unlock(inst.address, token) }()
+	}
+	inst.plan = e.decide(ctx, inst, r, rec)
+}
+
+// missing says which program of requires: is not in PATH.
+func (e *engine) missing(inst *instance, r *resolved) error {
+	for _, name := range r.requires {
+		if _, err := plugin.LookPath(name, e.path()); err != nil {
+			if r.plugin != nil {
+				return fmt.Errorf("plugin %s requires %s, which is not in PATH", r.plugin.target.Package.Name, name)
+			}
+			return fmt.Errorf("requires: %w", err)
+		}
+	}
+	return nil
+}
+
+// runsBefore names an instance that inst depends on and this run runs.
+func (e *engine) runsBefore(inst *instance) string {
+	for _, d := range inst.deps {
+		if (d.plan.run || d.plan.waitFor != "") && e.sel.has(d) {
+			return d.address
+		}
+	}
+	return ""
 }
 
 func tombstoned(rec *state.Record) error {
@@ -124,7 +174,7 @@ func tombstoned(rec *state.Record) error {
 // decide plans an instance from its record: up runs a new unit, one whose
 // last attempt did not finish, one forced, one whose digest changed, and one
 // whose generates are missing.
-func (e *engine) decide(inst *instance, r *resolved, rec *state.Record) plan {
+func (e *engine) decide(ctx context.Context, inst *instance, r *resolved, rec *state.Record) plan {
 	digest, missing, err := e.digest(inst, r)
 	if err != nil {
 		return plan{err: err}
@@ -166,6 +216,19 @@ func (e *engine) decide(inst *instance, r *resolved, rec *state.Record) plan {
 		p.reason = "generates missing: " + strings.Join(missing, ", ")
 	default:
 		p.run = false
+	}
+	if r.plugin != nil && r.plugin.plan != nil {
+		pp, err := e.planPlugin(ctx, inst, r, rec)
+		if err != nil {
+			return plan{err: err}
+		}
+		p.changes, p.outputs, p.pluginDigest, p.inexact = pp.Changes, pp.Outputs, pp.Digest, !pp.Exact
+		switch {
+		case len(pp.Changes) > 0 && !p.run:
+			p.run, p.reason = true, "plan: "+describe(pp.Changes)
+		case len(pp.Changes) > 0:
+			p.reason += "; plan: " + describe(pp.Changes)
+		}
 	}
 	return p
 }
@@ -287,13 +350,11 @@ func (e *engine) turn(ctx context.Context, inst *instance) {
 		failed(err)
 		return
 	}
-	for _, name := range r.requires {
-		if _, err := plugin.LookPath(name, e.path()); err != nil {
-			failed(fmt.Errorf("requires: %w", err))
-			return
-		}
+	if err := e.missing(inst, r); err != nil {
+		failed(err)
+		return
 	}
-	p := e.decide(inst, r, rec)
+	p := e.decide(ctx, inst, r, rec)
 	if p.err != nil {
 		failed(p.err)
 		return
@@ -315,7 +376,7 @@ func (e *engine) turn(ctx context.Context, inst *instance) {
 	}
 	approval := cmp.Or(inst.def.Approval, e.stackApproval(), "ask")
 	if approval != "auto" {
-		source, why, waited := e.approves(ctx, Question{Address: addr, Summary: p.summary()}, p.digest)
+		source, why, waited := e.approves(ctx, Question{Address: addr, Summary: p.summary()}, p.approval())
 		if why != "" {
 			e.finish(inst, skipped, false, nil)
 			e.say("approval", addr, "%s; %s, stopped at plan", p.summary(), why)
@@ -357,7 +418,7 @@ func (e *engine) turn(ctx context.Context, inst *instance) {
 		next.StateKey = addr + "." + next.ID
 	}
 	attempt := &state.Attempt{Op: "up", Run: e.runID, Holder: e.holder, Approval: approval, Digest: p.digest,
-		Down: down, Needs: e.needs(inst)}
+		Down: down, Needs: e.needs(inst), Inputs: r.inputs(), Source: r.source(inst)}
 	if prev := next.Pending; prev != nil {
 		if sameTarget(prev.Down, down) {
 			// What an interrupted attempt parsed stays until this one parses
@@ -382,7 +443,9 @@ func (e *engine) turn(ctx context.Context, inst *instance) {
 		return
 	}
 	failpoint.Hit("up-before-program")
-	res, err := e.attempts(ctx, inst, r, next, reason, p.digest, func(res *plugin.Result) error {
+	// up of a plugin gets the digest of its own plan, to apply what it
+	// planned or refuse.
+	res, err := e.attempts(ctx, inst, r, next, reason, cmp.Or(p.pluginDigest, p.digest), func(res *plugin.Result) error {
 		next.Pending.Outputs, next.Pending.RawOutput = res.Outputs, ""
 		if res.OutputErr != nil {
 			next.Pending.RawOutput = string(res.RawOutput)
@@ -402,9 +465,9 @@ func (e *engine) turn(ctx context.Context, inst *instance) {
 		failed(err)
 		return
 	}
-	done := &state.Record{ID: next.ID, StateKey: next.StateKey, Kind: "run", Down: down, Needs: attempt.Needs,
-		Outputs: res.Outputs, Digest: p.digest, Run: e.runID, Updated: time.Now().UTC().Format(time.RFC3339),
-		Abandoned: next.Abandoned}
+	done := &state.Record{ID: next.ID, StateKey: next.StateKey, Kind: r.kind(), Source: attempt.Source, Inputs: attempt.Inputs,
+		Down: down, Needs: attempt.Needs, Outputs: res.Outputs, Digest: p.digest, Run: e.runID,
+		Updated: time.Now().UTC().Format(time.RFC3339), Abandoned: next.Abandoned}
 	err = failpoint.Fail("up-before-put")
 	if err == nil {
 		etag, err = e.store.Put(addr, done, etag)
@@ -473,7 +536,8 @@ func sameTarget(a, b *state.Down) bool {
 	if a == nil || b == nil {
 		return a == b
 	}
-	return same([]any{a.Run, a.Shell, a.Dir, a.Env, a.EnvFiles, a.Pass}, []any{b.Run, b.Shell, b.Dir, b.Env, b.EnvFiles, b.Pass})
+	return same([]any{a.Run, a.Shell, a.Dir, a.Plugin, a.Env, a.EnvFiles, a.Pass},
+		[]any{b.Run, b.Shell, b.Dir, b.Plugin, b.Env, b.EnvFiles, b.Pass})
 }
 
 // attempts runs the program as often as retry allows: while an attempt
@@ -554,10 +618,14 @@ func (e *engine) exec(ctx context.Context, inst *instance, r *resolved, rec *sta
 	errw := &lineWriter{e: e, addr: inst.address, task: "up", stream: "stderr"}
 	defer out.flush()
 	defer errw.flush()
-	res, err := e.run.Exec(ctx, &plugin.Call{Command: r.cmd, Shell: r.shell, Base: inst.dir, Dir: r.dir, Env: r.env,
+	c := &plugin.Call{Command: r.cmd, Shell: r.shell, Base: inst.dir, Dir: r.dir, Env: r.env,
 		Pass: slices.Sorted(maps.Keys(r.pass)), Stdin: r.stdin, Stop: r.stop, Task: "up", Reason: reason, Digest: digest,
 		Unit:    &plugin.Unit{Address: inst.address, StateKey: rec.StateKey, Workdir: e.workdir(inst.address), State: programState(rec)},
-		Outputs: inst.def.Outputs, Stdout: out, Stderr: errw})
+		Outputs: inst.def.Outputs, Stdout: out, Stderr: errw}
+	if r.plugin != nil {
+		c.Inputs, c.PluginDir, c.Outputs = r.plugin.inputs, r.plugin.dir, r.plugin.target.Package.Plugin.Outputs.Declared
+	}
+	res, err := e.run.Exec(ctx, c)
 	if err != nil {
 		return nil, err
 	}

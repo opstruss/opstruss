@@ -1,0 +1,97 @@
+# A unit that uses a plugin runs the plugin's plan, up, and down with the
+# unit's inputs: up runs when the definition changes or the plan has
+# changes, its outputs go to the record, and down takes it away.
+
+env HOME=$WORK/home
+chmod 755 plugins/fake/plan.sh
+chmod 755 plugins/fake/up.sh
+chmod 755 plugins/fake/down.sh
+
+# a new unit runs, with what the plugin's plan says
+exec opstruss plan
+stdout '^default/db: will run: new; plan: create db$'
+stdout '^default/notes: will run: new$'
+exec opstruss up
+stdout 'default/db: up: done'
+stdout '^default/site \| id db-small$'
+exists cloud/db
+
+# with nothing changed, the plan of the plugin decides
+exec opstruss plan
+stdout '^default/db: unchanged$'
+exec sh -c 'echo big > cloud/db'
+exec opstruss plan
+stdout '^default/db: will run: plan: update db$'
+exec opstruss up
+grep '^small$' cloud/db
+
+# new inputs change the definition, and so does a script of the plugin
+exec sh -c 'sed s/small/large/ opstruss.yaml > o.yaml && mv o.yaml opstruss.yaml'
+exec opstruss plan
+stdout '^default/db: will run: definition changed; plan: update db$'
+exec opstruss up
+grep '^large$' cloud/db
+exec sh -c 'echo "# changed" >> plugins/fake/up.sh'
+exec opstruss plan
+stdout '^default/db: will run: definition changed$'
+exec opstruss up
+
+# down runs the plugin's down from its record
+exec opstruss down
+! exists cloud/db
+exec opstruss state list
+! stdout 'default/db'
+
+-- opstruss.yaml --
+name: app
+uses:
+  fake: ./plugins/fake
+units:
+  db:
+    uses: fake
+    with: {name: db, size: small}
+    approval: auto
+  site:
+    run: [echo, "id ${{ units.db.outputs.id }}"]
+    approval: auto
+  notes:
+    uses: ./plugins/simple
+    approval: auto
+-- plugins/fake/opstruss.plugin.yaml --
+name: fake
+inputs:
+  name: {type: string, required: true}
+  size: {type: string, default: small}
+outputs:
+  id: {type: string}
+tasks:
+  plan:
+    run: [./plan.sh]
+  up:
+    run: [./up.sh]
+  down:
+    run: [./down.sh]
+-- plugins/fake/plan.sh --
+#!/bin/sh
+have=$(cat "cloud/$INPUT_NAME" 2>/dev/null)
+if [ "$have" = "$INPUT_SIZE" ]; then
+  echo '{"changes": [], "digest": "sha256:same", "exact": true}' > "$OPSTRUSS_PLAN"
+  exit 0
+fi
+action=update
+[ -n "$have" ] || action=create
+printf '{"changes": [{"action": "%s", "resource": "%s"}], "digest": "sha256:%s-%s", "exact": true}\n' \
+  "$action" "$INPUT_NAME" "$INPUT_NAME" "$INPUT_SIZE" > "$OPSTRUSS_PLAN"
+-- plugins/fake/up.sh --
+#!/bin/sh
+mkdir -p cloud
+echo "$INPUT_SIZE" > "cloud/$INPUT_NAME"
+echo "id=$INPUT_NAME-$INPUT_SIZE" > "$OPSTRUSS_OUTPUT"
+-- plugins/fake/down.sh --
+#!/bin/sh
+rm -f "cloud/$INPUT_NAME"
+-- plugins/simple/opstruss.plugin.yaml --
+name: simple
+tasks:
+  up:
+    run: [sh, -c, 'echo note > note.txt']

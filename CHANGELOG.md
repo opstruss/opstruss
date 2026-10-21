@@ -26,8 +26,8 @@ minor release can change what a project, a component, or a plugin relies on.
   `pass:` and no `env:` on inputs, and tasks that are one operation each,
   which read only their inputs and steps and call only built-in tasks. It
   also checks what each unit's `uses:` and each call of a task by name
-  stand for, and the inputs given to them. Git sources and units that
-  use something do not run yet.
+  stand for, and the inputs given to them. Git sources, units that use a
+  task or a component, and plugins with `outputs: tool` do not run yet.
 - A task of a plugin is called by name, as `<name>.<task>: {…}`: its
   inputs are those of the plugin and the task, filled by the call and the
   declaration's `with:`; a program in argv starts from the plugin's
@@ -37,6 +37,20 @@ minor release can change what a project, a component, or a plugin relies on.
   steps, and the facts.
 - `requires:` of a task, and of the plugin of a task, is checked before
   it runs: a program that is not in `PATH` fails the task with its name.
+- A unit with `uses: <plugin>` runs the plugin's `plan`, `up`, and `down`
+  with its `with:` as inputs. Its definition, and so its digest, holds the
+  plugin's source by the content of its directory, so a changed script
+  runs the unit again. The plugin's `plan` runs under the unit's lock,
+  also in the plan before `up`, and writes `$OPSTRUSS_PLAN`: a unit whose
+  definition did not change runs only when that plan has changes, `up`
+  gets the plan's own digest as `OPSTRUSS_DIGEST`, and `units.<n>.plan`
+  shows its changes and whether it is exact. The record keeps the inputs,
+  the outputs the plugin declares, and the program of `down` with the
+  plugin's directory, which `down` runs; a plugin without `plan` runs as a
+  `run` unit does, and one without `down` is forgotten.
+- `plan` fails a unit whose `requires:` names a program that is not in
+  `PATH`, unless a unit it depends on runs first in the same run; then it
+  warns and checks again at the unit's turn.
 - Built-in tasks, called by name in a step (`http: {…}`) or as the one
   call of a task, which passes its outputs on: `command` (`argv` or
   `script`, `shell`, `stdin`), `http` (JSON bodies parsed, lower-case
