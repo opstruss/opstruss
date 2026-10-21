@@ -86,7 +86,7 @@ func TestEval(t *testing.T) {
 	}
 	errs := map[string]string{
 		"hosts ${{ inputs.hosts }}":           "is array inside text",
-		"${{ kv('last') }}":                   "kv() is not supported yet",
+		"${{ kv('last') }}":                   "kv() reads the memory of a stack, which is only open in a run",
 		"${{ file('none') }}":                 "file:",
 		"${{ nope.x }}":                       "undeclared reference",
 		"${{ opstruss.time.strftime('%Q') }}": "unknown directive %Q",
@@ -94,6 +94,30 @@ func TestEval(t *testing.T) {
 	for in, want := range errs {
 		if _, err := EvalString(in, s); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%s: want %q, got %v", in, want, err)
+		}
+	}
+	mem := map[string]any{"last": int64(3), "pr-1": "a", "pr-2": "b"}
+	ks := s.WithKV(func(key string) (any, error) {
+		if p, ok := strings.CutSuffix(key, "*"); ok {
+			out := map[string]any{}
+			for k, v := range mem {
+				if strings.HasPrefix(k, p) {
+					out[k] = v
+				}
+			}
+			return out, nil
+		}
+		return mem[key], nil
+	})
+	for in, want := range map[string]any{
+		"${{ kv('last') + 1 }}":                 int64(4),
+		"${{ kv('none') }}":                     nil,
+		"${{ kv('none', 7) }}":                  int64(7),
+		"${{ kv('last', 7) }}":                  int64(3),
+		"${{ kv('pr-*').map(k, k).join(',') }}": "pr-1,pr-2",
+	} {
+		if got, err := EvalString(in, ks); err != nil || !reflect.DeepEqual(got, want) {
+			t.Errorf("%s: got %#v (%v), want %#v", in, got, err, want)
 		}
 	}
 	if _, err := EvalText("${{ inputs.hosts }}", s); err == nil || !strings.Contains(err.Error(), "use toJSON()") {

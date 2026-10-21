@@ -1,0 +1,94 @@
+# kv keeps small values of a stack between runs: kv steps write and read
+# them, and kv() reads them in expressions, also of units and locals.
+
+env HOME=$WORK/home
+
+# a write is changed only when the value changes; later steps read it
+exec opstruss remember --value 1
+stdout '^  changed: true$'
+stdout '^  read: 1$'
+stdout '^  doubled: 2$'
+exec opstruss remember --value 1
+stdout '^  changed: false$'
+
+# kv('<prefix>*') reads every name that starts with it
+exec opstruss previews
+stdout '^  names: pr-1,pr-2$'
+
+# expect writes only over the value it names, and otherwise fails with
+# the value there is
+! exec opstruss swap --from 5 --to 6
+stderr 'last holds 1, not 5 that expect says'
+exec opstruss swap --from 1 --to 6
+stdout '^  value: 6$'
+
+# null removes a name; a name past its ttl reads as absent
+exec opstruss forget
+stdout '^  gone: true$'
+exec opstruss brief
+exec sleep 1.2
+exec opstruss check-brief
+stdout '^  brief: none$'
+
+# a unit reads kv() when it is planned, so a new value runs it again, and
+# a local reads it too
+exec opstruss up
+stdout 'tag v6'
+exec opstruss plan
+stdout 'site: unchanged'
+exec opstruss remember --value 7
+exec opstruss plan
+stdout 'site: will run'
+
+# names follow the rules of the keys of for_each
+! exec opstruss bad-name
+stderr 'kv key "Bad Name" takes lower-case letters'
+
+-- opstruss.yaml --
+name: app
+locals:
+  tag: v${{ kv('last', 0) }}
+units:
+  site:
+    run: [echo, "tag ${{ locals.tag }}"]
+    approval: auto
+tasks:
+  remember:
+    inputs:
+      value: {type: integer}
+    steps:
+      - id: w
+        kv: {key: last, value: "${{ inputs.value }}"}
+      - id: r
+        kv: {key: last}
+    outputs:
+      changed: {value: "${{ steps.w.changed }}"}
+      read: {value: "${{ steps.r.outputs.value }}"}
+      doubled: {value: "${{ kv('last') * 2 }}"}
+  previews:
+    steps:
+      - kv: {key: pr-1, value: {branch: a}}
+      - kv: {key: pr-2, value: {branch: b}}
+      - kv: {key: other, value: x}
+      - id: all
+        set: {names: "${{ kv('pr-*').map(k, k).join(',') }}"}
+    outputs:
+      names: {value: "${{ steps.all.outputs.names }}"}
+  swap:
+    inputs:
+      from: {type: integer}
+      to: {type: integer}
+    kv: {key: last, value: "${{ inputs.to }}", expect: "${{ inputs.from }}"}
+  forget:
+    steps:
+      - kv: {key: other, value: null}
+      - id: gone
+        set: {gone: "${{ kv('other') == null }}"}
+    outputs:
+      gone: {value: "${{ steps.gone.outputs.gone }}"}
+  brief:
+    kv: {key: brief, value: hi, ttl: 1s}
+  check-brief:
+    set: {brief: "${{ kv('brief', 'none') }}"}
+  bad-name:
+    kv: {key: Bad Name, value: 1}

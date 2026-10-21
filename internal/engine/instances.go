@@ -245,7 +245,7 @@ func (e *engine) scope(unit string, inst *instance, dir string) *expr.Scope {
 	if inst != nil && inst.def.ForEach != nil {
 		vars["each"] = map[string]any{"key": inst.key, "value": inst.each}
 	}
-	return &expr.Scope{Dir: dir, Vars: vars}
+	return e.passKV().scope(&expr.Scope{Dir: dir, Vars: vars})
 }
 
 // unitsView is units.<name>: the outputs of this run for the units it ran,

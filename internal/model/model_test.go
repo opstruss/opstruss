@@ -299,7 +299,7 @@ func TestRules(t *testing.T) {
 		{"name: app\ntasks:\n  t:\n    steps:\n      - run: [x]\n    outputs:\n      o: {type: string}\n", "an output of a task with steps has value:"},
 		{"name: app\ntasks:\n  t:\n    run: [x]\n    needs: [n]\n  n:\n    inputs:\n      v: {type: string, required: true}\n    run: [y]\n", "task n needs input v"},
 		{"name: app\ntasks:\n  t:\n    http: {url: x}\n", ""},
-		{"name: app\ntasks:\n  t:\n    kv: {key: x}\n", "kv is not supported yet"},
+		{"name: app\ntasks:\n  t:\n    kv: {key: x}\n", ""},
 		{"name: app\ntasks:\n  t:\n    run: [x]\n    on: {every: 30s}\n", "triggers are not supported yet"},
 		{"name: app\nuses:\n  d: ./plugins/d\n", "opstruss.yaml:3:3: uses.d: plugins/d does not exist"},
 		{"name: app\nuses:\n  d: github.com/opstruss/plugins/d@v1\n", "git sources are not supported yet"},
@@ -384,7 +384,7 @@ func TestReferences(t *testing.T) {
 		{"name: app\ntasks:\n  t:\n    steps:\n      - run: [x, \"${{ steps.b.outputs.stdout }}\"]\n      - id: b\n        run: [y]\n", "there is no step b before this one"},
 		{"name: app\ntasks:\n  n:\n    run: [y]\n  t:\n    run: [x, \"${{ tasks.n.outputs.stdout }}\"]\n", "tasks.n is read through needs"},
 		{"name: app\ntasks:\n  t:\n    run: [x]\n    if: outputs.exit_code == 0\n", "a task cannot read outputs"},
-		{"name: app\ntasks:\n  t:\n    run: [x, \"${{ kv('k') }}\"]\n", "kv() is not supported yet"},
+		{"name: app\ntasks:\n  t:\n    run: [x, \"${{ kv('k') }}\"]\n", ""},
 		{"name: app\nlocals:\n  l1: ${{ locals.l2 }}\n  l2: ${{ locals.l1 }}\n", "locals l1 → l2 → l1 form a cycle"},
 		{"name: app\ntasks:\n  t:\n    steps: [{task: u}]\n  u:\n    run: [x]\n    needs: [t]\n", "tasks t → u → t form a cycle"},
 		{"name: app\ntasks:\n  t:\n    steps: [{task: nope}]\n", "there is no task nope"},
@@ -431,11 +431,6 @@ units:
 		"more/units.yaml": "units:\n  dns:\n    run: [dns, \"${{ units.db.outputs.url }}\"]\nlocals:\n  ca: ${{ file('ca.pem') }}\n",
 		"more/ca.pem":     "CERT",
 	})
-	_, err := Load(dir, "")
-	if err == nil || !strings.Contains(err.Error(), "kv() is not supported yet") {
-		t.Fatalf("want kv() refused, got %v", err)
-	}
-	rewrite(t, dir, strings.Replace(mustRead(t, filepath.Join(dir, "opstruss.yaml")), "  later: ${{ kv('last') }}\n", "", 1))
 	p, err := Load(dir, "")
 	if err != nil {
 		t.Fatal(err)
@@ -443,23 +438,19 @@ units:
 	if want := []string{"db", "dns", "web"}; !slices.Equal(p.Order, want) {
 		t.Fatalf("order %v, want %v", p.Order, want)
 	}
-	locals, err := p.EvalLocals(map[string]any{"domain": "example.dev"})
+	locals, err := p.EvalLocals(map[string]any{"domain": "example.dev"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]any{"prefix": "app-default", "host": "app-default.example.dev", "ca": "CERT"}
+	// Without a reader, a local that reads kv() stays as written.
+	want := map[string]any{"prefix": "app-default", "host": "app-default.example.dev", "ca": "CERT", "later": "${{ kv('last') }}"}
 	if !reflect.DeepEqual(locals, want) {
 		t.Fatalf("locals %v, want %v", locals, want)
 	}
-}
-
-func mustRead(t *testing.T, path string) string {
-	t.Helper()
-	b, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
+	locals, err = p.EvalLocals(map[string]any{"domain": "example.dev"}, func(string) (any, error) { return int64(9), nil })
+	if err != nil || locals["later"] != int64(9) {
+		t.Fatalf("later = %v, %v", locals["later"], err)
 	}
-	return string(b)
 }
 
 func TestUses(t *testing.T) {

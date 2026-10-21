@@ -57,9 +57,6 @@ func (c *checker) refs(path []string, v any, pl place) []string {
 		c.add(path, "%v", err)
 		return nil
 	}
-	if slices.Contains(use.Funcs, "kv") {
-		c.add(path, "kv() is not supported yet")
-	}
 	var units []string
 	for _, r := range use.Refs {
 		root := r.Path[0]
@@ -363,9 +360,10 @@ func (c *checker) unitTask(name string) bool {
 	return false
 }
 
-// EvalLocals evaluates the locals with the project inputs. A local that reads
-// what is only known in a run, a secret or kv(), stays as written.
-func (p *Project) EvalLocals(inputs map[string]any) (map[string]any, error) {
+// EvalLocals evaluates the locals with the project inputs, and kv() through
+// kv. A local that reads what is only known in a run, a secret, or kv()
+// without kv, stays as written.
+func (p *Project) EvalLocals(inputs map[string]any, kv func(string) (any, error)) (map[string]any, error) {
 	deps := map[string][]string{}
 	uses := map[string]*expr.Use{}
 	for name, v := range p.Locals {
@@ -387,26 +385,38 @@ func (p *Project) EvalLocals(inputs map[string]any) (map[string]any, error) {
 	}
 	out := map[string]any{}
 	deferred := map[string]bool{}
+	readsKV := map[string]bool{}
 	for _, name := range g.Order {
 		use := uses[name]
-		later := slices.Contains(use.Funcs, "kv")
+		readsKV[name] = slices.Contains(use.Funcs, "kv")
+		later := false
 		for _, r := range use.Refs {
-			later = later || r.Path[0] == "secrets" || (r.Path[0] == "locals" && len(r.Path) > 1 && deferred[r.Path[1]])
+			if r.Path[0] == "locals" && len(r.Path) > 1 {
+				readsKV[name] = readsKV[name] || readsKV[r.Path[1]]
+				later = later || deferred[r.Path[1]]
+			}
+			later = later || r.Path[0] == "secrets"
 		}
-		if later {
+		if later || kv == nil && readsKV[name] {
 			deferred[name] = true
 			out[name] = p.Locals[name]
 			continue
 		}
-		s := &expr.Scope{Dir: p.DirOf("locals." + name), Vars: map[string]any{
+		s := &expr.Scope{Dir: p.DirOf("locals." + name), KV: kv, Vars: map[string]any{
 			"inputs": inputs, "locals": out, "stack": p.StackName,
 			"opstruss": map[string]any{"project": p.Name, "os": runtime.GOOS, "arch": runtime.GOARCH, "host": hostname()},
 		}}
 		v, err := expr.EvalValue(p.Locals[name], s)
-		if err != nil {
+		switch {
+		case err != nil && readsKV[name]:
+			// What kv() reads changes after the files are checked, so a
+			// local that fails on it fails what reads the local instead.
+			out[name] = expr.Broken(fmt.Errorf("local %s: %w", name, err))
+		case err != nil:
 			return nil, fmt.Errorf("local %s: %w", name, err)
+		default:
+			out[name] = v
 		}
-		out[name] = v
 	}
 	return out, nil
 }

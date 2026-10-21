@@ -592,8 +592,6 @@ func (c *checker) unsupportedCalls(path []string, calls Calls) {
 		case err != nil:
 		case t.Kind != TargetBuiltin:
 			c.add(at(path, name), "calling a task of a plugin is not supported yet")
-		case t.Task == "kv":
-			c.add(at(path, name), "kv is not supported yet")
 		}
 	}
 }

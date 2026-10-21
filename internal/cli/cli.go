@@ -303,7 +303,7 @@ func (a *app) explainCommand() *cobra.Command {
 			for k, v := range inputs {
 				values[k] = v.Value
 			}
-			locals, err := p.EvalLocals(values)
+			locals, err := p.EvalLocals(values, nil)
 			if err != nil {
 				return err
 			}

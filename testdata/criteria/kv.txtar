@@ -1,0 +1,22 @@
+# kv: two processes add one to a counter 500 times each, with expect and
+# retry: the counter ends at 1,000, so no increment is lost.
+
+env HOME=$WORK/home
+
+exec sh -c 'for p in 1 2; do (for i in $(seq 500); do opstruss inc > /dev/null 2>> errors || echo failed >> errors; done) & done; wait'
+exec sh -c 'cat errors 2> /dev/null; true'
+! stdout .
+exec opstruss total
+stdout '^  n: 1000$'
+
+-- opstruss.yaml --
+name: counter
+tasks:
+  inc:
+    kv:
+      key: n
+      value: ${{ kv('n', 0) + 1 }}
+      expect: ${{ kv('n') }}
+    retry: {attempts: 200, delay: 1ms}
+  total:
+    set: {n: "${{ kv('n') }}"}

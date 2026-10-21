@@ -29,6 +29,9 @@ func (e *engine) unitPass(ctx context.Context, op string, p pass) (map[string]an
 	defer e.passMu.Unlock()
 	e.setInPass(true)
 	defer e.setInPass(false)
+	e.mu.Lock()
+	e.kv = e.newKV()
+	e.mu.Unlock()
 	e.pass = p
 	e.insts, e.byUnit = nil, map[string][]*instance{}
 	if op == "down" {

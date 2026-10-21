@@ -38,7 +38,7 @@ type progSpec struct {
 // program runs the program of a task or a step as often as retry allows;
 // see try.
 func (e *engine) program(ctx context.Context, p progSpec, s *expr.Scope) *taskResult {
-	return e.try(ctx, p, s, func() (*taskResult, map[string]any, error) {
+	return e.try(ctx, p, s, func(s *expr.Scope) (*taskResult, map[string]any, error) {
 		c, err := e.programCall(p, s)
 		if err != nil {
 			return nil, nil, err
@@ -52,9 +52,9 @@ func (e *engine) program(ctx context.Context, p progSpec, s *expr.Scope) *taskRe
 
 // try runs attempt as often as retry allows, and judges each with
 // failed_when and changed_when, which read the outputs it judges by. Each
-// attempt evaluates its own expressions, so one after a failure reads
-// what changed since.
-func (e *engine) try(ctx context.Context, p progSpec, s *expr.Scope, attempt func() (*taskResult, map[string]any, error)) *taskResult {
+// attempt evaluates its own expressions, and after the first with kv()
+// read again, so one after a failure reads what changed since.
+func (e *engine) try(ctx context.Context, p progSpec, s *expr.Scope, attempt func(*expr.Scope) (*taskResult, map[string]any, error)) *taskResult {
 	fail := func(err error) *taskResult {
 		e.emit(Event{Type: "step", Level: "error", Task: p.label, Step: p.step, Message: err.Error()})
 		return failed(err)
@@ -73,7 +73,10 @@ func (e *engine) try(ctx context.Context, p progSpec, s *expr.Scope, attempt fun
 		}
 	}
 	for i := 1; ; i++ {
-		r, judged, err := attempt()
+		if i > 1 {
+			s = e.newKV().scope(s)
+		}
+		r, judged, err := attempt(s)
 		if err != nil {
 			return fail(err)
 		}

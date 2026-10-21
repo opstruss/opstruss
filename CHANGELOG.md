@@ -37,6 +37,15 @@ minor release can change what a project, a component, or a plugin relies on.
   `set`, `assert`, `wait` (seconds, a TCP port, or a URL), and `log`. Each
   is also `opstruss.<name>`, and `retry` evaluates the inputs of a call
   again at each attempt.
+- `kv` keeps one JSON value per name for the stack between runs, in the
+  backend under `<stack>/_kv/`: a `kv` step without `value` reads, with
+  `value` writes, and `value: null` removes; `ttl` makes a value expire,
+  `expect` writes only over the value it names and otherwise fails with
+  the value there is, and `changed` says whether the value changed.
+  `kv('<name>')`, `kv('<name>', <default>)`, and `kv('<prefix>*')` read
+  it in expressions, also of units and locals: one read per plan or up of
+  units, and per evaluation of a task or step, read again at each attempt
+  of `retry`.
 - `opstruss explain` prints the project of one stack as read: include files
   and stack overrides merged, each project input with where its value came
   from (`--input`, the stack, `env`, or `default`), the value of each local,

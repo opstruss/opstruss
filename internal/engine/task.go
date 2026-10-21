@@ -423,7 +423,7 @@ func (tc *taskCtx) scopeNow() *expr.Scope {
 	tc.mu.Lock()
 	defer tc.mu.Unlock()
 	s := tc.scope.With("steps", maps.Clone(tc.steps))
-	return s.With("units", tc.e.unitsView(tc.e.p.Order))
+	return tc.e.newKV().scope(s.With("units", tc.e.unitsView(tc.e.p.Order)))
 }
 
 func (tc *taskCtx) record(id string, v any) {
@@ -744,6 +744,6 @@ func (e *engine) taskScope(dir string, inputs, tasks map[string]any, unit *insta
 	facts := e.facts(unit)
 	facts["dir"], facts["artifacts"], facts["temp"] = dir, e.run.Artifacts, e.run.Temp
 	facts["cwd"] = e.opts.Cwd
-	return &expr.Scope{Dir: dir, Vars: map[string]any{"stack": e.p.StackName, "inputs": all, "locals": e.locals,
-		"opstruss": facts, "units": e.unitsView(e.p.Order), "tasks": tasks, "steps": map[string]any{}}}
+	return e.newKV().scope(&expr.Scope{Dir: dir, Vars: map[string]any{"stack": e.p.StackName, "inputs": all, "locals": e.locals,
+		"opstruss": facts, "units": e.unitsView(e.p.Order), "tasks": tasks, "steps": map[string]any{}}})
 }

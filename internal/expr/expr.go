@@ -5,11 +5,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -18,6 +20,8 @@ import (
 	"unicode/utf8"
 
 	"cel.dev/cel-go/cel"
+	"cel.dev/cel-go/common"
+	"cel.dev/cel-go/common/ast"
 	"cel.dev/cel-go/common/types"
 	"cel.dev/cel-go/common/types/ref"
 	"cel.dev/cel-go/common/types/traits"
@@ -81,11 +85,16 @@ var env = sync.OnceValues(func() (*cel.Env, error) {
 			sum := sha256.Sum256([]byte(v.(types.String)))
 			return types.String(hex.EncodeToString(sum[:]))
 		}),
+		// kv(key) and kv(key, default) read the memory of the stack that the
+		// scope gives: the macro hands the function the reader in the
+		// activation, since a binding cannot see the activation itself.
+		cel.Macros(cel.GlobalMacro("kv", 1, kvMacro), cel.GlobalMacro("kv", 2, kvMacro)),
+		cel.Variable(kvVar, cel.DynType),
 		cel.Function("kv",
-			cel.Overload("kv_string", []*cel.Type{cel.StringType}, cel.DynType,
-				cel.UnaryBinding(func(ref.Val) ref.Val { return types.NewErr("kv() is not supported yet") })),
-			cel.Overload("kv_string_dyn", []*cel.Type{cel.StringType, cel.DynType}, cel.DynType,
-				cel.BinaryBinding(func(ref.Val, ref.Val) ref.Val { return types.NewErr("kv() is not supported yet") }))),
+			cel.Overload("kv_reader_string", []*cel.Type{cel.DynType, cel.StringType}, cel.DynType,
+				cel.BinaryBinding(func(r, key ref.Val) ref.Val { return kvRead(r, key, nil) })),
+			cel.Overload("kv_reader_string_dyn", []*cel.Type{cel.DynType, cel.StringType, cel.DynType}, cel.DynType,
+				cel.FunctionBinding(func(args ...ref.Val) ref.Val { return kvRead(args[0], args[1], args[2]) }))),
 		cel.Function("strftime",
 			cel.MemberOverload("timestamp_strftime", []*cel.Type{cel.TimestampType, cel.StringType}, cel.StringType,
 				cel.BinaryBinding(func(t, f ref.Val) ref.Val {
@@ -188,11 +197,12 @@ func readFile(dir string) func(ref.Val) ref.Val {
 	}
 }
 
-// Scope is the data an expression reads, and the directory of the file
-// that wrote it.
+// Scope is the data an expression reads, the directory of the file that
+// wrote it, and what kv() reads: a name, or a prefix ending in *.
 type Scope struct {
 	Vars map[string]any
 	Dir  string
+	KV   func(key string) (any, error)
 }
 
 // With returns a copy of s in which name holds v.
@@ -202,7 +212,12 @@ func (s *Scope) With(name string, v any) *Scope {
 		vars[k] = x
 	}
 	vars[name] = v
-	return &Scope{Vars: vars, Dir: s.Dir}
+	return &Scope{Vars: vars, Dir: s.Dir, KV: s.KV}
+}
+
+// WithKV returns a copy of s whose kv() reads through read.
+func (s *Scope) WithKV(read func(string) (any, error)) *Scope {
+	return &Scope{Vars: s.Vars, Dir: s.Dir, KV: read}
 }
 
 func (s *Scope) activation() map[string]any {
@@ -214,7 +229,50 @@ func (s *Scope) activation() map[string]any {
 			a[n] = map[string]any{}
 		}
 	}
+	a[kvVar] = kvReader{read: s.KV}
 	return a
+}
+
+// Broken is a value that fails each expression that reads it, with err.
+func Broken(err error) any { return types.NewErr("%v", err) }
+
+// kvVar is the variable through which kv() reaches the reader of its
+// scope.
+const kvVar = "__kv"
+
+func kvMacro(eh cel.MacroExprFactory, _ ast.Expr, args []ast.Expr) (ast.Expr, *common.Error) {
+	return eh.NewCall("kv", append([]ast.Expr{eh.NewIdent(kvVar)}, args...)...), nil
+}
+
+// kvReader carries the reader of a scope into an evaluation.
+type kvReader struct{ read func(string) (any, error) }
+
+func (r kvReader) ConvertToNative(reflect.Type) (any, error) {
+	return nil, errors.New("kv() reads names, not the memory itself")
+}
+func (r kvReader) ConvertToType(ref.Type) ref.Val { return types.NewErr("kv() reads names") }
+func (r kvReader) Equal(ref.Val) ref.Val          { return types.False }
+func (r kvReader) Type() ref.Type                 { return kvReaderType }
+func (r kvReader) Value() any                     { return r.read }
+
+var kvReaderType = types.NewOpaqueType("opstruss.kv")
+
+func kvRead(r, key, def ref.Val) ref.Val {
+	reader, ok := r.(kvReader)
+	if !ok {
+		return types.NewErr("kv() takes a name and a default")
+	}
+	if reader.read == nil {
+		return types.NewErr("kv() reads the memory of a stack, which is only open in a run")
+	}
+	v, err := reader.read(string(key.(types.String)))
+	if err != nil {
+		return types.NewErr("kv: %v", err)
+	}
+	if v == nil && def != nil {
+		return def
+	}
+	return adapter{}.NativeToValue(v)
 }
 
 // Eval evaluates the source of one expression.

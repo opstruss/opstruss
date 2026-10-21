@@ -31,7 +31,16 @@ func (e *engine) callByName(ctx context.Context, p progSpec, name string, args m
 		maps.Copy(env, p.env)
 		p.env, p.pass = env, append(append([]string{}, t.Package.Decl.Pass...), p.pass...)
 	}
-	return e.try(ctx, p, s, func() (*taskResult, map[string]any, error) {
+	// kv writes when value is written, also as null, and checks expect
+	// when it is written, also as null; their values do not say so.
+	given := func(k string) bool {
+		_, ok := args[k]
+		if !ok && t.Package != nil && t.Package.Decl != nil {
+			_, ok = t.Package.Decl.With[k]
+		}
+		return ok
+	}
+	return e.try(ctx, p, s, func(s *expr.Scope) (*taskResult, map[string]any, error) {
 		in, err := callInputs(t, args, s)
 		if err != nil {
 			return nil, nil, fmt.Errorf("%s: %w", name, err)
@@ -46,9 +55,14 @@ func (e *engine) callByName(ctx context.Context, p progSpec, name string, args m
 		if !filepath.IsAbs(dir) {
 			dir = filepath.Join(p.base, dir)
 		}
-		res := builtin.Run(ctx, &builtin.Call{Task: t.Task, Inputs: in, Dir: dir, Log: func(level, msg string) {
-			e.emit(Event{Type: "log", Level: level, Task: p.label, Step: p.step, Message: msg})
-		}})
+		var res *builtin.Result
+		if t.Task == "kv" {
+			res = e.kvCall(ctx, in, given("value"), given("expect"))
+		} else {
+			res = builtin.Run(ctx, &builtin.Call{Task: t.Task, Inputs: in, Dir: dir, Log: func(level, msg string) {
+				e.emit(Event{Type: "log", Level: level, Task: p.label, Step: p.step, Message: msg})
+			}})
+		}
 		r := &taskResult{outcome: success, changed: res.Changed, outputs: res.Outputs}
 		if res.Err != nil {
 			r.outcome = failure

@@ -11,11 +11,13 @@ import (
 	"os/user"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/opstruss/opstruss/internal/expr"
 	"github.com/opstruss/opstruss/internal/model"
 	"github.com/opstruss/opstruss/internal/plugin"
 	"github.com/opstruss/opstruss/internal/proc"
@@ -114,7 +116,9 @@ type engine struct {
 	mu       sync.Mutex
 	exit     int
 	promptMu sync.Mutex
-	inPass   bool // a pass is expanding and planning units
+	inPass   bool      // a pass is expanding and planning units
+	kv       *kvMemory // what kv() reads in this pass
+	kvLocals bool      // a local reads kv()
 }
 
 // open reads the project and the state of its stack, marks the runs that
@@ -143,7 +147,7 @@ func load(opts Options) (*engine, error) {
 	for k, v := range values {
 		inputs[k] = v.Value
 	}
-	locals, err := p.EvalLocals(inputs)
+	locals, err := p.EvalLocals(inputs, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -151,6 +155,11 @@ func load(opts Options) (*engine, error) {
 		started: time.Now().UTC(), parallel: DefaultParallel, byUnit: map[string][]*instance{},
 		read: map[string]string{}, needed: map[string]*taskOnce{}, holders: map[string]context.CancelCauseFunc{},
 		touched: map[string]*record.Unit{}}
+	for _, v := range p.Locals {
+		if use, err := expr.AnalyzeValue(v); err == nil && slices.Contains(use.Funcs, "kv") {
+			e.kvLocals = true
+		}
+	}
 	if s, ok := opts.LookupEnv("OPSTRUSS_PARALLEL"); ok {
 		if e.parallel, err = strconv.Atoi(s); err != nil || e.parallel < 1 {
 			return nil, fmt.Errorf("OPSTRUSS_PARALLEL is %q, not a number above 0", s)
