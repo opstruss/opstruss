@@ -36,9 +36,12 @@ func (e *engine) taskLock(ctx context.Context, name string, t *model.Task, s *ex
 	if c := t.Concurrency; c != nil {
 		mode = cmp.Or(c.Mode, "queue")
 		if c.Group != "" {
-			g, err := expr.EvalText(c.Group, s)
+			g, sensitive, err := expr.EvalTextMarked(c.Group, s)
 			if err != nil {
 				return nil, nil, false, fmt.Errorf("concurrency.group: %w", err)
+			}
+			if sensitive || e.redact.Contains(g) {
+				return nil, nil, false, errors.New("concurrency.group: a sensitive value is never a group, which names a lock file")
 			}
 			if !forEachKey.MatchString(g) {
 				return nil, nil, false, fmt.Errorf("concurrency.group %q has more than lower-case letters, digits, '.', '-', and '_'", g)

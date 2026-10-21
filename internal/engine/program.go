@@ -46,7 +46,7 @@ func (e *engine) program(ctx context.Context, p progSpec, s *expr.Scope) *taskRe
 		if err != nil {
 			return nil, nil, err
 		}
-		if c.Command, err = command(p.cmd, s); err != nil {
+		if c.Command, err = e.command(p.cmd, s); err != nil {
 			return nil, nil, fmt.Errorf("run: %w", err)
 		}
 		return e.execProgram(ctx, p, c)
@@ -83,7 +83,7 @@ func (e *engine) try(ctx context.Context, p progSpec, s *expr.Scope, attempt fun
 		if err != nil {
 			return fail(err)
 		}
-		js := s.With("outputs", judged)
+		js := s.WithMarks("outputs", judged, anyMarks(r.marks))
 		r = judge(r, p.failedWhen, p.changedWhen, js)
 		done := r.outcome == success
 		if p.retry != nil && p.retry.Until != nil {
@@ -118,16 +118,20 @@ func (e *engine) programCall(p progSpec, s *expr.Scope) (*plugin.Call, error) {
 	}
 	env := map[string]model.EnvValue{}
 	for k, v := range p.env {
-		text, err := expr.EvalText(v.Text, s)
+		text, sensitive, err := expr.EvalTextMarked(v.Text, s)
 		if err != nil {
 			return nil, fmt.Errorf("env.%s: %w", k, err)
+		}
+		if sensitive {
+			e.hide(text, true)
 		}
 		env[k] = model.EnvValue{Text: text, File: v.File}
 	}
 	var stdin []byte
 	if p.stdin != nil {
-		v, err := expr.EvalValue(p.stdin.Value, s)
+		v, marks, err := expr.EvalMarked(p.stdin.Value, s)
 		if err == nil {
+			e.hide(v, marks)
 			stdin, err = plugin.Encode(v, p.stdin.Format)
 		}
 		if err != nil {
@@ -199,7 +203,30 @@ func (e *engine) execProgram(ctx context.Context, p progSpec, c *plugin.Call) (*
 	}
 	judged := maps.Clone(res.Outputs)
 	judged["stdout"], judged["stderr"], judged["exit_code"] = res.Stdout, res.Stderr, int64(res.ExitCode)
-	r := &taskResult{outcome: success, changed: res.Changed, outputs: res.Outputs}
+	// An output is sensitive when it is declared so, when the program says
+	// so in OPSTRUSS_RESULT, or when it holds a sensitive value.
+	marks := map[string]any{}
+	for name, o := range p.outputs {
+		if o.Sensitive {
+			marks[name] = true
+		}
+	}
+	for _, name := range res.Sensitive {
+		marks[name] = true
+	}
+	marks = e.markContent(res.Outputs, marks, Event{Address: addr, Task: p.label, Step: p.step})
+	for _, k := range []string{"stdout", "stderr"} {
+		// What a program prints is hidden in the log already; as an output
+		// it is sensitive without a word.
+		if e.redact.Contains(judged[k]) {
+			if marks == nil {
+				marks = map[string]any{}
+			}
+			marks[k] = true
+		}
+	}
+	e.hide(judged, anyMarks(marks))
+	r := &taskResult{outcome: success, changed: res.Changed, outputs: res.Outputs, marks: marks}
 	if p.step != "" || p.call {
 		r.outputs = judged
 	}

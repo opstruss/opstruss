@@ -3,6 +3,7 @@ package engine
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -62,11 +63,11 @@ func (e *engine) resolve(inst *instance, preview bool) (*resolved, error) {
 	}
 	s := e.scope(inst)
 	var err error
-	if r.cmd, err = command(u.Run, s); err != nil {
+	if r.cmd, err = e.command(u.Run, s); err != nil {
 		return nil, fmt.Errorf("run: %w", err)
 	}
 	if u.Down != nil {
-		cmd, err := command(u.Down, s)
+		cmd, err := e.command(u.Down, s)
 		if err != nil {
 			return nil, fmt.Errorf("down: %w", err)
 		}
@@ -135,7 +136,13 @@ func (e *engine) resolve(inst *instance, preview bool) (*resolved, error) {
 	return r, nil
 }
 
-func command(c *model.Command, s *expr.Scope) (model.Command, error) {
+// errArgv refuses a sensitive value in argv, which validate does too for
+// what it knows from the files.
+var errArgv = errors.New("a sensitive value cannot be an item of argv, which other users can read in the list of processes; pass it through env or stdin")
+
+// command evaluates a program: a script as it is, or each item of argv,
+// none of which may hold a sensitive value.
+func (e *engine) command(c *model.Command, s *expr.Scope) (model.Command, error) {
 	if c == nil {
 		return model.Command{}, nil
 	}
@@ -146,9 +153,12 @@ func command(c *model.Command, s *expr.Scope) (model.Command, error) {
 	}
 	var argv []string
 	for i, a := range c.Argv {
-		text, err := expr.EvalText(a, s)
+		text, sensitive, err := expr.EvalTextMarked(a, s)
 		if err != nil {
 			return model.Command{}, fmt.Errorf("item %d: %w", i, err)
+		}
+		if sensitive || e.redact.Contains(text) {
+			return model.Command{}, fmt.Errorf("item %d: %w", i, errArgv)
 		}
 		argv = append(argv, text)
 	}

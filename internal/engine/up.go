@@ -46,7 +46,7 @@ func runCommand(ctx context.Context, opts Options, op string) (*Result, error) {
 		e.fail("", err)
 	}
 	outcome := map[int]string{0: success, 1: failure, 2: skipped}[e.exit]
-	e.close(outcome, nil)
+	e.close(outcome, nil, nil)
 	return e.result(), nil
 }
 
@@ -616,6 +616,9 @@ func (e *engine) attempts(ctx context.Context, inst *instance, r *resolved, rec 
 			return nil, err
 		}
 		ferr := outcomeErr(res)
+		if ferr == nil && len(res.Sensitive) > 0 {
+			ferr = fmt.Errorf("the program marked %s sensitive, and units do not keep sensitive values yet", strings.Join(res.Sensitive, ", "))
+		}
 		done := ferr == nil
 		if retry != nil && retry.Until != nil {
 			s := e.scope(inst)
@@ -656,8 +659,6 @@ func outcomeErr(res *plugin.Result) error {
 		return fmt.Errorf("the program exited with %d", res.ExitCode)
 	case res.OutputErr != nil:
 		return res.OutputErr
-	case len(res.Sensitive) > 0:
-		return fmt.Errorf("the program marked %s sensitive, and sensitive outputs are not supported yet", strings.Join(res.Sensitive, ", "))
 	}
 	return nil
 }

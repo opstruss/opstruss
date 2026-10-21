@@ -1,0 +1,132 @@
+# A sensitive value is hidden in what a run writes out, as *** in the
+# terminal, --json, events, records, and errors, also inside values computed
+# from it; it never comes from a flag, and never becomes an item of argv.
+
+env HOME=$WORK/home
+env TOKEN=s3cr3t-token-value
+env KEY=k-key-value-123
+
+# what programs print, log messages, and outputs are hidden; an output
+# computed from a sensitive value, or holding one, is *** as a whole
+exec opstruss show
+stdout '^show: echo \| token=\*\*\* key=\*\*\*$'
+stdout '^show: .* \| derived \*\*\*$'
+stdout '^show: .* \| the token is \*\*\*$'
+stderr 'output url holds a sensitive value, so it is sensitive'
+! stderr 'output stdout'
+stdout '^  encoded: \*\*\*$'
+stdout '^  url: \*\*\*$'
+stdout '^  plain: hello$'
+! stdout 's3cr3t|k-key-value|czNjcjN0'
+! stderr 's3cr3t|k-key-value|czNjcjN0'
+exec opstruss show --json
+stdout '"url":"\*\*\*"'
+! stdout 's3cr3t|k-key-value|czNjcjN0'
+! exec sh -c 'grep -r -e s3cr3t -e k-key-value -e czNjcjN0 .opstruss'
+
+# a value that fails its schema is not in the error
+env KEY=bad-key-value
+! exec opstruss show
+stderr 'input key: "\*\*\*" does not match \^k-'
+! stdout bad-key-value
+! stderr bad-key-value
+env KEY=k-key-value-123
+
+# a sensitive input is not a flag, and --input does not take one
+! exec opstruss show --key k-other-123
+stderr '--key: input key is sensitive, so it is not taken from a flag, which shell history and the list of processes keep; set \$KEY, or answer at the terminal'
+! exec opstruss show --input token=x
+stderr '--input token: input token is sensitive, so it is not taken from the command line'
+
+# each line of a value with several is hidden
+exec sh -c 'KEY="$(printf "k-first-line\nsecond-line-x")" opstruss show'
+stdout 'key=\*\*\*$'
+stdout '^show: echo \| \*\*\*$'
+! stdout 'first-line|second-line'
+
+# a value too short to hide is warned about
+exec sh -c 'TOKEN=abc opstruss show'
+stderr 'input token is shorter than 4 characters, so the output does not hide it'
+
+# an output that the program marks sensitive is hidden from then on, and
+# cannot become an item of argv
+! exec opstruss leak
+stdout '^leak: .* \| got \*\*\*$'
+stderr 'item 1: a sensitive value cannot be an item of argv, which other users can read in the list of processes; pass it through env or stdin'
+! stdout 'from-program'
+! stderr 'from-program'
+
+# write keeps sensitive content for the user alone; kv does not keep a
+# sensitive value yet; a sensitive list is not a for_each
+exec opstruss keep
+[darwin] exec stat -f %Lp secret.txt
+[linux] exec stat -c %a secret.txt
+stdout '^600$'
+grep 's3cr3t-token-value' secret.txt
+! exec opstruss memo
+stderr 'kv does not keep sensitive values yet'
+! exec opstruss each
+stderr 'a sensitive list would make its items keys'
+
+# explain hides the sensitive input and the locals that read it
+exec opstruss explain
+stdout 'value: ''\*\*\*'''
+stdout 'auth: ''\*\*\*'''
+! stdout s3cr3t
+
+-- opstruss.yaml --
+name: app
+inputs:
+  token:
+    type: string
+    sensitive: true
+    env: TOKEN
+locals:
+  auth: Bearer ${{ inputs.token }}
+tasks:
+  show:
+    inputs:
+      key:
+        type: string
+        sensitive: true
+        env: KEY
+        pattern: ^k-
+    steps:
+      - name: echo
+        run: echo "token=$T key=$K"
+        env: {T: '${{ inputs.token }}', K: '${{ inputs.key }}'}
+      - id: b64
+        set: {v: '${{ base64.encode(bytes(inputs.token)) }}'}
+      - run: echo "derived $B"
+        env: {B: '${{ steps.b64.outputs.v }}'}
+      - log: {msg: 'the token is ${{ inputs.token }}'}
+      - id: url
+        run: printf 'https://user:%s@example.com' "$T"
+        env: {T: '${{ locals.auth }}'}
+        outputs:
+          url: {type: string, from: stdout}
+    outputs:
+      url: {value: '${{ steps.url.outputs.url }}'}
+      encoded: {value: '${{ steps.b64.outputs.v }}'}
+      plain: {value: hello}
+  leak:
+    steps:
+      - id: get
+        run: |
+          echo "secret=from-program-1234" > "$OPSTRUSS_OUTPUT"
+          echo '{"sensitive": ["secret"]}' > "$OPSTRUSS_RESULT"
+        outputs:
+          secret: {type: string}
+      - run: echo "got $S"
+        env: {S: '${{ steps.get.outputs.secret }}'}
+      - run: [echo, '${{ steps.get.outputs.secret }}']
+  keep:
+    write:
+      path: secret.txt
+      content: ${{ inputs.token }}
+  memo:
+    kv: {key: token, value: '${{ inputs.token }}'}
+  each:
+    steps:
+      - set: {x: 1}
+        for_each: ${{ [inputs.token] }}

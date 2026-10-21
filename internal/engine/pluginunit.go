@@ -75,21 +75,21 @@ func (e *engine) resolvePlugin(inst *instance, r *resolved, s *expr.Scope) error
 			pu.tool = dir
 		}
 	}
-	ps := e.pluginScope(pu.dir, inputs, inst)
+	ps := e.pluginScope(pu.dir, inputs, nil, inst)
 	up := pl.Tasks["up"]
-	if r.cmd, err = command(up.Run, ps); err != nil {
+	if r.cmd, err = e.command(up.Run, ps); err != nil {
 		return fmt.Errorf("up: %w", err)
 	}
 	r.shell = up.Shell
 	if d := pl.Tasks["down"]; d != nil {
-		cmd, err := command(d.Run, ps)
+		cmd, err := e.command(d.Run, ps)
 		if err != nil {
 			return fmt.Errorf("down: %w", err)
 		}
 		r.down = &cmd
 	}
 	if p := pl.Tasks["plan"]; p != nil {
-		cmd, err := command(p.Run, ps)
+		cmd, err := e.command(p.Run, ps)
 		if err != nil {
 			return fmt.Errorf("plan: %w", err)
 		}
@@ -205,7 +205,7 @@ func StatusUnits(ctx context.Context, opts Options) (*Result, error) {
 		e.fail("", err)
 	}
 	outcome := map[int]string{0: success, 1: failure, 2: skipped}[e.exit]
-	e.close(outcome, nil)
+	e.close(outcome, nil, nil)
 	return e.result(), nil
 }
 

@@ -19,6 +19,7 @@ import (
 	"github.com/opstruss/opstruss/internal/expr"
 	"github.com/opstruss/opstruss/internal/model"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 // unitCommands are the commands that change units: plan, up, and down,
@@ -120,6 +121,12 @@ func (a *app) ask(ctx context.Context, name string, in *model.Input) (string, er
 		prompt += " (" + in.Description + ")"
 	}
 	fmt.Fprintf(a.stderr, "%s: ", prompt)
+	if f, ok := a.in.(*os.File); ok && in.Sensitive && term.IsTerminal(int(f.Fd())) {
+		// A sensitive input is typed without echo.
+		b, err := term.ReadPassword(int(f.Fd()))
+		fmt.Fprintln(a.stderr)
+		return string(b), err
+	}
 	line, err := a.readLine(ctx)
 	return strings.TrimRight(line, "\r\n"), err
 }

@@ -129,10 +129,16 @@ func (a *app) taskCommand(name string, t *model.Task, ofUnits bool) *cobra.Comma
 	}
 	cmd := &cobra.Command{Use: use, Short: t.Description}
 	argsInput := ""
+	secrets := map[string]*string{}
 	for _, in := range slices.Sorted(maps.Keys(t.Inputs)) {
 		def := t.Inputs[in]
 		flag := strings.ReplaceAll(in, "_", "-")
 		switch {
+		case def.Sensitive:
+			// Only to say why it is not taken.
+			secrets[in] = new(string)
+			cmd.Flags().StringVar(secrets[in], flag, "", "")
+			_ = cmd.Flags().MarkHidden(flag)
 		case def.Args:
 			argsInput = in
 		case def.Type == "boolean":
@@ -165,6 +171,12 @@ func (a *app) taskCommand(name string, t *model.Task, ofUnits bool) *cobra.Comma
 			flag := strings.ReplaceAll(in, "_", "-")
 			var err error
 			switch {
+			case secrets[in] != nil && c.Flags().Changed(flag):
+				how := "answer at the terminal"
+				if def.Env != "" {
+					how = "set $" + def.Env + ", or " + how
+				}
+				err = fmt.Errorf("--%s: input %s is sensitive, so it is not taken from a flag, which shell history and the list of processes keep; %s", flag, in, how)
 			case bools[in] != nil:
 				err = set(in, flag, func() (any, error) { return true, nil })
 				if err == nil {

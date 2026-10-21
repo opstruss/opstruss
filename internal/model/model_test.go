@@ -306,7 +306,12 @@ func TestRules(t *testing.T) {
 		{"name: app\nuses:\n  http: ./plugins/d\n", "http is a built-in task"},
 		{"name: app\nuses:\n  d: github.com/other/d@v1\n", "a git source is github.com/opstruss/<repo>[/<path>]@<ref>"},
 		{"name: app\nuses:\n  d: github.com/opstruss/plugins/d\n", "a git source is github.com/opstruss/<repo>[/<path>]@<ref>"},
-		{"name: app\ninputs:\n  token: {type: string, sensitive: true}\n", "sensitive values are not supported yet"},
+		{"name: app\ninputs:\n  token: {type: string, sensitive: true}\n", ""},
+		{"name: app\ninputs:\n  token: {type: string, sensitive: true}\nlocals:\n  auth: Bearer ${{ inputs.token }}\nunits:\n  a:\n    run: [x]\n    env: {A: '${{ locals.auth }}'}\n", "units.a.env: a unit does not take sensitive values yet"},
+		{"name: app\ninputs:\n  token: {type: string, sensitive: true}\ntasks:\n  t:\n    run: [curl, '${{ inputs.token }}']\n", "tasks.t.run: a sensitive value cannot be an item of argv"},
+		{"name: app\ntasks:\n  t:\n    inputs:\n      key: {type: string, sensitive: true}\n    steps:\n      - command: {argv: ['${{ inputs.key }}']}\n      - run: [x]\n        env: {KEY: '${{ inputs.key }}'}\n", "tasks.t.steps[0].command.argv: a sensitive value cannot be an item of argv"},
+		{"name: app\ntasks:\n  t:\n    inputs:\n      key: {type: string, sensitive: true}\n    run: [x]\n    env: {KEY: '${{ inputs.key }}'}\n    outputs:\n      o: {type: string, sensitive: true}\n", ""},
+		{"name: app\noutputs:\n  o: {value: x, sensitive: true}\n", "sensitive values are not supported yet"},
 		{"name: app\nsecrets:\n  s: {env: S}\n", "secrets: not supported yet"},
 		{"name: app\nunits:\n  web:\n    run: [x]\nmoved:\n  - {from: web, to: site}\n", "web is still a unit"},
 		{"name: app\nunits:\n  site:\n    run: [x]\nmoved:\n  - {from: old, to: new}\n", "there is no unit new"},
@@ -352,7 +357,7 @@ stacks:
 		t.Fatal(err)
 	}
 	env := map[string]string{"APP_DEBUG": "true"}
-	got, err := p.ResolveInputs(map[string]string{"flag": "3"}, func(k string) (string, bool) { v, ok := env[k]; return v, ok })
+	got, err := p.ResolveInputs(map[string]string{"flag": "3"}, func(k string) (string, bool) { v, ok := env[k]; return v, ok }, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -365,10 +370,10 @@ stacks:
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %#v\nwant %#v", got, want)
 	}
-	if _, err := p.ResolveInputs(map[string]string{"flag": "x"}, nil); err == nil || !strings.Contains(err.Error(), `--input flag: "x" is not an integer`) {
+	if _, err := p.ResolveInputs(map[string]string{"flag": "x"}, nil, nil); err == nil || !strings.Contains(err.Error(), `--input flag: "x" is not an integer`) {
 		t.Fatalf("want a parse error, got %v", err)
 	}
-	if _, err := p.ResolveInputs(map[string]string{"nope": "1"}, nil); err == nil {
+	if _, err := p.ResolveInputs(map[string]string{"nope": "1"}, nil, nil); err == nil {
 		t.Fatal("want an unknown input error")
 	}
 }

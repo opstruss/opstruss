@@ -17,10 +17,11 @@ import (
 // Call is one call of a built-in task, with its inputs conformed to the
 // task's schema.
 type Call struct {
-	Task   string
-	Inputs map[string]any
-	Dir    string                  // where relative paths start
-	Log    func(level, msg string) // writes to the log and events of the run
+	Task      string
+	Inputs    map[string]any
+	Dir       string                  // where relative paths start
+	Log       func(level, msg string) // writes to the log and events of the run
+	Sensitive bool                    // the content of write is sensitive
 }
 
 // Result is how a call ended. A call that failed has Err, and may still
@@ -41,7 +42,7 @@ func Run(ctx context.Context, c *Call) *Result {
 	case "read":
 		return read(c.Dir, c.Inputs)
 	case "write":
-		return write(c.Dir, c.Inputs)
+		return write(c.Dir, c.Inputs, c.Sensitive)
 	case "set":
 		return &Result{Outputs: maps.Clone(c.Inputs)}
 	case "assert":

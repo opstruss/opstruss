@@ -441,6 +441,38 @@ func (p *Project) EvalLocals(inputs map[string]any, kv func(string) (any, error)
 	return p.evalLocals(p.Name, inputs, kv, false)
 }
 
+// LocalMarks says which locals are sensitive, given the marks of what they
+// read, such as {"inputs": {"token": true}}: a local that reads a
+// sensitive value, or a sensitive local, is sensitive as a whole.
+func (p *Project) LocalMarks(marks map[string]any) map[string]any {
+	out := map[string]any{}
+	if len(marks) == 0 {
+		return out
+	}
+	scope := maps.Clone(marks)
+	scope["locals"] = out
+	// Locals read locals, so this goes on until no local changes.
+	for changed := true; changed; {
+		changed = false
+		for name, v := range p.Locals {
+			if out[name] != nil {
+				continue
+			}
+			use, err := expr.AnalyzeValue(v)
+			if err != nil {
+				continue
+			}
+			for _, r := range use.Refs {
+				if expr.MarkAt(scope, r.Path...) != nil {
+					out[name], changed = true, true
+					break
+				}
+			}
+		}
+	}
+	return out
+}
+
 // ComponentLocals evaluates the locals of a component with its inputs, in
 // the project named project. A local that fails, as one that reads an
 // input with no value yet, fails only the expressions that read it.

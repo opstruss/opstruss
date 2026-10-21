@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/opstruss/opstruss/internal/model"
+	"github.com/opstruss/opstruss/internal/secret"
 	"github.com/spf13/cobra"
 	"go.yaml.in/yaml/v3"
 )
@@ -296,17 +297,26 @@ func (a *app) explainCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			inputs, err := p.ResolveInputs(given, a.lookupEnv)
+			red := secret.NewRedactor()
+			inputs, err := p.ResolveInputs(given, a.lookupEnv, func(_ string, v any) { red.Add(v) })
 			if err != nil {
-				return err
+				return red.Err(err)
 			}
-			values := map[string]any{}
+			values, marks := map[string]any{}, map[string]any{}
 			for k, v := range inputs {
 				values[k] = v.Value
+				if p.Inputs[k].Sensitive {
+					marks[k] = true
+					v.Value = secret.Mask
+					inputs[k] = v
+				}
 			}
 			locals, err := p.EvalLocals(values, nil)
 			if err != nil {
-				return err
+				return red.Err(err)
+			}
+			for k := range p.LocalMarks(map[string]any{"inputs": marks}) {
+				locals[k] = secret.Mask
 			}
 			out, err := explain(p, inputs, locals, names)
 			if err != nil {

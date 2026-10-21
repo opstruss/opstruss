@@ -46,14 +46,20 @@ func read(dir string, in map[string]any) *Result {
 // write writes content in a format, only when the file holds something
 // else or has another mode, through a temporary file and a rename, so a
 // reader never sees half of it. The directory must exist.
-func write(dir string, in map[string]any) *Result {
+func write(dir string, in map[string]any, sensitive bool) *Result {
 	p := fromDir(dir, in["path"])
 	data, err := plugin.Encode(in["content"], in["format"].(string))
 	if err != nil {
 		return failed(fmt.Errorf("content: %w", err))
 	}
 	mode := fs.FileMode(0o644)
-	if m, ok := in["mode"].(string); ok {
+	m, modeSet := in["mode"].(string)
+	if sensitive && !modeSet {
+		// Sensitive content is for the user alone, also in a file that was
+		// there.
+		m, modeSet = "0600", true
+	}
+	if modeSet {
 		n, err := strconv.ParseUint(m, 8, 32)
 		if err != nil {
 			return failed(fmt.Errorf("mode: %w", err))
@@ -68,7 +74,6 @@ func write(dir string, in map[string]any) *Result {
 		if err != nil {
 			return failed(err)
 		}
-		_, modeSet := in["mode"].(string)
 		if bytes.Equal(old, data) && (!modeSet || info.Mode().Perm() == mode) {
 			return &Result{Outputs: out}
 		}

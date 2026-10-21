@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -22,6 +23,7 @@ import (
 	"github.com/opstruss/opstruss/internal/plugin"
 	"github.com/opstruss/opstruss/internal/proc"
 	"github.com/opstruss/opstruss/internal/record"
+	"github.com/opstruss/opstruss/internal/secret"
 	"github.com/opstruss/opstruss/internal/state"
 )
 
@@ -126,6 +128,11 @@ type engine struct {
 	kv       *kvMemory         // what kv() reads in this pass
 	kvLocals bool              // a local reads kv()
 	hashes   map[string]string // of plugin directories, read once a run
+
+	redact     *secret.Redactor // hides the sensitive values the run knows in what it writes out
+	inputMarks map[string]any   // the sensitive inputs of the project
+	localMarks map[string]any   // the locals that read them
+	tooShort   []string         // sensitive values too short to hide, by name, for a warning once the run starts
 }
 
 // open reads the project and the state of its stack, marks the runs that
@@ -146,19 +153,36 @@ func load(opts Options) (*engine, error) {
 	if err != nil {
 		return nil, err
 	}
-	values, err := p.ResolveInputs(opts.Inputs, opts.LookupEnv)
+	// A sensitive input is known before it is checked, so the error of the
+	// check hides it.
+	red := secret.NewRedactor()
+	var short []string
+	values, err := p.ResolveInputs(opts.Inputs, opts.LookupEnv, func(name string, v any) {
+		if red.Add(v) {
+			short = append(short, "input "+name)
+		}
+	})
 	if err != nil {
-		return nil, err
+		return nil, red.Err(err)
 	}
-	inputs := map[string]any{}
+	inputs, inputMarks := map[string]any{}, map[string]any{}
 	for k, v := range values {
 		inputs[k] = v.Value
+		if p.Inputs[k].Sensitive {
+			red.Add(v.Value)
+			inputMarks[k] = true
+		}
 	}
 	locals, err := p.EvalLocals(inputs, nil)
 	if err != nil {
-		return nil, err
+		return nil, red.Err(err)
+	}
+	localMarks := p.LocalMarks(map[string]any{"inputs": inputMarks})
+	for k := range localMarks {
+		red.AddDerived(locals[k])
 	}
 	e := &engine{opts: opts, p: p, inputs: inputs, locals: locals, root: filepath.Join(p.Dir, ".opstruss"),
+		redact: red, inputMarks: inputMarks, localMarks: localMarks, tooShort: short,
 		started: time.Now().UTC(), parallel: DefaultParallel, byUnit: map[string][]*instance{},
 		read: map[string]string{}, needed: map[string]*taskOnce{}, holders: map[string]context.CancelCauseFunc{},
 		touched: map[string]*record.Unit{}, hashes: map[string]string{}, frames: map[string]*frameSet{}}
@@ -217,6 +241,9 @@ func (e *engine) start(command, task string) error {
 	for _, run := range interrupted {
 		e.warn("", "run %s ended without finishing its record; it is marked cancelled, as interrupted", run)
 	}
+	for _, name := range e.tooShort {
+		e.warnShort(name)
+	}
 	e.cleanTemp()
 	e.holder = state.NewHolder(e.runID, e.host)
 	e.run = &plugin.Run{Project: p.Name, Stack: p.StackName, ID: e.runID, Parents: e.parents,
@@ -242,11 +269,13 @@ func (e *engine) debug(addr, format string, args ...any) {
 }
 
 // close ends the run: the last event, of type run, then the record, then
-// the retention of old runs, and the run's temporary files go.
-func (e *engine) close(outcome string, outputs map[string]any) {
+// the retention of old runs, and the run's temporary files go. The outputs
+// that marks marks are written out as secret.Mask.
+func (e *engine) close(outcome string, outputs, marks map[string]any) {
 	if err := e.run.Close(); err != nil {
 		e.warn("", "removing the run's temporary files: %v", err)
 	}
+	outputs = e.shown(outputs, marks)
 	code := e.exit
 	e.emit(Event{Type: "run", Level: "info", Task: e.rec.Task(), Message: outcome, Outcome: outcome, ExitCode: &code, Outputs: outputs})
 	e.mu.Lock()
@@ -262,7 +291,7 @@ func (e *engine) close(outcome string, outputs map[string]any) {
 		err = record.Prune(e.root, e.p.StackName)
 	}
 	if err != nil && e.opts.Emit != nil {
-		e.opts.Emit(Event{Type: "diagnostic", Level: "warn", Message: "keeping the record of the run: " + err.Error()})
+		e.opts.Emit(Event{Type: "diagnostic", Level: "warn", Message: "keeping the record of the run: " + e.redact.String(err.Error())})
 	}
 }
 
@@ -305,10 +334,85 @@ func (e *engine) touch(addr string, u *record.Unit) {
 
 func (e *engine) tempOf(run string) string { return filepath.Join(e.root, "tmp", run) }
 
+// emit writes an event out, with every sensitive value the run knows
+// hidden: the one place where what the run says leaves it.
 func (e *engine) emit(ev Event) {
 	if e.rec != nil {
+		ev.Message = e.redact.String(ev.Message)
+		if ev.Outputs != nil {
+			ev.Outputs = e.redact.Value(ev.Outputs).(map[string]any)
+		}
 		e.rec.Emit(ev)
 	}
+}
+
+// warnShort warns that a sensitive value is too short to hide.
+func (e *engine) warnShort(name string) {
+	e.warn("", "%s is shorter than %d characters, so the output does not hide it", name, secret.MinLen)
+}
+
+// known makes v, a sensitive value the run was given, hidden in what the
+// run writes out, with a warning when it is too short for that.
+func (e *engine) known(name string, v any) {
+	if e.redact.Add(v) {
+		e.warnShort(name)
+	}
+}
+
+// hide makes the parts of v that marks marks hidden in what the run writes
+// out, as values computed from sensitive ones.
+func (e *engine) hide(v, marks any) {
+	switch m := marks.(type) {
+	case bool:
+		if m {
+			e.redact.AddDerived(v)
+		}
+	case map[string]any:
+		vm, ok := v.(map[string]any)
+		if !ok {
+			e.redact.AddDerived(v)
+			return
+		}
+		for k, sub := range m {
+			e.hide(vm[k], sub)
+		}
+	}
+}
+
+// markContent marks the outputs that hold a sensitive value the run
+// knows, as GitHub Actions does for job outputs, and says which; marks
+// may be nil, and the marks are returned.
+func (e *engine) markContent(outputs, marks map[string]any, ev Event) map[string]any {
+	for _, k := range slices.Sorted(maps.Keys(outputs)) {
+		if marks[k] != nil || !e.redact.Contains(outputs[k]) {
+			continue
+		}
+		if marks == nil {
+			marks = map[string]any{}
+		}
+		marks[k] = true
+		ev.Type, ev.Level, ev.Message = "diagnostic", "warn", fmt.Sprintf("output %s holds a sensitive value, so it is sensitive", k)
+		e.emit(ev)
+	}
+	return marks
+}
+
+// shown is outputs as the run writes them out: the outputs that marks
+// marks as secret.Mask, and the sensitive values the run knows hidden in
+// the others.
+func (e *engine) shown(outputs, marks map[string]any) map[string]any {
+	if outputs == nil {
+		return nil
+	}
+	out := make(map[string]any, len(outputs))
+	for k, v := range outputs {
+		if marks[k] != nil {
+			out[k] = secret.Mask
+			continue
+		}
+		out[k] = e.redact.Value(v)
+	}
+	return out
 }
 
 func (e *engine) say(typ, addr, format string, args ...any) {

@@ -51,7 +51,7 @@ func Exec(ctx context.Context, opts Options, argv []string, tty Stdio) (*Result,
 	if e.exit != 0 {
 		outcome = failure
 	}
-	e.close(outcome, nil)
+	e.close(outcome, nil, nil)
 	return e.result(), nil
 }
 
@@ -120,8 +120,8 @@ func (e *engine) execUnit(ctx context.Context, unit string, argv []string, tty S
 // its own arguments: from the plugin's directory, in the unit's working
 // directory and its own dir:, with its env under the unit's.
 func (e *engine) execHook(c *plugin.Call, inst *instance, r *resolved, hook *model.Task, argv []string) error {
-	ps := e.pluginScope(r.plugin.dir, r.plugin.inputs, inst)
-	cmd, err := command(hook.Run, ps)
+	ps := e.pluginScope(r.plugin.dir, r.plugin.inputs, nil, inst)
+	cmd, err := e.command(hook.Run, ps)
 	if err != nil {
 		return fmt.Errorf("exec: %w", err)
 	}

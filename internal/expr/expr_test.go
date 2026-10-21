@@ -153,3 +153,44 @@ func TestAnalyze(t *testing.T) {
 		t.Errorf("funcs %v should name kv", u.Funcs)
 	}
 }
+
+func TestMarks(t *testing.T) {
+	s := (&Scope{Vars: map[string]any{
+		"inputs": map[string]any{"token": "t0k3n", "name": "web"},
+		"steps":  map[string]any{"a": map[string]any{"outputs": map[string]any{"key": "k", "id": "1"}}},
+	}}).WithMarks("inputs", map[string]any{"token": "t0k3n", "name": "web"}, map[string]any{"token": true}).
+		WithMarks("steps", map[string]any{"a": map[string]any{"outputs": map[string]any{"key": "k", "id": "1"}}},
+			map[string]any{"a": map[string]any{"outputs": map[string]any{"key": true}}})
+	for src, want := range map[string]bool{
+		"inputs.token":                       true,
+		"inputs.name":                        false,
+		"inputs":                             true,
+		"inputs['name'] + 'x'":               false,
+		"base64.encode(bytes(inputs.token))": true,
+		"steps.a.outputs.id":                 false,
+		"steps.a.outputs.key.size()":         true,
+		"steps.a":                            true,
+	} {
+		if got := Sensitive(src, s); got != want {
+			t.Errorf("Sensitive(%q) = %v", src, got)
+		}
+	}
+	v, m, err := EvalMarked(map[string]any{"url": "https://${{ inputs.name }}", "auth": "Bearer ${{ inputs.token }}",
+		"list": []any{"a", "${{ inputs.token }}"}}, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	marks := m.(map[string]any)
+	if marks["url"] != nil || marks["auth"] != true || marks["list"] != true || v.(map[string]any)["auth"] != "Bearer t0k3n" {
+		t.Errorf("EvalMarked: %v %v", v, m)
+	}
+	if text, sensitive, err := EvalTextMarked("${{ inputs.name }}", s); err != nil || text != "web" || sensitive {
+		t.Errorf("EvalTextMarked: %q %v %v", text, sensitive, err)
+	}
+	if MarkAt(true, "x", "y") != true || MarkAt(nil, "x") != nil || MarkAt(map[string]any{"a": map[string]any{}}, "a") != nil {
+		t.Error("MarkAt")
+	}
+	if s.With("inputs", map[string]any{}).Marks["inputs"] != nil {
+		t.Error("With keeps no marks for the name it sets")
+	}
+}

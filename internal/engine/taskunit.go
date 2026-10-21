@@ -31,7 +31,7 @@ type taskUnit struct {
 // a run unit does.
 func (e *engine) resolveTask(inst *instance, r *resolved, s *expr.Scope) error {
 	u, t := inst.def, inst.def.Target
-	in, err := callInputs(t, u.With, s)
+	in, _, err := e.callInputs(t, u.With, s)
 	if err != nil {
 		return fmt.Errorf("with: %w", err)
 	}
@@ -180,7 +180,7 @@ func (e *engine) execTask(ctx context.Context, inst *instance, r *resolved, rec 
 			e.emit(Event{Type: "step", Level: "error", Address: inst.address, Task: "up", Message: fmt.Sprintf("%s: %v", t.Name, out.Err)})
 		}
 	}
-	out := &plugin.Result{Outputs: res.outputs, Changed: res.changed}
+	out := &plugin.Result{Outputs: res.outputs, Changed: res.changed, Sensitive: slices.Sorted(maps.Keys(res.marks))}
 	if out.Outputs == nil {
 		out.Outputs = map[string]any{}
 	}

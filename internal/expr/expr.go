@@ -197,27 +197,45 @@ func readFile(dir string) func(ref.Val) ref.Val {
 	}
 }
 
-// Scope is the data an expression reads, the directory of the file that
-// wrote it, and what kv() reads: a name, or a prefix ending in *.
+// Scope is the data an expression reads, which parts of it are sensitive,
+// the directory of the file that wrote it, and what kv() reads: a name, or
+// a prefix ending in *.
 type Scope struct {
-	Vars map[string]any
-	Dir  string
-	KV   func(key string) (any, error)
+	Vars  map[string]any
+	Marks map[string]any // the marks of each variable that has sensitive parts
+	Dir   string
+	KV    func(key string) (any, error)
 }
 
-// With returns a copy of s in which name holds v.
-func (s *Scope) With(name string, v any) *Scope {
+// With returns a copy of s in which name holds v, which has no sensitive
+// parts.
+func (s *Scope) With(name string, v any) *Scope { return s.WithMarks(name, v, nil) }
+
+// WithMarks returns a copy of s in which name holds v, with marks saying
+// which parts of v are sensitive.
+func (s *Scope) WithMarks(name string, v, marks any) *Scope {
 	vars := make(map[string]any, len(s.Vars)+1)
 	for k, x := range s.Vars {
 		vars[k] = x
 	}
 	vars[name] = v
-	return &Scope{Vars: vars, Dir: s.Dir, KV: s.KV}
+	var ms map[string]any
+	if len(s.Marks) > 0 || marks != nil {
+		ms = make(map[string]any, len(s.Marks)+1)
+		for k, m := range s.Marks {
+			ms[k] = m
+		}
+		delete(ms, name)
+		if marks != nil {
+			ms[name] = marks
+		}
+	}
+	return &Scope{Vars: vars, Marks: ms, Dir: s.Dir, KV: s.KV}
 }
 
 // WithKV returns a copy of s whose kv() reads through read.
 func (s *Scope) WithKV(read func(string) (any, error)) *Scope {
-	return &Scope{Vars: s.Vars, Dir: s.Dir, KV: read}
+	return &Scope{Vars: s.Vars, Marks: s.Marks, Dir: s.Dir, KV: read}
 }
 
 func (s *Scope) activation() map[string]any {

@@ -43,12 +43,12 @@ func (e *engine) callByName(ctx context.Context, p progSpec, name string, args m
 		return ok
 	}
 	return e.try(ctx, p, s, func(s *expr.Scope) (*taskResult, map[string]any, error) {
-		in, err := callInputs(t, args, s)
+		in, marks, err := e.callInputs(t, args, s)
 		if err != nil {
 			return nil, nil, fmt.Errorf("%s: %w", name, err)
 		}
 		if t.Kind == model.TargetBuiltin && t.Task == "command" {
-			return e.commandCall(ctx, p, in, s)
+			return e.commandCall(ctx, p, in, marks, s)
 		}
 		dir, err := expr.EvalText(p.dir, s)
 		if err != nil {
@@ -58,18 +58,28 @@ func (e *engine) callByName(ctx context.Context, p progSpec, name string, args m
 			dir = filepath.Join(p.base, dir)
 		}
 		if t.Kind == model.TargetTask {
-			r := e.callTask(ctx, name, t.Package.Plugin.Tasks[t.Task], dir, in, call{unit: p.unit, plugin: pluginRunOf(t, p), unitRun: p.unitRun})
+			r := e.callTask(ctx, name, t.Package.Plugin.Tasks[t.Task], dir, in, call{unit: p.unit, plugin: pluginRunOf(t, p), unitRun: p.unitRun, marks: marks})
 			return r, r.outputs, nil
 		}
 		var res *builtin.Result
-		if t.Task == "kv" {
+		switch {
+		case t.Task == "kv" && (marks["value"] != nil || marks["expect"] != nil):
+			res = &builtin.Result{Outputs: map[string]any{}, Err: errors.New("kv does not keep sensitive values yet")}
+		case t.Task == "kv":
 			res = e.kvCall(ctx, in, given("value"), given("expect"))
-		} else {
-			res = builtin.Run(ctx, &builtin.Call{Task: t.Task, Inputs: in, Dir: dir, Log: func(level, msg string) {
-				e.emit(Event{Type: "log", Level: level, Task: p.label, Step: p.step, Message: msg})
-			}})
+		default:
+			res = builtin.Run(ctx, &builtin.Call{Task: t.Task, Inputs: in, Dir: dir, Sensitive: marks["content"] != nil,
+				Log: func(level, msg string) {
+					e.emit(Event{Type: "log", Level: level, Task: p.label, Step: p.step, Message: msg})
+				}})
 		}
-		r := &taskResult{outcome: success, changed: res.Changed, outputs: res.Outputs}
+		outMarks := map[string]any{}
+		if t.Task == "set" {
+			// set gives its inputs as its outputs.
+			maps.Copy(outMarks, marks)
+		}
+		r := &taskResult{outcome: success, changed: res.Changed, outputs: res.Outputs,
+			marks: e.markContent(res.Outputs, outMarks, Event{Task: p.label, Step: p.step})}
 		if res.Err != nil {
 			r.outcome = failure
 			if p.failedWhen == nil {
@@ -124,10 +134,14 @@ func pluginRunOf(t *model.Target, p progSpec) *pluginRun {
 
 // pluginScope is what the expressions of a plugin task read: its inputs,
 // its steps, and the facts, with opstruss.dir the plugin's directory.
-func (e *engine) pluginScope(dir string, inputs map[string]any, unit *instance) *expr.Scope {
+func (e *engine) pluginScope(dir string, inputs, marks map[string]any, unit *instance) *expr.Scope {
 	facts := e.facts(unit)
 	facts["dir"], facts["artifacts"], facts["temp"], facts["cwd"] = dir, e.run.Artifacts, e.run.Temp, e.opts.Cwd
-	return (&expr.Scope{Dir: dir, Vars: map[string]any{"inputs": inputs, "opstruss": facts, "steps": map[string]any{}}}).WithKV(e.newKV().get)
+	s := &expr.Scope{Dir: dir, Vars: map[string]any{"inputs": inputs, "opstruss": facts, "steps": map[string]any{}}}
+	if len(marks) > 0 {
+		s.Marks = map[string]any{"inputs": marks}
+	}
+	return s.WithKV(e.newKV().get)
 }
 
 // checkRequires fails a task whose programs are not in PATH: those of its
@@ -153,8 +167,9 @@ func (e *engine) checkRequires(t *model.Task, c call, s *expr.Scope) error {
 
 // callInputs gives a call its inputs: those of the declaration's with:
 // that the task takes, then the call's own, evaluated and checked against
-// the task's schema.
-func callInputs(t *model.Target, args map[string]any, s *expr.Scope) (map[string]any, error) {
+// the task's schema; with the marks of those that are sensitive, because
+// they read a sensitive value or the task declares them so.
+func (e *engine) callInputs(t *model.Target, args map[string]any, s *expr.Scope) (map[string]any, map[string]any, error) {
 	decl, typed := t.Inputs()
 	given := map[string]any{}
 	if t.Package != nil && t.Package.Decl != nil {
@@ -165,25 +180,37 @@ func callInputs(t *model.Target, args map[string]any, s *expr.Scope) (map[string
 		}
 	}
 	maps.Copy(given, args)
-	out := map[string]any{}
-	for k, v := range given {
-		val, err := expr.EvalValue(v, s)
+	out, marks := map[string]any{}, map[string]any{}
+	for _, k := range slices.Sorted(maps.Keys(given)) {
+		val, m, err := expr.EvalMarked(given[k], s)
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w", k, err)
+			return nil, nil, fmt.Errorf("%s: %w", k, err)
 		}
 		out[k] = val
+		switch {
+		case decl[k] != nil && decl[k].Sensitive:
+			e.known("input "+k, val)
+			marks[k] = true
+		case m != nil:
+			e.hide(val, m)
+			marks[k] = m
+		}
 	}
 	if !typed {
-		return out, nil
+		return out, marks, nil
 	}
-	return conform(decl, out)
+	out, err := conform(decl, out)
+	return out, marks, err
 }
 
 // commandCall runs a call of command through the program contract, as run
 // does, with argv or script, shell, and stdin from its inputs.
-func (e *engine) commandCall(ctx context.Context, p progSpec, in map[string]any, s *expr.Scope) (*taskResult, map[string]any, error) {
+func (e *engine) commandCall(ctx context.Context, p progSpec, in, marks map[string]any, s *expr.Scope) (*taskResult, map[string]any, error) {
 	if (in["argv"] == nil) == (in["script"] == nil) {
 		return nil, nil, errors.New("command takes exactly one of argv or script")
+	}
+	if marks["argv"] != nil || e.redact.Contains(in["argv"]) {
+		return nil, nil, errArgv
 	}
 	if sh, ok := in["shell"].(string); ok {
 		p.shell = sh

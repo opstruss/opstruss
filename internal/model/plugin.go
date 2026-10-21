@@ -102,6 +102,13 @@ func (c *checker) pluginRules() {
 		c.task(path, t, false)
 		c.taskRefs(path, t)
 	}
+	marks := map[string]any{}
+	if in := inputMarks(pl.Inputs); len(in) > 0 {
+		marks["inputs"] = in
+	}
+	for _, name := range slices.Sorted(maps.Keys(pl.Tasks)) {
+		c.argvSensitive([]string{"tasks", name}, pl.Tasks[name], marks)
+	}
 }
 
 // pluginInputs rejects env: on inputs: code from elsewhere reads no

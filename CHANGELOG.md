@@ -110,6 +110,24 @@ minor release can change what a project, a component, or a plugin relies on.
   unit's plugin without the unit's lock, with its record to read, and for
   other units says what the record holds: up with its last run and
   outputs, pending, or absent.
+- A sensitive value is hidden as `***` wherever a run writes it: the
+  terminal, `--json`, events, `record.json`, error messages, and
+  `explain`, line by line and in its JSON form, also inside values
+  computed from it, such as `base64.encode()`. Inputs with
+  `sensitive: true` of the project, a task, or a plugin task are
+  sensitive, and so are outputs that are declared so, that a program
+  names in `sensitive` of `$OPSTRUSS_RESULT`, or that hold a sensitive
+  value, with a warning that names them. A sensitive input is never taken
+  from a flag or `--input`, but from its `env:` or typed without echo at
+  the terminal. A sensitive value cannot be an item of argv, which
+  `validate` checks where the files show it and the run checks before a
+  program starts, and it is never a key of `for_each`, a
+  `concurrency.group`, or a name in `units:`; `write` keeps sensitive
+  content in a file with mode 0600. A value shorter than 4 characters is
+  not hidden, and the run warns about it. Units, components, `kv`, and the
+  outputs of a project do not take sensitive values yet.
+- A task input with `env:` takes its value from that variable when the
+  call gives none, before the default.
 - `opstruss init` sets up the project in its directory, adding only what
   is missing: `opstruss.yaml` with `opstruss:` and a `name` made from the
   directory's name (or `--name`), `.opstruss/` in `.gitignore`, and a rule

@@ -27,8 +27,9 @@ type taskResult struct {
 	approval bool           // it failed only because something stopped at plan for approval
 	units    map[string]any // for a step that calls a task of units: the result of each instance
 	keys     map[string]*taskResult
-	part     string // for a block: the outcome of block: alone, which steps.<id>.outcome shows
-	soft     bool   // the task failed with continue_on_error, so its caller goes on
+	part     string         // for a block: the outcome of block: alone, which steps.<id>.outcome shows
+	soft     bool           // the task failed with continue_on_error, so its caller goes on
+	marks    map[string]any // the sensitive outputs
 }
 
 func (r *taskResult) view() any {
@@ -44,6 +45,26 @@ func (r *taskResult) view() any {
 		v["units"] = r.units
 	}
 	return v
+}
+
+// viewMarks are the marks of view(): its sensitive outputs.
+func (r *taskResult) viewMarks() any {
+	if r.keys != nil {
+		m := map[string]any{}
+		for k, v := range r.keys {
+			if vm := v.viewMarks(); vm != nil {
+				m[k] = vm
+			}
+		}
+		if len(m) == 0 {
+			return nil
+		}
+		return m
+	}
+	if len(r.marks) == 0 {
+		return nil
+	}
+	return map[string]any{"outputs": r.marks}
 }
 
 // failed is the result of a call that failed before or outside its
@@ -74,12 +95,13 @@ func aggregate(results map[string]*taskResult) *taskResult {
 
 // call is what the caller of a task gives it besides inputs.
 type call struct {
-	yes     bool       // --yes, or yes: true on the step that calls it
-	source  string     // what yes is, for the record
-	unit    *instance  // the unit, for the task of a unit
-	frame   *frame     // the instance of a component whose task it is
-	plugin  *pluginRun // the plugin, for a task of a plugin
-	unitRun *unitRun   // what the unit gives, for a task that runs for it
+	yes     bool           // --yes, or yes: true on the step that calls it
+	source  string         // what yes is, for the record
+	unit    *instance      // the unit, for the task of a unit
+	frame   *frame         // the instance of a component whose task it is
+	plugin  *pluginRun     // the plugin, for a task of a plugin
+	unitRun *unitRun       // what the unit gives, for a task that runs for it
+	marks   map[string]any // which of the given inputs are sensitive
 }
 
 // where is the instance of a component whose files write the task, or the
@@ -134,7 +156,7 @@ func Task(ctx context.Context, opts Options, name string, inputs map[string]any)
 	case res.outcome == failure, res.outcome == cancelled:
 		e.exit = 1
 	}
-	e.close(res.outcome, res.outputs)
+	e.close(res.outcome, res.outputs, res.marks)
 	return &Result{Run: e.runID, ExitCode: e.exit}, nil
 }
 
@@ -229,6 +251,32 @@ func (e *engine) callTask(ctx context.Context, name string, t *model.Task, dir s
 	if c.plugin != nil {
 		decl = c.plugin.inputs
 	}
+	given = maps.Clone(given)
+	if given == nil {
+		given = map[string]any{}
+	}
+	if c.plugin == nil {
+		// An input without a value reads the environment through its env:,
+		// which only the project's own files write.
+		for _, k := range slices.Sorted(maps.Keys(t.Inputs)) {
+			in := t.Inputs[k]
+			if _, ok := given[k]; ok || in.Env == "" {
+				continue
+			}
+			text, ok := e.opts.LookupEnv(in.Env)
+			if !ok {
+				continue
+			}
+			if in.Sensitive {
+				e.known("input "+k, text)
+			}
+			v, err := model.ParseText(text, in.Type)
+			if err != nil {
+				return fail(fmt.Errorf("input %s: %s: %w", k, in.Env, err))
+			}
+			given[k] = v
+		}
+	}
 	if e.opts.Ask != nil && c.plugin == nil {
 		// A required input without a value is asked for at the terminal.
 		for _, k := range slices.Sorted(maps.Keys(t.Inputs)) {
@@ -240,32 +288,52 @@ func (e *engine) callTask(ctx context.Context, name string, t *model.Task, dir s
 			if err != nil {
 				return fail(fmt.Errorf("input %s: %w", k, err))
 			}
+			if in.Sensitive {
+				e.known("input "+k, text)
+			}
 			v, err := model.ParseText(text, in.Type)
 			if err != nil {
 				return fail(fmt.Errorf("input %s: %w", k, err))
 			}
-			if given == nil {
-				given = map[string]any{}
-			}
 			given[k] = v
+		}
+	}
+	// A sensitive value is known before the schema checks it, so the error
+	// of the check hides it.
+	marks := map[string]any{}
+	for _, k := range slices.Sorted(maps.Keys(given)) {
+		switch {
+		case decl[k] != nil && decl[k].Sensitive:
+			e.known("input "+k, given[k])
+			marks[k] = true
+		case c.marks[k] != nil:
+			marks[k] = c.marks[k]
+		}
+	}
+	for k, in := range decl {
+		if in.Sensitive {
+			marks[k] = true
 		}
 	}
 	inputs, err := conform(decl, given)
 	if err != nil {
 		return fail(err)
 	}
-	tasks := map[string]any{}
+	tasks, taskMarks := map[string]any{}, map[string]any{}
 	for _, n := range t.Needs {
 		r := e.need(ctx, n, c.where(e))
 		tasks[n] = r.view()
+		if m := r.viewMarks(); m != nil {
+			taskMarks[n] = m
+		}
 		if r.outcome != success {
 			e.sayTask(label, "", "skipped: task %s it needs is %s", n, r.outcome)
 			return &taskResult{outcome: skipped, outputs: map[string]any{}, approval: r.approval}
 		}
 	}
-	scope := e.taskScope(dir, inputs, tasks, c)
+	scope := e.taskScope(dir, inputs, marks, tasks, taskMarks, c)
 	if c.plugin != nil {
-		scope = e.pluginScope(c.plugin.dir, inputs, c.unit)
+		scope = e.pluginScope(c.plugin.dir, inputs, marks, c.unit)
 	}
 	if u := c.unitRun; u != nil {
 		facts := scope.Vars["opstruss"].(map[string]any)
@@ -314,7 +382,7 @@ func (e *engine) callTask(ctx context.Context, name string, t *model.Task, dir s
 	if t.ForEach == nil {
 		return e.taskOnce(ctx, name, label, t, dir, scope, c)
 	}
-	items, err := forEachItems(t.ForEach, scope)
+	items, eachMarks, err := e.forEach(t.ForEach, scope)
 	if err != nil {
 		return fail(fmt.Errorf("for_each: %w", err))
 	}
@@ -332,7 +400,7 @@ func (e *engine) callTask(ctx context.Context, name string, t *model.Task, dir s
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			s := scope.With("each", map[string]any{"key": k, "value": items[k]})
+			s := scope.WithMarks("each", map[string]any{"key": k, "value": items[k]}, eachMarks)
 			r := e.taskOnce(ctx, name, label+"["+k+"]", t, dir, s, c)
 			mu.Lock()
 			results[k] = r
@@ -430,11 +498,11 @@ func (e *engine) stepsWithRetry(ctx context.Context, name, label string, t *mode
 		}
 	}
 	for i := 1; ; i++ {
-		tc := &taskCtx{e: e, name: name, label: label, dir: dir, scope: scope, steps: map[string]any{}, c: c}
+		tc := &taskCtx{e: e, name: name, label: label, dir: dir, scope: scope, steps: map[string]any{}, marks: map[string]any{}, c: c}
 		env, pass := c.envPass(t)
 		res := tc.run(ctx, t.Steps, defaults{shell: t.Shell, dir: t.Dir, env: env, pass: pass})
-		res.outputs = tc.values(t.Outputs)
-		js := tc.scopeNow().With("outputs", res.outputs)
+		res.outputs, res.marks = tc.values(t.Outputs)
+		js := tc.scopeNow().WithMarks("outputs", res.outputs, anyMarks(res.marks))
 		res = judge(res, t.FailedWhen, t.ChangedWhen, js)
 		done := res.outcome == success
 		if t.Retry != nil && t.Retry.Until != nil {
@@ -492,12 +560,13 @@ type taskCtx struct {
 
 	mu    sync.Mutex
 	steps map[string]any
+	marks map[string]any // of steps
 }
 
 func (tc *taskCtx) scopeNow() *expr.Scope {
 	tc.mu.Lock()
 	defer tc.mu.Unlock()
-	s := tc.scope.With("steps", maps.Clone(tc.steps))
+	s := tc.scope.WithMarks("steps", maps.Clone(tc.steps), anyMarks(maps.Clone(tc.marks)))
 	if tc.c.plugin != nil {
 		return s.WithKV(tc.e.newKV().get)
 	}
@@ -509,30 +578,40 @@ func (tc *taskCtx) scopeNow() *expr.Scope {
 	return s.With("locals", k.localsOf(f, tc.e.inputsOf(f))).WithKV(k.get)
 }
 
-func (tc *taskCtx) record(id string, v any) {
+func (tc *taskCtx) record(id string, r *taskResult) {
 	if id == "" {
 		return
 	}
 	tc.mu.Lock()
-	tc.steps[id] = v
+	tc.steps[id] = r.view()
+	if m := r.viewMarks(); m != nil {
+		tc.marks[id] = m
+	} else {
+		delete(tc.marks, id)
+	}
 	tc.mu.Unlock()
 }
 
 // values evaluates the outputs of a task with steps: each value: whose
 // references exist, and null for the others, so a task that failed still
-// gives what can be computed.
-func (tc *taskCtx) values(decl map[string]*model.Output) map[string]any {
-	out := map[string]any{}
+// gives what can be computed. An output that reads a sensitive value, or
+// is declared sensitive, is sensitive.
+func (tc *taskCtx) values(decl map[string]*model.Output) (map[string]any, map[string]any) {
+	out, marks := map[string]any{}, map[string]any{}
 	s := tc.scopeNow()
 	for name, o := range decl {
-		v, err := expr.EvalValue(o.Value, s)
+		v, m, err := expr.EvalMarked(o.Value, s)
 		if err != nil {
 			out[name] = nil
 			continue
 		}
 		out[name] = v
+		if m != nil || o.Sensitive {
+			marks[name] = true
+			tc.e.hide(v, true)
+		}
 	}
-	return out
+	return out, tc.e.markContent(out, marks, Event{Task: tc.label})
 }
 
 // run runs steps in order: a step that fails, unless continue_on_error,
@@ -542,11 +621,11 @@ func (tc *taskCtx) run(ctx context.Context, steps []*model.Step, d defaults) *ta
 	for i, s := range steps {
 		label := cmp.Or(s.Name, s.ID, tc.label+" step "+strconv.Itoa(i+1))
 		if res.outcome != success {
-			tc.record(s.ID, (&taskResult{outcome: skipped, outputs: map[string]any{}}).view())
+			tc.record(s.ID, &taskResult{outcome: skipped, outputs: map[string]any{}})
 			continue
 		}
 		r := tc.step(ctx, s, label, d)
-		tc.record(s.ID, r.view())
+		tc.record(s.ID, r)
 		res.changed = res.changed || r.changed
 		if r.outcome == failure || r.outcome == cancelled {
 			if (s.ContinueOnError || r.soft) && r.outcome == failure {
@@ -576,13 +655,13 @@ func (tc *taskCtx) step(ctx context.Context, s *model.Step, label string, d defa
 	if s.ForEach == nil {
 		return tc.stepOnce(ctx, s, label, d, scope)
 	}
-	items, err := forEachItems(s.ForEach, scope)
+	items, eachMarks, err := tc.e.forEach(s.ForEach, scope)
 	if err != nil {
 		return tc.fail(label, fmt.Errorf("for_each: %w", err))
 	}
 	results := map[string]*taskResult{}
 	for _, k := range slices.Sorted(maps.Keys(items)) {
-		r := tc.stepOnce(ctx, s, label+"["+k+"]", d, scope.With("each", map[string]any{"key": k, "value": items[k]}))
+		r := tc.stepOnce(ctx, s, label+"["+k+"]", d, scope.WithMarks("each", map[string]any{"key": k, "value": items[k]}, eachMarks))
 		results[k] = r
 		if r.outcome == failure && !s.ContinueOnError {
 			break
@@ -624,7 +703,7 @@ func (tc *taskCtx) stepOnce(ctx context.Context, s *model.Step, label string, d 
 		}
 	case s.Task != "":
 		res = tc.callStep(ctx, s, label, scope)
-		res = judge(res, s.FailedWhen, s.ChangedWhen, scope.With("outputs", res.outputs))
+		res = judge(res, s.FailedWhen, s.ChangedWhen, scope.WithMarks("outputs", res.outputs, anyMarks(res.marks)))
 	case len(s.Block) > 0:
 		res = tc.block(ctx, s, label, d.with(s.Shell, s.Dir, s.Env, s.Pass))
 	}
@@ -672,7 +751,7 @@ func (tc *taskCtx) callStep(ctx context.Context, s *model.Step, label string, sc
 	if s.Yes {
 		source = fmt.Sprintf("yes: true in task %s step %s", tc.name, cmp.Or(s.ID, label))
 	}
-	units, err := unitPatterns(s.Units, scope)
+	units, err := e.unitPatterns(s.Units, scope)
 	if err != nil {
 		return tc.fail(label, err)
 	}
@@ -701,12 +780,14 @@ func (tc *taskCtx) callStep(ctx context.Context, s *model.Step, label string, sc
 		}
 		return res
 	}
-	with, err := expr.EvalValue(anyMap(s.With), scope)
+	with, withMarks, err := expr.EvalMarked(anyMap(s.With), scope)
 	if err != nil {
 		return tc.fail(label, fmt.Errorf("with: %w", err))
 	}
+	e.hide(with, withMarks)
 	given, _ := with.(map[string]any)
-	c := call{yes: yes, source: source}
+	givenMarks, _ := withMarks.(map[string]any)
+	c := call{yes: yes, source: source, marks: givenMarks}
 	if t := f.in.Tasks[s.Task]; t != nil {
 		if f.node != nil {
 			c.frame = f
@@ -763,16 +844,19 @@ func (e *engine) relative(f *frame, units map[string]any) map[string]any {
 // unitPatterns reads units: patterns written in the file stay patterns,
 // while the result of a ${{ }} is taken as it is, so data from an event
 // cannot pick every instance.
-func unitPatterns(list []string, s *expr.Scope) ([]string, error) {
+func (e *engine) unitPatterns(list []string, s *expr.Scope) ([]string, error) {
 	var out []string
 	for _, u := range list {
 		if !expr.HasExpr(u) {
 			out = append(out, u)
 			continue
 		}
-		v, err := expr.EvalText(u, s)
+		v, sensitive, err := expr.EvalTextMarked(u, s)
 		if err != nil {
 			return nil, fmt.Errorf("units: %w", err)
+		}
+		if sensitive || e.redact.Contains(v) {
+			return nil, errors.New("units: a sensitive value is never the name of a unit, which events and records show")
 		}
 		if strings.Contains(v, "*") {
 			return nil, fmt.Errorf("units: %q is not a unit name; patterns are written in the file", v)
@@ -812,14 +896,34 @@ func judge(res *taskResult, failedWhen, changedWhen any, s *expr.Scope) *taskRes
 	return res
 }
 
-// forEachItems reads the for_each of a task or step: a map, or a list
-// whose strings are keys as they are and whose other items are keyed by
-// index.
-func forEachItems(v any, s *expr.Scope) (map[string]any, error) {
-	val, err := expr.EvalValue(v, s)
+// forEach reads the for_each of a task or step: a map, or a list whose
+// strings are keys as they are and whose other items are keyed by index;
+// with marks for each.value when the items are sensitive. A key shows in
+// events and records, so a sensitive value never is one: a sensitive list
+// goes through a map with keys of its own.
+func (e *engine) forEach(v any, s *expr.Scope) (map[string]any, any, error) {
+	val, marks, err := expr.EvalMarked(v, s)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+	var eachMarks any
+	if marks != nil {
+		e.hide(val, marks)
+		eachMarks = map[string]any{"value": true}
+		if _, list := val.([]any); list {
+			return nil, nil, errors.New("a sensitive list would make its items keys, which events and records show; give each item a key of its own with a map")
+		}
+	}
+	items, err := forEachItems(val)
+	for k := range items {
+		if err == nil && e.redact.Contains(k) {
+			err = errors.New("a key holds a sensitive value, and keys show in events and records")
+		}
+	}
+	return items, eachMarks, err
+}
+
+func forEachItems(val any) (map[string]any, error) {
 	items := map[string]any{}
 	switch x := val.(type) {
 	case map[string]any:
@@ -861,12 +965,19 @@ func conform(decl map[string]*model.Input, given map[string]any) (map[string]any
 
 // taskScope is what the expressions of a task read: its inputs with those
 // of the project, or of the instance of a component whose task it is, and
-// the locals and units there.
-func (e *engine) taskScope(dir string, inputs, tasks map[string]any, c call) *expr.Scope {
+// the locals and units there; marks and taskMarks say which inputs and
+// outputs of tasks are sensitive.
+func (e *engine) taskScope(dir string, inputs, marks, tasks, taskMarks map[string]any, c call) *expr.Scope {
 	f, k := c.where(e), e.newKV()
 	own := e.inputsOf(f)
 	all := maps.Clone(own)
 	maps.Copy(all, inputs)
+	inputMarks, localMarks := map[string]any{}, map[string]any{}
+	if f.node == nil {
+		maps.Copy(inputMarks, e.inputMarks)
+		maps.Copy(localMarks, e.localMarks)
+	}
+	maps.Copy(inputMarks, marks)
 	facts := e.facts(c.unit)
 	if c.unit == nil && f.node != nil {
 		facts["address"] = f.address
@@ -874,6 +985,20 @@ func (e *engine) taskScope(dir string, inputs, tasks map[string]any, c call) *ex
 	facts["dir"], facts["artifacts"], facts["temp"] = dir, e.run.Artifacts, e.run.Temp
 	facts["cwd"] = e.opts.Cwd
 	s := &expr.Scope{Dir: dir, Vars: map[string]any{"stack": e.p.StackName, "inputs": all, "locals": k.localsOf(f, own),
-		"opstruss": facts, "units": e.unitsView(f, slices.Sorted(maps.Keys(f.in.Units))), "tasks": tasks, "steps": map[string]any{}}}
+		"opstruss": facts, "units": e.unitsView(f, slices.Sorted(maps.Keys(f.in.Units))), "tasks": tasks, "steps": map[string]any{}},
+		Marks: map[string]any{}}
+	for name, m := range map[string]map[string]any{"inputs": inputMarks, "locals": localMarks, "tasks": taskMarks} {
+		if len(m) > 0 {
+			s.Marks[name] = m
+		}
+	}
 	return s.WithKV(k.get)
+}
+
+// anyMarks is m as marks: nil when it marks nothing.
+func anyMarks(m map[string]any) any {
+	if len(m) == 0 {
+		return nil
+	}
+	return m
 }

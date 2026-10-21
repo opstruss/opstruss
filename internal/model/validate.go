@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/opstruss/opstruss/internal/expr"
 	"github.com/opstruss/opstruss/internal/proc"
 )
 
@@ -103,6 +104,7 @@ func (c *checker) file() {
 	c.moves()
 	c.references()
 	c.unsupported()
+	c.sensitiveValues()
 }
 
 // component reads the component in dir once and checks its files as a
@@ -634,7 +636,10 @@ func (c *checker) unsupported() {
 	if p.MCP != nil {
 		c.add([]string{"mcp"}, "not supported yet")
 	}
-	c.sensitiveInputs([]string{"inputs"}, p.Inputs)
+	// A component keeps what it is given in the records of its units.
+	if p.component {
+		c.sensitiveInputs([]string{"inputs"}, p.Inputs)
+	}
 	for _, name := range slices.Sorted(maps.Keys(p.Outputs)) {
 		if p.Outputs[name].Sensitive {
 			c.add([]string{"outputs", name, "sensitive"}, "sensitive values are not supported yet")
@@ -647,31 +652,18 @@ func (c *checker) unsupported() {
 		}
 		c.sensitiveOutputs(at(path, "outputs"), u.Outputs)
 		for _, tn := range slices.Sorted(maps.Keys(u.Tasks)) {
-			c.unsupportedTask(at(path, "tasks", tn), u.Tasks[tn])
+			c.triggers(at(path, "tasks", tn), u.Tasks[tn])
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(p.Tasks)) {
-		c.unsupportedTask([]string{"tasks", name}, p.Tasks[name])
+		c.triggers([]string{"tasks", name}, p.Tasks[name])
 	}
 }
 
-func (c *checker) unsupportedTask(path []string, t *Task) {
+func (c *checker) triggers(path []string, t *Task) {
 	if t.On != nil {
 		c.add(at(path, "on"), "triggers are not supported yet")
 	}
-	c.sensitiveInputs(at(path, "inputs"), t.Inputs)
-	c.sensitiveOutputs(at(path, "outputs"), t.Outputs)
-	var walk func([]string, []*Step)
-	walk = func(path []string, steps []*Step) {
-		for i, s := range steps {
-			sp := at(path, strconv.Itoa(i))
-			c.sensitiveOutputs(at(sp, "outputs"), s.Outputs)
-			walk(at(sp, "block"), s.Block)
-			walk(at(sp, "rescue"), s.Rescue)
-			walk(at(sp, "always"), s.Always)
-		}
-	}
-	walk(at(path, "steps"), t.Steps)
 }
 
 func (c *checker) sensitiveInputs(path []string, inputs map[string]*Input) {
@@ -691,6 +683,149 @@ func (c *checker) sensitiveOutputs(path []string, outputs map[string]*Output) {
 	for _, name := range slices.Sorted(maps.Keys(outputs)) {
 		if outputs[name].Sensitive {
 			c.add(at(path, name, "sensitive"), "sensitive values are not supported yet")
+		}
+	}
+}
+
+// sensitiveValues keeps sensitive values out of the argv of programs,
+// which other users can read in the list of processes, and, while records
+// do not encrypt them, out of units.
+func (c *checker) sensitiveValues() {
+	p := c.p
+	marks := map[string]any{}
+	if in := inputMarks(p.Inputs); len(in) > 0 {
+		marks["inputs"] = in
+	}
+	if len(p.Secrets) > 0 {
+		marks["secrets"] = true
+	}
+	if l := p.LocalMarks(marks); len(l) > 0 {
+		marks["locals"] = l
+	}
+	for _, name := range slices.Sorted(maps.Keys(p.Units)) {
+		u, path := p.Units[name], []string{"units", name}
+		values := unitValues(u)
+		for _, key := range slices.Sorted(maps.Keys(values)) {
+			if reads(values[key], marks) {
+				c.add(at(path, strings.Split(key, ".")...), "a unit does not take sensitive values yet")
+			}
+		}
+		if u.Target != nil && keepsSensitive(u.Target) {
+			c.add(at(path, "uses"), "%s has sensitive inputs or outputs, which a unit does not keep yet", u.Uses)
+		}
+		for _, tn := range slices.Sorted(maps.Keys(u.Tasks)) {
+			c.argvSensitive(at(path, "tasks", tn), u.Tasks[tn], marks)
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(p.Tasks)) {
+		c.argvSensitive([]string{"tasks", name}, p.Tasks[name], marks)
+	}
+}
+
+// inputMarks marks the sensitive inputs among inputs.
+func inputMarks(inputs map[string]*Input) map[string]any {
+	out := map[string]any{}
+	for name, in := range inputs {
+		if in.Sensitive {
+			out[name] = true
+		}
+	}
+	return out
+}
+
+// reads says whether an expression in v reads a part that marks marks.
+func reads(v any, marks map[string]any) bool {
+	if len(marks) == 0 {
+		return false
+	}
+	use, err := expr.AnalyzeValue(v)
+	if err != nil {
+		return false
+	}
+	for _, r := range use.Refs {
+		if expr.MarkAt(marks, r.Path...) != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// keepsSensitive says whether a unit that uses t would keep a sensitive
+// value in its record: an input or output of t that is sensitive.
+func keepsSensitive(t *Target) bool {
+	in, _ := t.Inputs()
+	if len(inputMarks(in)) > 0 {
+		return true
+	}
+	var outs map[string]*Output
+	switch t.Kind {
+	case TargetTask:
+		outs = maps.Clone(t.Package.Plugin.Outputs.Declared)
+		if outs == nil {
+			outs = map[string]*Output{}
+		}
+		maps.Copy(outs, t.Package.Plugin.Tasks[t.Task].Outputs)
+	case TargetPlugin:
+		outs = t.Package.Plugin.Outputs.Declared
+	case TargetProject:
+		outs = t.project.Outputs
+	case TargetComponent:
+		if t.Component != nil {
+			for _, o := range t.Component.Outputs {
+				if o.Sensitive {
+					return true
+				}
+			}
+		}
+	}
+	for _, o := range outs {
+		if o.Sensitive {
+			return true
+		}
+	}
+	return false
+}
+
+// argvSensitive rejects a sensitive value in an item of the argv of a
+// program of t, whose own inputs add to what marks marks.
+func (c *checker) argvSensitive(path []string, t *Task, marks map[string]any) {
+	if in := inputMarks(t.Inputs); len(in) > 0 {
+		all := map[string]any{}
+		if m, ok := marks["inputs"].(map[string]any); ok {
+			maps.Copy(all, m)
+		}
+		maps.Copy(all, in)
+		marks = maps.Clone(marks)
+		marks["inputs"] = all
+	}
+	if len(marks) == 0 {
+		return
+	}
+	const msg = "a sensitive value cannot be an item of argv, which other users can read in the list of processes; pass it through env or stdin"
+	if reads(argv(t.Run), marks) {
+		c.add(at(path, "run"), msg)
+	}
+	c.callArgv(path, t.Calls, marks, msg)
+	var walk func([]string, []*Step)
+	walk = func(sp []string, steps []*Step) {
+		for i, s := range steps {
+			p := at(sp, strconv.Itoa(i))
+			if reads(argv(s.Run), marks) {
+				c.add(at(p, "run"), msg)
+			}
+			c.callArgv(p, s.Calls, marks, msg)
+			walk(at(p, "block"), s.Block)
+			walk(at(p, "rescue"), s.Rescue)
+			walk(at(p, "always"), s.Always)
+		}
+	}
+	walk(at(path, "steps"), t.Steps)
+}
+
+func (c *checker) callArgv(path []string, calls Calls, marks map[string]any, msg string) {
+	for _, name := range slices.Sorted(maps.Keys(calls)) {
+		if t, err := c.call(name); err == nil && t.Kind == TargetBuiltin && t.Task == "command" && reads(calls[name]["argv"], marks) {
+			c.add(at(path, name, "argv"), "%s", msg)
 		}
 	}
 }
