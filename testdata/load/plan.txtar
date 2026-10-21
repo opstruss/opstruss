@@ -1,6 +1,7 @@
-# Load: plan of 1,000 run units that did not change takes at most 2 s.
+# Load: plan of 1,000 run units that did not change takes at most 2 s, the
+# median of three plans, with no other script running.
 
 env HOME=$WORK/home
 exec sh -c '{ echo "name: big"; echo "units:"; for i in $(seq 1000); do printf "  u%s:\n    run: \"true\"\n    approval: auto\n" "$i"; done; } > opstruss.yaml'
 exec opstruss up
-within 2s opstruss plan
+within 3 2s opstruss plan

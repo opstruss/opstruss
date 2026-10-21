@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"os"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -43,19 +45,28 @@ func params(dir string) testscript.Params {
 			}
 			ts.Fatalf("%s did not appear", args[0])
 		},
-		// within runs a command and fails when it takes longer than a
-		// duration, for the load criteria.
+		// within runs a command n times and fails when the median takes
+		// longer than a duration, for the load criteria.
 		"within": func(ts *testscript.TestScript, neg bool, args []string) {
-			limit, err := time.ParseDuration(args[0])
-			if err != nil || len(args) < 2 {
-				ts.Fatalf("usage: within <duration> <command> [args...]")
+			if len(args) < 3 {
+				ts.Fatalf("usage: within <runs> <duration> <command> [args...]")
 			}
-			began := time.Now()
-			ts.Check(ts.Exec(args[1], args[2:]...))
-			if took := time.Since(began); took > limit {
-				ts.Fatalf("%s took %s, more than %s", strings.Join(args[1:], " "), took.Round(time.Millisecond), limit)
-			} else {
-				ts.Logf("%s took %s", strings.Join(args[1:], " "), took.Round(time.Millisecond))
+			n, err := strconv.Atoi(args[0])
+			limit, err2 := time.ParseDuration(args[1])
+			if err != nil || err2 != nil || n < 1 {
+				ts.Fatalf("usage: within <runs> <duration> <command> [args...]")
+			}
+			var took []time.Duration
+			for range n {
+				began := time.Now()
+				ts.Check(ts.Exec(args[2], args[3:]...))
+				took = append(took, time.Since(began))
+			}
+			slices.Sort(took)
+			median, what := took[n/2], strings.Join(args[2:], " ")
+			ts.Logf("%s took %v, median %s", what, took, median.Round(time.Millisecond))
+			if median > limit {
+				ts.Fatalf("%s took %s in the median of %d runs, more than %s", what, median.Round(time.Millisecond), n, limit)
 			}
 		},
 	}}

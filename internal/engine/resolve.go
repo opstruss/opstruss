@@ -52,7 +52,7 @@ func (e *engine) resolve(inst *instance, preview bool) (*resolved, error) {
 			}
 		}
 	}
-	s := e.scope(inst, inst.dir)
+	s := e.scope(inst.unit, inst, inst.dir)
 	var err error
 	if r.cmd, err = command(u.Run, s); err != nil {
 		return nil, fmt.Errorf("run: %w", err)

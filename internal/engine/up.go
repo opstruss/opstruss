@@ -504,7 +504,7 @@ func (e *engine) attempts(ctx context.Context, inst *instance, r *resolved, rec 
 		ferr := outcomeErr(res)
 		done := ferr == nil
 		if retry != nil && retry.Until != nil {
-			s := e.scope(inst, inst.dir)
+			s := e.scope(inst.unit, inst, inst.dir)
 			s.Vars["outputs"] = res.Outputs
 			ok, err := expr.EvalCondition(retry.Until, s)
 			if err != nil {

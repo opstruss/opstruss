@@ -22,6 +22,16 @@ func TestCriteria(t *testing.T) {
 	testscript.Run(t, params("testdata/criteria"))
 }
 
+// TestLoad runs the load criteria in testdata/load after TestCriteria, as
+// a test of its own, so no other script competes for the machine while
+// it measures.
+func TestLoad(t *testing.T) {
+	if os.Getenv("OPSTRUSS_CRITERIA") == "" {
+		t.Skip("set OPSTRUSS_CRITERIA=1, as make criteria does")
+	}
+	testscript.Run(t, params("testdata/load"))
+}
+
 // fakecloud makes resources that are files in a directory, each holding
 // the OPSTRUSS_STATE_KEY of the unit that made it, as a cloud tags a
 // resource, so an up that runs again finds what an earlier attempt made:

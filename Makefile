@@ -8,7 +8,7 @@ test:
 	go test -race -tags failpoints -run 'TestScripts/crash' .
 
 criteria:
-	OPSTRUSS_CRITERIA=1 go test -tags failpoints -timeout 30m -run TestCriteria .
+	OPSTRUSS_CRITERIA=1 go test -tags failpoints -timeout 30m -run 'TestCriteria|TestLoad' .
 
 lint:
 	golangci-lint run

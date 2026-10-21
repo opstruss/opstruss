@@ -164,7 +164,7 @@ func (e *engine) expand(name string) ([]*instance, error) {
 			return nil, fmt.Errorf("if and for_each of %s are known when the run starts, but this run changes %s first; run opstruss up %s, then this", name, up, up)
 		}
 	}
-	scope := e.scope(nil, dir)
+	scope := e.scope(name, nil, dir)
 	if u.If != nil {
 		ok, err := expr.EvalCondition(u.If, scope)
 		if err != nil {
@@ -232,11 +232,16 @@ func (e *engine) changing(v any) string {
 	return ""
 }
 
-// scope is what the expressions of a unit read: inst is nil for its if and
-// for_each.
-func (e *engine) scope(inst *instance, dir string) *expr.Scope {
+// scope is what the expressions of unit read, which holds only the units
+// it depends on, or of the project outputs when unit is "": inst is nil
+// for if and for_each, which come before the instances.
+func (e *engine) scope(unit string, inst *instance, dir string) *expr.Scope {
+	names := e.p.Order
+	if unit != "" {
+		names = e.p.Deps[unit]
+	}
 	vars := map[string]any{"stack": e.p.StackName, "inputs": e.inputs, "locals": e.locals,
-		"opstruss": e.facts(inst), "units": e.unitsView()}
+		"opstruss": e.facts(inst), "units": e.unitsView(names)}
 	if inst != nil && inst.def.ForEach != nil {
 		vars["each"] = map[string]any{"key": inst.key, "value": inst.each}
 	}
@@ -246,12 +251,15 @@ func (e *engine) scope(inst *instance, dir string) *expr.Scope {
 // unitsView is units.<name>: the outputs of this run for the units it ran,
 // and the stored ones for the others, with outcome, changed, and plan
 // once a pass of this run reached them; a unit with for_each is a map of
-// its instances.
-func (e *engine) unitsView() map[string]any {
+// its instances. It holds the units in names.
+func (e *engine) unitsView(names []string) map[string]any {
 	e.mu.Lock()
-	byUnit := maps.Clone(e.byUnit)
 	views := map[string]map[string]any{}
-	for name, insts := range byUnit {
+	for _, name := range names {
+		insts, ok := e.byUnit[name]
+		if !ok {
+			continue
+		}
 		byKey := map[string]any{}
 		for _, inst := range insts {
 			v := map[string]any{"outputs": inst.outputsNow()}
@@ -272,7 +280,7 @@ func (e *engine) unitsView() map[string]any {
 	// order, so the units an expression may read are expanded already.
 	if !inPass {
 		var addrs []string
-		for name := range e.p.Units {
+		for _, name := range names {
 			if views[name] != nil {
 				continue
 			}

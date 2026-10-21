@@ -35,6 +35,7 @@ jobs:
 
   criteria:
     strategy:
+      fail-fast: false
       matrix:
         os:
           - ubuntu-latest
