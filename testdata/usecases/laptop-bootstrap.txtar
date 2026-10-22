@@ -1,0 +1,292 @@
+# A workstation set up from a dotfiles repository: run units that run
+# again only when their files change, units for one OS, a tool that an
+# earlier unit installs, a public key handed from one unit to the next, a
+# secret from gh, stacks as contexts, and down of what a unit made.
+
+env HOME=$WORK/home
+env USER=rina
+env SOPS_AGE_KEY_FILE=$WORK/age/keys.txt
+env PATH=$WORK/fakes:$PATH
+exec chmod 755 fakes/brew fakes/sudo fakes/apt-get fakes/stow.later fakes/defaults fakes/killall fakes/mise fakes/gh
+exec chmod 755 dotfiles/scripts/apt.sh dotfiles/scripts/macos-defaults.sh dotfiles/scripts/git-config.sh dotfiles/scripts/ssh-key.sh dotfiles/scripts/github-key.sh
+mkdir $HOME
+cd dotfiles
+exec opstruss init
+stdout 'wrote .sops.yaml'
+
+# a new machine: links needs stow, which brew or apt installs in the same
+# run, so plan only warns and links checks again at its turn; needs to the
+# unit of the other OS holds, and macos still asks
+exec opstruss plan --stack work
+stderr '^work/links: requires: stow is not in PATH; planned at its turn, after work/(brew|apt)$'
+[darwin] stdout '^work/brew: will run: new$'
+[darwin] stdout '^work/macos: will run: new$'
+[darwin] ! stdout work/apt
+[linux] stdout '^work/apt: will run: new$'
+[linux] ! stdout 'work/(brew|macos)'
+[darwin] ! exec opstruss up --stack work
+[darwin] stdout '^work/macos: will run: new; needs approval, stopped at plan$'
+[!darwin] exec opstruss up --stack work
+stdout '^work/links: up: done$'
+stdout '^work/ssh-key: up: done$'
+stdout '^work/github-key: up: done$'
+stdout '^work/tools: up: done$'
+grep '^stow --restow --target=.*/home zsh git nvim ssh mise$' $WORK/calls
+grep '^mise install$' $WORK/calls
+[darwin] grep '^brew bundle --file Brewfile --no-upgrade$' $WORK/calls
+[linux] grep '^apt-get install -y --no-install-recommends stow jq$' $WORK/calls
+[darwin] exec opstruss up macos --stack work --yes
+[darwin] stdout '^work/macos: up: done$'
+[darwin] grep '^defaults write com.apple.dock autohide -bool true$' $WORK/calls
+[darwin] grep '^killall Dock Finder$' $WORK/calls
+
+# git has the identity of the stack; the public key of ssh-key went to
+# GitHub under the name of this machine, with the token from gh, which no
+# file of OpsTruss holds in plain text
+exec git config --global user.email
+stdout '^rina@acme.com$'
+exists $HOME/.ssh/id_ed25519
+exec sh -c 'test "$(jq -r ".[0].key" ../fakes/keys.json)" = "$(cut -d" " -f1,2 $HOME/.ssh/id_ed25519.pub)"'
+exec jq -r '.[0].title' ../fakes/keys.json
+stdout ' \(work\)$'
+grep '^gh api user/keys token=gho_fake0123456789$' $WORK/calls
+! exec grep -r gho_fake .opstruss
+
+# nothing changed, nothing runs, also from another directory with -C
+exec opstruss up --stack work --yes
+stdout '^work/github-key: unchanged$'
+! stdout 'up: done'
+cd $WORK
+exec opstruss -C dotfiles up --stack work --yes
+! stdout 'up: done'
+cd dotfiles
+
+# a package more runs only the unit of its file
+[darwin] cp Brewfile.more Brewfile
+[linux] cp packages.more packages.txt
+exec opstruss up --stack work --yes
+[darwin] stdout '^work/brew: up: done$'
+[linux] stdout '^work/apt: up: done$'
+stdout '^work/links: unchanged$'
+stdout '^work/github-key: unchanged$'
+
+# the personal stack has its own records and identity
+exec opstruss up git --stack personal
+stdout '^personal/git: up: done$'
+exec git config --global user.email
+stdout '^rina@example.net$'
+
+# the machine goes back: down removes the key from GitHub with the token
+# kept in its record, then the symlinks
+exec opstruss down github-key --stack work --yes
+stdout '^work/github-key: down: done$'
+exec jq length ../fakes/keys.json
+stdout '^0$'
+grep '^gh api -X token=gho_fake0123456789$' $WORK/calls
+exec opstruss down --stack work --yes
+stdout '^work/tools: forgotten without a down program$'
+stdout '^work/links: down: done$'
+grep '^stow --delete --target=.*/home zsh git nvim ssh mise$' $WORK/calls
+
+-- fakes/brew --
+#!/bin/sh
+# brew bundle installs what the Brewfile names, stow among them.
+echo "brew $*" >> "${0%/*}/../calls"
+cp "${0%/*}/stow.later" "${0%/*}/stow"
+-- fakes/sudo --
+#!/bin/sh
+# sudo -n, with a session from sudo -v before: the command as it is.
+[ "$1" = -n ] && shift
+exec "$@"
+-- fakes/apt-get --
+#!/bin/sh
+# apt-get install installs the packages it names, stow among them.
+echo "apt-get $*" >> "${0%/*}/../calls"
+cp "${0%/*}/stow.later" "${0%/*}/stow"
+-- fakes/stow.later --
+#!/bin/sh
+echo "stow $*" >> "${0%/*}/../calls"
+-- fakes/defaults --
+#!/bin/sh
+echo "defaults $*" >> "${0%/*}/../calls"
+-- fakes/killall --
+#!/bin/sh
+echo "killall $*" >> "${0%/*}/../calls"
+-- fakes/mise --
+#!/bin/sh
+echo "mise $*" >> "${0%/*}/../calls"
+-- fakes/gh --
+#!/bin/sh
+# gh, with the SSH keys of the user in keys.json, which keeps a key
+# without its comment, as GitHub does.
+keys="${0%/*}/keys.json"
+[ -f "$keys" ] || echo '[]' > "$keys"
+echo "gh $1 $2 token=${GH_TOKEN:-none}" >> "${0%/*}/../calls"
+case "$1 $2" in
+"auth token") echo gho_fake0123456789 ;;
+"api user/keys")
+  if [ "$3" = --jq ]; then
+    jq -r "$4" "$keys"
+    exit
+  fi
+  title=${4#title=}
+  key=$(echo "${6#key=}" | cut -d' ' -f1,2)
+  jq --arg t "$title" --arg k "$key" '. + [{id: (length + 1), title: $t, key: $k}]' "$keys" > "$keys.new"
+  mv "$keys.new" "$keys"
+  ;;
+"api -X")
+  jq --argjson id "${4#user/keys/}" 'map(select(.id != $id))' "$keys" > "$keys.new"
+  mv "$keys.new" "$keys"
+  ;;
+esac
+-- dotfiles/opstruss.yaml --
+# opstruss.yaml
+name: dotfiles
+description: Set up a workstation from this repository
+
+inputs:
+  git_name:
+    type: string
+    default: Rina Putri
+  git_email:
+    type: string
+    required: true
+
+stacks:                                    # konteks; OS dibaca dari opstruss.os
+  work:
+    with: {git_email: rina@acme.com}
+    approval: auto
+  personal:
+    with: {git_email: rina@example.net}
+    approval: auto
+
+secrets:
+  github:
+    run: [gh, auth, token]                 # gh auth login dijalankan sebelum OpsTruss (non-interaktif)
+
+units:
+  brew:
+    if: opstruss.os == 'darwin'            # fakta mesin: diketahui saat plan
+    run: [brew, bundle, --file, Brewfile, --no-upgrade]
+    requires: [brew]
+    sources: [Brewfile]
+    timeout: 1h
+  apt:
+    if: opstruss.os == 'linux'
+    run: [./scripts/apt.sh, packages.txt]
+    requires: [apt-get, sudo]
+    sources: [packages.txt]
+  links:
+    run: stow --restow --target="$HOME" zsh git nvim ssh mise   # shell: $HOME dari environment dasar
+    down: stow --delete --target="$HOME" zsh git nvim ssh mise
+    requires: [stow]                       # dipasang brew atau apt di run ini: diperiksa di gilirannya
+    needs: [brew, apt]                     # yang hilang karena if dianggap terpenuhi
+    sources: [zsh/**, git/**, nvim/**, ssh/**, mise/**]
+  macos:
+    if: opstruss.os == 'darwin'
+    run: [./scripts/macos-defaults.sh]     # ikut digest: program ber-path relatif
+    approval: ask                          # mengubah pengaturan sistem: tetap ditanya
+  git:
+    run: [./scripts/git-config.sh]
+    env:
+      GIT_NAME: ${{ inputs.git_name }}
+      GIT_EMAIL: ${{ inputs.git_email }}
+  tools:
+    run: [mise, install]
+    requires: [mise]
+    needs: [links]                         # ~/.config/mise/config.toml datang dari stow
+    sources: [mise/**]
+    timeout: 1h
+  ssh-key:
+    run: [./scripts/ssh-key.sh]            # buat ~/.ssh/id_ed25519 bila belum ada
+    outputs:
+      public_key: {type: string}
+      fingerprint: {type: string}
+  github-key:
+    run: [./scripts/github-key.sh]
+    down: [./scripts/github-key.sh, remove]
+    env:
+      GH_TOKEN: ${{ secrets.github }}
+      PUBLIC_KEY: ${{ units['ssh-key'].outputs.public_key }}
+      TITLE: ${{ opstruss.host }} (${{ stack }})
+-- dotfiles/Brewfile --
+brew "stow"
+brew "jq"
+-- dotfiles/Brewfile.more --
+brew "stow"
+brew "jq"
+cask "wezterm"
+-- dotfiles/packages.txt --
+# paket dasar
+stow
+jq
+-- dotfiles/packages.more --
+# paket dasar
+stow
+jq
+ripgrep
+-- dotfiles/zsh/.zshrc --
+export EDITOR=nvim
+-- dotfiles/git/.config/git/ignore --
+.DS_Store
+-- dotfiles/nvim/.config/nvim/init.lua --
+vim.opt.number = true
+-- dotfiles/ssh/.ssh/config --
+Host *
+  AddKeysToAgent yes
+-- dotfiles/mise/.config/mise/config.toml --
+[tools]
+node = "22"
+-- dotfiles/scripts/apt.sh --
+#!/usr/bin/env bash
+# apt.sh <file>: pasang paket dari daftar.  sudo -n: run tanpa terminal, pakai sesi sudo -v sebelumnya.
+set -euo pipefail
+sudo -n true 2>/dev/null || { echo "jalankan 'sudo -v' dulu, lalu ulangi opstruss up" >&2; exit 1; }
+mapfile -t pkgs < <(grep -v '^#' "$1" | grep -v '^$')
+sudo -n apt-get install -y --no-install-recommends "${pkgs[@]}"
+-- dotfiles/scripts/macos-defaults.sh --
+#!/usr/bin/env bash
+# macos-defaults.sh: pengaturan yang sama di setiap Mac; aman diulang.
+set -euo pipefail
+defaults write com.apple.dock autohide -bool true
+defaults write com.apple.dock show-recents -bool false
+defaults write NSGlobalDomain KeyRepeat -int 2
+defaults write NSGlobalDomain InitialKeyRepeat -int 15
+defaults write com.apple.finder AppleShowAllFiles -bool true
+killall Dock Finder 2>/dev/null || true
+-- dotfiles/scripts/git-config.sh --
+#!/usr/bin/env bash
+# git-config.sh: identitas dan kebiasaan git dari env.
+set -euo pipefail
+git config --global user.name "$GIT_NAME"
+git config --global user.email "$GIT_EMAIL"
+git config --global init.defaultBranch main
+git config --global pull.rebase true
+-- dotfiles/scripts/ssh-key.sh --
+#!/usr/bin/env bash
+# ssh-key.sh: buat kunci ed25519 bila belum ada; output public key dan fingerprint.
+set -euo pipefail
+key="$HOME/.ssh/id_ed25519"
+if [ -f "$key" ]; then
+  echo '{"changed": false}' > "$OPSTRUSS_RESULT"
+else
+  mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
+  ssh-keygen -q -t ed25519 -N "" -C "$USER@$(hostname -s)" -f "$key"   # tanpa passphrase: run tanpa terminal
+fi
+jq -n --arg pub "$(cat "$key.pub")" --arg fp "$(ssh-keygen -lf "$key.pub" | awk '{print $2}')" \
+  '{public_key: $pub, fingerprint: $fp}' > "$OPSTRUSS_OUTPUT"
+-- dotfiles/scripts/github-key.sh --
+#!/usr/bin/env bash
+# github-key.sh [remove]: daftarkan public key mesin ini di GitHub, atau hapus saat down.
+set -euo pipefail
+key=$(cut -d' ' -f1,2 <<<"$PUBLIC_KEY")
+id=$(gh api user/keys --jq ".[] | select(.key == \"$key\") | .id")
+if [ "${1:-}" = remove ]; then
+  [ -z "$id" ] || gh api -X DELETE "user/keys/$id"
+  exit 0
+fi
+if [ -n "$id" ]; then
+  echo '{"changed": false}' > "$OPSTRUSS_RESULT"
+else
+  gh api user/keys -f title="$TITLE" -f key="$PUBLIC_KEY" > /dev/null
+fi

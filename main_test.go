@@ -41,6 +41,13 @@ func TestScripts(t *testing.T) {
 	testscript.Run(t, params("testdata/script"))
 }
 
+// TestUseCases runs the projects of real use in testdata/usecases: each
+// .txtar file holds a whole project as its users write it, with fakes for
+// the tools and services it talks to.
+func TestUseCases(t *testing.T) {
+	testscript.Run(t, params("testdata/usecases"))
+}
+
 func params(dir string) testscript.Params {
 	return testscript.Params{Dir: dir, Setup: func(env *testscript.Env) error {
 		// How long the load scripts run: 30 seconds in make criteria, ten
