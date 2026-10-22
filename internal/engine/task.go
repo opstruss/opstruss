@@ -383,20 +383,27 @@ func (e *engine) callTask(ctx context.Context, name string, t *model.Task, dir s
 			return &taskResult{outcome: skipped, outputs: map[string]any{}, approval: true}
 		}
 	}
-	lock := name
-	if f := c.where(e); f.node != nil && c.plugin == nil {
-		// The task of an instance of a component has a lock of its own.
-		lock = e.short(f.address) + "/" + name
+	if c.plugin == nil && c.unitRun == nil {
+		// Only a task of the project takes a concurrency lock: a task of a
+		// plugin is one operation, and the task that a unit runs is held
+		// by the lock of the unit's address, as a run unit is.
+		lock := name
+		if f := c.where(e); f.node != nil {
+			// The task of an instance of a component has a lock of its own.
+			lock = e.short(f.address) + "/" + name
+		}
+		var release func()
+		var skip bool
+		ctx, release, skip, err = e.taskLock(ctx, lock, t, scope)
+		if err != nil {
+			return fail(err)
+		}
+		if skip {
+			e.sayTask(label, "", "skipped: a run of %s is going on, and concurrency is skip", name)
+			return &taskResult{outcome: skipped, outputs: map[string]any{}}
+		}
+		defer release()
 	}
-	ctx, release, skip, err := e.taskLock(ctx, lock, t, scope)
-	if err != nil {
-		return fail(err)
-	}
-	if skip {
-		e.sayTask(label, "", "skipped: a run of %s is going on, and concurrency is skip", name)
-		return &taskResult{outcome: skipped, outputs: map[string]any{}}
-	}
-	defer release()
 	if t.ForEach == nil {
 		return e.taskOnce(ctx, name, label, t, dir, scope, c)
 	}

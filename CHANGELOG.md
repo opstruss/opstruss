@@ -390,11 +390,14 @@ minor release can change what a project, a component, or a plugin relies on.
   `approval: ask` stops without `--yes`, and `yes: true` on a `task:` step
   approves that call, but only plans this run read as exact, with the same
   digest.
-- `concurrency` keeps one call of a task at a time in a stack and checkout,
-  through a lock file in `.opstruss/tasks/<stack>/`: `queue` waits, `skip`
-  leaves the call out, `cancel` stops the run that holds it when that run
-  started with the same task, `parallel` takes no lock, and `group` gives
-  one lock per value.
+- `concurrency` keeps one call of a task at a time in a stack and
+  checkout, through a lock file in `.opstruss/tasks/<stack>/`: `queue`
+  waits, `skip` leaves the call out, `cancel` stops the run that holds it
+  when that run started with the same task, `parallel` takes no lock, and
+  `group` gives one lock per value. It holds the tasks of the project as
+  the command line, MCP, a trigger, or a step `task:` calls them; a task
+  of a plugin, which is one operation, and the task that a unit runs,
+  which the lock of the unit's address holds, take no lock.
 - The exit code of a task follows the outcome of the task called: 0, 1
   when it failed, and 2 when it stopped at plan for approval.
 - At a terminal, `up`, `down`, and a task with `approval: ask` ask before

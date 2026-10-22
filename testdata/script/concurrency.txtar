@@ -3,6 +3,7 @@
 # group gives one lock per value.
 
 env HOME=$WORK/home
+exec chmod 755 meet.sh
 
 # skip leaves the task out while another call holds it
 exec opstruss hold-skip &
@@ -33,9 +34,32 @@ exec opstruss review --pr two
 wait
 exists done-one
 
+# a task of a plugin is one operation, and the task that a unit runs is
+# held by the lock of its address, so neither takes a lock: each call
+# waits for the other, which it meets only when they run at once
+exec opstruss fan
+exec opstruss up --yes
+stdout '^default/twin\[b\]: up: done$'
+
 -- opstruss.yaml --
 name: shop
+uses:
+  pair: ./pair
+units:
+  twin:
+    uses: meet
+    for_each: [a, b]
+    with: {name: '${{ each.value }}', dir: unit}
+    approval: auto
 tasks:
+  meet:
+    inputs:
+      name: {type: string, required: true}
+      dir: {type: string, required: true}
+    run: [./meet.sh, '${{ inputs.dir }}', '${{ inputs.name }}']
+  fan:
+    for_each: [a, b]
+    pair.meet: {name: '${{ each.value }}', dir: plugin}
   hold-skip:
     concurrency: skip
     run: touch started-skip; sleep 1
@@ -58,3 +82,23 @@ start
 end
 -- cancel.want --
 finished
+-- meet.sh --
+#!/bin/sh
+# meet.sh <dir> <name>: marks its name in dir, then waits up to five
+# seconds for both a and b there.
+mkdir -p "$1"
+touch "$1/$2"
+i=0
+while [ ! -e "$1/a" ] || [ ! -e "$1/b" ]; do
+  i=$((i + 1))
+  [ "$i" -lt 100 ] || exit 1
+  sleep 0.05
+done
+-- pair/opstruss.plugin.yaml --
+name: pair
+tasks:
+  meet:
+    inputs:
+      name: {type: string, required: true}
+      dir: {type: string, required: true}
+    run: [sh, -c, 'exec ./meet.sh "$INPUT_DIR" "$INPUT_NAME"']   # in the directory of the caller
