@@ -1,0 +1,228 @@
+# A database moves from db-old to db-new in five phases that take hours
+# in real use. Each phase is a unit, so its record is a checkpoint: a
+# phase that fails stops the chain, and up again starts at that phase,
+# whose program learns from OPSTRUSS_REASON that an attempt came before
+# and clears what it left. A flaky upload retries only itself, a phase
+# run again with the same result leaves the phases after it alone, and a
+# change at the end runs only the end. pg_dump, pg_restore, psql, aws,
+# and dnsctl are fakes.
+
+env HOME=$WORK/home
+env PATH=$WORK/fakes:$PATH
+exec chmod 755 fakes/pg_dump fakes/pg_restore fakes/psql fakes/aws fakes/dnsctl
+exec opstruss validate
+stdout '^valid$'
+
+# the upload fails once and retries alone; the restore runs out of disk
+# on db-new, so the chain stops there
+! exec opstruss up --yes
+stdout '^default/dump: up: done$'
+stdout '^default/archive: up: done$'
+stdout '^default/restore \| pg_restore: error: could not extend file: No space left on device$'
+stderr '^default/restore: the program exited with 1$'
+stdout '^default/verify: skipped: default/restore is failure$'
+! stdout 'default/(verify|cutover): up'
+grep -count=2 '^aws s3 cp ' calls
+grep -count=1 '^pg_restore ' calls
+
+# plan shows where the chain stands
+exec opstruss plan
+stdout '^default/dump: unchanged$'
+stdout '^default/archive: unchanged$'
+stdout '^default/restore: will run: up of run \S+ \(pid [0-9]+ on .*\) did not finish$'
+stdout '^default/verify: planned after default/restore$'
+stdout '^default/cutover: planned after default/verify$'
+
+# with room on db-new, up starts at the restore: what the failed attempt
+# left goes first, and the phases after it follow
+rm servers/db-new/disk-full
+exec opstruss up --yes
+stdout '^default/dump: unchanged$'
+stdout '^default/archive: unchanged$'
+stdout '^default/restore: up: done$'
+stdout '^default/verify: up: done$'
+stdout '^default/cutover: up: done$'
+grep '^psql --host db-new -c DROP DATABASE IF EXISTS shop postgres$' calls
+grep -count=2 '^pg_restore ' calls
+grep '^dnsctl set db.internal CNAME db-new --ttl 300$' calls
+cmp servers/db-old/shop servers/db-new/shop
+grep -count=1 '^pg_dump ' calls
+grep -count=2 '^aws ' calls
+
+# every checkpoint holds, so up again runs nothing
+exec opstruss up --yes
+! stdout 'up: done'
+grep -count=2 '^pg_restore ' calls
+
+# a dump taken again gives the same file, so no phase after it runs
+exec opstruss up dump --force --yes
+stdout '^default/dump: up: done$'
+exec opstruss up --yes
+! stdout 'up: done'
+grep -count=2 '^pg_dump ' calls
+grep -count=2 '^aws ' calls
+grep -count=2 '^pg_restore ' calls
+
+# a new TTL for the name runs only the cutover
+exec opstruss up --yes --input ttl=60
+stdout '^default/cutover: up: done$'
+! stdout 'default/(dump|archive|restore|verify): up'
+grep '^dnsctl set db.internal CNAME db-new --ttl 60$' calls
+
+-- flaky --
+-- servers/db-new/disk-full --
+-- servers/db-old/shop --
+table customers
+row customers 1
+row customers 2
+table orders
+row orders 1
+row orders 2
+row orders 3
+-- fakes/pg_dump --
+#!/bin/sh
+# pg_dump --host <server> --format custom --file <file> <db>: copies the
+# database file servers/<server>/<db> of the tests to <file>.
+dir=${0%/*}/..
+echo "pg_dump $*" >> "$dir/calls"
+while [ $# -gt 1 ]; do
+  case $1 in
+  --host) host=$2; shift 2 ;;
+  --file) file=$2; shift 2 ;;
+  *) shift ;;
+  esac
+done
+cp "$dir/servers/$host/$1" "$file"
+-- fakes/pg_restore --
+#!/bin/sh
+# pg_restore --host <server> --create --dbname postgres <file>: makes the
+# database file of the tests from <file>; disk-full on the server stops it
+# halfway, and a database that is already there stops it at once.
+dir=${0%/*}/..
+echo "pg_restore $*" >> "$dir/calls"
+host=$2
+file=$6
+db=$(basename "$file" .dump)
+if [ -e "$dir/servers/$host/$db" ]; then
+  echo "pg_restore: error: database \"$db\" already exists" >&2
+  exit 1
+fi
+if [ -e "$dir/servers/$host/disk-full" ]; then
+  head -n 3 "$file" > "$dir/servers/$host/$db"
+  echo "pg_restore: error: could not extend file: No space left on device" >&2
+  exit 1
+fi
+cp "$file" "$dir/servers/$host/$db"
+-- fakes/psql --
+#!/bin/sh
+# psql --host <server> [-At] -c <sql> <db>: answers the three statements of
+# this project from the database files of the tests.
+dir=${0%/*}/..
+echo "psql $*" >> "$dir/calls"
+host=$2
+[ "$3" = -At ] && shift
+sql=$4
+case $sql in
+"DROP DATABASE IF EXISTS "*) rm -f "$dir/servers/$host/${sql##* }" ;;
+*pg_tables*) grep -c '^table ' "$dir/servers/$host/$5" ;;
+*n_live_tup*) grep -c '^row ' "$dir/servers/$host/$5" ;;
+*) echo "psql: unknown statement: $sql" >&2; exit 1 ;;
+esac
+-- fakes/aws --
+#!/bin/sh
+# aws s3 cp <file> <url>: while flaky is there, the first try takes it
+# away and fails, as a dropped connection does.
+dir=${0%/*}/..
+echo "aws $*" >> "$dir/calls"
+if [ -e "$dir/flaky" ]; then
+  rm "$dir/flaky"
+  echo "upload failed: $3 to $4 Connection was closed before we received a valid response" >&2
+  exit 1
+fi
+-- fakes/dnsctl --
+#!/bin/sh
+echo "dnsctl $*" >> "${0%/*}/../calls"
+-- opstruss.yaml --
+name: db-move
+description: Move the shop database from db-old to db-new, one checkpoint per phase
+
+inputs:
+  database:
+    type: string
+    default: shop
+  ttl:
+    type: integer
+    description: TTL of db.internal after the cutover
+    default: 300
+
+units:
+  dump:
+    description: Dump the database on db-old
+    run: |
+      mkdir -p work
+      pg_dump --host db-old --format custom --file "work/$DB.dump" "$DB"
+      echo "file=work/$DB.dump" >> "$OPSTRUSS_OUTPUT"
+      echo "checksum=$(cksum < "work/$DB.dump" | cut -d' ' -f1)" >> "$OPSTRUSS_OUTPUT"
+    env:
+      DB: ${{ inputs.database }}
+    outputs:
+      file: {}
+      checksum: {}
+
+  archive:
+    description: Keep the dump in object storage before db-new is touched
+    run: |
+      url=s3://acme-backups/migrations/$DB-$CHECKSUM.dump
+      aws s3 cp "$FILE" "$url"
+      echo "url=$url" >> "$OPSTRUSS_OUTPUT"
+    env:
+      DB: ${{ inputs.database }}
+      FILE: ${{ units.dump.outputs.file }}
+      CHECKSUM: ${{ units.dump.outputs.checksum }}
+    retry:
+      attempts: 3
+      delay: 1s
+    outputs:
+      url: {}
+
+  restore:
+    description: Restore the dump on db-new
+    needs: [archive]
+    run: |
+      if [ "$OPSTRUSS_REASON" = interrupted ]; then
+        # an attempt before this one failed or was cut off halfway
+        psql --host db-new -c "DROP DATABASE IF EXISTS $DB" postgres
+      fi
+      pg_restore --host db-new --create --dbname postgres "$FILE"
+      echo "tables=$(psql --host db-new -At -c "SELECT count(*) FROM pg_tables WHERE schemaname = 'public'" "$DB")" >> "$OPSTRUSS_OUTPUT"
+      echo "checksum=$CHECKSUM" >> "$OPSTRUSS_OUTPUT"
+    env:
+      DB: ${{ inputs.database }}
+      FILE: ${{ units.dump.outputs.file }}
+      CHECKSUM: ${{ units.dump.outputs.checksum }}
+    outputs:
+      tables: {type: integer}
+      checksum: {}
+
+  verify:
+    description: Compare the rows on both servers
+    run: |
+      rows() { psql --host "$1" -At -c 'SELECT sum(n_live_tup) FROM pg_stat_user_tables' "$DB"; }
+      old=$(rows db-old)
+      new=$(rows db-new)
+      if [ "$old" != "$new" ]; then
+        echo "rows differ: $old on db-old, $new on db-new" >&2
+        exit 1
+      fi
+      echo "rows=$new" >> "$OPSTRUSS_OUTPUT"
+    env:
+      DB: ${{ inputs.database }}
+      RESTORED: ${{ units.restore.outputs.checksum }}
+    outputs:
+      rows: {type: integer}
+
+  cutover:
+    description: Point db.internal at db-new
+    run: [dnsctl, set, db.internal, CNAME, db-new, --ttl, "${{ inputs.ttl }}"]
+    env:
+      ROWS: ${{ units.verify.outputs.rows }}

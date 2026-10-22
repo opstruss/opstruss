@@ -1,0 +1,229 @@
+# A firewall change in production waits hours for the change board. A
+# proposal plans it, opens a change request with the plan, and keeps the
+# plan's digest in kv for the approval window; the ticket system's
+# webhook approves it later, and only a plan with that digest is applied.
+# A rule that changes in between is refused, an approval after the window
+# applies nothing, and a rejection forgets the proposal. The ticket system
+# is fakeapi, and OpenTofu is the tofu test plugin.
+
+env HOME=$WORK/home
+env ITSM_TOKEN=itsm-test-token
+env ITSM_HOOK=itsm-hook-token
+! exec fakeapi -listen 127.0.0.1:19501 itsm &itsm&
+waitfile itsm/port
+exec opstruss validate
+stdout '^valid$'
+
+# the firewall as it is, and the daemon for the ticket system's webhooks;
+# a proposal without a change opens nothing
+exec opstruss up --yes
+stdout '^default/firewall: up: done$'
+exec opstruss up -d
+stdout '^default/firewall: unchanged$'
+exec opstruss propose
+stdout 'the firewall already matches rules.yaml'
+! exists itsm/requests
+
+# a new rule is proposed: its plan goes to a change request and its
+# digest to kv, and the firewall stays as it is
+cp rules/office.yaml rules.yaml
+exec opstruss propose
+grep '^POST /api/changes auth=Bearer itsm-test-token \{"plan":"will run: definition changed; plan: update hcloud_firewall.edge","title":"Firewall change"\}$' itsm/requests
+exists .opstruss/state/default/_kv/change-chg-101
+grep -count=1 '^apply ' tofu.log
+
+# the board approves hours later: the same plan is applied, the ticket
+# hears it, and kv forgets the proposal
+webhook POST /hooks/itsm '{"id":"CHG-101","decision":"approved"}' -bearer itsm-hook-token
+stdout '^202 '
+waitgrep '^POST /api/changes/CHG-101/comments auth=Bearer itsm-test-token \{"text":"Applied"\}$' itsm/requests
+grep -count=2 '^apply ' tofu.log
+waitgone .opstruss/state/default/_kv/change-chg-101
+
+# a rule changes after its proposal: the approval does not cover the new
+# plan, so nothing is applied, and the ticket hears why
+cp rules/vpn.yaml rules.yaml
+exec opstruss propose
+cp rules/vpn-wide.yaml rules.yaml
+webhook POST /hooks/itsm '{"id":"CHG-102","decision":"approved"}' -bearer itsm-hook-token
+stdout '^202 '
+waitgrep '^POST /api/changes/CHG-102/comments auth=Bearer itsm-test-token \{"text":"Not applied: the plan changed since it was proposed; propose it again"\}$' itsm/requests
+waitgone .opstruss/state/default/_kv/change-chg-102
+grep -count=2 '^apply ' tofu.log
+
+# an approval after the window applies nothing
+exec opstruss propose --window 1s
+exec sleep 2
+webhook POST /hooks/itsm '{"id":"CHG-103","decision":"approved"}' -bearer itsm-hook-token
+stdout '^202 '
+waitgrep '^POST /api/changes/CHG-103/comments auth=Bearer itsm-test-token \{"text":"Not applied: CHG-103 is past its approval window; propose it again"\}$' itsm/requests
+grep -count=2 '^apply ' tofu.log
+
+# a rejection forgets the proposal
+exec opstruss propose
+exists .opstruss/state/default/_kv/change-chg-104
+webhook POST /hooks/itsm '{"id":"CHG-104","decision":"rejected"}' -bearer itsm-hook-token
+stdout '^202 '
+waitgone .opstruss/state/default/_kv/change-chg-104
+grep -count=2 '^apply ' tofu.log
+
+# a request without the ticket system's token makes no run
+webhook POST /hooks/itsm '{"id":"CHG-104","decision":"approved"}' -bearer wrong-token
+stdout '^401 '
+
+exec opstruss stop
+! exec grep -r -e itsm-test-token -e itsm-hook-token .opstruss
+
+-- itsm/routes --
+POST /api/changes 201 {"id": "CHG-101"}
+POST /api/changes 201 {"id": "CHG-102"}
+POST /api/changes 201 {"id": "CHG-103"}
+POST /api/changes 201 {"id": "CHG-104"}
+POST /api/changes/* 201 {}
+-- rules.yaml --
+- {port: 443, from: 0.0.0.0/0}
+-- rules/office.yaml --
+- {port: 443, from: 0.0.0.0/0}
+- {port: 22, from: 203.0.113.0/24}
+-- rules/vpn.yaml --
+- {port: 443, from: 0.0.0.0/0}
+- {port: 22, from: 203.0.113.0/24}
+- {port: 51820, from: 198.51.100.7/32}
+-- rules/vpn-wide.yaml --
+- {port: 443, from: 0.0.0.0/0}
+- {port: 22, from: 203.0.113.0/24}
+- {port: 51820, from: 0.0.0.0/0}
+-- infra/firewall/main.tf --
+variable "rules" {
+  type = list(object({ port = number, from = string }))
+}
+
+resource "hcloud_firewall" "edge" {
+  name = "edge"
+  dynamic "rule" {
+    for_each = var.rules
+    content {
+      direction  = "in"
+      protocol   = "tcp"
+      port       = rule.value.port
+      source_ips = [rule.value.from]
+    }
+  }
+}
+-- infra/firewall/outputs.jq --
+{rules: ($vars.rules | length)}
+-- opstruss.yaml --
+name: firewall
+description: Production firewall changes that wait for the change board
+
+uses:
+  tofu: ./testplugins/tofu
+  itsm:                                    # the ticket system's API through the built-in http
+    source: opstruss.http
+    with:
+      headers:
+        Authorization: Bearer ${{ secrets.itsm_token }}
+
+runtime:
+  listen: 127.0.0.1:0
+
+secrets:
+  itsm_token: {env: ITSM_TOKEN}
+  itsm_hook: {env: ITSM_HOOK}
+
+units:
+  firewall:
+    uses: tofu
+    with:
+      source: ./infra/firewall
+      vars:
+        rules: ${{ fromYAML(file('rules.yaml')) }}
+
+tasks:
+  propose:
+    description: Plan a firewall change and open a change request for it
+    inputs:
+      window:
+        type: string
+        description: How long the change board has to approve it
+        default: 72h
+    steps:
+      - task: plan
+        units: [firewall]
+      - name: Nothing to change
+        if: size(units.firewall.plan.changes) == 0
+        log:
+          msg: the firewall already matches rules.yaml
+      - name: Open a change request
+        id: ticket
+        if: size(units.firewall.plan.changes) > 0
+        itsm:
+          method: POST
+          url: http://127.0.0.1:19501/api/changes
+          status_code: [201]
+          body:
+            title: Firewall change
+            plan: ${{ units.firewall.plan.summary }}
+      - name: Keep the plan until the board decides
+        if: steps.ticket.outcome == 'success'
+        kv:
+          key: change-${{ steps.ticket.outputs.body.id.lowerAscii() }}
+          value:
+            digest: ${{ units.firewall.plan.digest }}
+          ttl: ${{ inputs.window }}
+
+  decide:
+    description: Apply or drop a proposal when the change board decides
+    internal: true
+    on:
+      webhook:
+        path: /hooks/itsm
+        secret: ${{ secrets.itsm_hook }}
+        signature: bearer
+        respond: accepted
+    steps:
+      - name: The proposal
+        id: proposal
+        set:
+          key: change-${{ event.body.id.lowerAscii() }}
+          value: ${{ kv('change-' + event.body.id.lowerAscii()) }}
+      - name: Past its window
+        if: event.body.decision == 'approved' && steps.proposal.outputs.value == null
+        itsm:
+          method: POST
+          url: http://127.0.0.1:19501/api/changes/${{ event.body.id }}/comments
+          status_code: [201]
+          body:
+            text: "Not applied: ${{ event.body.id }} is past its approval window; propose it again"
+      - name: Plan again
+        id: plan
+        if: event.body.decision == 'approved' && steps.proposal.outputs.value != null
+        task: plan
+        units: [firewall]
+      - name: The plan changed
+        if: steps.plan.outcome == 'success' && units.firewall.plan.digest != steps.proposal.outputs.value.digest
+        itsm:
+          method: POST
+          url: http://127.0.0.1:19501/api/changes/${{ event.body.id }}/comments
+          status_code: [201]
+          body:
+            text: "Not applied: the plan changed since it was proposed; propose it again"
+      - name: Apply
+        id: apply
+        if: steps.plan.outcome == 'success' && units.firewall.plan.digest == steps.proposal.outputs.value.digest
+        task: up
+        units: [firewall]
+        yes: true                          # only a plan with the digest compared above
+      - name: Report
+        if: steps.apply.outcome == 'success'
+        itsm:
+          method: POST
+          url: http://127.0.0.1:19501/api/changes/${{ event.body.id }}/comments
+          status_code: [201]
+          body:
+            text: Applied
+      - name: Forget the proposal
+        if: steps.proposal.outputs.value != null
+        kv:
+          key: ${{ steps.proposal.outputs.key }}
+          value: null

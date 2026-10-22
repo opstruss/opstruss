@@ -8,7 +8,7 @@ test:
 	go test -race -tags failpoints -run 'TestScripts/crash' .
 
 criteria:
-	OPSTRUSS_CRITERIA=1 go test -tags failpoints -timeout 30m -run 'TestCriteria|TestLoad' .
+	OPSTRUSS_CRITERIA=1 go test -tags failpoints -timeout 30m -run 'TestCriteria|TestUseCases|TestLoad' .
 
 # load runs the load criteria for ten minutes, as the daily load workflow does.
 load:

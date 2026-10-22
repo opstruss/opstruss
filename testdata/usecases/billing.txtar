@@ -1,0 +1,253 @@
+# Billing that must never charge twice. Each customer is a unit whose up
+# creates it at Stripe with OPSTRUSS_STATE_KEY in its metadata, so an up
+# killed after Stripe answered finds that customer again through
+# OPSTRUSS_REASON=interrupted instead of creating a second one. The
+# monthly charge is a task that claims each customer's month in kv with
+# expect before it charges: the same month again charges nothing, a run
+# killed during a charge leaves a claim that the next run settles from
+# Stripe, and a claim without a charge at Stripe stops for a person. The
+# Stripe CLI is a fake; the kills need a build with -tags failpoints.
+
+env HOME=$WORK/home
+env SOPS_AGE_KEY_FILE=$WORK/age/keys.txt
+env STRIPE_API_KEY=sk_test_billing
+env PATH=$WORK/fakes:$PATH
+env OPSTRUSS_FAILPOINT_LOG=$WORK/visited
+exec chmod 755 fakes/stripe
+exec chmod 755 scripts/customer.sh
+exec opstruss init
+exec opstruss validate
+stdout '^valid$'
+
+# two customers come up at Stripe, each with its state key
+exec opstruss up --yes
+stdout '^default/customer\[acme\]: up: done$'
+stdout '^default/customer\[globex\]: up: done$'
+grep -count=2 '"opstruss_key":"default/customer\[(acme|globex)\]\.[0-9a-f]+"' provider/customers.jsonl
+
+# a new email changes the customer the unit has
+cp customers.2.yaml customers.yaml
+exec opstruss up --yes
+stdout '^default/customer\[acme\]: up: done$'
+grep '^stripe customers update cus_1 -d email=finance@acme.test$' calls
+grep -count=2 '^\{' provider/customers.jsonl
+
+# October is charged once per customer, and again charges nothing
+exec opstruss charge --month 2026-10
+grep -count=2 '"opstruss_key":"charge\.(acme|globex)\.2026-10"' provider/charges.jsonl
+exec opstruss charge --month 2026-10
+stdout 'acme: 2026-10 was charged by run \S+ \(ch_1\)'
+stdout 'globex: 2026-10 was charged by run \S+ \(ch_2\)'
+grep -count=2 '^\{' provider/charges.jsonl
+
+# a new customer's up is killed after Stripe created it: plan names the
+# up that did not finish, and the next up finds that customer by its
+# state key
+[failpoints] cp customers.3.yaml customers.yaml
+[failpoints] env OPSTRUSS_FAILPOINT=up-after-program=kill
+[failpoints] ! exec opstruss up --yes
+[failpoints] env OPSTRUSS_FAILPOINT=
+[failpoints] exec opstruss plan
+[failpoints] stdout '^default/customer\[initech\]: will run: up of run \S+ \(pid [0-9]+ on .*\) did not finish$'
+[failpoints] exec opstruss up --yes
+[failpoints] stdout '^default/customer\[initech\]: up: done$'
+[failpoints] grep '^stripe customers search --query metadata\[.opstruss_key.\]:.default/customer\[initech\]\.[0-9a-f]+.$' calls
+[failpoints] grep -count=3 '^\{' provider/customers.jsonl
+
+# November: the run is killed while it charges acme, and the charge goes
+# through at Stripe; the next run records that charge from Stripe and
+# charges the others
+[failpoints] env OPSTRUSS_FAILPOINT=program-started=kill
+[failpoints] ! exec opstruss charge --month 2026-11
+[failpoints] env OPSTRUSS_FAILPOINT=
+[failpoints] waitgrep '"opstruss_key":"charge\.acme\.2026-11"' provider/charges.jsonl
+[failpoints] exec opstruss charge --month 2026-11
+[failpoints] grep '^stripe charges search --query metadata\[.opstruss_key.\]:.charge\.acme\.2026-11.$' calls
+[failpoints] grep -count=3 '"opstruss_key":"charge\.(acme|globex|initech)\.2026-11"' provider/charges.jsonl
+[failpoints] exec opstruss charge --month 2026-11
+[failpoints] stdout 'acme: 2026-11 was charged by run \S+ \(ch_3\)'
+
+# December: the run is killed while Stripe cannot be reached, so the
+# claim has no charge anywhere; the next run charges the others and stops
+# at acme for a person to decide
+[failpoints] cp yes provider/unreachable
+[failpoints] env OPSTRUSS_FAILPOINT=program-started=kill
+[failpoints] ! exec opstruss charge --month 2026-12
+[failpoints] env OPSTRUSS_FAILPOINT=
+[failpoints] waitgrep '^stripe charges create -d customer=cus_1 .*charge\.acme\.2026-12 \(unreachable\)$' calls
+[failpoints] rm provider/unreachable
+[failpoints] ! exec opstruss charge --month 2026-12
+[failpoints] stderr 'acme: run \S+ claimed 2026-12 and did not finish, and Stripe has no charge for it'
+[failpoints] ! grep 'charge\.acme\.2026-12' provider/charges.jsonl
+[failpoints] grep -count=2 '"opstruss_key":"charge\.(globex|initech)\.2026-12"' provider/charges.jsonl
+[failpoints] grep '^up-after-program$' visited
+[failpoints] grep '^program-started$' visited
+
+# no customer and no charge is there twice
+exec sh -c 'cat provider/*.jsonl | jq -r .metadata.opstruss_key | sort | uniq -d'
+! stdout .
+! exec grep -r sk_test_billing .opstruss
+
+-- yes --
+yes
+-- customers.yaml --
+acme: {email: billing@acme.test, plan: pro}
+globex: {email: ap@globex.test, plan: team}
+-- customers.2.yaml --
+acme: {email: finance@acme.test, plan: pro}
+globex: {email: ap@globex.test, plan: team}
+-- customers.3.yaml --
+acme: {email: finance@acme.test, plan: pro}
+globex: {email: ap@globex.test, plan: team}
+initech: {email: billing@initech.test, plan: pro}
+-- fakes/stripe --
+#!/bin/sh
+# stripe <customers|charges> create|update <id>|search --query <query>
+# [-d name=value]...: the Stripe CLI for the tests. Objects live in
+# provider/<resource>.jsonl, every call goes to calls, and
+# provider/unreachable makes a call fail as a lost network does, before it
+# does anything.
+set -eu
+dir=${0%/*}/..
+[ -n "${STRIPE_API_KEY:-}" ] || { echo "stripe: no API key" >&2; exit 1; }
+if [ -e "$dir/provider/unreachable" ]; then
+  echo "stripe $* (unreachable)" >> "$dir/calls"
+  echo "stripe: dial tcp api.stripe.com:443: connection refused" >&2
+  exit 1
+fi
+echo "stripe $*" >> "$dir/calls"
+mkdir -p "$dir/provider"
+store=$dir/provider/$1.jsonl
+touch "$store"
+action=$2
+shift 2
+case $action in
+search)
+  key=$(printf '%s' "$2" | sed "s/^metadata\['opstruss_key'\]:'\(.*\)'$/\1/")
+  jq -sc --arg k "$key" '{data: [.[] | select(.metadata.opstruss_key == $k)]}' "$store"
+  exit 0
+  ;;
+update) id=$1; shift ;;
+*)
+  prefix=ch
+  [ "$store" = "${store%customers.jsonl}" ] || prefix=cus
+  id=${prefix}_$(($(wc -l < "$store") + 1))
+  ;;
+esac
+obj=$(jq -cn --arg id "$id" '{id: $id}')
+while [ $# -gt 1 ]; do
+  pair=$2
+  shift 2
+  obj=$(printf '%s' "$obj" | jq -c --arg k "${pair%%=*}" --arg v "${pair#*=}" \
+    'if ($k | startswith("metadata[")) then .metadata[$k[9:-1]] = $v else .[$k] = $v end')
+done
+if [ "$action" = update ]; then
+  jq -c --argjson o "$obj" 'if .id == $o.id then . * $o else . end' "$store" > "$store.new"
+  mv "$store.new" "$store"
+else
+  printf '%s\n' "$obj" >> "$store"
+fi
+printf '%s\n' "$obj"
+-- scripts/customer.sh --
+#!/bin/sh
+# Creates the customer at Stripe once and keeps its email current. The
+# state key goes with it, so an up cut off before its record was written
+# finds the customer there instead of creating a second one.
+set -eu
+id=$(jq -r '.outputs.id // empty' "$OPSTRUSS_STATE")
+if [ -z "$id" ] && [ "$OPSTRUSS_REASON" = interrupted ]; then
+  found=$(stripe customers search --query "metadata['opstruss_key']:'$OPSTRUSS_STATE_KEY'")
+  id=$(printf '%s' "$found" | jq -r '.data[0].id // empty')
+fi
+if [ -n "$id" ]; then
+  stripe customers update "$id" -d "email=$EMAIL" > /dev/null
+else
+  made=$(stripe customers create -d "email=$EMAIL" -d "metadata[opstruss_key]=$OPSTRUSS_STATE_KEY")
+  id=$(printf '%s' "$made" | jq -r .id)
+fi
+echo "id=$id" >> "$OPSTRUSS_OUTPUT"
+-- opstruss.yaml --
+name: billing
+description: Customers at Stripe and their monthly charges
+
+inputs:
+  prices:
+    type: object
+    description: Monthly price of each plan, in cents
+    default: {pro: 4900, team: 19900}
+
+secrets:
+  stripe_key: {env: STRIPE_API_KEY}
+
+units:
+  customer:
+    for_each: ${{ fromYAML(file('customers.yaml')) }}
+    run: [./scripts/customer.sh]
+    env:
+      STRIPE_API_KEY: ${{ secrets.stripe_key }}
+      EMAIL: ${{ each.value.email }}
+    outputs:
+      id: {}
+
+tasks:
+  charge:
+    description: Charge every customer once for a month
+    inputs:
+      month:
+        type: string
+        pattern: '^[0-9]{4}-[0-9]{2}$'
+        required: true
+    for_each: ${{ fromYAML(file('customers.yaml')) }}
+    max_parallel: 1                        # one charge at a time, in the order of the keys
+    env:
+      STRIPE_API_KEY: ${{ secrets.stripe_key }}
+    steps:
+      - name: Claim the month
+        id: claim
+        kv:
+          key: charge.${{ each.key }}.${{ inputs.month }}
+          value:
+            run: ${{ opstruss.run }}
+          expect: null                     # one run gets it, also from another machine
+        continue_on_error: true
+      - name: Charge
+        id: pay
+        if: steps.claim.outcome == 'success'
+        run: [stripe, charges, create,
+          -d, "customer=${{ units.customer[each.key].outputs.id }}",
+          -d, "amount=${{ inputs.prices[each.value.plan] }}",
+          -d, currency=usd,
+          -d, "metadata[opstruss_key]=charge.${{ each.key }}.${{ inputs.month }}"]
+        outputs:
+          charge: {from: stdout, format: json}
+      - name: Record the charge
+        if: steps.pay.outcome == 'success'
+        kv:
+          key: charge.${{ each.key }}.${{ inputs.month }}
+          value:
+            run: ${{ opstruss.run }}
+            charge: ${{ steps.pay.outputs.charge.id }}
+          expect: ${{ steps.claim.outputs.value }}
+      - name: Charged before
+        if: steps.claim.outcome == 'failure' && has(steps.claim.outputs.value.charge)
+        log:
+          msg: "${{ each.key }}: ${{ inputs.month }} was charged by run ${{ steps.claim.outputs.value.run }} (${{ steps.claim.outputs.value.charge }})"
+      - name: Claimed by a run that did not finish
+        if: steps.claim.outcome == 'failure' && !has(steps.claim.outputs.value.charge)
+        block:
+          - name: Ask Stripe
+            id: find
+            run: [stripe, charges, search, --query, "metadata['opstruss_key']:'charge.${{ each.key }}.${{ inputs.month }}'"]
+            outputs:
+              found: {from: stdout, format: json}
+          - name: Stripe has the charge
+            assert:
+              that: size(steps.find.outputs.found.data) == 1
+              msg: "${{ each.key }}: run ${{ steps.claim.outputs.value.run }} claimed ${{ inputs.month }} and did not finish, and Stripe has no charge for it; charge by hand, or remove the claim once that run is surely gone"
+          - name: Record what that run charged
+            kv:
+              key: charge.${{ each.key }}.${{ inputs.month }}
+              value:
+                run: ${{ steps.claim.outputs.value.run }}
+                charge: ${{ steps.find.outputs.found.data[0].id }}
+              expect: ${{ steps.claim.outputs.value }}

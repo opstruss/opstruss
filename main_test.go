@@ -46,7 +46,8 @@ func TestScripts(t *testing.T) {
 
 // TestUseCases runs the projects of real use in testdata/usecases: each
 // .txtar file holds a whole project as its users write it, with fakes for
-// the tools and services it talks to.
+// the tools and services it talks to. make criteria runs them again in a
+// build with -tags failpoints, for the parts that kill OpsTruss.
 func TestUseCases(t *testing.T) {
 	testscript.Run(t, params("testdata/usecases"))
 }
