@@ -418,6 +418,15 @@ func (e *engine) hide(v, marks any) {
 		for k, sub := range m {
 			e.hide(vm[k], sub)
 		}
+	case []any:
+		vl, ok := v.([]any)
+		if !ok || len(vl) != len(m) {
+			e.redact.AddDerived(v)
+			return
+		}
+		for i, sub := range m {
+			e.hide(vl[i], sub)
+		}
 	}
 }
 

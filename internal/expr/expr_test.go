@@ -182,13 +182,15 @@ func TestMarks(t *testing.T) {
 		t.Fatal(err)
 	}
 	marks := m.(map[string]any)
-	if marks["url"] != nil || marks["auth"] != true || marks["list"] != true || v.(map[string]any)["auth"] != "Bearer t0k3n" {
+	list, _ := marks["list"].([]any)
+	if marks["url"] != nil || marks["auth"] != true || len(list) != 2 || list[0] != nil || list[1] != true || v.(map[string]any)["auth"] != "Bearer t0k3n" {
 		t.Errorf("EvalMarked: %v %v", v, m)
 	}
 	if text, sensitive, err := EvalTextMarked("${{ inputs.name }}", s); err != nil || text != "web" || sensitive {
 		t.Errorf("EvalTextMarked: %q %v %v", text, sensitive, err)
 	}
-	if MarkAt(true, "x", "y") != true || MarkAt(nil, "x") != nil || MarkAt(map[string]any{"a": map[string]any{}}, "a") != nil {
+	if MarkAt(true, "x", "y") != true || MarkAt(nil, "x") != nil || MarkAt(map[string]any{"a": map[string]any{}}, "a") != nil ||
+		MarkAt([]any{nil, true}, "1") != true || MarkAt([]any{nil, true}, "0") != nil {
 		t.Error("MarkAt")
 	}
 	if s.With("inputs", map[string]any{}).Marks["inputs"] != nil {

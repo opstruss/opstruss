@@ -24,6 +24,12 @@ stdout '"url":"\*\*\*"'
 ! stdout 's3cr3t|k-key-value|czNjcjN0'
 ! exec sh -c 'grep -r -e s3cr3t -e k-key-value -e czNjcjN0 .opstruss'
 
+# a list written item by item keeps the marks of its items: the sensitive
+# field is hidden, and the plain ones stay plain, also later in argv
+exec opstruss vault
+stdout '^vault: item \| {"fields":\[{"id":"username","value":"rina@acme.com"},{"id":"password","value":"\*\*\*"}\],"title":"Akun rina@acme.com"}$'
+stdout '^vault: later \| hello rina@acme.com$'
+
 # a value that fails its schema is not in the error
 env KEY=bad-key-value
 ! exec opstruss show
@@ -121,6 +127,19 @@ tasks:
       - run: echo "got $S"
         env: {S: '${{ steps.get.outputs.secret }}'}
       - run: [echo, '${{ steps.get.outputs.secret }}']
+  vault:
+    steps:
+      - name: item
+        run: [cat]
+        stdin:
+          format: json
+          value:
+            title: Akun rina@acme.com
+            fields:
+              - {id: username, value: rina@acme.com}
+              - {id: password, value: '${{ inputs.token }}'}
+      - name: later
+        run: [echo, hello rina@acme.com]
   keep:
     write:
       path: secret.txt

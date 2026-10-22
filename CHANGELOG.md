@@ -212,7 +212,9 @@ minor release can change what a project, a component, or a plugin relies on.
   `explain`, line by line, in its JSON form, and quoted as error messages
   quote values, also inside values computed from it, such as
   `base64.encode()`, and when a run only reads it back from a record, as
-  `down` does. Inputs with
+  `down` does. A value of one `${{ }}` is sensitive as a whole, while a
+  map or a list written in YAML keeps it to its keys or items, so the
+  other fields beside a password stay readable. Inputs with
   `sensitive: true` of the project, a task, or a plugin task are
   sensitive, and so are outputs that are declared so, that a program
   names in `sensitive` of `$OPSTRUSS_RESULT`, or that hold a sensitive

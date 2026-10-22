@@ -2,25 +2,34 @@ package expr
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 )
 
 // Marks say which parts of a value are sensitive: true for all of it, a
 // map[string]any with the marks of the keys that have sensitive parts, for
-// a map, or nil for none. The result of an expression that reads a
+// a map, a []any with the marks of each item, for a list written item by
+// item, or nil for none. The result of an expression that reads a
 // sensitive part is sensitive as a whole, like a sensitive value in
 // Terraform.
 
 // MarkAt returns the marks of the part of a value at path.
 func MarkAt(marks any, path ...string) any {
 	for _, p := range path {
-		m, ok := marks.(map[string]any)
-		if !ok {
+		switch m := marks.(type) {
+		case map[string]any:
+			marks = m[p]
+		case []any:
+			i, err := strconv.Atoi(p)
+			if err != nil || i < 0 || i >= len(m) {
+				return marks
+			}
+			marks = m[i]
+		default:
 			// true covers every part; nil none.
 			return marks
 		}
-		marks = m[p]
 	}
 	if m, ok := marks.(map[string]any); ok && len(m) == 0 {
 		return nil
@@ -70,7 +79,7 @@ func analyzed(src string) (*Use, error) {
 // EvalMarked evaluates every expression in a string, map, or list, as
 // EvalValue does, and returns the marks of the result: a string with an
 // expression that reads a sensitive part is sensitive, a map keeps the
-// marks of its keys, and a list with a sensitive item is sensitive.
+// marks of its keys, and a list those of its items.
 func EvalMarked(v any, s *Scope) (any, any, error) {
 	switch x := v.(type) {
 	case string:
@@ -98,7 +107,7 @@ func EvalMarked(v any, s *Scope) (any, any, error) {
 		return out, marks, nil
 	case []any:
 		out := make([]any, len(x))
-		var marks any
+		var marks []any
 		for i, e := range x {
 			r, m, err := EvalMarked(e, s)
 			if err != nil {
@@ -106,8 +115,14 @@ func EvalMarked(v any, s *Scope) (any, any, error) {
 			}
 			out[i] = r
 			if m != nil {
-				marks = true
+				if marks == nil {
+					marks = make([]any, len(x))
+				}
+				marks[i] = m
 			}
+		}
+		if marks == nil {
+			return out, nil, nil
 		}
 		return out, marks, nil
 	}
