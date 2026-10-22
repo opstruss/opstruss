@@ -51,6 +51,12 @@ type Service struct {
 	StopRun *plugin.Program
 	Ready   Ready
 	Redact  *secret.Redactor // hides the sensitive values of the run in its log
+	// Rebuild prepares the program again before each start after the
+	// first, for a watch source whose inputs are read each time.
+	Rebuild func() (*plugin.Program, error)
+	// Lines gets each line of output in place of the log, for a watch
+	// source, whose lines are its events.
+	Lines func(stream, line string)
 }
 
 // Ready says when a service is ready: when one of HTTP, TCP, and Run

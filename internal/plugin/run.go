@@ -101,6 +101,20 @@ type Run struct {
 	calls    atomic.Int64
 }
 
+// Outside is what the programs that live outside any run start from, such
+// as the sources of watch triggers: the project, the stack, and the
+// operator's environment.
+func Outside(project, stack string, environ []string) *Run {
+	r := &Run{Project: project, Stack: stack, Environ: environ, operator: map[string]string{}}
+	for _, kv := range environ {
+		if k, v, ok := strings.Cut(kv, "="); ok {
+			r.operator[k] = v
+		}
+	}
+	r.base = clean(r.operator)
+	return r
+}
+
 // Open makes the run's directories and takes the lock that every program
 // of the run inherits, which shows a later run that programs of this one
 // still live after its OpsTruss was killed.

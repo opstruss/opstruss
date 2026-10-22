@@ -91,6 +91,12 @@ func (r *Run) environment(c *Call, write func(name string, data []byte) (string,
 		env["OPSTRUSS_STATE_KEY"] = u.StateKey
 	}
 	if !inRun {
+		// A program outside a run gets its inputs as INPUT_* only.
+		for name, v := range c.Inputs {
+			if s := expr.Text(v); v != nil && len(s) <= MaxInputEnv {
+				env[model.InputEnv(name)] = s
+			}
+		}
 		return env, nil
 	}
 	files := map[string]string{"OPSTRUSS_OUTPUT": outputFile, "OPSTRUSS_RESULT": resultFile}

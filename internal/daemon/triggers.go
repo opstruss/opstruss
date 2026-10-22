@@ -39,6 +39,7 @@ type triggers struct {
 
 	mu      sync.Mutex
 	stop    context.CancelFunc
+	afters  []*engine.Trigger
 	flight  map[string]bool // triggers with a run that runs or waits
 	pending map[string]int  // unfinished runs by task
 	runs    sync.WaitGroup
@@ -67,12 +68,17 @@ func (t *triggers) install(opts engine.Options) {
 	if t.stop != nil {
 		t.stop()
 	}
-	t.stop, t.opts = stop, opts
+	t.stop, t.opts, t.afters = stop, opts, nil
+	for _, tr := range list {
+		if tr.Kind == "after" {
+			t.afters = append(t.afters, tr)
+		}
+	}
 	t.mu.Unlock()
 	_ = t.d.reg.update(func(f *File) {
 		var keep []*Schedule
 		for _, tr := range list {
-			if tr.Kind == "webhook" {
+			if tr.Kind != "schedule" && tr.Kind != "every" {
 				continue
 			}
 			s := &Schedule{Task: tr.Task, Kind: tr.Kind, Key: tr.Key}
@@ -91,6 +97,8 @@ func (t *triggers) install(opts engine.Options) {
 			go t.schedule(ctx, tr)
 		case "every":
 			go t.every(ctx, tr)
+		case "watch":
+			go t.watch(ctx, tr)
 		}
 	}
 	if err := t.hooks.set(listen, list); err != nil {
@@ -267,6 +275,9 @@ func (t *triggers) fire(tr *engine.Trigger, at time.Time) {
 		opts.Supervisor = t.d.sup
 		res, err := engine.Fire(t.d.runs, opts, tr)
 		t.report(tr, at, res, err)
+		if res != nil {
+			t.ended(res.Run, 0)
+		}
 	}()
 }
 

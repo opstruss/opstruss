@@ -63,10 +63,12 @@ type Supervisor struct {
 	recovered chan struct{} // closed once what a daemon that ended left is stopped
 	done      chan struct{} // closed once the supervisor stops
 
-	mu       sync.Mutex
-	services map[string]*service
-	unclear  map[string]map[string]string // by address and id: what is left that cannot be proven the service's
-	closed   bool
+	mu        sync.Mutex
+	services  map[string]*service
+	listeners map[string]map[int]func(stream, line string) // of the lines of services, by address
+	nextID    int
+	unclear   map[string]map[string]string // by address and id: what is left that cannot be proven the service's
+	closed    bool
 }
 
 func newSupervisor(root, stack string, reg *registry, say func(record.Event)) *Supervisor {
@@ -320,6 +322,37 @@ func (sup *Supervisor) live() bool {
 
 func (sup *Supervisor) short(addr string) string { return strings.TrimPrefix(addr, sup.stack+"/") }
 
+// listen hands each line that the service at addr writes to fn, until
+// the function it returns is called.
+func (sup *Supervisor) listen(addr string, fn func(stream, line string)) func() {
+	sup.mu.Lock()
+	defer sup.mu.Unlock()
+	if sup.listeners == nil {
+		sup.listeners = map[string]map[int]func(string, string){}
+	}
+	if sup.listeners[addr] == nil {
+		sup.listeners[addr] = map[int]func(string, string){}
+	}
+	sup.nextID++
+	id := sup.nextID
+	sup.listeners[addr][id] = fn
+	return func() {
+		sup.mu.Lock()
+		defer sup.mu.Unlock()
+		delete(sup.listeners[addr], id)
+	}
+}
+
+func (sup *Supervisor) listenersOf(addr string) []func(string, string) {
+	sup.mu.Lock()
+	defer sup.mu.Unlock()
+	var out []func(string, string)
+	for _, fn := range sup.listeners[addr] {
+		out = append(out, fn)
+	}
+	return out
+}
+
 // service is one service and the loop that keeps it.
 type service struct {
 	sup  *Supervisor
@@ -334,6 +367,7 @@ type service struct {
 	mu       sync.Mutex
 	status   engine.ServiceStatus
 	cur      *child
+	started  bool // the first program started
 	stopping bool
 	check    error // why the last ready check failed
 }
@@ -355,12 +389,14 @@ type child struct {
 func (s *service) loop() {
 	defer close(s.done)
 	addr := s.spec.Address
-	var err error
-	if s.log, err = record.OpenLog(filepath.Join(s.sup.root, "logs", s.sup.stack, filepath.FromSlash(s.sup.short(addr))+".jsonl")); err != nil {
-		s.end(err)
-		return
+	if s.spec.Lines == nil {
+		var err error
+		if s.log, err = record.OpenLog(filepath.Join(s.sup.root, "logs", s.sup.stack, filepath.FromSlash(s.sup.short(addr))+".jsonl")); err != nil {
+			s.end(err)
+			return
+		}
+		defer func() { _ = s.log.Close() }()
 	}
-	defer func() { _ = s.log.Close() }()
 	defer s.removeFiles()
 	delay := firstDelay
 	for {
@@ -456,6 +492,14 @@ func (s *service) lastCheck() error {
 // of its own, with its own lock and OPSTRUSS_SERVICE_ID, recorded in
 // <stack>.json before the gate lets it run.
 func (s *service) start() (_ *child, err error) {
+	if s.started && s.spec.Rebuild != nil {
+		p, err := s.spec.Rebuild()
+		if err != nil {
+			return nil, err
+		}
+		s.spec.Program = p
+	}
+	s.started = true
 	prog := s.spec.Program
 	id, err := newID()
 	if err != nil {
@@ -604,8 +648,20 @@ func (s *service) line(task, stream, text string) {
 	if s.spec.Redact != nil {
 		text = s.spec.Redact.String(text)
 	}
+	text = strings.ToValidUTF8(text, "\uFFFD")
+	if s.spec.Lines != nil {
+		if task == "" {
+			s.spec.Lines(stream, text)
+		}
+		return
+	}
+	for _, fn := range s.sup.listenersOf(s.spec.Address) {
+		if task == "" {
+			fn(stream, text)
+		}
+	}
 	ev := s.log.Emit(record.Event{Type: "log", Level: "info", Address: s.spec.Address, Task: task, Stream: stream,
-		Message: strings.ToValidUTF8(text, "�")})
+		Message: text})
 	if s.sup.watch != nil {
 		s.sup.watch(ev)
 	}

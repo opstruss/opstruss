@@ -450,6 +450,7 @@ func (c *checker) tasks() {
 			continue
 		}
 		c.schedules(at(path, "on"), t.On)
+		c.watches(at(path, "on"), t.On)
 		for i, w := range t.On.Webhook {
 			wp := at(path, "on", "webhook")
 			if len(t.On.Webhook) > 1 {
@@ -511,6 +512,53 @@ func (c *checker) schedules(path []string, on *Triggers) {
 		}
 		if d, err := time.ParseDuration(every); err == nil && d < time.Second {
 			c.add(ep, "every is at least 1s")
+		}
+	}
+}
+
+// watches checks the watch and after triggers of a task: a watch has
+// exactly one source, stream goes with unit, batch or debounce but not
+// both, and the units and tasks they name exist.
+func (c *checker) watches(path []string, on *Triggers) {
+	for i, w := range on.Watch {
+		wp := at(path, "watch")
+		if len(on.Watch) > 1 {
+			wp = at(wp, strconv.Itoa(i))
+		}
+		n := len(w.Calls)
+		for _, set := range []bool{w.Unit != "", len(w.Paths) > 0} {
+			if set {
+				n++
+			}
+		}
+		if n != 1 {
+			c.add(wp, "a watch has exactly one source: unit, paths, or one call of a task")
+		}
+		if w.Unit != "" && c.p.Units[w.Unit] == nil {
+			c.add(at(wp, "unit"), "there is no unit %s", w.Unit)
+		}
+		if w.Stream != "" && w.Unit == "" {
+			c.add(at(wp, "stream"), "stream is for a watch of a unit")
+		}
+		if w.Batch != "" && w.Debounce != "" {
+			c.add(wp, "a watch has batch or debounce, not both")
+		}
+		for name := range w.Calls {
+			if slices.Contains(StandardTasks, name) || slices.Contains(BuiltinTasks, name) && name != "command" {
+				c.add(at(wp, name), "a watch source is a program that writes a line per event: command, or a task of a plugin")
+			}
+		}
+	}
+	for i, a := range on.After {
+		ap := at(path, "after")
+		if len(on.After) > 1 {
+			ap = at(ap, strconv.Itoa(i))
+		}
+		if a.Unit != "" && c.p.Units[a.Unit] == nil {
+			c.add(at(ap, "unit"), "there is no unit %s", a.Unit)
+		}
+		if c.p.Tasks[a.Task] == nil && !slices.Contains(StandardTasks, a.Task) && !c.unitTask(a.Task) {
+			c.add(at(ap, "task"), "there is no task %s", a.Task)
 		}
 	}
 }
@@ -784,26 +832,6 @@ func (c *checker) unsupported() {
 	}
 	if p.MCP != nil {
 		c.add([]string{"mcp"}, "not supported yet")
-	}
-	for _, name := range slices.Sorted(maps.Keys(p.Units)) {
-		u, path := p.Units[name], []string{"units", name}
-		for _, tn := range slices.Sorted(maps.Keys(u.Tasks)) {
-			c.triggers(at(path, "tasks", tn), u.Tasks[tn])
-		}
-	}
-	for _, name := range slices.Sorted(maps.Keys(p.Tasks)) {
-		c.triggers([]string{"tasks", name}, p.Tasks[name])
-	}
-}
-
-func (c *checker) triggers(path []string, t *Task) {
-	if t.On == nil {
-		return
-	}
-	for name, n := range map[string]int{"watch": len(t.On.Watch), "after": len(t.On.After)} {
-		if n > 0 {
-			c.add(at(path, "on", name), "not supported yet")
-		}
 	}
 }
 

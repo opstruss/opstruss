@@ -1,0 +1,74 @@
+# A watch makes runs of the lines of a service, the changes of files, or
+# the lines of a program it runs as a source; if: chooses each event and
+# debounce gathers them. after makes a run when another run ends, and a
+# chain of after stops past three.
+
+env HOME=$WORK/home
+
+exec opstruss up -d --yes
+waitgrep '^line error: disk full$' fired
+! grep 'all good' fired
+waitgrep '^source one -$' fired
+waitgrep '^source \{"n":2\} 2$' fired
+
+# files that change make one run with debounce
+mkdir src
+exec sh -c 'echo a > src/a.txt; echo b > src/b.txt'
+waitgrep '^paths 2 ' fired
+
+# a run that ends makes the runs of after, three deep at most
+exec opstruss t1
+waitgrep '^t4 after t3 success$' fired
+grep '^t2 after t1 success$' fired
+waitgrep 'after t4: run [0-9T]+Z-[0-9a-f]+ is 3 deep in a chain of after, so it makes no run' .opstruss/logs/default/_daemon.jsonl
+! grep '^t5' fired
+exec opstruss stop
+
+-- opstruss.yaml --
+name: shop
+units:
+  web:
+    service: |
+      echo "all good"
+      echo "error: disk full"
+      exec sleep 300
+    approval: auto
+tasks:
+  lines:
+    run: echo "line $LINE" >> fired
+    env: {LINE: '${{ event.line }}'}
+    on:
+      watch:
+        unit: web
+        if: event.line.contains('error')
+  source:
+    run: echo "source $LINE $N" >> fired
+    env: {LINE: '${{ event.line }}', N: '${{ has(event.data) ? string(event.data.n) : "-" }}'}
+    on:
+      watch:
+        command: {argv: [sh, -c, 'echo one; echo "{\"n\":2}"; exec sleep 300']}
+  files:
+    run: echo "paths $N $P" >> fired
+    env: {N: '${{ string(event.count) }}', P: '${{ event.paths.map(p, p.path).join(",") }}'}
+    on:
+      watch:
+        paths: ['src/**']
+        debounce: 2s
+  t1:
+    run: echo t1 >> fired
+  t2:
+    run: echo "t2 after $T $O" >> fired
+    env: {T: '${{ event.task }}', O: '${{ event.outcome }}'}
+    on: {after: {task: t1}}
+  t3:
+    run: echo "t3 after $T $O" >> fired
+    env: {T: '${{ event.task }}', O: '${{ event.outcome }}'}
+    on: {after: {task: t2}}
+  t4:
+    run: echo "t4 after $T $O" >> fired
+    env: {T: '${{ event.task }}', O: '${{ event.outcome }}'}
+    on: {after: {task: t3}}
+  t5:
+    run: echo "t5 after $T" >> fired
+    env: {T: '${{ event.task }}'}
+    on: {after: {task: t4}}

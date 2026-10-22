@@ -35,6 +35,21 @@ type Trigger struct {
 	Secret    string
 	Signature model.Signature
 	Respond   string
+
+	// A watch: its source, a unit and its stream, paths relative to Dir,
+	// or a call, which WatchSource prepares; and how its events gather.
+	Unit     string
+	Stream   string
+	Paths    []model.PathItem
+	Dir      string
+	Call     bool
+	Batch    time.Duration
+	Debounce time.Duration
+
+	// An after: the task, and the unit it runs for, whose runs that end
+	// with Outcome make one of this task.
+	After   string
+	Outcome string
 }
 
 // TriggerEvent is what makes a run: where it comes from, as event.trigger
@@ -91,6 +106,31 @@ func Triggers(opts Options) ([]*Trigger, string, error) {
 				Method: method, Secret: secret, Signature: *w.Signature, Respond: cmp.Or(w.Respond, "accepted")})
 		}
 	}
+	for _, name := range slices.Sorted(maps.Keys(e.p.Tasks)) {
+		on := e.p.Tasks[name].On
+		if on == nil {
+			continue
+		}
+		for i, w := range on.Watch {
+			t := &Trigger{Task: name, Kind: "watch", Index: i, Key: keyOf(name, fmt.Sprint(i)), Unit: w.Unit,
+				Stream: cmp.Or(w.Stream, "both"), Paths: w.Paths, Dir: e.p.DirOf("tasks." + name), Call: len(w.Calls) > 0}
+			for _, d := range []struct {
+				text string
+				to   *time.Duration
+			}{{w.Batch, &t.Batch}, {w.Debounce, &t.Debounce}} {
+				if d.text != "" {
+					if *d.to, err = time.ParseDuration(d.text); err != nil {
+						return nil, "", fmt.Errorf("task %s: watch: %w", name, err)
+					}
+				}
+			}
+			out = append(out, t)
+		}
+		for i, a := range on.After {
+			out = append(out, &Trigger{Task: name, Kind: "after", Index: i, Key: keyOf(a.Task, a.Unit), After: a.Task,
+				Unit: a.Unit, Outcome: cmp.Or(a.Outcome, "success")})
+		}
+	}
 	listen := ""
 	if e.p.Runtime != nil {
 		listen = e.p.Runtime.Listen
@@ -133,6 +173,11 @@ func Fire(ctx context.Context, opts Options, t *Trigger) (*Result, error) {
 		cond, with = task.On.Schedule[t.Index].If, task.On.Schedule[t.Index].With
 	case t.Kind == "webhook" && t.Index < len(task.On.Webhook):
 		cond, with = task.On.Webhook[t.Index].If, task.On.Webhook[t.Index].With
+	case t.Kind == "watch" && t.Index < len(task.On.Watch):
+		// if: chose each event before they gathered into this run.
+		with = task.On.Watch[t.Index].With
+	case t.Kind == "after" && t.Index < len(task.On.After):
+		cond, with = task.On.After[t.Index].If, task.On.After[t.Index].With
 	}
 	e.ctx = ctx
 	given := map[string]any{}
@@ -211,6 +256,16 @@ func (t *Trigger) String() string {
 	switch t.Kind {
 	case "webhook":
 		return "webhook " + t.Method + " " + t.Path
+	case "watch":
+		switch {
+		case t.Unit != "":
+			return "watch " + t.Unit
+		case len(t.Paths) > 0:
+			return "watch paths"
+		}
+		return "watch"
+	case "after":
+		return "after " + t.After
 	case "schedule":
 		if t.Timezone != "" {
 			return fmt.Sprintf("schedule %s (%s)", t.Cron, t.Timezone)

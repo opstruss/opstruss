@@ -127,6 +127,9 @@ func (w *webhooks) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		opts.Started = func(run string) { started <- run }
 		res, err := engine.Fire(w.t.d.runs, opts, tr)
 		w.t.report(tr, ev.Time, res, err)
+		if res != nil {
+			w.t.ended(res.Run, 0)
+		}
 		finished <- done{res, err}
 	}()
 	answer := func(code int, v any) {

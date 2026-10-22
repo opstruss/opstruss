@@ -329,6 +329,25 @@ func (c *checker) references() {
 				c.refs(at(sp, "if"), condition(s.If), place{kind: "trigger"})
 				c.refs(at(sp, "with"), s.With, place{kind: "trigger"})
 			}
+			for i, w := range t.On.Watch {
+				wp := []string{"tasks", name, "on", "watch"}
+				if len(t.On.Watch) > 1 {
+					wp = at(wp, strconv.Itoa(i))
+				}
+				for call, args := range w.Calls {
+					c.refs(at(wp, call), args, place{kind: "install"})
+				}
+				c.refs(at(wp, "if"), condition(w.If), place{kind: "trigger"})
+				c.refs(at(wp, "with"), w.With, place{kind: "trigger"})
+			}
+			for i, a := range t.On.After {
+				ap := []string{"tasks", name, "on", "after"}
+				if len(t.On.After) > 1 {
+					ap = at(ap, strconv.Itoa(i))
+				}
+				c.refs(at(ap, "if"), condition(a.If), place{kind: "trigger"})
+				c.refs(at(ap, "with"), a.With, place{kind: "trigger"})
+			}
 			for i, w := range t.On.Webhook {
 				wp := []string{"tasks", name, "on", "webhook"}
 				if len(t.On.Webhook) > 1 {
