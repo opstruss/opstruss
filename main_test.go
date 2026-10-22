@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -149,8 +150,9 @@ func params(dir string) testscript.Params {
 		},
 		// burst sends n requests with a bearer token to a webhook of the
 		// daemon of stack default within a second, and fails when one gets
-		// another answer than 202 or 503, or when the 99th percentile of the
-		// answers takes longer than max: burst <path> <n> <secret> <max>.
+		// another answer than 202 or 503, or on Linux when the 99th
+		// percentile of the answers takes longer than max: burst <path> <n>
+		// <secret> <max>.
 		"burst": func(ts *testscript.TestScript, _ bool, args []string) {
 			var file struct {
 				Listen string `json:"listen"`
@@ -195,7 +197,9 @@ func params(dir string) testscript.Params {
 			if codes[202]+codes[503] != n {
 				ts.Fatalf("answers %v", codes)
 			}
-			if p99 > limit {
+			// Go on macOS holds back accept while a fork runs, as macOS has no
+			// SOCK_CLOEXEC, so the time is a criterion on Linux only.
+			if p99 > limit && runtime.GOOS == "linux" {
 				ts.Fatalf("p99 %s, more than %s", p99, limit)
 			}
 		},

@@ -1,7 +1,8 @@
 # Load: 200 requests in one second to a webhook whose task queues its
 # runs, and to one whose runs go in parallel: each request gets 202, or 503
-# once 100 runs wait; the 99th percentile of the answers takes at most
-# 50 ms, and the daemon goes on.
+# once 100 runs wait; on Linux the 99th percentile of the answers takes at
+# most 50 ms, and the daemon goes on. macOS holds back a new connection
+# while the daemon forks a program, so there the time is only reported.
 
 env HOME=$WORK/home
 env HOOK=burst-token
