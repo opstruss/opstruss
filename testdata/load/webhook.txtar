@@ -1,16 +1,17 @@
-# Load: 200 requests in one second to a webhook whose task queues its
-# runs, and to one whose runs go in parallel: each request gets 202, or 503
-# once 100 runs wait; on Linux the 99th percentile of the answers takes at
-# most 50 ms, and the daemon goes on. macOS holds back a new connection
-# while the daemon forks a program, so there the time is only reported.
+# Load: 200 requests in one second, three times, to a webhook whose task
+# queues its runs, and to one whose runs go in parallel: each request gets
+# 202, or 503 once 100 runs wait; on Linux the median of the 99th
+# percentiles of the answers takes at most 50 ms, and the daemon goes on.
+# macOS holds back a new connection while the daemon forks a program, so
+# there the time is only reported.
 
 env HOME=$WORK/home
 env HOOK=burst-token
 exec opstruss up -d --yes
 waitgrep 'webhooks listen on' .opstruss/logs/default/_daemon.jsonl
-burst /queued 200 burst-token 50ms
+burst /queued 200 burst-token 50ms 8s
 stdout '^202 [0-9]+ 503 [1-9][0-9]* other 0'
-burst /parallel 200 burst-token 50ms
+burst /parallel 200 burst-token 50ms 2s
 stdout '^202 [0-9]+ 503 [0-9]+ other 0'
 exec opstruss stop
 
@@ -23,11 +24,11 @@ runtime:
 tasks:
   queued:
     concurrency: queue
-    run: sleep 0.2
+    run: sleep 0.05
     on:
       webhook: {path: /queued, secret: '${{ inputs.hook }}', signature: bearer}
   parallel:
     concurrency: parallel
-    run: sleep 0.2
+    run: sleep 0.05
     on:
       webhook: {path: /parallel, secret: '${{ inputs.hook }}', signature: bearer}

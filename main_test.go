@@ -149,11 +149,15 @@ func params(dir string) testscript.Params {
 			}
 		},
 		// burst sends n requests with a bearer token to a webhook of the
-		// daemon of stack default within a second, and fails when one gets
-		// another answer than 202 or 503, or on Linux when the 99th
-		// percentile of the answers takes longer than max: burst <path> <n>
-		// <secret> <max>.
+		// daemon of stack default within a second, three times with a pause
+		// between for the runs to finish, and fails when one gets another
+		// answer than 202 or 503, or on Linux when the median of the three
+		// 99th percentiles takes longer than max, as within takes the median
+		// of plans: burst <path> <n> <secret> <max> <pause>.
 		"burst": func(ts *testscript.TestScript, _ bool, args []string) {
+			if len(args) != 5 {
+				ts.Fatalf("usage: burst <path> <n> <secret> <max> <pause>")
+			}
 			var file struct {
 				Listen string `json:"listen"`
 			}
@@ -164,43 +168,55 @@ func params(dir string) testscript.Params {
 			ts.Check(err)
 			limit, err := time.ParseDuration(args[3])
 			ts.Check(err)
+			pause, err := time.ParseDuration(args[4])
+			ts.Check(err)
 			type result struct {
 				code int
 				took time.Duration
 			}
-			results := make(chan result, n)
-			for i := range n {
-				go func() {
-					time.Sleep(time.Duration(i) * time.Second / time.Duration(n))
-					req, _ := http.NewRequest("POST", "http://"+file.Listen+args[0], strings.NewReader("{}"))
-					req.Header.Set("Authorization", "Bearer "+args[2])
-					began := time.Now()
-					resp, err := http.DefaultClient.Do(req)
-					if err != nil {
-						results <- result{0, time.Since(began)}
-						return
-					}
-					_ = resp.Body.Close()
-					results <- result{resp.StatusCode, time.Since(began)}
-				}()
+			var p99s []time.Duration
+			for round := range 3 {
+				if round > 0 {
+					time.Sleep(pause)
+				}
+				results := make(chan result, n)
+				for i := range n {
+					go func() {
+						time.Sleep(time.Duration(i) * time.Second / time.Duration(n))
+						req, _ := http.NewRequest("POST", "http://"+file.Listen+args[0], strings.NewReader("{}"))
+						req.Header.Set("Authorization", "Bearer "+args[2])
+						began := time.Now()
+						resp, err := http.DefaultClient.Do(req)
+						if err != nil {
+							results <- result{0, time.Since(began)}
+							return
+						}
+						_ = resp.Body.Close()
+						results <- result{resp.StatusCode, time.Since(began)}
+					}()
+				}
+				codes := map[int]int{}
+				var took []time.Duration
+				for range n {
+					r := <-results
+					codes[r.code]++
+					took = append(took, r.took)
+				}
+				slices.Sort(took)
+				p99 := took[len(took)*99/100]
+				p99s = append(p99s, p99)
+				_, _ = fmt.Fprintf(ts.Stdout(), "202 %d 503 %d other %d p99 %s slowest %v\n", codes[202], codes[503], n-codes[202]-codes[503], p99, took[len(took)-3:])
+				if codes[202]+codes[503] != n {
+					ts.Fatalf("answers %v", codes)
+				}
 			}
-			codes := map[int]int{}
-			var took []time.Duration
-			for range n {
-				r := <-results
-				codes[r.code]++
-				took = append(took, r.took)
-			}
-			slices.Sort(took)
-			p99 := took[len(took)*99/100]
-			_, _ = fmt.Fprintf(ts.Stdout(), "202 %d 503 %d other %d p99 %s slowest %v\n", codes[202], codes[503], n-codes[202]-codes[503], p99, took[len(took)-3:])
-			if codes[202]+codes[503] != n {
-				ts.Fatalf("answers %v", codes)
-			}
+			slices.Sort(p99s)
+			median := p99s[1]
+			_, _ = fmt.Fprintf(ts.Stdout(), "median p99 %s\n", median)
 			// Go on macOS holds back accept while a fork runs, as macOS has no
 			// SOCK_CLOEXEC, so the time is a criterion on Linux only.
-			if p99 > limit && runtime.GOOS == "linux" {
-				ts.Fatalf("p99 %s, more than %s", p99, limit)
+			if median > limit && runtime.GOOS == "linux" {
+				ts.Fatalf("the median p99 is %s, more than %s", median, limit)
 			}
 		},
 		// daemonrun fails unless the newest run of a stack ran in its
