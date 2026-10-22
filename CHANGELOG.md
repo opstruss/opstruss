@@ -387,10 +387,10 @@ minor release can change what a project, a component, or a plugin relies on.
   outputs of a task with steps, also when it failed, as far as they can be
   computed.
 - `needs` runs each task it names once per run; `for_each` on a task runs
-  its instances in parallel, at most `max_parallel` at once. A task with
-  `approval: ask` stops without `--yes`, and `yes: true` on a `task:` step
-  approves that call, but only plans this run read as exact, with the same
-  digest.
+  its instances in parallel, at most `max_parallel` at once, starting them
+  in the order of their keys. A task with `approval: ask` stops without
+  `--yes`, and `yes: true` on a `task:` step approves that call, but only
+  plans this run read as exact, with the same digest.
 - `concurrency` keeps one call of a task at a time in a stack and
   checkout, through a lock file in `.opstruss/tasks/<stack>/`: `queue`
   waits, `skip` leaves the call out, `cancel` stops the run that holds it

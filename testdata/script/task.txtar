@@ -34,6 +34,11 @@ stdout '^  tries: 3$'
 # needs runs lint once per run; a task: step is always a call of its own
 grep -count=2 . lint.count
 
+# for_each on a task with max_parallel: 1 runs its instances one after
+# another in the order of their keys
+exec opstruss in-turn
+cmp turns want-turns
+
 # a step that fails skips the rest, and the exit code is 1
 ! exec opstruss broken
 stdout '^broken: .* failed$'
@@ -56,6 +61,13 @@ stdout '^default/db \| backup default/db$'
 exec opstruss backup db
 stdout 'backup default/db'
 
+-- want-turns --
+a
+b
+c
+d
+e
+f
 -- opstruss.yaml --
 name: shop
 units:
@@ -150,3 +162,9 @@ tasks:
       - task: up
         units: [web]
         yes: true
+  in-turn:
+    for_each: [f, e, d, c, b, a]
+    max_parallel: 1
+    run: echo "$KEY" >> turns
+    env:
+      KEY: ${{ each.key }}

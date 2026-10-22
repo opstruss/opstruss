@@ -419,11 +419,13 @@ func (e *engine) callTask(ctx context.Context, name string, t *model.Task, dir s
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	results := map[string]*taskResult{}
+	// Instances start in the order of their keys, so max_parallel: 1 runs
+	// them one after another in that order.
 	for _, k := range slices.Sorted(maps.Keys(items)) {
+		sem <- struct{}{}
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			sem <- struct{}{}
 			defer func() { <-sem }()
 			s := scope.WithMarks("each", map[string]any{"key": k, "value": items[k]}, itemMarks(eachMarks, k))
 			r := e.taskOnce(ctx, name, label+"["+k+"]", t, dir, s, c)
