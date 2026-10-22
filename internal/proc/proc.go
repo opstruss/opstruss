@@ -12,6 +12,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 // KillWait is how long Stop waits for a group to empty after SIGKILL, for
@@ -81,6 +83,17 @@ func (g Group) Stop(sig syscall.Signal, grace time.Duration) error {
 	return fmt.Errorf("process group %d still has processes %s after SIGKILL", g, KillWait)
 }
 
+// GroupOf returns the process group of pid.
+func GroupOf(pid int) (Group, error) {
+	g, err := unix.Getpgid(pid)
+	return Group(g), err
+}
+
+// Session returns the session of pid, numbered by the pid of its leader.
+// A process never moves to another session than the one it starts in or
+// makes, so a process group never does either.
+func Session(pid int) (int, error) { return unix.Getsid(pid) }
+
 // wait polls until the group is empty or d has passed.
 func (g Group) wait(d time.Duration) bool {
 	deadline := time.Now().Add(d)
@@ -108,6 +121,16 @@ var signals = map[string]syscall.Signal{
 	"SIGALRM":  syscall.SIGALRM,
 	"SIGTERM":  syscall.SIGTERM,
 	"SIGWINCH": syscall.SIGWINCH,
+}
+
+// SignalName is the name of sig, such as SIGTERM, as ParseSignal reads it.
+func SignalName(sig syscall.Signal) string {
+	for name, s := range signals {
+		if s == sig {
+			return name
+		}
+	}
+	return fmt.Sprintf("signal %d", int(sig))
 }
 
 // ParseSignal returns the signal named name, such as SIGTERM.

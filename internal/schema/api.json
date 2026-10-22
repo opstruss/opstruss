@@ -15,7 +15,7 @@
       "additionalProperties": false
     },
     "request": {
-      "description": "params of plan, up, down, status, and run: the project, the stack, and what the caller brings.",
+      "description": "params of plan, up, down, status, run, and unlock: the project, the stack, and what the caller brings.",
       "type": "object",
       "properties": {
         "dir": { "type": "string", "minLength": 1 },
@@ -37,7 +37,7 @@
       "additionalProperties": false
     },
     "result": {
-      "description": "result of plan, up, down, status, and run.",
+      "description": "result of plan, up, down, status, run, and unlock.",
       "type": "object",
       "properties": {
         "run": { "type": "string" },

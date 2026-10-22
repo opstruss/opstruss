@@ -52,12 +52,19 @@ type Stop struct {
 	Grace  time.Duration
 }
 
-// DefaultStop is how the program of a run unit or task stops by default.
-var DefaultStop = Stop{Signal: syscall.SIGINT, Grace: time.Minute}
+// DefaultStop is how the program of a run unit or task stops by default,
+// and ServiceStop how a service does, as docker stop does.
+var (
+	DefaultStop = Stop{Signal: syscall.SIGINT, Grace: time.Minute}
+	ServiceStop = Stop{Signal: syscall.SIGTERM, Grace: 10 * time.Second}
+)
 
 // StopOf reads stop:, with the defaults for what it leaves out.
-func StopOf(s *model.Stop) (Stop, error) {
-	stop := DefaultStop
+func StopOf(s *model.Stop) (Stop, error) { return StopWith(s, DefaultStop) }
+
+// StopWith reads stop:, with def for what it leaves out.
+func StopWith(s *model.Stop, def Stop) (Stop, error) {
+	stop := def
 	if s == nil {
 		return stop, nil
 	}

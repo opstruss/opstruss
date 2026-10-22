@@ -40,6 +40,7 @@ type resolved struct {
 	waitFor  string
 	plugin   *pluginUnit // for a unit that uses a plugin
 	task     *taskUnit   // for a unit that uses a task
+	service  *serviceDef // for a service unit
 
 	// What is sensitive: inputs of the plugin or task, variables of env,
 	// and stdin. The record keeps them encrypted and the digest hashes them
@@ -56,7 +57,8 @@ func (e *engine) resolve(inst *instance, preview bool) (*resolved, error) {
 	u := inst.def
 	r := &resolved{shell: u.Shell, timeout: DefaultTimeout}
 	if preview {
-		for _, v := range []any{argvOf(u.Run), argvOf(u.Down), envOf(u.Env), u.Dir, stdinOf(u.Stdin), u.Revision, anyMap(u.With)} {
+		for _, v := range []any{argvOf(u.Run), argvOf(u.Service), argvOf(u.Down), envOf(u.Env), u.Dir, stdinOf(u.Stdin), u.Revision,
+			anyMap(u.With), readyOf(u.Ready), stopRunOf(u.Stop)} {
 			if up := e.changing(v, inst.frame); up != "" {
 				r.waitFor = up
 				return r, nil
@@ -132,6 +134,11 @@ func (e *engine) resolve(inst *instance, preview bool) (*resolved, error) {
 	}
 	if r.stop, err = plugin.StopOf(u.Stop); err != nil {
 		return nil, err
+	}
+	if u.Service != nil {
+		if err := e.resolveService(u, r, s); err != nil {
+			return nil, err
+		}
 	}
 	switch t := u.Target; {
 	case t == nil:
@@ -239,6 +246,20 @@ func stdinOf(s *model.Stdin) any {
 	return s.Value
 }
 
+func readyOf(r *model.Ready) any {
+	if r == nil {
+		return nil
+	}
+	return []any{r.HTTP, r.TCP, argvOf(r.Run)}
+}
+
+func stopRunOf(s *model.Stop) any {
+	if s == nil {
+		return nil
+	}
+	return argvOf(s.Run)
+}
+
 func cmdValue(c model.Command) any {
 	if c.Script != "" {
 		return c.Script
@@ -253,10 +274,10 @@ func cmdValue(c model.Command) any {
 // kind is what the record says the unit is.
 func (r *resolved) kind() string {
 	switch {
-	case r.plugin != nil:
-		return "plugin"
-	case r.task != nil:
-		return "task"
+	case r.plugin != nil, r.task != nil:
+		return "uses"
+	case r.service != nil:
+		return "service"
 	}
 	return "run"
 }
@@ -360,6 +381,9 @@ func (r *resolved) fingerprints() map[string]string {
 
 // downContract is what down runs for the unit, with the context it needs.
 func (e *engine) downContract(inst *instance, r *resolved) *state.Down {
+	if r.service != nil {
+		return r.service.down(r)
+	}
 	if r.down == nil {
 		return nil
 	}
@@ -482,6 +506,9 @@ func (e *engine) digest(inst *instance, r *resolved) (string, []string, error) {
 	}
 	add("sources", sources, len(sources) == 0)
 	add("revision", r.revision, r.revision == "")
+	if r.service != nil {
+		r.service.digest(r, def)
+	}
 	data, err := canonical(def)
 	if err != nil {
 		return "", nil, err

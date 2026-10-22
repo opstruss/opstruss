@@ -772,8 +772,14 @@ func (tc *taskCtx) callStep(ctx context.Context, s *model.Step, label string, sc
 	f := tc.c.where(e)
 	units = e.within(f, units)
 	switch s.Task {
-	case "plan", "up", "down":
-		got, gotMarks, err := e.unitPass(ctx, s.Task, pass{units: units, yes: yes, force: s.Force, source: source})
+	case "plan", "up", "down", "status":
+		var got, gotMarks map[string]any
+		var err error
+		if s.Task == "status" {
+			got, gotMarks, err = e.statusPass(ctx, units)
+		} else {
+			got, gotMarks, err = e.unitPass(ctx, s.Task, pass{units: units, yes: yes, force: s.Force, source: source})
+		}
 		if err != nil {
 			return tc.fail(label, err)
 		}

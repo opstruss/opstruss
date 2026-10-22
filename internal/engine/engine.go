@@ -48,6 +48,9 @@ type Options struct {
 	Approve func(context.Context, Question) (bool, error)
 	Ask     func(context.Context, string, *model.Input) (string, error)
 	Debug   bool // OPSTRUSS_LOG=debug: diagnostics of the engine as debug events
+	// Supervisor keeps the services of the stack; without one, a service
+	// cannot start.
+	Supervisor Supervisor
 }
 
 // Question is a change that waits for approval.

@@ -11,7 +11,6 @@ import (
 	"os/signal"
 	"slices"
 	"strings"
-	"sync"
 	"syscall"
 
 	"github.com/opstruss/opstruss/internal/api"
@@ -63,7 +62,9 @@ func (a *app) unitCommands() []*cobra.Command {
 
 With -d, up runs in the daemon of the stack, which starts in the background
 when none runs and stays until opstruss stop. While a daemon runs, the runs
-of the command line go to it.`
+of the command line go to it. Without one, an up that starts a service makes
+this process the daemon of the stack, which shows the output of its services
+and stays while they run; Ctrl-C stops them.`
 	up.Annotations = map[string]string{detachable: "true"}
 	return []*cobra.Command{
 		command("plan", "preview", "Show what up would do and why, without changing anything", ""),
@@ -201,10 +202,10 @@ func (a *app) render() func(engine.Event) { return a.renderTo(a.stdout) }
 // renderTo is render with the events that are not warnings or errors on
 // out.
 func (a *app) renderTo(out io.Writer) func(engine.Event) {
-	var mu sync.Mutex
 	return func(ev engine.Event) {
-		mu.Lock()
-		defer mu.Unlock()
+		// Runs and services write at once, a line each.
+		a.renderMu.Lock()
+		defer a.renderMu.Unlock()
 		if a.json {
 			data, _ := json.Marshal(ev)
 			fmt.Fprintf(out, "%s\n", data)

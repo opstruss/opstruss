@@ -1,0 +1,128 @@
+# A service runs in the daemon of its stack: up starts it and waits until
+# it is ready, restarts follow restart:, a changed definition restarts it,
+# stop stops it with the daemon and keeps its record, and down stops it
+# and drops the record. A run without a daemon that starts a service makes
+# its process the daemon, in the foreground while the service runs.
+
+env HOME=$WORK/home
+env GREETING=hello
+
+# up -d starts the daemon, which starts the service once ready.run passes
+exec opstruss up -d --yes web flaky
+stdout 'default/web: running, pid [0-9]+'
+stdout 'default/flaky: running, pid [0-9]+'
+exec opstruss status web
+stdout '^default/web: running, pid [0-9]+ since .*, 0 restarts$'
+exec opstruss status flaky
+stdout '^default/flaky: running, pid [0-9]+ since .*, 2 restarts$'
+waitgrep '"type":"log","level":"info","address":"default/web","stream":"stdout","message":"hello hello"' .opstruss/logs/default/web.jsonl
+waitgrep '"message":"attempt 3"' .opstruss/logs/default/flaky.jsonl
+grep '"type":"service","level":"warn","address":"default/flaky","message":"exited with 1; restarting in 100ms"' .opstruss/logs/default/_daemon.jsonl
+grep '"address": "default/web",\n\s+"id": "[0-9a-f]{16}",\n\s+"pid": ' .opstruss/daemon/default.json
+exec opstruss list
+stdout 'default/web +service running'
+
+# the record names the service and how it stops
+exec opstruss state pull web
+stdout '"kind": "service"'
+stdout '"signal": "SIGTERM"'
+
+# up with nothing changed leaves it; a changed definition restarts it
+exec opstruss up --yes web
+stdout 'default/web: unchanged'
+env GREETING=hola
+exec opstruss up --yes web
+stdout 'default/web: will run: definition changed'
+stdout 'default/web: running, pid'
+waitgrep 'hello hola' .opstruss/logs/default/web.jsonl
+
+# up --force restarts it
+exec opstruss up --yes --force web
+stdout 'default/web: will run: forced'
+stdout 'default/web: running, pid'
+
+# a task reads the status of a service
+exec opstruss check
+stdout '\| web is running$'
+
+# stop stops the daemon and its services, which keep their records
+exec opstruss stop
+stdout 'stopped the daemon of stack default'
+exec opstruss status web
+stdout '^default/web: stopped$'
+exec opstruss plan web
+stdout 'default/web: will run: not running'
+! grep '"address": "default/web"' .opstruss/daemon/default.json
+
+# up -d starts it again; down stops it and drops its record
+exec opstruss up -d --yes web
+stdout 'default/web: running'
+exec opstruss down --yes web
+stdout 'default/web: down: stopped'
+exec opstruss status web
+stdout '^default/web: absent$'
+exec opstruss stop
+
+# without a daemon, up becomes the daemon in the foreground while the
+# service runs, with its output at the terminal
+exec opstruss up --yes once
+stdout 'this process is the daemon of stack default while its services run'
+stdout 'default/once \| done'
+stdout 'default/once: exited with 0'
+exec opstruss status once
+stdout '^default/once: stopped$'
+
+# a service is validated as one
+! exec opstruss validate -C bad
+stderr 'ready has exactly one of http, tcp, or run'
+stderr 'a service runs until it stops; ready.timeout bounds how long up waits for it'
+stderr 'a service starts again by restart:, not retry:'
+
+-- opstruss.yaml --
+name: shop
+units:
+  web:
+    service: |
+      echo "hello $GREETING"
+      touch "ready-$OPSTRUSS_SERVICE_ID"
+      exec sleep 300
+    pass: [GREETING]
+    ready:
+      run: [sh, -c, 'test -f "ready-$OPSTRUSS_SERVICE_ID"']
+      interval: 100ms
+    stop:
+      grace: 2s
+  flaky:
+    service: |
+      n=$(cat count 2>/dev/null || echo 0)
+      n=$((n+1))
+      echo $n > count
+      echo "attempt $n"
+      [ "$n" -ge 3 ] || exit 1
+      exec sleep 300
+    ready:
+      run: [sh, -c, 'test "$(cat count)" -ge 3']
+      interval: 100ms
+  once:
+    service: echo done
+    restart: "no"
+    approval: auto
+tasks:
+  check:
+    steps:
+      - id: st
+        task: status
+        units: [web]
+      - run: echo "web is $STATE"
+        env:
+          STATE: ${{ steps.st.units.web.outputs.state }}
+-- bad/opstruss.yaml --
+name: bad
+units:
+  web:
+    service: [sleep, "300"]
+    timeout: 1m
+    retry: {attempts: 2}
+    ready:
+      http: http://127.0.0.1:8080/
+      tcp: 127.0.0.1:8080

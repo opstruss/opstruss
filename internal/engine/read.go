@@ -72,7 +72,7 @@ func e0(opts Options) (*engine, error) {
 type UnitStatus struct {
 	Address string         `json:"address"`
 	Kind    string         `json:"kind"`
-	State   string         `json:"state"` // up, pending, or absent
+	State   string         `json:"state"` // up, pending, or absent; for a service, as its status says
 	Run     string         `json:"run,omitempty"`
 	Outputs map[string]any `json:"outputs,omitempty"`
 }
@@ -126,6 +126,9 @@ func List(opts Options) (*Status, error) {
 			if rec.Pending != nil {
 				u.State = "pending"
 			}
+		}
+		if inst.def.Service != nil {
+			u.Kind, u.State = "service", e.serviceStatus(inst)["state"].(string)
 		}
 		st.Units = append(st.Units, u)
 	}

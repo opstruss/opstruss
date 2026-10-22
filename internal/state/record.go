@@ -71,10 +71,12 @@ type Down struct {
 	Stop     *DownStop         `json:"stop,omitempty"`
 }
 
-// DownStop is how the program of down stops.
+// DownStop is how the program of down stops, or, for a service, how the
+// service does: Run is its stop.run.
 type DownStop struct {
 	Signal string `json:"signal,omitempty"`
 	Grace  string `json:"grace,omitempty"`
+	Run    any    `json:"run,omitempty"`
 }
 
 // Attempt is an operation that started and has not finished: the pending

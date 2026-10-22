@@ -15,6 +15,7 @@ import (
 
 	"github.com/opstruss/opstruss/internal/api"
 	"github.com/opstruss/opstruss/internal/daemon"
+	"github.com/opstruss/opstruss/internal/engine"
 	"github.com/opstruss/opstruss/internal/model"
 	"github.com/spf13/cobra"
 )
@@ -30,16 +31,35 @@ func (a *app) api() *api.API { return api.New(a.handlers()) }
 
 // call runs a method of the engine API in the daemon of the stack when one
 // runs, so the run shares its locks and its concurrency, and in this
-// process otherwise; with -d, a daemon is started first when none runs.
+// process otherwise; with -d, a daemon is started first when none runs. A
+// run in this process that starts a service makes this process the daemon
+// of the stack, which stays in the foreground until its services end or
+// ctx does, and then stops them.
 func (a *app) call(ctx context.Context, method string, req api.Request) (*api.Result, error) {
 	c, err := a.dial(req)
 	if err != nil {
 		return nil, err
 	}
-	if c == nil {
-		return a.api().Call(ctx, method, req)
+	if c != nil {
+		return c.Call(ctx, method, req, a.handlers())
 	}
-	return c.Call(ctx, method, req, a.handlers())
+	fg := a.foreground(ctx, req)
+	x := a.api()
+	x.Supervisor = fg
+	res, err := x.Call(ctx, method, req)
+	if fg.Started() {
+		a.render()(engine.Event{Type: "daemon", Level: "info",
+			Message: fmt.Sprintf("this process is the daemon of stack %s while its services run; Ctrl-C stops them", fg.Stack)})
+		fg.Wait(ctx)
+	}
+	return res, err
+}
+
+// foreground is the supervisor of a run in this process, which shows the
+// output of the services it starts at this terminal.
+func (a *app) foreground(ctx context.Context, req api.Request) *daemon.Foreground {
+	stack, _ := model.StackOf(req.Dir, req.Stack)
+	return &daemon.Foreground{Dir: req.Dir, Stack: stack, Version: version(), Ctx: ctx, Watch: a.render()}
 }
 
 // dial connects to the daemon of the request's stack, the one that runs or
@@ -152,11 +172,13 @@ func (a *app) daemonCommand() *cobra.Command {
 	}
 }
 
-// stopCommand stops the daemon of the stack, which cancels the runs in it.
+// stopCommand stops the daemon of the stack, which cancels the runs in it
+// and stops its services; their records stay, so up starts them again.
+// What a daemon that ended left of its services is stopped too.
 func (a *app) stopCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "stop",
-		Short: "Stop the daemon of the stack, which cancels the runs in it",
+		Short: "Stop the daemon of the stack, which cancels the runs in it and stops its services",
 		Args:  cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error {
 			dir, err := a.projectDir()
@@ -167,8 +189,14 @@ func (a *app) stopCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			pid, err := daemon.Stop(filepath.Join(dir, ".opstruss"), stack)
+			root := filepath.Join(dir, ".opstruss")
+			pid, err := daemon.Stop(root, stack)
 			if err != nil {
+				return err
+			}
+			left, unclear, err := daemon.Recover(root, stack, "")
+			var running *daemon.RunningError
+			if err != nil && !errors.As(err, &running) {
 				return err
 			}
 			if a.json {
@@ -176,12 +204,50 @@ func (a *app) stopCommand() *cobra.Command {
 				if pid != 0 {
 					out["pid"] = pid
 				}
-				return a.printJSON(out)
-			}
-			if pid == 0 {
-				fmt.Fprintf(a.stdout, "no daemon runs for stack %s\n", stack)
+				if len(left) > 0 {
+					out["left"] = left
+				}
+				if err := a.printJSON(out); err != nil {
+					return err
+				}
 			} else {
-				fmt.Fprintf(a.stdout, "stopped the daemon of stack %s, pid %d\n", stack, pid)
+				if pid == 0 {
+					fmt.Fprintf(a.stdout, "no daemon runs for stack %s\n", stack)
+				} else {
+					fmt.Fprintf(a.stdout, "stopped the daemon of stack %s, pid %d\n", stack, pid)
+				}
+				for _, l := range left {
+					fmt.Fprintf(a.stdout, "stopped what the daemon that ended left: %s\n", l)
+				}
+			}
+			if len(unclear) > 0 {
+				return fmt.Errorf("%s; once you are sure it is not the service's, opstruss unlock <unit> forgets it", strings.Join(unclear, "; "))
+			}
+			return nil
+		},
+	}
+}
+
+// unlockCommand forgets what is left of a service that cannot be proven
+// its own, which keeps up from starting it and stop from finishing.
+func (a *app) unlockCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "unlock <unit>",
+		Short: "Forget what is left of a service that cannot be proven its own, so up starts it again",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, units []string) error {
+			req, err := a.request(units)
+			if err != nil {
+				return err
+			}
+			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
+			res, err := a.call(ctx, "unlock", req)
+			if err != nil {
+				return err
+			}
+			if res.ExitCode != 0 {
+				return &exitError{res.ExitCode}
 			}
 			return nil
 		},

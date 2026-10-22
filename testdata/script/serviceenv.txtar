@@ -1,0 +1,38 @@
+# A service lives outside the run that starts it: it gets the facts of its
+# unit and OPSTRUSS_SERVICE_ID, not those of the run, and its log hides the
+# sensitive values of that run.
+
+env HOME=$WORK/home
+env SOPS_AGE_KEY_FILE=$WORK/age/keys.txt
+env TOKEN=s3cr3t-token-value
+exec opstruss init
+exec opstruss up -d --yes
+stdout 'default/talk: running'
+waitgrep '"message":"end"' .opstruss/logs/default/talk.jsonl
+grep '"message":"OPSTRUSS_ADDRESS=default/talk"' .opstruss/logs/default/talk.jsonl
+grep '"message":"OPSTRUSS_SERVICE_ID=[0-9a-f]{16}"' .opstruss/logs/default/talk.jsonl
+grep '"message":"OPSTRUSS_STATE_KEY=default/talk\.[0-9a-f]{8}"' .opstruss/logs/default/talk.jsonl
+grep '"message":"OPSTRUSS_PROJECT=shop"' .opstruss/logs/default/talk.jsonl
+! grep 'OPSTRUSS_RUN=|OPSTRUSS_TEMP=|OPSTRUSS_TASK=|OPSTRUSS_OUTPUT=' .opstruss/logs/default/talk.jsonl
+grep '"message":"token \*\*\*"' .opstruss/logs/default/talk.jsonl
+grep '"message":"file \*\*\*"' .opstruss/logs/default/talk.jsonl
+! exec sh -c 'grep -r s3cr3t .opstruss/logs .opstruss/runs .opstruss/daemon/default.json'
+exec opstruss stop
+! exists .opstruss/daemon/default/talk
+
+-- opstruss.yaml --
+name: shop
+inputs:
+  token: {type: string, sensitive: true, env: TOKEN}
+units:
+  talk:
+    service: |
+      env | grep '^OPSTRUSS_' | sort
+      echo "token $TOKEN"
+      echo "file $(cat "$TOKEN_FILE")"
+      echo end
+      exec sleep 300
+    env:
+      TOKEN: ${{ inputs.token }}
+      TOKEN_FILE: {file: '${{ inputs.token }}'}
+    approval: auto

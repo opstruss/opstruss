@@ -15,6 +15,7 @@ import (
 	"runtime/debug"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/opstruss/opstruss/internal/model"
 	"github.com/opstruss/opstruss/internal/secret"
@@ -47,6 +48,7 @@ type app struct {
 	inputs     []string
 	json       bool
 	completion string
+	renderMu   sync.Mutex
 }
 
 // exitError ends a command that already wrote why it failed.
@@ -189,7 +191,7 @@ func (a *app) root() *cobra.Command {
 	root.AddCommand(a.versionCommand(), a.initCommand(), a.validateCommand(), a.explainCommand(), a.stateCommand())
 	root.AddCommand(a.unitCommands()...)
 	root.AddCommand(a.listCommand(), a.outputsCommand(), a.runsCommand(), a.execCommand(), a.doctorCommand(),
-		a.stopCommand(), a.daemonCommand())
+		a.stopCommand(), a.unlockCommand(), a.daemonCommand())
 	a.taskCommands(root)
 	return root
 }

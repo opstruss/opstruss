@@ -252,6 +252,8 @@ func (e *engine) decide(ctx context.Context, inst *instance, r *resolved, rec *s
 		p.reason = "forced"
 	case rec.Digest != digest:
 		p.reason = "definition changed"
+	case r.service != nil && !e.running(inst.address):
+		p.reason = "not running"
 	case len(missing) > 0:
 		p.reason = "generates missing: " + strings.Join(missing, ", ")
 	default:
@@ -683,6 +685,10 @@ func sameTarget(a, b *state.Down) bool {
 func (e *engine) attempts(ctx context.Context, inst *instance, r *resolved, rec *state.Record, reason, digest string,
 	keep func(*plugin.Result) error) (*plugin.Result, error) {
 	retry := inst.def.Retry
+	if r.service != nil {
+		// A service restarts by restart:; its start is not repeated.
+		retry = nil
+	}
 	n, delay, backoff := 1, time.Duration(0), 1.0
 	if retry != nil {
 		n = max(1, retry.Attempts)
@@ -747,9 +753,12 @@ func outcomeErr(res *plugin.Result) error {
 	return nil
 }
 
-// exec runs the program of up for inst, or the task of a unit that uses
-// one.
+// exec runs the program of up for inst, the task of a unit that uses one,
+// or the start of a service.
 func (e *engine) exec(ctx context.Context, inst *instance, r *resolved, rec *state.Record, reason, digest string) (*plugin.Result, error) {
+	if r.service != nil {
+		return e.startService(ctx, inst, r, rec)
+	}
 	command := r.task != nil && r.task.target.Kind == model.TargetBuiltin && r.task.target.Task == "command"
 	if r.task != nil && !command {
 		return e.execTask(ctx, inst, r, rec, reason), nil

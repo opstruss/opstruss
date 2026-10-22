@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -25,16 +26,18 @@ import (
 // Version is the version of <stack>.json.
 const Version = 1
 
-// File is daemon/<stack>.json: how to reach the daemon and how to stop it.
-// The daemon lives while it holds daemon/<stack>.lock, so the file outlives
-// it.
+// File is daemon/<stack>.json: how to reach the daemon and how to stop it,
+// and the programs it guards. The daemon lives while it holds
+// daemon/<stack>.lock, so the file outlives it, and the next daemon stops
+// what is left of those programs.
 type File struct {
-	Version  int    `json:"version"`
-	PID      int    `json:"pid"`
-	Start    string `json:"start"` // when the process started, from proc.StartTime
-	Started  string `json:"started"`
-	OpsTruss string `json:"opstruss"`
-	Socket   string `json:"socket"`
+	Version   int        `json:"version"`
+	PID       int        `json:"pid"`
+	Start     string     `json:"start"` // when the process started, from proc.StartTime
+	Started   string     `json:"started"`
+	OpsTruss  string     `json:"opstruss"`
+	Socket    string     `json:"socket"`
+	Processes []*Process `json:"processes,omitempty"`
 }
 
 // maxSocket is the longest path of a Unix socket: 104 bytes with its NUL
@@ -54,6 +57,9 @@ type Options struct {
 	Dir     string // the project
 	Stack   string
 	Version string // of OpsTruss
+	// Watch also gets the output and events of the services, for the
+	// terminal of a daemon in the foreground.
+	Watch func(record.Event)
 }
 
 // RunningError is a daemon of the stack that runs already.
@@ -74,10 +80,13 @@ type Daemon struct {
 	ln   net.Listener
 	tmp  string // the directory of the socket under $TMPDIR, when it is there
 	log  *record.Log
+	reg  *registry
+	sup  *Supervisor
 
 	mu       sync.Mutex
 	stopping bool
 	calls    sync.WaitGroup
+	active   atomic.Int64 // calls that run
 }
 
 // Start takes the lock of the stack's daemon, listens on its socket, and
@@ -106,8 +115,10 @@ func Start(opts Options) (_ *Daemon, err error) {
 		}
 		return nil, err
 	}
-	// The file of a newer OpsTruss may hold what this one would drop.
-	if _, err := Read(root, opts.Stack); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	// The file of a newer OpsTruss may hold what this one would drop; the
+	// programs that the last daemon guarded are stopped before any starts.
+	old, err := Read(root, opts.Stack)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, err
 	}
 	sock := socketPath(root, opts.Stack)
@@ -134,10 +145,17 @@ func Start(opts Options) (_ *Daemon, err error) {
 	}
 	f := File{Version: Version, PID: os.Getpid(), Start: start, Started: time.Now().UTC().Format(time.RFC3339),
 		OpsTruss: opts.Version, Socket: sock}
-	if err := writeFile(filePath(root, opts.Stack), f); err != nil {
+	if old != nil {
+		f.Processes = old.Processes
+	}
+	d.reg = &registry{path: filePath(root, opts.Stack)}
+	if err := d.reg.update(func(next *File) { *next = f }); err != nil {
 		return nil, err
 	}
 	d.say("info", "daemon started: pid %d, opstruss %s", f.PID, f.OpsTruss)
+	d.sup = newSupervisor(root, opts.Stack, d.reg, func(ev record.Event) { d.log.Emit(ev) })
+	d.sup.watch = opts.Watch
+	go d.sup.recover()
 	return d, nil
 }
 
@@ -159,7 +177,11 @@ func (d *Daemon) Serve(ctx context.Context) error {
 	defer cancel()
 	srv := &api.Server{Version: d.opts.Version, Stopping: d.isStopping,
 		Call: func(ctx context.Context, method string, r api.Request, h api.Handlers) (*api.Result, error) {
-			return api.New(h).Call(ctx, method, r)
+			d.active.Add(1)
+			defer d.active.Add(-1)
+			x := api.New(h)
+			x.Supervisor = d.sup
+			return x.Call(ctx, method, r)
 		}}
 	go d.accept(calls, srv)
 	select {
@@ -172,10 +194,15 @@ func (d *Daemon) Serve(ctx context.Context) error {
 	d.mu.Unlock()
 	cancel()
 	d.calls.Wait()
+	d.sup.stopAll()
 	d.say("info", "daemon stopped")
 	d.close()
 	return nil
 }
+
+// idle reports whether no call runs and no service lives, when a daemon
+// in the foreground has nothing left to stay for.
+func (d *Daemon) idle() bool { return d.active.Load() == 0 && !d.sup.live() }
 
 func (d *Daemon) isStopping() bool {
 	d.mu.Lock()

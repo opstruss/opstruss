@@ -81,23 +81,24 @@ func lastLine(f *os.File) (size, seq int64, err error) {
 }
 
 // Emit gives ev its envelope and appends it as one write, so a reader
-// never sees half of it. A log that cannot be written loses the event, as
-// the output of a program that fills the disk does.
-func (l *Log) Emit(ev Event) {
+// never sees half of it, and returns it with that envelope. A log that
+// cannot be written loses the event, as the output of a program that fills
+// the disk does.
+func (l *Log) Emit(ev Event) Event {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.f == nil {
-		return
-	}
 	ev.V, ev.Seq, ev.Time = EventVersion, l.seq+1, now()
+	if l.f == nil {
+		return ev
+	}
 	data, err := json.Marshal(ev)
 	if err != nil {
-		return
+		return ev
 	}
 	if l.size > 0 && l.size+int64(len(data))+1 > logMax {
 		l.turn()
 		if l.f == nil {
-			return
+			return ev
 		}
 		ev.Seq = 1
 		data, _ = json.Marshal(ev)
@@ -105,6 +106,7 @@ func (l *Log) Emit(ev Event) {
 	l.seq = ev.Seq
 	n, _ := l.f.Write(append(data, '\n'))
 	l.size += int64(n)
+	return ev
 }
 
 // turn moves the full file aside, over the oldest one, and starts a new

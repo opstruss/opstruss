@@ -1,0 +1,47 @@
+# A daemon killed with kill -9 stops nothing, so its services live on. The
+# next daemon stops what is left before up starts them again: the group of
+# a leader with the start time recorded, and the processes that carry the
+# service's id. A group whose leader is gone, with members that do not
+# show the id, cannot be proven the service's: up does not start the
+# service, stop fails, and unlock forgets it.
+
+env HOME=$WORK/home
+
+exec opstruss up -d --yes
+stdout 'default/web: running, pid'
+exec sh -c 'sed -n "s/^      \"pid\": \([0-9]*\),\$/\1/p" .opstruss/daemon/default.json > service.pid'
+exec sh -c 'sed -n "s/^  \"pid\": \([0-9]*\),\$/\1/p" .opstruss/daemon/default.json > daemon.pid'
+exec sh -c 'kill -9 $(cat daemon.pid)'
+exec sh -c 'kill -0 $(cat service.pid)'
+
+exec opstruss up -d --yes
+stdout 'default/web: will run: not running'
+stdout 'default/web: running, pid'
+exec sh -c '! kill -0 $(cat service.pid)'
+grep '"type":"service","level":"warn","address":"default/web","message":"stopping what the daemon that ended left: process group [0-9]+"' .opstruss/logs/default/_daemon.jsonl
+
+# the leader is killed too, and a member of its group without the id stays
+exec sh -c 'sed -n "s/^      \"pid\": \([0-9]*\),\$/\1/p" .opstruss/daemon/default.json > service.pid'
+exec sh -c 'sed -n "s/^  \"pid\": \([0-9]*\),\$/\1/p" .opstruss/daemon/default.json > daemon.pid'
+exec sh -c 'kill -9 $(cat daemon.pid) && kill -9 $(cat service.pid)'
+
+! exec opstruss up -d --yes
+stderr 'default/web: pid [0-9]+ \(sleep\) is in the process group of pid [0-9]+, which is gone, and it does not show that it belongs to the service; once you are sure it is not the service''s, opstruss unlock web forgets it'
+! exec opstruss stop
+stderr 'pid [0-9]+ \(sleep\) is in the process group'
+exec opstruss unlock web
+stdout 'default/web: forgot pid [0-9]+ \(sleep\)'
+exec opstruss up -d --yes
+stdout 'default/web: running, pid'
+exec sh -c 'kill -9 $(cat child.pid)'
+exec opstruss stop
+
+-- opstruss.yaml --
+name: shop
+units:
+  web:
+    service: |
+      env -i sleep 300 &
+      echo $! > child.pid
+      wait
+    approval: auto

@@ -221,22 +221,32 @@ func (e *engine) pluginHash(dir string) (string, error) {
 
 // StatusUnits runs status of the units: the plugin's status task for a
 // unit whose plugin has one, without the unit's lock and with its record
-// to read, and otherwise what the record says: up, pending, or absent,
-// with the last run and the outputs.
+// to read, what its supervisor says of a service, and otherwise what the
+// record says: up, pending, or absent, with the last run and the outputs.
 func StatusUnits(ctx context.Context, opts Options) (*Result, error) {
 	e, err := open(ctx, opts, "status", "")
 	if err != nil {
 		return nil, err
 	}
-	if err := e.statusPass(ctx, opts.Units); err != nil {
+	got, _, err := e.statusPass(ctx, opts.Units)
+	if err != nil {
 		e.fail("", err)
+	}
+	for _, u := range got {
+		if u.(map[string]any)["outcome"] == failure {
+			e.exit = max(e.exit, 1)
+		}
 	}
 	outcome := map[int]string{0: success, 1: failure, 2: skipped}[e.exit]
 	e.close(outcome, nil, nil)
 	return e.result(), nil
 }
 
-func (e *engine) statusPass(ctx context.Context, patterns []string) error {
+// statusPass runs status of the units that patterns pick, and returns, for
+// each by its address without the stack, the outcome and outputs, which a
+// task: status step gives as steps.<id>.units, with the marks of the
+// sensitive ones.
+func (e *engine) statusPass(ctx context.Context, patterns []string) (map[string]any, map[string]any, error) {
 	e.passMu.Lock()
 	e.pass = pass{units: patterns, noDeps: true}
 	e.resetUnits()
@@ -247,15 +257,17 @@ func (e *engine) statusPass(ctx context.Context, patterns []string) error {
 	insts := slices.Clone(e.insts)
 	e.passMu.Unlock()
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	if len(insts) == 0 {
 		e.say("run", "", "no units")
 	}
+	out, marks := map[string]any{}, map[string]any{}
 	for _, inst := range insts {
 		if !e.sel.has(inst) {
 			continue
 		}
+		short := e.short(inst.address)
 		if t := inst.def.Target; t != nil && t.Kind == model.TargetPlugin && t.Package.Plugin.Tasks["status"] != nil {
 			r, err := e.resolve(inst, false)
 			if err != nil {
@@ -267,25 +279,44 @@ func (e *engine) statusPass(ctx context.Context, patterns []string) error {
 			if inst.record != nil {
 				ur.state = programState(inst.record)
 			}
-			if res := e.callTask(ctx, "status", t.Package.Plugin.Tasks["status"], inst.dir, r.plugin.inputs,
-				call{unit: inst, plugin: run, unitRun: ur}); res.outcome == failure {
-				e.exit = max(e.exit, 1)
+			res := e.callTask(ctx, "status", t.Package.Plugin.Tasks["status"], inst.dir, r.plugin.inputs,
+				call{unit: inst, plugin: run, unitRun: ur})
+			out[short] = res.view()
+			if m := res.viewMarks(); m != nil {
+				marks[short] = m
 			}
 			continue
 		}
+		outputs := map[string]any{"state": "absent", "run": "", "updated": "", "outputs": map[string]any{}}
+		ev := Event{Type: "unit", Level: "info", Address: inst.address}
 		switch rec := inst.record; {
+		case inst.def.Service != nil:
+			outputs = e.serviceStatus(inst)
+			ev.Message = fmt.Sprint(outputs["state"])
+			if pid := outputs["pid"].(int64); pid != 0 {
+				ev.Message += fmt.Sprintf(", pid %d since %s, %d restarts", pid, outputs["since"], outputs["restarts"])
+			}
 		case rec == nil || rec.Tombstone != nil:
-			e.say("unit", inst.address, "absent")
-		case rec.Pending != nil:
-			e.say("unit", inst.address, "pending: %s of run %s did not finish", rec.Pending.Op, rec.Pending.Run)
+			ev.Message = "absent"
 		default:
-			e.say("unit", inst.address, "up, from run %s at %s", rec.Run, rec.Updated)
-			if len(rec.Outputs) > 0 {
-				e.say("unit", inst.address, "outputs: %s", expr.JSON(e.shown(rec.Outputs, hiddenMarks(rec.Hidden[state.PartOutputs]))))
+			outputs["state"], outputs["run"], outputs["updated"] = "up", rec.Run, rec.Updated
+			if shown := e.shown(rec.Outputs, hiddenMarks(rec.Hidden[state.PartOutputs])); shown != nil {
+				outputs["outputs"] = shown
+			}
+			ev.Message = fmt.Sprintf("up, from run %s at %s", rec.Run, rec.Updated)
+			if rec.Pending != nil {
+				outputs["state"] = "pending"
+				ev.Message = fmt.Sprintf("pending: %s of run %s did not finish", rec.Pending.Op, rec.Pending.Run)
 			}
 		}
+		ev.Outputs = outputs
+		e.emit(ev)
+		if o, _ := outputs["outputs"].(map[string]any); len(o) > 0 && outputs["state"] == "up" {
+			e.say("unit", inst.address, "outputs: %s", expr.JSON(o))
+		}
+		out[short] = map[string]any{"outcome": success, "changed": false, "outputs": outputs}
 	}
-	return nil
+	return out, marks, nil
 }
 
 // toolMoved stops a unit whose tool keeps state in tool/ while its input

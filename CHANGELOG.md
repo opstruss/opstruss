@@ -25,6 +25,34 @@ minor release can change what a project, a component, or a plugin relies on.
   protocol with what to do, writes its events to
   `.opstruss/logs/<stack>/_daemon.jsonl`, which turns over at 10 MiB into
   `.1` and `.2`, and stops when its lock file is deleted.
+- A unit with `service:` is a program that keeps running, which the daemon
+  of the stack keeps. `up` starts it, and again after its definition
+  changed, with `--force`, or when it does not run, and waits until
+  `ready:` passes: one `http`, `tcp`, or `run` check every `interval`
+  (default 1s) for at most `timeout` (default 1m). `restart:`
+  (`on-failure` by default, `always`, or `no`) starts it again after it
+  exits, 100 ms later at first and twice as long each time up to a
+  minute, from the start again once it ran for 10 seconds. It stops with
+  `stop.run`, then `stop.signal` (default `SIGTERM`) to its process group,
+  and a kill after `stop.grace` (default 10s). `down` stops it and drops
+  its record, while `opstruss stop` stops it with the daemon and keeps the
+  record. Its output goes to `.opstruss/logs/<stack>/<unit>.jsonl`, which
+  turns over as the daemon's log does, with the sensitive values of the
+  run that started it hidden, and `status` gives its `state` (`running`,
+  `starting`, `restarting`, or `stopped`), `pid`, `since`, and
+  `restarts`.
+- A run without a daemon that starts a service makes its process the
+  daemon of the stack, which stays in the foreground with the output of
+  its services until they end or Ctrl-C stops them, as `docker compose up`
+  does; the runs of other command lines go to it meanwhile.
+- A service runs in a session of its own with `OPSTRUSS_SERVICE_ID`, which
+  its processes pass on, and a lock of its own on file descriptor 3, and
+  is written in `.opstruss/daemon/<stack>.json` before it runs. When a
+  daemon starts, and when `opstruss stop` finds none, what a daemon that
+  ended left is stopped first. A process group whose leader is gone and
+  that does not show the id keeps the service from starting and
+  `opstruss stop` from finishing, naming its pid, until
+  `opstruss unlock <unit>` forgets it.
 - `opstruss validate` checks `opstruss.yaml`, its include files, and every
   stack against the schema and the rules of the model, among them that
   every `${{ }}` compiles and reads only what exists and may be read where
@@ -121,7 +149,9 @@ minor release can change what a project, a component, or a plugin relies on.
 - `opstruss status [unit]...` (also `ps`) runs the `status` task of each
   unit's plugin without the unit's lock, with its record to read, and for
   other units says what the record holds: up with its last run and
-  outputs, pending, or absent.
+  outputs, pending, or absent. A `task: status` step gives what each unit
+  says as `steps.<id>.units['<unit>'].outputs`, and `--json` carries it in
+  the event of each unit.
 - A sensitive value is hidden as `***` wherever a run writes it: the
   terminal, `--json`, events, `record.json`, error messages, and
   `explain`, line by line, in its JSON form, and quoted as error messages

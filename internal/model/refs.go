@@ -259,9 +259,16 @@ func retryUntil(r *Retry) any {
 
 // unitValues are the keys of a unit whose expressions read other units.
 func unitValues(u *Unit) map[string]any {
-	return map[string]any{"with": u.With, "env": envValues(u.Env), "run": argv(u.Run), "service": argv(u.Service),
+	v := map[string]any{"with": u.With, "env": envValues(u.Env), "run": argv(u.Run), "service": argv(u.Service),
 		"down": argv(u.Down), "dir": u.Dir, "revision": u.Revision, "requires": u.Requires.Value(),
 		"stdin.value": stdinValue(u.Stdin), "retry.until": retryUntil(u.Retry), "if": condition(u.If), "for_each": u.ForEach}
+	if r := u.Ready; r != nil {
+		v["ready.http"], v["ready.tcp"], v["ready.run"] = r.HTTP, r.TCP, argv(r.Run)
+	}
+	if u.Stop != nil {
+		v["stop.run"] = argv(u.Stop.Run)
+	}
+	return v
 }
 
 // references checks every expression, and builds the graph of task calls

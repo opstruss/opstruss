@@ -54,8 +54,12 @@ type Handlers struct {
 	Ask     func(context.Context, string, *model.Input) (string, error)
 }
 
-// API answers calls in this process.
-type API struct{ h Handlers }
+// API answers calls in this process. Supervisor keeps the services that
+// its runs start; without one, a service cannot start.
+type API struct {
+	h          Handlers
+	Supervisor engine.Supervisor
+}
 
 // New returns the API of this process with h for the callbacks of calls.
 func New(h Handlers) *API { return &API{h: h} }
@@ -70,7 +74,7 @@ func (a *API) options(r Request) engine.Options {
 	return engine.Options{Dir: r.Dir, Cwd: r.Cwd, Stack: r.Stack, Inputs: r.Inputs, Environ: r.Environ,
 		LookupEnv: func(k string) (string, bool) { v, ok := env[k]; return v, ok },
 		Units:     r.Units, Yes: r.Yes, Force: r.Force, NoDeps: r.NoDeps, Debug: r.Debug, ShowSensitive: r.ShowSensitive,
-		Emit: a.h.Event, Approve: a.h.Approve, Ask: a.h.Ask}
+		Emit: a.h.Event, Approve: a.h.Approve, Ask: a.h.Ask, Supervisor: a.Supervisor}
 }
 
 func result(res *engine.Result, err error) (*Result, error) {
@@ -93,6 +97,8 @@ func (a *API) Call(ctx context.Context, method string, r Request) (*Result, erro
 		return a.StatusUnits(ctx, r)
 	case "run":
 		return a.Run(ctx, r)
+	case "unlock":
+		return a.Unlock(ctx, r)
 	}
 	return nil, fmt.Errorf("the engine API has no method %q", method)
 }
@@ -122,6 +128,12 @@ func (a *API) StatusUnits(ctx context.Context, r Request) (*Result, error) {
 // the terminal does not cross a socket.
 func (a *API) Exec(ctx context.Context, r Request, argv []string, tty engine.Stdio) (*Result, error) {
 	return result(engine.Exec(ctx, a.options(r), argv, tty))
+}
+
+// Unlock forgets what is left of the service of the one unit of the
+// request that cannot be proven its own.
+func (a *API) Unlock(ctx context.Context, r Request) (*Result, error) {
+	return result(engine.Unlock(ctx, a.options(r)))
 }
 
 // Run runs the task of the request with its inputs.

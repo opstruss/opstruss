@@ -5,7 +5,6 @@ import (
 	"maps"
 	"os"
 	"path"
-	"path/filepath"
 	"strings"
 
 	"github.com/opstruss/opstruss/internal/expr"
@@ -59,18 +58,15 @@ func passes(pass []string, name string) bool {
 
 // environment builds the environment of a call: the clean base, what pass
 // lets through, and env, then the facts and contract files of its kind of
-// program, which only the engine sets. Every file goes in dir, 0600, and
-// is removed with it after the call.
-func (r *Run) environment(c *Call, dir string) (map[string]string, error) {
+// program, which only the engine sets; a program that lives outside the
+// run gets neither the facts of the run nor its files. Every file goes
+// through write, which says where it is.
+func (r *Run) environment(c *Call, write func(name string, data []byte) (string, error), inRun bool) (map[string]string, error) {
 	env := maps.Clone(r.base)
 	for k, v := range r.operator {
 		if passes(c.Pass, k) {
 			env[k] = v
 		}
-	}
-	write := func(name string, data []byte) (string, error) {
-		p := filepath.Join(dir, name)
-		return p, os.WriteFile(p, data, 0o600)
 	}
 	for k, v := range c.Env {
 		if model.ReservedEnv(k) {
@@ -87,6 +83,16 @@ func (r *Run) environment(c *Call, dir string) (map[string]string, error) {
 		env[k] = p
 	}
 
+	env["OPSTRUSS_CONTRACT"] = Contract
+	env["OPSTRUSS_PROJECT"] = r.Project
+	env["OPSTRUSS_STACK"] = r.Stack
+	if u := c.Unit; u != nil {
+		env["OPSTRUSS_ADDRESS"] = u.Address
+		env["OPSTRUSS_STATE_KEY"] = u.StateKey
+	}
+	if !inRun {
+		return env, nil
+	}
 	files := map[string]string{"OPSTRUSS_OUTPUT": outputFile, "OPSTRUSS_RESULT": resultFile}
 	if c.Plan {
 		files["OPSTRUSS_PLAN"] = planFile
@@ -110,9 +116,6 @@ func (r *Run) environment(c *Call, dir string) (map[string]string, error) {
 			}
 		}
 	}
-	env["OPSTRUSS_CONTRACT"] = Contract
-	env["OPSTRUSS_PROJECT"] = r.Project
-	env["OPSTRUSS_STACK"] = r.Stack
 	env["OPSTRUSS_RUN"] = r.ID
 	env["OPSTRUSS_RUN_PARENTS"] = strings.Join(r.Parents, ",")
 	env["OPSTRUSS_TASK"] = c.Task
@@ -128,8 +131,6 @@ func (r *Run) environment(c *Call, dir string) (map[string]string, error) {
 		env["OPSTRUSS_PLUGIN_DIR"] = c.PluginDir
 	}
 	if u := c.Unit; u != nil {
-		env["OPSTRUSS_ADDRESS"] = u.Address
-		env["OPSTRUSS_STATE_KEY"] = u.StateKey
 		if u.Workdir != "" {
 			if err := os.MkdirAll(u.Workdir, 0o700); err != nil {
 				return nil, err

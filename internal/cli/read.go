@@ -22,7 +22,9 @@ func (a *app) listCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			st, err := a.api().Status(context.Background(), req)
+			x := a.api()
+			x.Supervisor = a.foreground(context.Background(), req)
+			st, err := x.Status(context.Background(), req)
 			if err != nil {
 				return err
 			}
@@ -46,7 +48,7 @@ func (a *app) listCommand() *cobra.Command {
 			if len(st.Units) > 0 {
 				fmt.Fprintln(a.stdout, "Units")
 				for _, u := range st.Units {
-					fmt.Fprintf(a.stdout, "  %-30s %-6s %s\n", u.Address, u.Kind, u.State)
+					fmt.Fprintf(a.stdout, "  %-30s %-7s %s\n", u.Address, u.Kind, u.State)
 				}
 			}
 			return nil

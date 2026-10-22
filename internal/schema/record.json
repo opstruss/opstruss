@@ -75,7 +75,14 @@
           "type": "object",
           "properties": {
             "signal": { "type": "string" },
-            "grace": { "type": "string" }
+            "grace": { "type": "string" },
+            "run": {
+              "description": "stop.run of a service",
+              "oneOf": [
+                { "type": "string" },
+                { "type": "array", "items": { "type": "string" } }
+              ]
+            }
           }
         }
       }

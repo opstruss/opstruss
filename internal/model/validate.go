@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net"
+	"net/url"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -256,6 +258,45 @@ func (c *checker) environment(path []string, env Env, pass []string) {
 	}
 }
 
+// unitCommands are the programs of a unit, by their keys.
+func unitCommands(u *Unit) map[string]*Command {
+	cmds := map[string]*Command{"run": u.Run, "service": u.Service, "down": u.Down}
+	if u.Ready != nil {
+		cmds["ready.run"] = u.Ready.Run
+	}
+	if u.Stop != nil {
+		cmds["stop.run"] = u.Stop.Run
+	}
+	return cmds
+}
+
+// ready checks that ready: has exactly one check, and that the address
+// of an http or tcp check written without an expression is one.
+func (c *checker) ready(path []string, r *Ready) {
+	if r == nil {
+		return
+	}
+	n := 0
+	for _, set := range []bool{r.HTTP != "", r.TCP != "", r.Run != nil} {
+		if set {
+			n++
+		}
+	}
+	if n != 1 {
+		c.add(path, "ready has exactly one of http, tcp, or run")
+	}
+	if r.HTTP != "" && !expr.HasExpr(r.HTTP) {
+		if u, err := url.Parse(r.HTTP); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			c.add(at(path, "http"), "%s is not an http or https URL", r.HTTP)
+		}
+	}
+	if r.TCP != "" && !expr.HasExpr(r.TCP) {
+		if _, _, err := net.SplitHostPort(r.TCP); err != nil {
+			c.add(at(path, "tcp"), "%s is not host:port: %v", r.TCP, err)
+		}
+	}
+}
+
 func (c *checker) stop(path []string, s *Stop) {
 	if s == nil || s.Signal == "" {
 		return
@@ -297,6 +338,13 @@ func (c *checker) units() {
 			if len(u.Generates) > 0 {
 				c.add(at(path, "generates"), "generates is for run units and units that use a task")
 			}
+			if u.Timeout != "" {
+				c.add(at(path, "timeout"), "a service runs until it stops; ready.timeout bounds how long up waits for it")
+			}
+			if u.Retry != nil {
+				c.add(at(path, "retry"), "a service starts again by restart:, not retry:")
+			}
+			c.ready(at(path, "ready"), u.Ready)
 		}
 		if u.Uses != "" {
 			c.unitUses(path, name, u)
@@ -311,9 +359,9 @@ func (c *checker) units() {
 				c.add(at(path, "needs", strconv.Itoa(i)), "there is no unit %s", n)
 			}
 		}
-		for k, cmd := range map[string]*Command{"run": u.Run, "service": u.Service, "down": u.Down} {
+		for k, cmd := range unitCommands(u) {
 			if hasExpr(cmd) {
-				c.add(at(path, k), scriptExpr)
+				c.add(at(path, strings.Split(k, ".")...), scriptExpr)
 			}
 		}
 		c.environment(path, u.Env, u.Pass)
@@ -688,9 +736,6 @@ func (c *checker) unsupported() {
 	}
 	for _, name := range slices.Sorted(maps.Keys(p.Units)) {
 		u, path := p.Units[name], []string{"units", name}
-		if u.Service != nil {
-			c.add(at(path, "service"), "service units are not supported yet")
-		}
 		for _, tn := range slices.Sorted(maps.Keys(u.Tasks)) {
 			c.triggers(at(path, "tasks", tn), u.Tasks[tn])
 		}
@@ -722,9 +767,9 @@ func (c *checker) sensitiveValues() {
 	}
 	for _, name := range slices.Sorted(maps.Keys(p.Units)) {
 		u, path := p.Units[name], []string{"units", name}
-		for key, cmd := range map[string]*Command{"run": u.Run, "down": u.Down, "service": u.Service} {
+		for key, cmd := range unitCommands(u) {
 			if reads(argv(cmd), marks) {
-				c.add(at(path, key), "%s", argvMessage)
+				c.add(at(path, strings.Split(key, ".")...), "%s", argvMessage)
 			}
 		}
 		for _, tn := range slices.Sorted(maps.Keys(u.Tasks)) {

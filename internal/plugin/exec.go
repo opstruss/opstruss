@@ -198,22 +198,11 @@ func (r *Run) Exec(ctx context.Context, c *Call) (*Result, error) {
 		return nil, err
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
-	env, err := r.environment(c, dir)
+	env, err := r.environment(c, inDir(dir), true)
 	if err != nil {
 		return nil, err
 	}
-	cwd := resolve(c.Base, c.Dir)
-	if info, err := os.Stat(cwd); err != nil || !info.IsDir() {
-		return nil, fmt.Errorf("the directory %s does not exist", cwd)
-	}
-	args, err := argv(c.Command, c.Shell, c.Args)
-	if err != nil {
-		return nil, err
-	}
-	if c.PluginDir != "" && c.Command.Script == "" && strings.Contains(args[0], "/") {
-		args[0] = resolve(c.PluginDir, args[0])
-	}
-	path, err := LookPath(args[0], env["PATH"])
+	path, args, cwd, err := program(c, env)
 	if err != nil {
 		return nil, err
 	}
@@ -337,22 +326,11 @@ func (r *Run) Attach(c *Call, stdin io.Reader, stdout, stderr io.Writer) (int, e
 		return 0, err
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
-	env, err := r.environment(c, dir)
+	env, err := r.environment(c, inDir(dir), true)
 	if err != nil {
 		return 0, err
 	}
-	cwd := resolve(c.Base, c.Dir)
-	if info, err := os.Stat(cwd); err != nil || !info.IsDir() {
-		return 0, fmt.Errorf("the directory %s does not exist", cwd)
-	}
-	args, err := argv(c.Command, c.Shell, c.Args)
-	if err != nil {
-		return 0, err
-	}
-	if c.PluginDir != "" && c.Command.Script == "" && strings.Contains(args[0], "/") {
-		args[0] = resolve(c.PluginDir, args[0])
-	}
-	path, err := LookPath(args[0], env["PATH"])
+	path, args, cwd, err := program(c, env)
 	if err != nil {
 		return 0, err
 	}
@@ -370,6 +348,71 @@ func (r *Run) Attach(c *Call, stdin io.Reader, stdout, stderr io.Writer) (int, e
 		return 128 + int(ws.Signal()), nil
 	}
 	return ws.ExitStatus(), nil
+}
+
+// Program is a program prepared to live outside a run, such as a service
+// with its ready.run and stop.run: what it runs, where, and with what
+// environment. Files are the files of its env: values, by path, which are
+// written before it starts.
+type Program struct {
+	Path  string
+	Args  []string
+	Dir   string
+	Env   []string
+	Files map[string][]byte
+	Stdin []byte
+}
+
+// Prepare prepares c as a program that lives outside the run, with the
+// environment of such a program: no facts or files of the run, and the
+// files of env: values in dir, which outlive the run.
+func (r *Run) Prepare(c *Call, dir string) (*Program, error) {
+	files := map[string][]byte{}
+	env, err := r.environment(c, func(name string, data []byte) (string, error) {
+		p := filepath.Join(dir, name)
+		files[p] = data
+		return p, nil
+	}, false)
+	if err != nil {
+		return nil, err
+	}
+	path, args, cwd, err := program(c, env)
+	if err != nil {
+		return nil, err
+	}
+	p := &Program{Path: path, Args: args, Dir: cwd, Files: files, Stdin: c.Stdin}
+	for _, k := range slices.Sorted(maps.Keys(env)) {
+		p.Env = append(p.Env, k+"="+env[k])
+	}
+	return p, nil
+}
+
+// inDir writes the files of a call in dir, 0600; they go with it after
+// the call.
+func inDir(dir string) func(string, []byte) (string, error) {
+	return func(name string, data []byte) (string, error) {
+		p := filepath.Join(dir, name)
+		return p, os.WriteFile(p, data, 0o600)
+	}
+}
+
+// program finds what c runs in env: the path of its program, its argv,
+// and its working directory, which must exist.
+func program(c *Call, env map[string]string) (path string, args []string, cwd string, err error) {
+	cwd = resolve(c.Base, c.Dir)
+	if info, err := os.Stat(cwd); err != nil || !info.IsDir() {
+		return "", nil, "", fmt.Errorf("the directory %s does not exist", cwd)
+	}
+	if args, err = argv(c.Command, c.Shell, c.Args); err != nil {
+		return "", nil, "", err
+	}
+	if c.PluginDir != "" && c.Command.Script == "" && strings.Contains(args[0], "/") {
+		args[0] = resolve(c.PluginDir, args[0])
+	}
+	if path, err = LookPath(args[0], env["PATH"]); err != nil {
+		return "", nil, "", err
+	}
+	return path, args, cwd, nil
 }
 
 // drain waits up to d for the streams to end, then closes them; it reports

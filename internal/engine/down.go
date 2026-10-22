@@ -319,7 +319,10 @@ func (e *engine) downOne(ctx context.Context, l *leftover) string {
 		rec.Abandoned = append(rec.Abandoned, a)
 	}
 	contracts := slices.Clone(rec.Abandoned)
-	if rec.Down != nil {
+	// A service goes down when its supervisor stops it; its down contract
+	// says how.
+	service := rec.Kind == "service"
+	if rec.Down != nil && !service {
 		contracts = append(contracts, &state.Attempt{Inputs: rec.Inputs, Outputs: rec.Outputs, Down: rec.Down, Hidden: rec.Hidden})
 	}
 	if !e.pass.force {
@@ -347,6 +350,11 @@ func (e *engine) downOne(ctx context.Context, l *leftover) string {
 		return fail(err)
 	}
 	failpoint.Hit("down-before-program")
+	if service {
+		if err := e.services().Stop(ctx, addr); err != nil {
+			return fail(err)
+		}
+	}
 	for len(contracts) > 0 {
 		c := contracts[0]
 		if err := e.runDown(ctx, addr, rec.StateKey, c); err != nil {
@@ -369,9 +377,12 @@ func (e *engine) downOne(ctx context.Context, l *leftover) string {
 		e.warn(addr, "could not remove the tool's state: %v", err)
 	}
 	_ = os.RemoveAll(e.workdir(addr))
-	if rec.Down == nil {
+	switch {
+	case service:
+		e.say("unit", addr, "down: stopped")
+	case rec.Down == nil:
 		e.say("unit", addr, "forgotten without a down program")
-	} else {
+	default:
 		e.say("unit", addr, "down: done")
 	}
 	return success

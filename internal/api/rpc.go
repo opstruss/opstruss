@@ -29,7 +29,7 @@ import (
 
 // Methods are the calls that a daemon runs for its callers: those that
 // make a run.
-var Methods = []string{"plan", "up", "down", "status", "run"}
+var Methods = []string{"plan", "up", "down", "status", "run", "unlock"}
 
 // Codes of errors beside those of JSON-RPC.
 const (
