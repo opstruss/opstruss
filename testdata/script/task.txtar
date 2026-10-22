@@ -17,12 +17,14 @@ exec opstruss test -- -run TestFoo
 stdout '^test \| go test -run TestFoo$'
 
 # steps: failed_when, changed_when, retry until, block with rescue and
-# always, for_each in order, a task called with with:, and outputs from
-# value: as far as they can be computed
+# always, which read the outcome of their block, for_each in order, a
+# task called with with:, and outputs from value: as far as they can be
+# computed
 exec opstruss deploy
 stdout '^deploy: check \| port 5432$'
-stdout '^deploy: .* \| rescued$'
-stdout '^deploy: .* \| always$'
+stdout '^deploy: .* \| rescued failure$'
+stdout '^deploy: .* \| always failure$'
+stdout '^deploy: .* \| fine success$'
 stdout '^deploy: loop\[a\] \| item a$'
 stdout '^deploy: loop\[b\] \| item b$'
 stdout '^  block: failure$'
@@ -103,9 +105,14 @@ tasks:
         block:
           - run: exit 3
         rescue:
-          - run: echo rescued
+          - run: [echo, "rescued ${{ steps.rel.outcome }}"]
         always:
-          - run: echo always
+          - run: [echo, "always ${{ steps.rel.outcome }}"]
+      - id: fine
+        block:
+          - run: "true"
+        always:
+          - run: [echo, "fine ${{ steps.fine.outcome }}"]
       - id: loop
         for_each: [a, b]
         run: [echo, "item ${{ each.key }}"]

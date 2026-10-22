@@ -369,7 +369,8 @@ minor release can change what a project, a component, or a plugin relies on.
   its outputs are printed at the end.
 - `steps:` run in order: `run`, `task:` (`plan`, `up`, or `down` of
   `units:`, a project task with `with:`, or the task of each unit that has
-  it), and `block:` with `rescue:` and `always:`. `if`, `for_each`, `retry`,
+  it), and `block:` with `rescue:` and `always:`, which read the outcome
+  of `block:` as `steps.<id>.outcome`. `if`, `for_each`, `retry`,
   `timeout`, `failed_when`, `changed_when`, and `continue_on_error` apply to
   steps; `steps.<id>` holds `outputs` (with `stdout`, `stderr`, and
   `exit_code` for `run`), `changed`, and `outcome`, and `value:` gives the

@@ -463,6 +463,10 @@ func (c *checker) stepRefs(path []string, steps []*Step, pl place) {
 		c.refs(at(sp, "changed_when"), condition(s.ChangedWhen), check)
 		c.refs(at(sp, "retry", "until"), retryUntil(s.Retry), check)
 		c.stepRefs(at(sp, "block"), s.Block, sl)
+		// rescue: and always: read the outcome of their own block.
+		if s.ID != "" && len(s.Block) > 0 {
+			pl.steps[s.ID] = true
+		}
 		c.stepRefs(at(sp, "rescue"), s.Rescue, sl)
 		c.stepRefs(at(sp, "always"), s.Always, sl)
 		if c.plugin == nil && s.Task != "" && c.p.Tasks[s.Task] == nil && !slices.Contains(StandardTasks, s.Task) && !c.unitTask(s.Task) {

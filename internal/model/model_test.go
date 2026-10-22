@@ -414,6 +414,8 @@ func TestReferences(t *testing.T) {
 		{"name: app\nunits:\n  a:\n    run: [x]\n    if: opstruss.time > timestamp('2026-01-01T00:00:00Z')\n", "read only facts known at plan"},
 		{"name: app\nunits:\n  a:\n    run: [x, \"${{ each.key }}\"]\n", "each is only in something with for_each"},
 		{"name: app\ntasks:\n  t:\n    steps:\n      - run: [x, \"${{ steps.b.outputs.stdout }}\"]\n      - id: b\n        run: [y]\n", "there is no step b before this one"},
+		{"name: app\ntasks:\n  t:\n    steps:\n      - id: b\n        block: [{run: [x, \"${{ steps.b.outcome }}\"]}]\n", "there is no step b before this one"},
+		{"name: app\ntasks:\n  t:\n    steps:\n      - id: b\n        block: [{run: [x]}]\n        always: [{run: [y, \"${{ steps.b.outcome }}\"]}]\n", ""},
 		{"name: app\ntasks:\n  n:\n    run: [y]\n  t:\n    run: [x, \"${{ tasks.n.outputs.stdout }}\"]\n", "tasks.n is read through needs"},
 		{"name: app\ntasks:\n  t:\n    run: [x]\n    if: outputs.exit_code == 0\n", "a task cannot read outputs"},
 		{"name: app\ntasks:\n  t:\n    run: [x, \"${{ kv('k') }}\"]\n", ""},

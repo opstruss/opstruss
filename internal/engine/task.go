@@ -738,6 +738,8 @@ func (tc *taskCtx) stepOnce(ctx context.Context, s *model.Step, label string, d 
 func (tc *taskCtx) block(ctx context.Context, s *model.Step, label string, d defaults) *taskResult {
 	res := tc.run(ctx, s.Block, d)
 	part := res.outcome
+	// rescue: and always: read steps.<id>.outcome as the outcome of block:.
+	tc.record(s.ID, &taskResult{outcome: part, changed: res.changed, outputs: map[string]any{}})
 	if res.outcome == failure && len(s.Rescue) > 0 {
 		r := tc.run(ctx, s.Rescue, d)
 		res.changed = res.changed || r.changed
