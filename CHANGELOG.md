@@ -162,19 +162,20 @@ minor release can change what a project, a component, or a plugin relies on.
   each `up` through it, with the files, inputs, and environment of that
   time, and its runs keep that project; `opstruss list` shows the
   triggers of each task and, while the daemon runs, when it comes next.
-- A task with `on: watch` runs for each event of its source: a line that
-  a service writes, or the `watch` hook of the plugin of a unit; a change
-  of the files that `paths` names, through inotify on Linux and the stat
-  of each file every second on macOS, for at most 50,000 files; or a line
-  of a program that one call of a task runs, `command` or a task of a
-  plugin, which the daemon keeps running as it keeps a service and starts
-  again with backoff, with its inputs read again each time. `if` chooses
-  each event, and `batch` or `debounce` gathers them into one run with
-  `event.lines` or `event.paths`, at most 10,000 items or 1 MiB, and
-  `event.count`. A task with `on: after` runs when a run of another task
-  ends in the daemon with the `outcome` it names, for the unit it names,
-  with `event.task`, `unit`, `outcome`, and `outputs`; a chain of after
-  stops past three.
+- A task with `on: watch` runs for each event of its source: a line that a
+  service writes, or the `watch` hook of the plugin of a unit; a change of
+  the files that `paths` names, through inotify on Linux and the stat of
+  each file every second on macOS, for at most 50,000 files; or a line of
+  a program that one call of a task runs, `command` or a task of a plugin,
+  which the daemon keeps running as it keeps a service and starts again
+  with backoff, with its inputs read again each time. The program of a
+  source works in the directory of the task or unit that watches, as a
+  step does. `if` chooses each event, and `batch` or `debounce` gathers
+  them into one run with `event.lines` or `event.paths`, at most 10,000
+  items or 1 MiB, and `event.count`. A task with `on: after` runs when a
+  run of another task ends in the daemon with the `outcome` it names, for
+  the unit it names, with `event.task`, `unit`, `outcome`, and `outputs`;
+  a chain of after stops past three.
 - A task with `on: webhook` runs when a request comes to its `path` and
   `method` on `runtime.listen` of the daemon, which every project with a
   webhook writes. `signature` checks `secret` before any run is made:
@@ -256,19 +257,22 @@ minor release can change what a project, a component, or a plugin relies on.
   `skip`, `warn`, or `error`, and only an `error`, which fails a run,
   makes it exit 1; `--json` prints one document.
 - `secrets:` names where each secret of the project comes from: a sops
-  file, whole or one `field` of it; a variable of the environment
-  (`env: <NAME>`); what a program prints (`run:`); or the output `value`
-  of a task of a plugin, called by name. A run resolves a secret only when
-  an expression of a unit or task it runs reads it, `plan` included, once
-  a run, and decrypts each sops file once; a source that fails fails what
+  file, whole or one `field` of it; a variable of the environment (`env:
+  <NAME>`); what a program prints (`run:`); or the output `value` of a
+  task of a plugin, called by name. A run resolves a secret only when an
+  expression of a unit or task it runs reads it, `plan` included, once a
+  run, and decrypts each sops file once; a source that fails fails what
   reads it, with its name, and the rest runs. Values computed from a
   secret, in locals and in the inputs and outputs of components, wait as
-  long. A secret is sensitive, a stack overrides it by name, and commands
-  that only read never resolve one. `validate` checks that each has one
-  source, whose expressions read the stack, the project's inputs, locals
-  that read no secret, and the facts known at plan, and that `if`,
-  `for_each`, and the outputs of the project read no local that reads a
-  secret.
+  long. The expressions of `on:` read secrets that sops and env hold, also
+  outside a run, as the daemon installs a webhook or starts a watch
+  source, and `validate` refuses there one that a program or a task gives,
+  which only a run reads. A secret is sensitive, a stack overrides it by
+  name, and commands that only read never resolve one. `validate` checks
+  that each has one source, whose expressions read the stack, the
+  project's inputs, locals that read no secret, and the facts known at
+  plan, and that `if`, `for_each`, and the outputs of the project read no
+  local that reads a secret.
 - A task input with `env:` takes its value from that variable when the
   call gives none, before the default.
 - `opstruss init` sets up the project in its directory, adding only what

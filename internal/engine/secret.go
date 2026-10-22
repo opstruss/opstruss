@@ -34,9 +34,10 @@ func (e *engine) secretValues() map[string]any {
 
 // resolveSecret reads secret name from its source, whose expressions read
 // what is known at plan: the stack, the inputs and locals of the project,
-// and the facts.
+// and the facts. Outside a run only the expressions of a trigger read
+// secrets, and only from sops and env, because a program runs in a run.
 func (e *engine) resolveSecret(name string) (any, error) {
-	if e.run == nil {
+	if e.run == nil && !e.trigger {
 		return nil, errors.New("secrets are read only in a run")
 	}
 	src, dir := e.p.Secrets[name], e.p.DirOf("secrets."+name)
@@ -52,6 +53,8 @@ func (e *engine) resolveSecret(name string) (any, error) {
 			return nil, fmt.Errorf("%s is not set", src.EnvName)
 		}
 		return v, nil
+	case e.run == nil:
+		return nil, errors.New("it comes from a program, which runs only in a run; a trigger reads secrets from sops and env")
 	case src.Run != nil:
 		// What the program prints is the value, so it stays out of the log.
 		r := e.program(e.ctx, progSpec{label: "secrets." + name, cmd: src.Run, shell: src.Shell, dir: src.Dir, base: dir,

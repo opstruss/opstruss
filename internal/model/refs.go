@@ -80,9 +80,14 @@ func (c *checker) refs(path []string, v any, pl place) []string {
 				c.add(path, "there is no input %s (in ${{ %s }})", name, r.Expr)
 			}
 		case "locals":
+			trigger := pl.kind == "trigger" || pl.kind == "install"
 			switch {
 			case name != "" && !hasKey(c.p.Locals, name):
 				c.add(path, "there is no local %s (in ${{ %s }})", name, r.Expr)
+			case trigger && name != "" && c.programLocal(name):
+				c.add(path, "a trigger reads only the secrets that sops and env hold, and local %s reads one that a program gives, which runs only in a run (in ${{ %s }})", name, r.Expr)
+			case trigger && name == "" && c.programLocal(""):
+				c.add(path, "a trigger reads locals by name, as locals.<name>, since a local reads a secret that a program gives (in ${{ %s }})", r.Expr)
 			case slices.Contains(readable[pl.kind], "secrets"):
 				// What reads secrets reads the locals that do as well.
 			case name != "" && c.secretLocal(name):
@@ -122,6 +127,8 @@ func (c *checker) refs(path []string, v any, pl place) []string {
 				c.add(path, "secrets are read by name, as secrets.<name> (in ${{ %s }})", r.Expr)
 			case name != "" && c.p.Secrets[name] == nil:
 				c.add(path, "there is no secret %s (in ${{ %s }})", name, r.Expr)
+			case (pl.kind == "trigger" || pl.kind == "install") && fromProgram(c.p.Secrets[name]):
+				c.add(path, "a trigger reads only the secrets that sops and env hold, and %s comes from a program, which runs only in a run (in ${{ %s }})", name, r.Expr)
 			}
 		case "each":
 			if !pl.each {
@@ -144,6 +151,32 @@ func (c *checker) hasInput(name string, pl place) bool {
 		return c.plugin.Inputs[name] != nil
 	}
 	return c.p.Inputs[name] != nil
+}
+
+// fromProgram says whether secret s comes from a program or a task, which
+// only a run starts.
+func fromProgram(s *Secret) bool { return s.Run != nil || len(s.Calls) > 0 }
+
+// programLocal says, as secretLocal does, whether local name reads a
+// secret that comes from a program or a task, or for "", whether a local
+// does.
+func (c *checker) programLocal(name string) bool {
+	if c.readsProgram == nil {
+		names := map[string]any{}
+		for n, s := range c.p.Secrets {
+			if fromProgram(s) {
+				names[n] = true
+			}
+		}
+		c.readsProgram = map[string]any{}
+		if len(names) > 0 {
+			c.readsProgram = c.p.LocalMarks(map[string]any{"secrets": names}, nil)
+		}
+	}
+	if name == "" {
+		return len(c.readsProgram) > 0
+	}
+	return c.readsProgram[name] != nil
 }
 
 // secretLocal says whether local name reads a secret, itself or through

@@ -30,7 +30,7 @@ func NewFilter(opts Options, t *Trigger) (*Filter, error) {
 	if w.If == nil {
 		return &Filter{}, nil
 	}
-	e.ctx = context.Background()
+	e.ctx, e.trigger = context.Background(), true
 	e.pass = pass{}
 	if err := e.selectUnits(false); err != nil {
 		return nil, err
@@ -52,13 +52,14 @@ func (f *Filter) Match(fields map[string]any) (bool, error) {
 // WatchSource prepares the program of a watch that runs one: one call of
 // a task, command or a task of a plugin, or the watch hook of the plugin
 // of a unit, with its inputs evaluated now, as they are each time the
-// source starts; dir keeps the files of its env: values.
+// source starts. It works in the directory of the task or the unit that
+// watches, as a step does; dir keeps the files of its env: values.
 func WatchSource(opts Options, t *Trigger, dir string) (*plugin.Program, error) {
 	e, err := load(opts)
 	if err != nil {
 		return nil, err
 	}
-	e.ctx = context.Background()
+	e.ctx, e.trigger = context.Background(), true
 	e.pass = pass{}
 	if err := e.selectUnits(false); err != nil {
 		return nil, err
@@ -84,7 +85,7 @@ func WatchSource(opts Options, t *Trigger, dir string) (*plugin.Program, error) 
 		if err != nil {
 			return nil, fmt.Errorf("watch hook: %w", err)
 		}
-		return run.Prepare(&plugin.Call{Command: cmd, Shell: hook.Shell, Base: r.plugin.dir, Dir: hook.Dir, Env: r.plugin.env,
+		return run.Prepare(&plugin.Call{Command: cmd, Shell: hook.Shell, Base: inst.dir, Dir: r.dir, Env: r.plugin.env,
 			Pass: slices.Sorted(maps.Keys(r.pass)), Inputs: r.plugin.inputs, PluginDir: r.plugin.dir,
 			Unit: &plugin.Unit{Address: inst.address}}, dir)
 	}
@@ -131,7 +132,7 @@ func WatchSource(opts Options, t *Trigger, dir string) (*plugin.Program, error) 
 		for k, v := range env {
 			values[k] = v
 		}
-		return run.Prepare(&plugin.Call{Command: cmd, Shell: task.Shell, Base: target.Package.Dir, Dir: task.Dir, Env: values,
+		return run.Prepare(&plugin.Call{Command: cmd, Shell: task.Shell, Base: base, Dir: task.Dir, Env: values,
 			Pass: prog.pass, Inputs: in, PluginDir: target.Package.Dir}, dir)
 	}
 	return nil, fmt.Errorf("%s is no program that writes a line per event", name)

@@ -123,6 +123,7 @@ type engine struct {
 	rootTask string
 	needed   map[string]*taskOnce // tasks of needs, which run once per run
 	event    map[string]any       // event: what made the run
+	trigger  bool                 // reads the expressions of a trigger, which outside a run read secrets from sops and env
 	outcome  string               // how the run ended, once it closed
 	outputs  map[string]any       // and what it gave, as shown
 

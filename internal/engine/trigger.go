@@ -69,7 +69,7 @@ func Triggers(opts Options) ([]*Trigger, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	e.ctx = context.Background()
+	e.ctx, e.trigger = context.Background(), true
 	var scope *expr.Scope
 	var out []*Trigger
 	for _, name := range slices.Sorted(maps.Keys(e.p.Tasks)) {
@@ -162,6 +162,7 @@ func Fire(ctx context.Context, opts Options, t *Trigger) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	e.trigger = true
 	task := e.p.Tasks[t.Task]
 	if task == nil || task.On == nil {
 		return nil, fmt.Errorf("the project has no task %s with triggers", t.Task)

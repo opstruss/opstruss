@@ -67,7 +67,8 @@ type checker struct {
 	comps  *components
 	probs  Problems
 
-	readsSecret map[string]any // the locals that read a secret, once asked
+	readsSecret  map[string]any // the locals that read a secret, once asked
+	readsProgram map[string]any // the locals that read a secret from a program or a task, once asked
 }
 
 // components are the components read for a project, by directory, shared
