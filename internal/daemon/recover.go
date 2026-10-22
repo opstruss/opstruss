@@ -44,7 +44,7 @@ func (r *registry) update(fn func(*File)) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	next := r.f
-	next.Processes = slices.Clone(r.f.Processes)
+	next.Processes, next.Schedules = slices.Clone(r.f.Processes), slices.Clone(r.f.Schedules)
 	fn(&next)
 	if err := writeFile(r.path, next); err != nil {
 		return err
@@ -57,6 +57,15 @@ func (r *registry) processes() []*Process {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return slices.Clone(r.f.Processes)
+}
+
+// files is what the file holds now; its lists are copies.
+func (r *registry) files() File {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	f := r.f
+	f.Processes, f.Schedules = slices.Clone(f.Processes), slices.Clone(f.Schedules)
+	return f
 }
 
 func without(ps []*Process, id string) []*Process {

@@ -12,6 +12,7 @@
     "command": { "type": "string" },
     "task": { "type": "string" },
     "args": { "type": "array", "items": { "type": "string" } },
+    "trigger": { "type": "string", "description": "What made the run, as event.trigger says: cli, schedule, every, and later others." },
     "user": { "type": "string" },
     "host": { "type": "string" },
     "hostname": { "type": "string" },

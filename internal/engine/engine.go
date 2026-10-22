@@ -52,6 +52,11 @@ type Options struct {
 	// Supervisor keeps the services of the stack; without one, a service
 	// cannot start.
 	Supervisor Supervisor
+	// Model is the project as a daemon read it when it installed its
+	// triggers, for the runs they make; without it, the files are read.
+	Model *model.Project
+	// Event is what made the run; without it, the command line did.
+	Event *TriggerEvent
 }
 
 // Question is a change that waits for approval.
@@ -113,6 +118,7 @@ type engine struct {
 
 	rootTask string
 	needed   map[string]*taskOnce // tasks of needs, which run once per run
+	event    map[string]any       // event: what made the run
 
 	insts  []*instance            // in graph order
 	byUnit map[string][]*instance // by the path of the unit
@@ -165,9 +171,12 @@ func open(ctx context.Context, opts Options, command, task string) (*engine, err
 // load reads the project and opens the state of its stack, for a run or
 // for a command that only reads.
 func load(opts Options) (*engine, error) {
-	p, err := model.Load(opts.Dir, opts.Stack)
-	if err != nil {
-		return nil, err
+	p := opts.Model
+	if p == nil {
+		var err error
+		if p, err = model.Load(opts.Dir, opts.Stack); err != nil {
+			return nil, err
+		}
 	}
 	// A sensitive input is known before it is checked, so the error of the
 	// check hides it.
@@ -195,6 +204,7 @@ func load(opts Options) (*engine, error) {
 		read: map[string]string{}, needed: map[string]*taskOnce{},
 		touched: map[string]*record.Unit{}, hashes: map[string]string{}, frames: map[string]*frameSet{},
 		sopsFiles: map[string]any{}}
+	e.event = eventOf(opts.Event, e.started)
 	e.secrets = e.secretValues()
 	e.localMarks = p.LocalMarks(e.projectMarks(inputMarks), nil)
 	if e.locals, err = e.evalLocals(nil); err != nil {
@@ -243,7 +253,7 @@ func (e *engine) start(command, task string) error {
 		return err
 	}
 	rec := &record.Record{Project: p.Name, Stack: p.StackName, Command: command, Task: task, Args: opts.Units,
-		Host: e.host, PID: os.Getpid(), Started: e.started.Format(time.RFC3339Nano)}
+		Trigger: e.event["trigger"].(string), Host: e.host, PID: os.Getpid(), Started: e.started.Format(time.RFC3339Nano)}
 	if len(e.parents) > 0 {
 		rec.Parent = e.parents[len(e.parents)-1]
 	}

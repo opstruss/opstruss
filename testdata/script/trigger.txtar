@@ -1,0 +1,48 @@
+# A task with on: runs by itself in the daemon of its stack: every makes a
+# run one interval after the daemon installs it and each interval after;
+# event says what made the run and its logical time; list shows when the
+# task comes next; up through the daemon installs the triggers again from
+# the files; a run from the command line says that it came from cli.
+
+env HOME=$WORK/home
+
+exec opstruss up -d --yes
+waitgrep '^every 20' fired
+waitgrep '"command": "task",\n\s+"task": "tick",\n\s+"trigger": "every"' '.opstruss/runs/default/*/record.json'
+exec opstruss list
+stdout '^  tick .*on every 1s; next 20[0-9-]+T'
+exec opstruss list --json
+stdout '"triggers": \[\n\s+"every 1s"'
+grep '"type":"trigger","level":"info","message":"installed 1 triggers"' .opstruss/logs/default/_daemon.jsonl
+
+# a run from the command line
+exec opstruss tick
+grep '^cli 20' fired
+
+# up installs the triggers again from the files as they are now
+cp next.yaml opstruss.yaml
+exec opstruss up --yes
+waitgrep '^again every' fired
+exec opstruss stop
+exec opstruss list
+! stdout 'next'
+
+-- opstruss.yaml --
+name: shop
+tasks:
+  tick:
+    run: echo "$TRIGGER $TIME" >> fired
+    env:
+      TRIGGER: ${{ event.trigger }}
+      TIME: ${{ string(event.time) }}
+    on:
+      every: 1s
+-- next.yaml --
+name: shop
+tasks:
+  tick:
+    run: echo "again $TRIGGER" >> fired
+    env:
+      TRIGGER: ${{ event.trigger }}
+    on:
+      every: 1s

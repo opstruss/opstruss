@@ -59,7 +59,8 @@ func (a *app) call(ctx context.Context, method string, req api.Request) (*api.Re
 // output of the services it starts at this terminal.
 func (a *app) foreground(ctx context.Context, req api.Request) *daemon.Foreground {
 	stack, _ := model.StackOf(req.Dir, req.Stack)
-	return &daemon.Foreground{Dir: req.Dir, Stack: stack, Version: version(), Ctx: ctx, Watch: a.render()}
+	return &daemon.Foreground{Dir: req.Dir, Stack: stack, Version: version(), Ctx: ctx, Watch: a.render(),
+		Environ: req.Environ, Inputs: req.Inputs}
 }
 
 // dial connects to the daemon of the request's stack, the one that runs or
@@ -152,7 +153,7 @@ func (a *app) daemonCommand() *cobra.Command {
 			dir, err := a.projectDir()
 			var d *daemon.Daemon
 			if err == nil {
-				d, err = daemon.Start(daemon.Options{Dir: dir, Stack: a.stack, Version: version()})
+				d, err = daemon.Start(daemon.Options{Dir: dir, Stack: a.stack, Version: version(), Environ: a.environ})
 			}
 			var running *daemon.RunningError
 			if errors.As(err, &running) {

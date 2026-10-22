@@ -146,13 +146,19 @@ func Task(ctx context.Context, opts Options, name string, inputs map[string]any)
 	if err != nil {
 		return nil, err
 	}
+	return e.task(ctx, name, inputs), nil
+}
+
+// task runs the task name in the run that e started.
+func (e *engine) task(ctx context.Context, name string, inputs map[string]any) *Result {
 	e.rootTask = name
-	c := call{yes: opts.Yes, source: "--yes"}
+	c := call{yes: e.opts.Yes, source: "--yes"}
 	var res *taskResult
 	if t := e.p.Tasks[name]; t != nil {
 		res = e.callTask(ctx, name, t, e.p.DirOf("tasks."+name), inputs, c)
 	} else {
-		if res, err = e.unitTasks(ctx, name, opts.Units, inputs, c); err != nil {
+		var err error
+		if res, err = e.unitTasks(ctx, name, e.opts.Units, inputs, c); err != nil {
 			e.emit(Event{Type: "task", Level: "error", Task: name, Message: err.Error()})
 			res = failed(err)
 		}
@@ -165,7 +171,7 @@ func Task(ctx context.Context, opts Options, name string, inputs map[string]any)
 		e.exit = 1
 	}
 	e.close(res.outcome, res.outputs, res.marks)
-	return &Result{Run: e.runID, ExitCode: e.exit}, nil
+	return &Result{Run: e.runID, ExitCode: e.exit}
 }
 
 // unitTasks runs the task name of each unit that has it, in graph order,
@@ -1010,7 +1016,7 @@ func (e *engine) taskScope(dir string, inputs, marks, tasks, taskMarks map[strin
 	facts["cwd"] = e.opts.Cwd
 	units, unitMarks := e.unitsView(f, slices.Sorted(maps.Keys(f.in.Units)))
 	s := &expr.Scope{Dir: dir, Vars: map[string]any{"stack": e.p.StackName, "inputs": all, "locals": k.localsOf(f, own),
-		"opstruss": facts, "units": units, "tasks": tasks, "steps": map[string]any{}, "secrets": e.secrets},
+		"opstruss": facts, "units": units, "tasks": tasks, "steps": map[string]any{}, "secrets": e.secrets, "event": e.event},
 		Marks: map[string]any{}}
 	if len(e.secrets) > 0 {
 		s.Marks["secrets"] = true

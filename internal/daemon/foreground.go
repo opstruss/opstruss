@@ -26,6 +26,10 @@ type Foreground struct {
 	Ctx context.Context
 	// Watch gets the output and events of its services, for the terminal.
 	Watch func(record.Event)
+	// Environ and Inputs are those of the run, which the triggers that the
+	// daemon installs run with.
+	Environ []string
+	Inputs  map[string]string
 
 	mu     sync.Mutex
 	d      *Daemon
@@ -49,7 +53,7 @@ func (f *Foreground) become() (*Daemon, error) {
 	if f.d != nil {
 		return f.d, nil
 	}
-	d, err := Start(Options{Dir: f.Dir, Stack: f.Stack, Version: f.Version, Watch: f.Watch})
+	d, err := Start(Options{Dir: f.Dir, Stack: f.Stack, Version: f.Version, Watch: f.Watch, Environ: f.Environ, Inputs: f.Inputs})
 	var running *RunningError
 	if errors.As(err, &running) {
 		return nil, fmt.Errorf("the daemon of stack %s started meanwhile, pid %d; run up again, which goes to it", f.Stack, running.PID)

@@ -23,7 +23,7 @@ var planFacts = []string{"project", "os", "arch", "host"}
 
 // place is where an expression is written, which decides what it may read.
 type place struct {
-	kind    string // unit, until, cond, local, task, check, plugin, plugin-check, output
+	kind    string // unit, until, cond, local, task, check, plugin, plugin-check, output, secret, trigger
 	each    bool
 	task    *Task
 	steps   map[string]bool
@@ -41,13 +41,14 @@ var readable = map[string][]string{
 	"plugin-check": {"inputs", "steps", "each", "opstruss", "outputs"},
 	"output":       {"inputs", "locals", "units", "stack", "opstruss"},
 	"secret":       {"inputs", "locals", "stack", "opstruss"},
+	"trigger":      {"inputs", "locals", "units", "secrets", "stack", "event", "opstruss"},
 }
 
 var placeNames = map[string]string{
 	"unit": "a unit", "until": "retry.until of a unit", "cond": "if and for_each of a unit", "local": "locals",
 	"task": "a task", "check": "failed_when, changed_when, and retry.until", "output": "project outputs",
 	"plugin": "a plugin task", "plugin-check": "failed_when, changed_when, and retry.until of a plugin task",
-	"secret": "secret sources",
+	"secret": "secret sources", "trigger": "if and with of a trigger",
 }
 
 // refs checks the expressions in v, written at path, and returns the units
@@ -318,6 +319,16 @@ func (c *checker) references() {
 	for _, name := range slices.Sorted(maps.Keys(p.Tasks)) {
 		t := p.Tasks[name]
 		c.taskRefs([]string{"tasks", name}, t)
+		if t.On != nil {
+			for i, s := range t.On.Schedule {
+				sp := []string{"tasks", name, "on", "schedule"}
+				if len(t.On.Schedule) > 1 {
+					sp = at(sp, strconv.Itoa(i))
+				}
+				c.refs(at(sp, "if"), condition(s.If), place{kind: "trigger"})
+				c.refs(at(sp, "with"), s.With, place{kind: "trigger"})
+			}
+		}
 		calls[name] = slices.DeleteFunc(slices.Clone(t.Needs), func(n string) bool { return p.Tasks[n] == nil })
 		walkSteps(t.Steps, func(s *Step) {
 			if p.Tasks[s.Task] != nil {

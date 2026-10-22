@@ -2,6 +2,7 @@ package engine
 
 import (
 	"bufio"
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/opstruss/opstruss/internal/expr"
+	"github.com/opstruss/opstruss/internal/model"
 	"github.com/opstruss/opstruss/internal/record"
 	"github.com/opstruss/opstruss/internal/state"
 )
@@ -79,12 +81,38 @@ type UnitStatus struct {
 
 // TaskStatus is a task of the project with its last run.
 type TaskStatus struct {
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
-	Internal    bool   `json:"internal,omitempty"`
-	Run         string `json:"run,omitempty"`
-	Outcome     string `json:"outcome,omitempty"`
-	Ended       string `json:"ended,omitempty"`
+	Name        string   `json:"name"`
+	Description string   `json:"description,omitempty"`
+	Internal    bool     `json:"internal,omitempty"`
+	Triggers    []string `json:"triggers,omitempty"`
+	Next        string   `json:"next,omitempty"` // when its schedule or every comes next, while the daemon runs
+	Run         string   `json:"run,omitempty"`
+	Outcome     string   `json:"outcome,omitempty"`
+	Ended       string   `json:"ended,omitempty"`
+}
+
+// triggerNames say what the triggers of a task are, as list shows them.
+func triggerNames(on *model.Triggers) []string {
+	if on == nil {
+		return nil
+	}
+	var out []string
+	for _, s := range on.Schedule {
+		out = append(out, (&Trigger{Kind: "schedule", Cron: s.Cron, Timezone: s.Timezone}).String())
+	}
+	for _, every := range on.Every {
+		out = append(out, "every "+every)
+	}
+	for _, w := range on.Webhook {
+		out = append(out, "webhook "+cmp.Or(w.Method, "POST")+" "+w.Path)
+	}
+	for range on.Watch {
+		out = append(out, "watch")
+	}
+	for _, a := range on.After {
+		out = append(out, "after "+a.Task)
+	}
+	return out
 }
 
 // Status is the content of a stack in one view, as opstruss list shows it.
@@ -107,7 +135,8 @@ func List(opts Options) (*Status, error) {
 		return nil, err
 	}
 	for _, name := range slices.Sorted(maps.Keys(e.p.Tasks)) {
-		t := &TaskStatus{Name: name, Description: e.p.Tasks[name].Description, Internal: e.p.Tasks[name].Internal}
+		t := &TaskStatus{Name: name, Description: e.p.Tasks[name].Description, Internal: e.p.Tasks[name].Internal,
+			Triggers: triggerNames(e.p.Tasks[name].On)}
 		for _, r := range runs {
 			if r.Command == "task" && r.Task == name {
 				t.Run, t.Outcome, t.Ended = r.Run, r.Outcome, r.Ended

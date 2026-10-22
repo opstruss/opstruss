@@ -146,6 +146,25 @@ minor release can change what a project, a component, or a plugin relies on.
   the program's output stays its own, the events of the run go to
   stderr, and the program's exit code is the run's, which the record
   names `<unit>/exec` with its argv.
+- A task with `on: schedule` or `on: every` runs by itself in the daemon
+  of its stack. `cron` reads as CronJob of Kubernetes reads it, with names
+  of months and days and `@daily` and the like; `timezone` (default: the
+  machine's) holds the time zone, and around a change of daylight saving
+  time a job at a fixed time that the clock skips runs right after the
+  jump and one that the clock repeats runs once, as cronie runs them.
+  `every` (at least 1s) runs one interval after the daemon installs it.
+  A time that comes while the run that the trigger made last still runs
+  or waits goes to that run; one that comes more than a minute late, after
+  the machine slept, is missed, and `persistent: true` runs once for what
+  a schedule missed then or while no daemon ran. `if` and `with` of a
+  schedule read `event` and decide whether a run is made and with what
+  inputs. The daemon installs the triggers when it starts and again after
+  each `up` through it, with the files, inputs, and environment of that
+  time, and its runs keep that project; `opstruss list` shows the
+  triggers of each task and, while the daemon runs, when it comes next.
+- `event.trigger` and `event.time` say what made a run and its logical
+  time: the time of the schedule, or when a run from the command line
+  started; the record of a run keeps `trigger`.
 - `opstruss logs [unit]...` shows the output of the units: the log of a
   service, from the files it turned over into first; the `logs` task of a
   unit's plugin, with the input `follow` when the task declares it; and

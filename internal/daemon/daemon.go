@@ -13,12 +13,14 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
 
 	"github.com/opstruss/opstruss/internal/api"
+	"github.com/opstruss/opstruss/internal/engine"
 	"github.com/opstruss/opstruss/internal/proc"
 	"github.com/opstruss/opstruss/internal/record"
 )
@@ -31,13 +33,14 @@ const Version = 1
 // daemon/<stack>.lock, so the file outlives it, and the next daemon stops
 // what is left of those programs.
 type File struct {
-	Version   int        `json:"version"`
-	PID       int        `json:"pid"`
-	Start     string     `json:"start"` // when the process started, from proc.StartTime
-	Started   string     `json:"started"`
-	OpsTruss  string     `json:"opstruss"`
-	Socket    string     `json:"socket"`
-	Processes []*Process `json:"processes,omitempty"`
+	Version   int         `json:"version"`
+	PID       int         `json:"pid"`
+	Start     string      `json:"start"` // when the process started, from proc.StartTime
+	Started   string      `json:"started"`
+	OpsTruss  string      `json:"opstruss"`
+	Socket    string      `json:"socket"`
+	Processes []*Process  `json:"processes,omitempty"`
+	Schedules []*Schedule `json:"schedules,omitempty"`
 }
 
 // maxSocket is the longest path of a Unix socket: 104 bytes with its NUL
@@ -60,6 +63,10 @@ type Options struct {
 	// Watch also gets the output and events of the services, for the
 	// terminal of a daemon in the foreground.
 	Watch func(record.Event)
+	// Environ and Inputs are those that the triggers installed as the
+	// daemon starts run with.
+	Environ []string
+	Inputs  map[string]string
 }
 
 // RunningError is a daemon of the stack that runs already.
@@ -82,6 +89,11 @@ type Daemon struct {
 	log  *record.Log
 	reg  *registry
 	sup  *Supervisor
+	trig *triggers
+
+	// runs ends the calls and the runs of triggers, as the daemon stops.
+	runs       context.Context
+	cancelRuns context.CancelFunc
 
 	mu       sync.Mutex
 	stopping bool
@@ -146,7 +158,7 @@ func Start(opts Options) (_ *Daemon, err error) {
 	f := File{Version: Version, PID: os.Getpid(), Start: start, Started: time.Now().UTC().Format(time.RFC3339),
 		OpsTruss: opts.Version, Socket: sock}
 	if old != nil {
-		f.Processes = old.Processes
+		f.Processes, f.Schedules = old.Processes, old.Schedules
 	}
 	d.reg = &registry{path: filePath(root, opts.Stack)}
 	if err := d.reg.update(func(next *File) { *next = f }); err != nil {
@@ -156,7 +168,23 @@ func Start(opts Options) (_ *Daemon, err error) {
 	d.sup = newSupervisor(root, opts.Stack, d.reg, func(ev record.Event) { d.log.Emit(ev) })
 	d.sup.watch = opts.Watch
 	go d.sup.recover()
+	d.runs, d.cancelRuns = context.WithCancel(context.Background())
+	d.trig = &triggers{d: d, flight: map[string]bool{}, pending: map[string]int{}}
+	d.trig.install(runOptions(opts.Dir, opts.Stack, opts.Inputs, opts.Environ))
 	return d, nil
+}
+
+// runOptions are the options of a run of the project in dir, with the
+// inputs and environment of whoever asked for it.
+func runOptions(dir, stack string, inputs map[string]string, environ []string) engine.Options {
+	env := map[string]string{}
+	for _, kv := range environ {
+		if k, v, ok := strings.Cut(kv, "="); ok {
+			env[k] = v
+		}
+	}
+	return engine.Options{Dir: dir, Stack: stack, Inputs: inputs, Environ: environ,
+		LookupEnv: func(k string) (string, bool) { v, ok := env[k]; return v, ok }}
 }
 
 // socketDir makes a directory for the socket under $TMPDIR, or under /tmp
@@ -173,17 +201,22 @@ func socketDir() (string, error) {
 // the lock file is gone. Then it takes no new call, cancels the calls that
 // run, waits for them, and closes.
 func (d *Daemon) Serve(ctx context.Context) error {
-	calls, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	defer d.cancelRuns()
 	srv := &api.Server{Version: d.opts.Version, Stopping: d.isStopping,
 		Call: func(ctx context.Context, method string, r api.Request, h api.Handlers) (*api.Result, error) {
 			d.active.Add(1)
 			defer d.active.Add(-1)
 			x := api.New(h)
 			x.Supervisor = d.sup
-			return x.Call(ctx, method, r)
+			res, err := x.Call(ctx, method, r)
+			if method == "up" && err == nil {
+				// up installs the triggers again from the files as they are
+				// now, with what its caller brings.
+				d.trig.install(runOptions(r.Dir, r.Stack, r.Inputs, r.Environ))
+			}
+			return res, err
 		}}
-	go d.accept(calls, srv)
+	go d.accept(d.runs, srv)
 	select {
 	case <-ctx.Done():
 	case <-d.lockLost(ctx):
@@ -192,7 +225,8 @@ func (d *Daemon) Serve(ctx context.Context) error {
 	d.mu.Lock()
 	d.stopping = true
 	d.mu.Unlock()
-	cancel()
+	d.cancelRuns()
+	d.trig.close()
 	d.calls.Wait()
 	d.sup.stopAll()
 	d.say("info", "daemon stopped")
@@ -202,7 +236,7 @@ func (d *Daemon) Serve(ctx context.Context) error {
 
 // idle reports whether no call runs and no service lives, when a daemon
 // in the foreground has nothing left to stay for.
-func (d *Daemon) idle() bool { return d.active.Load() == 0 && !d.sup.live() }
+func (d *Daemon) idle() bool { return d.active.Load() == 0 && !d.sup.live() && !d.trig.active() }
 
 func (d *Daemon) isStopping() bool {
 	d.mu.Lock()

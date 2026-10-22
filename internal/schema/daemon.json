@@ -27,6 +27,21 @@
         },
         "required": ["address", "id", "pid", "start", "started", "lock", "signal", "grace"]
       }
+    },
+    "schedules": {
+      "description": "The schedule and every triggers that the daemon installed: when each last made a run, which a persistent schedule catches up from, and when it comes next.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "task": { "type": "string" },
+          "kind": { "enum": ["schedule", "every"] },
+          "key": { "type": "string", "description": "The hash of the cron and time zone, or of the interval, which names the trigger apart from its place in the list." },
+          "last": { "type": "string", "format": "date-time" },
+          "next": { "type": "string", "format": "date-time" }
+        },
+        "required": ["task", "kind", "key"]
+      }
     }
   },
   "required": ["version", "pid", "start", "started", "opstruss", "socket"]

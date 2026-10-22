@@ -56,6 +56,7 @@ type Record struct {
 	Command  string           `json:"command"`
 	Task     string           `json:"task,omitempty"`
 	Args     []string         `json:"args,omitempty"`
+	Trigger  string           `json:"trigger,omitempty"` // what made the run, as event.trigger says
 	User     string           `json:"user"`
 	Host     string           `json:"host"`
 	Hostname string           `json:"hostname"`

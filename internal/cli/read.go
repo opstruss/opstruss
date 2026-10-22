@@ -4,10 +4,13 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/opstruss/opstruss/internal/api"
+	"github.com/opstruss/opstruss/internal/daemon"
 	"github.com/opstruss/opstruss/internal/expr"
 	"github.com/spf13/cobra"
 )
@@ -28,6 +31,13 @@ func (a *app) listCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// When a task comes next is what its daemon knows.
+			next := daemon.Next(filepath.Join(req.Dir, ".opstruss"), st.Stack)
+			for _, t := range st.Tasks {
+				if at, ok := next[t.Name]; ok {
+					t.Next = at.Format(time.RFC3339)
+				}
+			}
 			if a.json {
 				return a.printJSON(st)
 			}
@@ -41,6 +51,12 @@ func (a *app) listCommand() *cobra.Command {
 					desc := t.Description
 					if t.Internal {
 						desc = "(internal) " + desc
+					}
+					if len(t.Triggers) > 0 {
+						last += "; on " + strings.Join(t.Triggers, ", ")
+					}
+					if t.Next != "" {
+						last += "; next " + t.Next
 					}
 					fmt.Fprintf(a.stdout, "  %-20s %-40s %s\n", t.Name, desc, last)
 				}

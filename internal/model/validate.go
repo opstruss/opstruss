@@ -13,9 +13,11 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/opstruss/opstruss/internal/expr"
 	"github.com/opstruss/opstruss/internal/proc"
+	"github.com/robfig/cron/v3"
 )
 
 // BuiltinTasks are the tasks in the binary, also called opstruss.<name>.
@@ -447,6 +449,7 @@ func (c *checker) tasks() {
 		if t.On == nil {
 			continue
 		}
+		c.schedules(at(path, "on"), t.On)
 		for i, w := range t.On.Webhook {
 			wp := at(path, "on", "webhook")
 			if len(t.On.Webhook) > 1 {
@@ -460,6 +463,46 @@ func (c *checker) tasks() {
 				c.add(at(wp, "path"), "%s is also the webhook of task %s", key, other)
 			}
 			webhooks[key] = name
+		}
+	}
+}
+
+// schedules checks the schedule and every triggers of a task: cron as
+// CronJob of Kubernetes reads it, with its time zone in timezone: only and
+// intervals in every: only, and intervals of at least a second.
+func (c *checker) schedules(path []string, on *Triggers) {
+	for i, s := range on.Schedule {
+		sp := at(path, "schedule")
+		if len(on.Schedule) > 1 {
+			sp = at(sp, strconv.Itoa(i))
+		}
+		switch spec := s.Cron; {
+		case strings.HasPrefix(spec, "TZ=") || strings.HasPrefix(spec, "CRON_TZ="):
+			c.add(at(sp, "cron"), "write the time zone in timezone:, not in cron")
+		case strings.HasPrefix(spec, "@every"):
+			c.add(at(sp, "cron"), "write an interval in every:, not in cron")
+		case expr.HasExpr(spec):
+			c.add(at(sp, "cron"), "${{ }} is not allowed in cron; a daemon reads the schedule as it is written")
+		default:
+			if _, err := cron.ParseStandard(spec); err != nil {
+				c.add(at(sp, "cron"), "%v", err)
+			}
+		}
+		if tz := s.Timezone; tz != "" {
+			if expr.HasExpr(tz) {
+				c.add(at(sp, "timezone"), "${{ }} is not allowed in timezone")
+			} else if _, err := time.LoadLocation(tz); err != nil {
+				c.add(at(sp, "timezone"), "%s is not a time zone of the IANA database, such as Asia/Jakarta", tz)
+			}
+		}
+	}
+	for i, every := range on.Every {
+		ep := at(path, "every")
+		if len(on.Every) > 1 {
+			ep = at(ep, strconv.Itoa(i))
+		}
+		if d, err := time.ParseDuration(every); err == nil && d < time.Second {
+			c.add(ep, "every is at least 1s")
 		}
 	}
 }
@@ -746,8 +789,13 @@ func (c *checker) unsupported() {
 }
 
 func (c *checker) triggers(path []string, t *Task) {
-	if t.On != nil {
-		c.add(at(path, "on"), "triggers are not supported yet")
+	if t.On == nil {
+		return
+	}
+	for name, n := range map[string]int{"webhook": len(t.On.Webhook), "watch": len(t.On.Watch), "after": len(t.On.After)} {
+		if n > 0 {
+			c.add(at(path, "on", name), "not supported yet")
+		}
 	}
 }
 
