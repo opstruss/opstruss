@@ -149,6 +149,31 @@ func (s *Sops) Unwrap(wrapped []byte) ([]byte, error) {
 	return s.run(wrapped, "decrypt")
 }
 
+// Check opens what Wrap returned, so a data key that this machine could
+// not open again is never kept, as when .sops.yaml came from another
+// machine and its rule names only that machine's key.
+func (s *Sops) Check(wrapped []byte) error {
+	if _, err := s.Unwrap(wrapped); err != nil {
+		mine := "a key of this machine"
+		if key, _ := FindAgeKey(s.lookup); key.Recipient != "" {
+			mine = "the age key of this machine, " + key.Recipient + ","
+		}
+		return fmt.Errorf("sops wrapped the data key of stack %s for keys that cannot open it here, so %s is not written; add %s to the rule in %s that matches it: %w", s.Stack, MetaName(s.Stack), mine, SopsConfig, err)
+	}
+	return nil
+}
+
+// lookup reads a variable of the operator's environment, the last one when
+// it is there twice, as exec does.
+func (s *Sops) lookup(name string) (string, bool) {
+	for _, kv := range slices.Backward(s.Environ) {
+		if k, v, _ := strings.Cut(kv, "="); k == name {
+			return v, true
+		}
+	}
+	return "", false
+}
+
 func (s *Sops) run(stdin []byte, args ...string) ([]byte, error) {
 	name := MetaName(s.Stack)
 	args = append(args, "--filename-override", name, "--input-type", "json", "--output-type", "json")

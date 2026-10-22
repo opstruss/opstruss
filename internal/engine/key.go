@@ -63,6 +63,9 @@ func (e *engine) openKey() ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
+		if err := sops.Check(wrapped); err != nil {
+			return nil, err
+		}
 		_, err = e.store.ReplaceMeta(wrapped, etag)
 		if errors.Is(err, state.ErrConflict) {
 			continue

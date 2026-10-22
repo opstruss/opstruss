@@ -44,10 +44,9 @@ type AgeKey struct {
 	Created   bool   `json:"created"`
 }
 
-// EnsureAgeKey returns the first X25519 identity that sops reads, from
-// $SOPS_AGE_KEY or the key file, and adds a new one to the key file, the
-// way age-keygen writes it, when neither has one.
-func EnsureAgeKey(lookup func(string) (string, bool), now time.Time) (AgeKey, error) {
+// FindAgeKey returns the first X25519 identity that sops reads, from
+// $SOPS_AGE_KEY or the key file, with no recipient when neither has one.
+func FindAgeKey(lookup func(string) (string, bool)) (AgeKey, error) {
 	if v, _ := lookup("SOPS_AGE_KEY"); v != "" {
 		r, err := firstRecipient(v)
 		if err != nil {
@@ -69,14 +68,26 @@ func EnsureAgeKey(lookup func(string) (string, bool), now time.Time) (AgeKey, er
 	if err != nil {
 		return AgeKey{}, fmt.Errorf("%s: %w", file, err)
 	}
-	if r != "" {
-		return AgeKey{Recipient: r, File: file}, nil
+	return AgeKey{Recipient: r, File: file}, nil
+}
+
+// EnsureAgeKey returns the key of FindAgeKey, and adds a new one to the key
+// file, the way age-keygen writes it, when sops reads none.
+func EnsureAgeKey(lookup func(string) (string, bool), now time.Time) (AgeKey, error) {
+	key, err := FindAgeKey(lookup)
+	if err != nil || key.Recipient != "" {
+		return key, err
+	}
+	file := key.File
+	data, err := os.ReadFile(file)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return AgeKey{}, err
 	}
 	id, err := age.GenerateX25519Identity()
 	if err != nil {
 		return AgeKey{}, err
 	}
-	r = id.Recipient().String()
+	r := id.Recipient().String()
 	text := fmt.Sprintf("# created: %s\n# public key: %s\n%s\n", now.Format(time.RFC3339), r, id)
 	if len(data) > 0 && data[len(data)-1] != '\n' {
 		text = "\n" + text

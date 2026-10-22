@@ -81,6 +81,17 @@ stdout '"raw_output": "enc:v1:'
 exec opstruss down api --yes
 stdout '^default/api \| down with \*\*\*$'
 
+# a .sops.yaml from another machine names only the keys of others, so a
+# data key made here could not be opened here again: it is not kept, and
+# the error names the key of this machine to add
+mkdir third
+exec sh -c 'SOPS_AGE_KEY_FILE=$WORK/age3/keys.txt opstruss -C third init --name third'
+env SOPS_AGE_KEY_FILE=$WORK/age3/keys.txt
+! exec opstruss -C norule up secret --yes
+stderr 'sops wrapped the data key of stack default for keys that cannot open it here, so default/_meta is not written; add the age key of this machine, age1[a-z0-9]+, to the rule in .sops.yaml that matches it'
+! exists norule/ran
+env SOPS_AGE_KEY_FILE=$WORK/age/keys.txt
+
 # without a rule for _meta, a unit with a sensitive value fails before it
 # runs, and an output a program marks sensitive is not kept; sops looks for
 # .sops.yaml in the directories above too
