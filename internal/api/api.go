@@ -31,9 +31,10 @@ type Request struct {
 	Yes     bool              `json:"yes,omitempty"`
 	Force   bool              `json:"force,omitempty"`
 	NoDeps  bool              `json:"no_deps,omitempty"`
-	Task    string            `json:"task,omitempty"` // run: the task
-	With    map[string]any    `json:"with,omitempty"` // run: its inputs
-	Run     string            `json:"run,omitempty"`  // events: the run to read
+	Follow  bool              `json:"follow,omitempty"` // logs: go on with what is written
+	Task    string            `json:"task,omitempty"`   // run: the task
+	With    map[string]any    `json:"with,omitempty"`   // run: its inputs
+	Run     string            `json:"run,omitempty"`    // events: the run to read
 	Debug   bool              `json:"debug,omitempty"`
 	// ShowSensitive gives outputs their sensitive values.
 	ShowSensitive bool `json:"show_sensitive,omitempty"`
@@ -73,7 +74,7 @@ func (a *API) options(r Request) engine.Options {
 	}
 	return engine.Options{Dir: r.Dir, Cwd: r.Cwd, Stack: r.Stack, Inputs: r.Inputs, Environ: r.Environ,
 		LookupEnv: func(k string) (string, bool) { v, ok := env[k]; return v, ok },
-		Units:     r.Units, Yes: r.Yes, Force: r.Force, NoDeps: r.NoDeps, Debug: r.Debug, ShowSensitive: r.ShowSensitive,
+		Units:     r.Units, Yes: r.Yes, Force: r.Force, NoDeps: r.NoDeps, Follow: r.Follow, Debug: r.Debug, ShowSensitive: r.ShowSensitive,
 		Emit: a.h.Event, Approve: a.h.Approve, Ask: a.h.Ask, Supervisor: a.Supervisor}
 }
 
@@ -128,6 +129,12 @@ func (a *API) StatusUnits(ctx context.Context, r Request) (*Result, error) {
 // the terminal does not cross a socket.
 func (a *API) Exec(ctx context.Context, r Request, argv []string, tty engine.Stdio) (*Result, error) {
 	return result(engine.Exec(ctx, a.options(r), argv, tty))
+}
+
+// Logs shows the output of the units of the request; it runs in this
+// process also while a daemon runs, since it only reads.
+func (a *API) Logs(ctx context.Context, r Request) (*Result, error) {
+	return result(engine.Logs(ctx, a.options(r)))
 }
 
 // Unlock forgets what is left of the service of the one unit of the

@@ -1,0 +1,87 @@
+# logs shows the output of the units: the log of a service, the logs task
+# of a plugin, or the output of the last run that touched a unit; -f goes
+# on with the log of a service until Ctrl-C, and a plugin that follows
+# gets the input follow.
+
+env HOME=$WORK/home
+
+# a run unit shows the output of the last run that touched it
+exec opstruss up --yes site
+exec opstruss up --yes --force site
+exec opstruss logs site
+stdout '^default/site: output of up in run [0-9]{8}T[0-9]{6}Z-[0-9a-f]{8} at '
+stdout '^default/site \| built 2$'
+! stdout 'built 1'
+exec opstruss logs other
+stdout '^default/other: no run touched it yet$'
+exec opstruss show
+stdout '^default/site \| built 2$'
+
+# a plugin's logs task gets follow
+exec opstruss up --yes api
+exec opstruss logs api
+stdout 'default/api \| follow=false'
+exec opstruss logs -f api
+stdout 'default/api \| follow=true'
+exec opstruss logs --follow api
+stdout 'default/api \| follow=true'
+
+# a service shows its log, and -f goes on with it
+exec opstruss up -d --yes web
+waitgrep '"message":"tick 2"' .opstruss/logs/default/web.jsonl
+exec opstruss logs web
+stdout '^default/web \| tick 1$'
+exec opstruss logs -f web &follow&
+# Ctrl-C reaches it once its run started
+waitgrep '(?s)"command": "logs",.*"status": "running"' '.opstruss/runs/default/*/record.json'
+waitgrep '"message":"tick 12"' .opstruss/logs/default/web.jsonl
+kill -INT follow
+wait follow
+stdout '^default/web \| tick 9$'
+exec opstruss stop
+
+# -f is for logs only
+! exec opstruss status -f
+stderr '-f is for logs, which follows what services and plugins write, not for status'
+
+-- count --
+0
+-- opstruss.yaml --
+name: shop
+uses:
+  tail: ./plugins/tail
+units:
+  site:
+    run: |
+      n=$(($(cat count) + 1))
+      echo $n > count
+      echo "built $n"
+    approval: auto
+  other:
+    run: echo other
+  api:
+    uses: tail
+    approval: auto
+  web:
+    service: |
+      i=0
+      while :; do
+        i=$((i+1))
+        echo "tick $i"
+        sleep 0.1
+      done
+    approval: auto
+tasks:
+  show:
+    steps:
+      - task: logs
+        units: [site]
+-- plugins/tail/opstruss.plugin.yaml --
+name: tail
+tasks:
+  up:
+    run: [sh, -c, 'echo up']
+  logs:
+    inputs:
+      follow: {type: boolean, default: false}
+    run: [sh, -c, 'echo "follow=$INPUT_FOLLOW"']

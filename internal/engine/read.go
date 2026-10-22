@@ -175,10 +175,19 @@ func Events(opts Options, id string, emit func(Event)) error {
 	if err != nil {
 		return err
 	}
-	f, err := os.Open(filepath.Join(e.root, "runs", e.p.StackName, filepath.Base(id), "events.jsonl"))
+	err = eachEvent(filepath.Join(e.root, "runs", e.p.StackName, filepath.Base(id), "events.jsonl"), func(ev Event) error {
+		emit(ev)
+		return nil
+	})
 	if errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("stack %s has no run %s", e.p.StackName, id)
 	}
+	return err
+}
+
+// eachEvent hands each event of the events.jsonl at path to fn, in order.
+func eachEvent(path string, fn func(Event) error) error {
+	f, err := os.Open(path)
 	if err != nil {
 		return err
 	}
@@ -190,7 +199,9 @@ func Events(opts Options, id string, emit func(Event)) error {
 		if err := json.Unmarshal(sc.Bytes(), &ev); err != nil {
 			return err
 		}
-		emit(ev)
+		if err := fn(ev); err != nil {
+			return err
+		}
 	}
 	return sc.Err()
 }

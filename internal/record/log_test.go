@@ -2,11 +2,14 @@ package record
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func readLog(t *testing.T, p string) []Event {
@@ -80,5 +83,67 @@ func TestLogTurns(t *testing.T) {
 		if info, _ := os.Stat(f); info.Size() > logMax {
 			t.Fatalf("%s has %d bytes", f, info.Size())
 		}
+	}
+}
+
+// ReadLog reads the files a log turned over into first, and with follow
+// goes on across turns, each event once and in order.
+func TestReadLogFollow(t *testing.T) {
+	maxBefore, every := logMax, followEvery
+	logMax, followEvery = 400, 5*time.Millisecond
+	t.Cleanup(func() { logMax, followEvery = maxBefore, every })
+	p := filepath.Join(t.TempDir(), "web.jsonl")
+	l, err := OpenLog(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = l.Close() }()
+	emit := func(from, to int) {
+		for i := from; i < to; i++ {
+			l.Emit(Event{Type: "log", Level: "info", Address: "default/web", Message: fmt.Sprintf("line %d", i)})
+		}
+	}
+	emit(0, 3)
+
+	var got []string
+	if err := ReadLog(context.Background(), p, false, func(ev Event) { got = append(got, ev.Message) }); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(got, ",") != "line 0,line 1,line 2" {
+		t.Fatalf("read %v", got)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	lines := make(chan string, 100)
+	done := make(chan error, 1)
+	go func() { done <- ReadLog(ctx, p, true, func(ev Event) { lines <- ev.Message }) }()
+	defer func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Error(err)
+		}
+	}()
+	// Enough to turn the log over more than once, but not so often that a
+	// file is gone before it is read.
+	for i := 3; i < 12; i++ {
+		emit(i, i+1)
+		time.Sleep(20 * time.Millisecond)
+	}
+	var seen []string
+	for deadline := time.After(5 * time.Second); len(seen) < 12; {
+		select {
+		case s := <-lines:
+			seen = append(seen, s)
+		case <-deadline:
+			t.Fatalf("followed %v", seen)
+		}
+	}
+	for i, s := range seen {
+		if want := fmt.Sprintf("line %d", i); s != want {
+			t.Fatalf("followed %v", seen)
+		}
+	}
+	if _, err := os.Stat(p + ".1"); err != nil {
+		t.Fatalf("the log did not turn over: %v", err)
 	}
 }

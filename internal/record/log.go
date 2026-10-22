@@ -1,10 +1,14 @@
 package record
 
 import (
+	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sync"
@@ -134,6 +138,111 @@ func (l *Log) Close() error {
 	err := l.f.Close()
 	l.f = nil
 	return err
+}
+
+// followEvery is how often ReadLog looks for what was appended.
+var followEvery = 200 * time.Millisecond
+
+// ReadLog hands the events of the log at path to fn, oldest first,
+// starting with the files it turned over into. With follow, it goes on
+// with what is appended, also after the log turns over, until ctx ends, as
+// tail -F does; a log that does not exist yet is waited for.
+func ReadLog(ctx context.Context, path string, follow bool, fn func(Event)) error {
+	// The file at path is opened first: one that turns over while the older
+	// files are read is among them then, and is read once, after them.
+	f, err := os.Open(path)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	defer func() {
+		if f != nil {
+			_ = f.Close()
+		}
+	}()
+	var held os.FileInfo
+	if f != nil {
+		if held, err = f.Stat(); err != nil {
+			return err
+		}
+	}
+	for i := LogFiles - 1; i > 0; i-- {
+		old, err := os.Open(fmt.Sprintf("%s.%d", path, i))
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		var rest []byte
+		var rerr error
+		if info, err := old.Stat(); err == nil && (held == nil || !os.SameFile(info, held)) {
+			rerr = readEvents(old, &rest, fn)
+		}
+		_ = old.Close()
+		if rerr != nil {
+			return rerr
+		}
+	}
+	var rest []byte
+	for {
+		if f == nil {
+			if f, err = os.Open(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				return err
+			}
+			rest = nil
+		}
+		if f != nil {
+			if err := readEvents(f, &rest, fn); err != nil {
+				return err
+			}
+			// A log that turned over is another file at its path now; what
+			// the old one got last is read before the new one.
+			if now, err := os.Stat(path); err == nil {
+				if info, err := f.Stat(); err == nil && !os.SameFile(info, now) {
+					if err := readEvents(f, &rest, fn); err != nil {
+						return err
+					}
+					_ = f.Close()
+					f = nil
+					continue
+				}
+			}
+		}
+		if !follow {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(followEvery):
+		}
+	}
+}
+
+// readEvents hands each whole line that f has from where it is to fn as an
+// event; a line that is not one is skipped, and an unfinished one waits in
+// rest for the rest of it.
+func readEvents(f *os.File, rest *[]byte, fn func(Event)) error {
+	r := bufio.NewReaderSize(f, 64<<10)
+	for {
+		chunk, err := r.ReadSlice('\n')
+		*rest = append(*rest, chunk...)
+		if errors.Is(err, bufio.ErrBufferFull) {
+			continue
+		}
+		if err == nil {
+			var ev Event
+			if json.Unmarshal(bytes.TrimSpace(*rest), &ev) == nil {
+				fn(ev)
+			}
+			*rest = (*rest)[:0]
+			continue
+		}
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		return err
+	}
 }
 
 // now is the time of an event: UTC, to the millisecond.

@@ -44,6 +44,7 @@ type app struct {
 	loadErr    error  // why the project's tasks are not commands
 	dir        string
 	detach     bool // -d: run in the daemon of the stack, started when none runs
+	follow     bool // -f: logs goes on with what is written
 	stack      string
 	inputs     []string
 	json       bool
@@ -105,7 +106,7 @@ func start(args []string, stdin io.Reader, terminal bool, stdout, stderr io.Writ
 
 // takeShort removes from args the short flags that are OpsTruss's on every
 // command line, since inputs make only long flags: -C <dir>, like git -C,
-// each one after the first relative to the one before, and -d.
+// each one after the first relative to the one before, -d, and -f.
 func (a *app) takeShort(args []string) ([]string, error) {
 	var out []string
 	for i := 0; i < len(args); i++ {
@@ -123,6 +124,8 @@ func (a *app) takeShort(args []string) ([]string, error) {
 			a.dir = joinDir(a.dir, strings.TrimPrefix(arg, "-C"))
 		case arg == "-d":
 			a.detach = true
+		case arg == "-f":
+			a.follow = true
 		default:
 			// The commands of tasks come from the project of the stack, so
 			// --stack is read before the flags are.
@@ -179,6 +182,9 @@ func (a *app) root() *cobra.Command {
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			if a.detach && cmd.Annotations[detachable] == "" {
 				return fmt.Errorf("-d is for up and tasks, which can start a daemon, not for %s", cmd.Name())
+			}
+			if a.follow && cmd.Name() != "logs" {
+				return fmt.Errorf("-f is for logs, which follows what services and plugins write, not for %s", cmd.Name())
 			}
 			return nil
 		},

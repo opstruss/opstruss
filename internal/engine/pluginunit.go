@@ -274,7 +274,7 @@ func (e *engine) statusPass(ctx context.Context, patterns []string) (map[string]
 				e.fail(inst.address, err)
 				continue
 			}
-			run := &pluginRun{name: t.Package.Name, dir: r.plugin.dir, requires: t.Package.Plugin.Requires, inputs: t.Package.Plugin.Inputs}
+			run := &pluginRun{name: t.Package.Name, dir: r.plugin.dir, requires: t.Package.Plugin.Requires, inputs: taskInputs(t.Package.Plugin, "status")}
 			ur := &unitRun{env: r.plugin.env, pass: slices.Sorted(maps.Keys(r.pass)), stateDir: r.plugin.tool}
 			if inst.record != nil {
 				ur.state = programState(inst.record)

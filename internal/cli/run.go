@@ -72,7 +72,38 @@ and stays while they run; Ctrl-C stops them.`
 		command("down", "destroy", "Take the units down with the down contract of their records",
 			"run down although pass values differ from those recorded"),
 		command("status", "ps", "Show the state of the units: the status task of their plugin, or what their record says", ""),
+		a.logsCommand(),
 	}
+}
+
+// logsCommand shows the output of the units. It runs in this process also
+// while a daemon runs, since it only reads, so following a log does not
+// keep a daemon in the foreground.
+func (a *app) logsCommand() *cobra.Command {
+	var follow bool
+	cmd := &cobra.Command{
+		Use:   "logs [unit]...",
+		Short: "Show the output of the units: the log of a service, the logs task of their plugin, or the last run that touched them",
+		RunE: func(_ *cobra.Command, units []string) error {
+			req, err := a.request(units)
+			if err != nil {
+				return err
+			}
+			req.Follow = follow || a.follow
+			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
+			res, err := a.api().Logs(ctx, req)
+			if err != nil {
+				return err
+			}
+			if res.ExitCode != 0 {
+				return &exitError{res.ExitCode}
+			}
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&follow, "follow", false, "go on with what services and plugins write, until Ctrl-C; -f is the same")
+	return cmd
 }
 
 // request is a call of the engine API about the project and stack of

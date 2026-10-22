@@ -39,6 +39,7 @@ type Options struct {
 	Yes       bool     // approve the changes of this run
 	Force     bool     // up: run the units named although unchanged; down: although pass values differ
 	NoDeps    bool     // leave out the dependencies of up and the dependents of down
+	Follow    bool     // logs: go on with what services and plugins write
 
 	ShowSensitive bool // outputs: give sensitive values as they are
 	Emit          func(Event)

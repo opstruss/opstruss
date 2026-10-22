@@ -146,6 +146,15 @@ minor release can change what a project, a component, or a plugin relies on.
   the program's output stays its own, the events of the run go to
   stderr, and the program's exit code is the run's, which the record
   names `<unit>/exec` with its argv.
+- `opstruss logs [unit]...` shows the output of the units: the log of a
+  service, from the files it turned over into first; the `logs` task of a
+  unit's plugin, with the input `follow` when the task declares it; and
+  for other units the output of the last run that touched them, as
+  `docker logs` shows that of a container that ended. `-f` (or
+  `--follow`) goes on with the logs of services, also after they turn
+  over, and with plugins that follow, until Ctrl-C. `logs` runs in the
+  caller's process also while a daemon runs, and the lines it shows keep
+  their own time and run; a `task: logs` step shows them too.
 - `opstruss status [unit]...` (also `ps`) runs the `status` task of each
   unit's plugin without the unit's lock, with its record to read, and for
   other units says what the record holds: up with its last run and

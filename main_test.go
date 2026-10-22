@@ -53,18 +53,20 @@ func params(dir string) testscript.Params {
 			ts.Fatalf("%s did not appear", args[0])
 		},
 		// waitgrep waits up to 10 seconds until a file that a process in
-		// the background writes, such as the log of a service, matches a
-		// regular expression.
+		// the background writes, such as the log of a service, or one of
+		// the files a glob matches, matches a regular expression.
 		"waitgrep": func(ts *testscript.TestScript, _ bool, args []string) {
 			if len(args) != 2 {
-				ts.Fatalf("usage: waitgrep <regexp> <file>")
+				ts.Fatalf("usage: waitgrep <regexp> <file or glob>")
 			}
 			re, err := regexp.Compile("(?m)" + args[0])
 			ts.Check(err)
-			p := ts.MkAbs(args[1])
 			for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
-				if data, err := os.ReadFile(p); err == nil && re.Match(data) {
-					return
+				paths, _ := filepath.Glob(ts.MkAbs(args[1]))
+				for _, p := range paths {
+					if data, err := os.ReadFile(p); err == nil && re.Match(data) {
+						return
+					}
 				}
 			}
 			ts.Fatalf("no match for %q in %s", args[0], args[1])

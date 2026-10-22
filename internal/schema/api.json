@@ -27,6 +27,7 @@
         "yes": { "type": "boolean" },
         "force": { "type": "boolean" },
         "no_deps": { "type": "boolean" },
+        "follow": { "type": "boolean" },
         "task": { "type": "string" },
         "with": { "type": "object" },
         "run": { "type": "string" },
