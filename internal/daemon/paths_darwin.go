@@ -19,32 +19,36 @@ type stamp struct {
 }
 
 // paths sends the changes of the files that the watch tr names, by the
-// stat of each every second, under the directory of its task.
+// stat of each every second, under the directory of its task and the
+// fixed part of each absolute pattern.
 func (t *triggers) paths(ctx context.Context, tr *engine.Trigger, push func(map[string]any)) {
+	roots := pathRoots(tr)
 	scan := func() (map[string]stamp, bool) {
 		seen := map[string]stamp{}
-		_ = filepath.WalkDir(tr.Dir, func(p string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return nil
-			}
-			if d.IsDir() {
-				if name := d.Name(); p != tr.Dir && (name == ".git" || name == ".opstruss") {
-					return filepath.SkipDir
+		for _, root := range roots {
+			_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+				if err != nil {
+					return nil
+				}
+				if d.IsDir() {
+					if name := d.Name(); p != root && (name == ".git" || name == ".opstruss") {
+						return filepath.SkipDir
+					}
+					return nil
+				}
+				shown, ok := pathOf(tr, p)
+				if !ok {
+					return nil
+				}
+				if len(seen) >= MaxPolled {
+					return filepath.SkipAll
+				}
+				if info, err := d.Info(); err == nil {
+					seen[shown] = stamp{info.ModTime(), info.Size()}
 				}
 				return nil
-			}
-			rel, err := filepath.Rel(tr.Dir, p)
-			if err != nil || !matchPath(tr.Paths, filepath.ToSlash(rel)) {
-				return nil
-			}
-			if len(seen) >= MaxPolled {
-				return filepath.SkipAll
-			}
-			if info, err := d.Info(); err == nil {
-				seen[filepath.ToSlash(rel)] = stamp{info.ModTime(), info.Size()}
-			}
-			return nil
-		})
+			})
+		}
 		return seen, len(seen) < MaxPolled
 	}
 	last, ok := scan()

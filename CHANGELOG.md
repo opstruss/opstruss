@@ -164,18 +164,19 @@ minor release can change what a project, a component, or a plugin relies on.
   triggers of each task and, while the daemon runs, when it comes next.
 - A task with `on: watch` runs for each event of its source: a line that a
   service writes, or the `watch` hook of the plugin of a unit; a change of
-  the files that `paths` names, through inotify on Linux and the stat of
-  each file every second on macOS, for at most 50,000 files; or a line of
-  a program that one call of a task runs, `command` or a task of a plugin,
-  which the daemon keeps running as it keeps a service and starts again
-  with backoff, with its inputs read again each time. The program of a
-  source works in the directory of the task or unit that watches, as a
-  step does. `if` chooses each event, and `batch` or `debounce` gathers
-  them into one run with `event.lines` or `event.paths`, at most 10,000
-  items or 1 MiB, and `event.count`. A task with `on: after` runs when a
-  run of another task ends in the daemon with the `outcome` it names, for
-  the unit it names, with `event.task`, `unit`, `outcome`, and `outputs`;
-  a chain of after stops past three.
+  the files that `paths` names, relative to the directory of the task or
+  absolute, with `${{ }}` read as the daemon installs the trigger, through
+  inotify on Linux and the stat of each file every second on macOS, for at
+  most 50,000 files; or a line of a program that one call of a task runs,
+  `command` or a task of a plugin, which the daemon keeps running as it
+  keeps a service and starts again with backoff, with its inputs read
+  again each time. The program of a source works in the directory of the
+  task or unit that watches, as a step does. `if` chooses each event, and
+  `batch` or `debounce` gathers them into one run with `event.lines` or
+  `event.paths`, at most 10,000 items or 1 MiB, and `event.count`. A task
+  with `on: after` runs when a run of another task ends in the daemon with
+  the `outcome` it names, for the unit it names, with `event.task`,
+  `unit`, `outcome`, and `outputs`; a chain of after stops past three.
 - A task with `on: webhook` runs when a request comes to its `path` and
   `method` on `runtime.listen` of the daemon, which every project with a
   webhook writes. `signature` checks `secret` before any run is made:

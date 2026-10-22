@@ -32,6 +32,8 @@ exec opstruss stop
 
 -- opstruss.yaml --
 name: shop
+inputs:
+  src: {type: string, default: src}
 uses:
   feed: ./feed
 secrets:
@@ -69,7 +71,7 @@ tasks:
     env: {N: '${{ string(event.count) }}', P: '${{ event.paths.map(p, p.path).join(",") }}'}
     on:
       watch:
-        paths: ['src/**']
+        paths: ['${{ inputs.src }}/**']   # read as the daemon installs the trigger
         debounce: 2s
   t1:
     run: echo t1 >> fired

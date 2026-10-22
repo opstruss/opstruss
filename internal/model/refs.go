@@ -49,7 +49,7 @@ var placeNames = map[string]string{
 	"unit": "a unit", "until": "retry.until of a unit", "cond": "if and for_each of a unit", "local": "locals",
 	"task": "a task", "check": "failed_when, changed_when, and retry.until", "output": "project outputs",
 	"plugin": "a plugin task", "plugin-check": "failed_when, changed_when, and retry.until of a plugin task",
-	"secret": "secret sources", "trigger": "if and with of a trigger", "install": "the secret of a webhook",
+	"secret": "secret sources", "trigger": "if and with of a trigger", "install": "what the daemon reads as it installs a trigger",
 }
 
 // refs checks the expressions in v, written at path, and returns the units
@@ -369,6 +369,9 @@ func (c *checker) references() {
 				}
 				for call, args := range w.Calls {
 					c.refs(at(wp, call), args, place{kind: "install"})
+				}
+				for j, it := range w.Paths {
+					c.refs(at(wp, "paths", strconv.Itoa(j)), it.Pattern, place{kind: "install"})
 				}
 				c.refs(at(wp, "if"), condition(w.If), place{kind: "trigger"})
 				c.refs(at(wp, "with"), w.With, place{kind: "trigger"})

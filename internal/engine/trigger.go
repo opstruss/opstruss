@@ -71,6 +71,17 @@ func Triggers(opts Options) ([]*Trigger, string, error) {
 	}
 	e.ctx, e.trigger = context.Background(), true
 	var scope *expr.Scope
+	installScope := func() (*expr.Scope, error) {
+		if scope == nil {
+			e.pass = pass{}
+			if err := e.selectUnits(false); err != nil {
+				return nil, err
+			}
+			e.previewQuiet()
+			scope = e.triggerScope()
+		}
+		return scope, nil
+	}
 	var out []*Trigger
 	for _, name := range slices.Sorted(maps.Keys(e.p.Tasks)) {
 		on := e.p.Tasks[name].On
@@ -89,15 +100,11 @@ func Triggers(opts Options) ([]*Trigger, string, error) {
 			out = append(out, &Trigger{Task: name, Kind: "every", Index: i, Key: keyOf(every), Every: d})
 		}
 		for i, w := range on.Webhook {
-			if scope == nil {
-				e.pass = pass{}
-				if err := e.selectUnits(false); err != nil {
-					return nil, "", err
-				}
-				e.previewQuiet()
-				scope = e.triggerScope()
+			s, err := installScope()
+			if err != nil {
+				return nil, "", err
 			}
-			secret, err := expr.EvalText(w.Secret, scope)
+			secret, err := expr.EvalText(w.Secret, s)
 			if err != nil {
 				return nil, "", e.redact.Err(fmt.Errorf("task %s: webhook secret: %w", name, err))
 			}
@@ -112,8 +119,21 @@ func Triggers(opts Options) ([]*Trigger, string, error) {
 			continue
 		}
 		for i, w := range on.Watch {
+			paths := slices.Clone(w.Paths)
+			for j, it := range paths {
+				if !expr.HasExpr(it.Pattern) {
+					continue
+				}
+				s, err := installScope()
+				if err != nil {
+					return nil, "", err
+				}
+				if paths[j].Pattern, err = expr.EvalText(it.Pattern, s); err != nil {
+					return nil, "", e.redact.Err(fmt.Errorf("task %s: watch: paths: %w", name, err))
+				}
+			}
 			t := &Trigger{Task: name, Kind: "watch", Index: i, Key: keyOf(name, fmt.Sprint(i)), Unit: w.Unit,
-				Stream: cmp.Or(w.Stream, "both"), Paths: w.Paths, Dir: e.p.DirOf("tasks." + name), Call: len(w.Calls) > 0}
+				Stream: cmp.Or(w.Stream, "both"), Paths: paths, Dir: e.p.DirOf("tasks." + name), Call: len(w.Calls) > 0}
 			for _, d := range []struct {
 				text string
 				to   *time.Duration

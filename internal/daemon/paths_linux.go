@@ -5,15 +5,14 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/opstruss/opstruss/internal/engine"
 )
 
 // paths sends the changes of the files that the watch tr names, as
-// inotify reports them under the directory of its task, also in
-// directories made later.
+// inotify reports them under the directory of its task and the fixed part
+// of each absolute pattern, also in directories made later.
 func (t *triggers) paths(ctx context.Context, tr *engine.Trigger, push func(map[string]any)) {
 	w, err := fsnotify.NewWatcher()
 	if err != nil {
@@ -22,11 +21,11 @@ func (t *triggers) paths(ctx context.Context, tr *engine.Trigger, push func(map[
 	}
 	defer func() { _ = w.Close() }()
 	send := func(p, op string) {
-		rel, err := filepath.Rel(tr.Dir, p)
-		if err != nil || strings.HasPrefix(rel, "..") || !matchPath(tr.Paths, filepath.ToSlash(rel)) {
+		shown, ok := pathOf(tr, p)
+		if !ok {
 			return
 		}
-		push(map[string]any{"paths": []any{map[string]any{"path": filepath.ToSlash(rel), "op": op}}, "count": int64(1)})
+		push(map[string]any{"paths": []any{map[string]any{"path": shown, "op": op}}, "count": int64(1)})
 	}
 	// add watches root and the directories under it; in a directory made
 	// after the watch started, the files that came before its watch did
@@ -49,7 +48,9 @@ func (t *triggers) paths(ctx context.Context, tr *engine.Trigger, push func(map[
 			return nil
 		})
 	}
-	add(tr.Dir, false)
+	for _, root := range pathRoots(tr) {
+		add(root, false)
+	}
 	for {
 		select {
 		case <-ctx.Done():

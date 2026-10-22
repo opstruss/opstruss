@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/opstruss/opstruss/internal/engine"
-	"github.com/opstruss/opstruss/internal/model"
 	"github.com/opstruss/opstruss/internal/plugin"
 	"github.com/opstruss/opstruss/internal/record"
 )
@@ -220,15 +220,50 @@ func (t *triggers) ended(run string, depth int) {
 	}
 }
 
-// matchPath reports whether rel, a path relative to the directory of the
-// task, is one of items: the last pattern that matches decides, and an
-// exclude: takes it out.
-func matchPath(items []model.PathItem, rel string) bool {
+// pathOf says whether the file at abs is one of the paths of the watch tr,
+// a relative pattern read from the directory of its task and an absolute
+// one as it is, where the last pattern that matches decides and an
+// exclude: takes it out; and it gives the path that event.paths shows:
+// relative to that directory for a file under it, absolute otherwise.
+func pathOf(tr *engine.Trigger, abs string) (string, bool) {
+	rel, err := filepath.Rel(tr.Dir, abs)
+	inside := err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+	shown := filepath.ToSlash(abs)
+	if inside {
+		shown = filepath.ToSlash(rel)
+	}
 	in := false
-	for _, it := range items {
-		if ok, _ := doublestar.Match(it.Pattern, rel); ok {
+	for _, it := range tr.Paths {
+		target := filepath.ToSlash(abs)
+		if !filepath.IsAbs(it.Pattern) {
+			if !inside {
+				continue
+			}
+			target = shown
+		}
+		if ok, _ := doublestar.Match(filepath.ToSlash(it.Pattern), target); ok {
 			in = !it.Exclude
 		}
 	}
-	return in
+	return shown, in
+}
+
+// pathRoots are the directories that the watch tr looks under: that of its
+// task, and the fixed part of each absolute pattern outside it.
+func pathRoots(tr *engine.Trigger) []string {
+	roots := []string{tr.Dir}
+	for _, it := range tr.Paths {
+		if it.Exclude || !filepath.IsAbs(it.Pattern) {
+			continue
+		}
+		base, _ := doublestar.SplitPattern(filepath.ToSlash(it.Pattern))
+		base = filepath.FromSlash(base)
+		if rel, err := filepath.Rel(tr.Dir, base); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			continue
+		}
+		if !slices.Contains(roots, base) {
+			roots = append(roots, base)
+		}
+	}
+	return roots
 }
