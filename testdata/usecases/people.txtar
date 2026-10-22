@@ -1,0 +1,377 @@
+# Onboarding and offboarding across Google Workspace, GitHub, Slack, and
+# 1Password with the http task and the op CLI: approval before anyone gets
+# an account, a temporary password kept sensitive, a people registry in kv
+# with a single writer, an offboarding that goes on past a failed system
+# and is safe to run again, and a weekly review of leftover access. The
+# APIs are fakeapi, op is a fake, and the waits are short.
+
+env HOME=$WORK/home
+env SOPS_AGE_KEY_FILE=$WORK/age/keys.txt
+env PATH=$WORK/fakes:$PATH
+exec chmod 755 fakes/op scripts/google-token.sh
+! exec fakeapi -listen 127.0.0.1:18801 api &api&
+waitfile api/port
+exec opstruss init
+cp api/routes.onboard api/routes
+
+# onboarding waits for IT to approve it
+! exec opstruss onboard --email rina.putri@acme.com --given-name Rina --family-name Putri --team eng --github-user rinap
+stdout '^onboard: task onboard needs approval; stopped$'
+! exists api/requests
+
+# with approval: a Google account with a temporary password that only the
+# manager's vault sees, GitHub and Slack, and the registry in kv
+exec opstruss onboard --email rina.putri@acme.com --given-name Rina --family-name Putri --team eng --github-user rinap --yes
+stdout '^onboard: success$'
+exec opstruss onboard --email andi@acme.com --given-name Andi --family-name Saputra --team eng --github-user andi-acme --yes
+exec opstruss onboard --email budi@acme.com --given-name Budi --family-name Santoso --team ops --github-user budi-acme --yes
+grep '^POST /admin/directory/v1/users auth=Bearer ya29.google-test-token {"changePasswordAtNextLogin":true,.*"primaryEmail":"rina.putri@acme.com"}$' api/requests
+grep '^PUT /orgs/acme/teams/engineers/memberships/rinap auth=Bearer gh-test-token {"role":"member"}$' api/requests
+grep '^POST /scim/v2/Users auth=Bearer slack-test-token .*"userName":"rina.putri"}$' api/requests
+grep '^op item create Akun budi@acme.com$' calls
+grep '^POST /it {"text":"Onboarding budi@acme.com \(ops\): Google, GitHub, Slack siap; password sementara di vault Onboarding"}$' api/requests
+exec jq -r '.value | keys | join(" ")' .opstruss/state/default/_kv/people
+stdout '^andi@acme.com budi@acme.com rina.putri@acme.com$'
+exec sh -c '! grep -r "$(jq -r .fields[1].value op-items/item.json)" .opstruss'
+
+# Slack is down: offboarding goes on with the other systems, kv keeps what
+# failed, IT hears it, and the run fails
+cp api/routes.offboard api/routes
+! exec opstruss offboard --email budi@acme.com --reason 'kontrak selesai' --yes
+stderr 'sebagian sistem gagal; ulangi offboard, task ini aman diulang'
+grep -count=3 '^DELETE /scim/v2/Users/U123 ' api/requests
+grep '^POST /it {"text":"Offboarding budi@acme.com: google=success, github=success, slack=failure, 1password=success"}$' api/requests
+exec jq -r '.value["budi@acme.com"].systems.slack' .opstruss/state/default/_kv/people
+stdout '^failure$'
+
+# the same offboarding again finishes it: GitHub says the member is gone,
+# and 1Password that the user is suspended already
+cp api/routes.again api/routes
+exec opstruss offboard --email budi@acme.com --reason 'kontrak selesai' --yes
+stdout '^offboard: success$'
+grep '^POST /it {"text":"Offboarding budi@acme.com: google=success, github=success, slack=success, 1password=success"}$' api/requests
+exec opstruss offboard --email andi@acme.com --reason 'pindah perusahaan' --yes
+
+# someone from before OpsTruss has no GitHub login in kv, so GitHub is
+# skipped
+exec opstruss offboard --email dewi@acme.com --reason 'pensiun' --yes
+grep '^POST /it {"text":"Offboarding dewi@acme.com: google=success, github=skipped, slack=success, 1password=success"}$' api/requests
+
+# the weekly review finds the GitHub member that andi still is
+cp api/routes.review api/routes
+exec opstruss access-review
+grep '^POST /it {"text":"Akses tertinggal: google ; github andi@acme.com; slack "}$' api/requests
+! exec grep -r -e ya29.google-test-token -e gh-test-token -e slack-test-token .opstruss
+
+-- api/routes.onboard --
+GET /admin/directory/v1/users/* 404 {"error": {"code": 404}}
+POST /admin/directory/v1/users 200 {"id": "g1"}
+PUT /orgs/acme/* 200 {"state": "pending"}
+GET /scim/v2/Users 200 {"totalResults": 0, "Resources": []}
+POST /scim/v2/Users 201 {"id": "U1"}
+POST /it 200 ok
+-- api/routes.offboard --
+PUT /admin/directory/v1/users/* 200 {}
+POST /admin/directory/v1/users/* 204
+DELETE /orgs/acme/memberships/* 204
+GET /scim/v2/Users 200 {"totalResults": 1, "Resources": [{"id": "U123"}]}
+DELETE /scim/v2/Users/U123 503 {"detail": "try again later"}
+POST /it 200 ok
+-- api/routes.again --
+PUT /admin/directory/v1/users/* 200 {}
+POST /admin/directory/v1/users/* 204
+DELETE /orgs/acme/memberships/* 404 {"message": "Not Found"}
+GET /scim/v2/Users 200 {"totalResults": 1, "Resources": [{"id": "U123"}]}
+DELETE /scim/v2/Users/U123 204
+POST /it 200 ok
+-- api/routes.review --
+GET /admin/directory/v1/users 200 {"users": [{"primaryEmail": "rina.putri@acme.com"}]}
+GET /orgs/acme/members 200 [{"login": "rinap"}, {"login": "andi-acme"}]
+GET /scim/v2/Users 200 {"totalResults": 1, "Resources": [{"emails": [{"value": "rina.putri@acme.com"}]}]}
+POST /it 200 ok
+-- fakes/op --
+#!/bin/sh
+# op, the 1Password CLI: read gives the secrets of the people bot, item
+# create keeps the item it reads on stdin in op-items/, and user suspend
+# suspends once.
+dir=${0%/*}/..
+case "$1 $2" in
+"read op://IT/GitHub people bot/token") echo gh-test-token ;;
+"read op://IT/Slack SCIM/token") echo slack-test-token ;;
+"read op://IT/Slack it webhook/url") echo http://127.0.0.1:18801/it ;;
+"item create")
+  mkdir -p "$dir/op-items"
+  cat > "$dir/op-items/item.json"
+  echo "op item create $(jq -r .title "$dir/op-items/item.json")" >> "$dir/calls"
+  ;;
+"user suspend")
+  if [ -f "$dir/op-suspended-$3" ]; then
+    echo "[ERROR] user $3 is already suspended" >&2
+    exit 1
+  fi
+  touch "$dir/op-suspended-$3"
+  echo "op user suspend $3" >> "$dir/calls"
+  ;;
+*) echo "op: unknown command $*" >&2; exit 1 ;;
+esac
+-- scripts/google-token.sh --
+#!/bin/sh
+# google-token.sh: an access token of the service account, printed on stdout.
+echo ya29.google-test-token
+-- opstruss.yaml --
+# opstruss.yaml
+name: people
+description: Onboard and offboard employees across Google Workspace, GitHub, Slack, and 1Password
+
+uses:
+  google:                                  # Admin SDK Directory API
+    source: opstruss.http
+    with:
+      headers:
+        Authorization: Bearer ${{ secrets.google }}
+  github:
+    source: opstruss.http
+    with:
+      headers:
+        Authorization: Bearer ${{ secrets.github }}
+        Accept: application/vnd.github+json
+  slack:                                   # SCIM API
+    source: opstruss.http
+    with:
+      headers:
+        Authorization: Bearer ${{ secrets.slack_scim }}
+  it-channel:
+    source: opstruss.http
+    with:
+      method: POST
+      url: ${{ secrets.it_webhook }}
+
+inputs:
+  domain:
+    type: string
+    default: acme.com
+  org:
+    type: string
+    default: acme
+  teams:
+    type: object
+    description: Google org unit and GitHub team per team
+    default:
+      eng: {ou: /Engineering, github_team: engineers}
+      design: {ou: /Design, github_team: designers}
+      ops: {ou: /Operations, github_team: ops}
+
+secrets:
+  google: {run: [./scripts/google-token.sh]}
+  github: {run: [op, read, "op://IT/GitHub people bot/token"]}
+  slack_scim: {run: [op, read, "op://IT/Slack SCIM/token"]}
+  it_webhook: {run: [op, read, "op://IT/Slack it webhook/url"]}
+
+tasks:
+  onboard:
+    description: Create accounts for a new employee
+    approval: ask                          # IT membaca input dulu
+    inputs:
+      email: {type: string, pattern: '^[a-z0-9.]+@acme\.com$', required: true}
+      given_name: {type: string, required: true}
+      family_name: {type: string, required: true}
+      team: {type: string, enum: [eng, design, ops], required: true}
+      github_user: {type: string, default: ""}
+    steps:
+      - name: Temporary password
+        id: pw
+        run: [openssl, rand, -base64, "24"]
+        outputs:
+          value: {from: stdout, sensitive: true}   # stdout ini data: tidak masuk log
+      - name: Google account
+        block:
+          - name: Exists
+            id: g_find
+            google:
+              url: http://127.0.0.1:18801/admin/directory/v1/users/${{ inputs.email }}
+              status_code: [200, 404]
+          - name: Create
+            if: steps.g_find.outputs.status == 404
+            google:
+              method: POST
+              url: http://127.0.0.1:18801/admin/directory/v1/users
+              body:
+                primaryEmail: ${{ inputs.email }}
+                name: {givenName: "${{ inputs.given_name }}", familyName: "${{ inputs.family_name }}"}
+                password: ${{ steps.pw.outputs.value }}
+                changePasswordAtNextLogin: true
+                orgUnitPath: ${{ inputs.teams[inputs.team].ou }}
+      - name: GitHub membership
+        if: inputs.github_user != ''
+        block:
+          - github:
+              method: PUT                  # idempotent: aman diulang
+              url: http://127.0.0.1:18801/orgs/${{ inputs.org }}/memberships/${{ inputs.github_user }}
+              body: {role: member}
+          - github:
+              method: PUT
+              url: http://127.0.0.1:18801/orgs/${{ inputs.org }}/teams/${{ inputs.teams[inputs.team].github_team }}/memberships/${{ inputs.github_user }}
+              body: {role: member}
+      - name: Slack account
+        block:
+          - name: Exists
+            id: s_find
+            slack:
+              url: http://127.0.0.1:18801/scim/v2/Users?filter=email%20eq%20%22${{ inputs.email }}%22
+          - name: Create
+            if: steps.s_find.outputs.body.totalResults == 0
+            slack:
+              method: POST
+              url: http://127.0.0.1:18801/scim/v2/Users
+              status_code: [201]
+              body:
+                schemas: ["urn:ietf:params:scim:schemas:core:2.0:User"]
+                userName: ${{ inputs.email.split('@')[0] }}
+                emails: [{value: "${{ inputs.email }}", primary: true}]
+                name: {givenName: "${{ inputs.given_name }}", familyName: "${{ inputs.family_name }}"}
+      - name: Password for the manager
+        run: [op, item, create, --vault, Onboarding, --template, /dev/stdin]
+        stdin:
+          format: json                     # password lewat stdin, bukan argv
+          value:
+            title: "Akun ${{ inputs.email }}"
+            category: LOGIN
+            fields:
+              - {id: username, type: STRING, value: "${{ inputs.email }}"}
+              - {id: password, type: CONCEALED, value: "${{ steps.pw.outputs.value }}"}
+      - name: Remember
+        task: record-person
+        with:
+          email: ${{ inputs.email }}
+          record:
+            state: active
+            team: ${{ inputs.team }}
+            github: ${{ inputs.github_user }}
+            since: ${{ opstruss.time.strftime('%Y-%m-%d', 'Asia/Jakarta') }}
+      - name: Tell IT
+        it-channel:
+          body:
+            text: "Onboarding ${{ inputs.email }} (${{ inputs.team }}): Google, GitHub, Slack siap; password sementara di vault Onboarding"
+
+  offboard:
+    description: Remove a departing employee from every system
+    approval: ask
+    inputs:
+      email: {type: string, pattern: '^[a-z0-9.]+@acme\.com$', required: true}
+      reason: {type: string, required: true}
+    steps:
+      - name: Who
+        id: who
+        set:                               # orang dari sebelum OpsTruss: tanpa github dan team
+          person: "${{ kv('people', {})[?inputs.email].orValue({'github': '', 'team': ''}) }}"
+      - name: Google
+        id: google
+        continue_on_error: true            # sistem lain tetap dicabut
+        block:
+          - google:
+              method: PUT
+              url: http://127.0.0.1:18801/admin/directory/v1/users/${{ inputs.email }}
+              body: {suspended: true}
+            retry: {attempts: 3, delay: 10ms}
+          - google:
+              method: POST
+              url: http://127.0.0.1:18801/admin/directory/v1/users/${{ inputs.email }}/signOut
+              status_code: [204]
+            retry: {attempts: 3, delay: 10ms}
+      - name: GitHub
+        id: github
+        if: steps.who.outputs.person.github != ''
+        continue_on_error: true
+        retry: {attempts: 3, delay: 10ms}
+        github:
+          method: DELETE
+          url: http://127.0.0.1:18801/orgs/${{ inputs.org }}/memberships/${{ steps.who.outputs.person.github }}
+          status_code: [204, 404]          # 404: sudah keluar, tetap berhasil
+      - name: Slack
+        id: slack
+        continue_on_error: true
+        block:
+          - id: s_find
+            slack:
+              url: http://127.0.0.1:18801/scim/v2/Users?filter=email%20eq%20%22${{ inputs.email }}%22
+            retry: {attempts: 3, delay: 10ms}
+          - if: steps.s_find.outputs.body.totalResults > 0
+            slack:
+              method: DELETE               # SCIM: menonaktifkan akun dan memutus sesinya
+              url: http://127.0.0.1:18801/scim/v2/Users/${{ steps.s_find.outputs.body.Resources[0].id }}
+              status_code: [204]
+            retry: {attempts: 3, delay: 10ms}
+      - name: 1Password
+        id: onepassword
+        continue_on_error: true
+        run: [op, user, suspend, "${{ inputs.email }}"]
+        failed_when: outputs.exit_code != 0 && !outputs.stderr.contains('already suspended')
+      - name: Remember
+        task: record-person
+        with:
+          email: ${{ inputs.email }}
+          record: "${{ {'state': 'offboarded', 'team': steps.who.outputs.person.team, 'github': steps.who.outputs.person.github, 'since': opstruss.time.strftime('%Y-%m-%d', 'Asia/Jakarta'), 'reason': inputs.reason, 'systems': {'google': steps.google.outcome, 'github': steps.github.outcome, 'slack': steps.slack.outcome, '1password': steps.onepassword.outcome}} }}"
+      - name: Tell IT
+        it-channel:
+          body:
+            text: "Offboarding ${{ inputs.email }}: google=${{ steps.google.outcome }}, github=${{ steps.github.outcome }}, slack=${{ steps.slack.outcome }}, 1password=${{ steps.onepassword.outcome }}"
+      - name: Every system done
+        assert:
+          that: "[steps.google, steps.github, steps.slack, steps.onepassword].all(s, s.outcome in ['success', 'skipped'])"
+          msg: sebagian sistem gagal; ulangi offboard, task ini aman diulang
+
+  record-person:
+    description: Update one entry in the people registry
+    internal: true
+    concurrency: queue                     # satu penulis kv people
+    inputs:
+      email: {type: string, required: true}
+      record: {type: object, required: true}
+    steps:
+      - name: Merge
+        id: merge
+        run: [jq, -c, '.people + {(.email): .record}']   # CEL tidak menggabung map (celah 2)
+        stdin:
+          format: json
+          value:
+            people: ${{ kv('people', {}) }}
+            email: ${{ inputs.email }}
+            record: ${{ inputs.record }}
+        outputs:
+          value: {from: stdout, format: json}
+      - kv:
+          key: people
+          value: ${{ steps.merge.outputs.value }}
+
+  access-review:
+    description: Find offboarded people who still have access somewhere
+    on:
+      schedule: {cron: "0 8 * * 1", timezone: Asia/Jakarta, persistent: true}
+    steps:
+      - name: Offboarded
+        id: gone
+        set:
+          emails: "${{ kv('people', {}).filter(e, kv('people')[e].state == 'offboarded') }}"
+      - name: Active Google users
+        id: g
+        google:
+          url: http://127.0.0.1:18801/admin/directory/v1/users?domain=${{ inputs.domain }}&query=isSuspended%3Dfalse&maxResults=500
+      - name: GitHub members
+        id: gh
+        github:
+          url: http://127.0.0.1:18801/orgs/${{ inputs.org }}/members?per_page=100   # satu halaman; paginasi milik script atau plugin
+      - name: Active Slack users
+        id: s
+        slack:
+          url: http://127.0.0.1:18801/scim/v2/Users?filter=active%20eq%20true&count=1000
+      - name: Leftovers
+        id: left
+        set:
+          google: "${{ steps.gone.outputs.emails.filter(e, e in steps.g.outputs.body.users.map(u, u.primaryEmail)) }}"
+          github: "${{ steps.gone.outputs.emails.filter(e, kv('people')[e].github != '' && kv('people')[e].github in steps.gh.outputs.body.map(m, m.login)) }}"
+          slack: "${{ steps.gone.outputs.emails.filter(e, e in steps.s.outputs.body.Resources.map(r, r.emails[0].value)) }}"
+      - name: Alert
+        if: size(steps.left.outputs.google) + size(steps.left.outputs.github) + size(steps.left.outputs.slack) > 0
+        it-channel:
+          body:
+            text: "Akses tertinggal: google ${{ steps.left.outputs.google.join(', ') }}; github ${{ steps.left.outputs.github.join(', ') }}; slack ${{ steps.left.outputs.slack.join(', ') }}"

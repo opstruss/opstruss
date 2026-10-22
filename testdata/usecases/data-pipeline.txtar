@@ -1,0 +1,305 @@
+# A daily ETL: a schema unit that runs again only when its file changes,
+# orders of one day from a shop API with paging and a rate limit retried
+# through retry.until, a load and a quality gate per day, and a backfill
+# that loads days in parallel and reports each day. The shop API, psql,
+# and duckdb are fakes, Slack is fakeapi, and the waits are short.
+
+env HOME=$WORK/home
+env SOPS_AGE_KEY_FILE=$WORK/age/keys.txt
+env PATH=$WORK/fakes:$PATH
+exec chmod 755 fakes/curl fakes/psql fakes/duckdb etl/extract.sh
+! exec fakeapi -listen 127.0.0.1:18601 api &api&
+waitfile api/port
+exec opstruss init
+exec sh -c 'printf "  - path_regex: secrets.sops.yaml\n    age: %s\n" "$(sed -n "s/^# public key: //p" age/keys.txt)" >> .sops.yaml'
+exec sops encrypt --filename-override secrets.sops.yaml --output secrets.sops.yaml plain.yaml
+
+# the schema comes first, through its unit
+exec opstruss up
+stdout '^default/schema: up: done$'
+grep '^psql --set=ON_ERROR_STOP=1 --quiet --file=etl/schema.sql pg=set$' calls
+
+# a backfill of three days, in parallel: the API limits one call, which
+# extract retries; 2026-10-10 has two pages; 2026-10-11 fails the quality
+# gate, and the report names every day
+exec mkdir rate.on
+exec opstruss backfill --from 2026-10-10 --to 2026-10-12
+stdout '^load-day: Extract: attempt 1 of 5 did not succeed; again in 10ms$'
+stderr '^load-day: Quality gate: assert: order 2026-10-11 tidak wajar: {"ratio":0.2,"rows":12}$'
+stdout '^backfill: Load: failed; continue_on_error goes on$'
+stdout '^backfill: success$'
+grep '^curl 2026-10-10 page=2 token=ok$' calls
+grep '^duckdb -bail -c .read etl/load.sql DAY=2026-10-10 rows=3 pg=set$' calls
+grep '^POST /slack {"text":"2026-10-10: 120 order, rasio 1"}$' api/requests
+grep '^POST /slack {"text":"backfill 2026-10-10 sampai 2026-10-12: 2026-10-10=success, 2026-10-11=failure, 2026-10-12=success"}$' api/requests
+! grep 'token=bad' calls
+
+# the three days ran at once, and the schema ran once for all of them
+grep -count=1 '^psql ' calls
+
+# nightly loads yesterday in Asia/Jakarta
+exec opstruss nightly
+stdout '^nightly: success$'
+grep '^POST /slack {"text":"[0-9]{4}-[0-9]{2}-[0-9]{2}: 120 order, rasio 1"}$' api/requests
+
+# a new schema file runs the schema unit again
+exec sh -c 'echo "-- tuned" >> etl/schema.sql'
+exec opstruss up
+stdout '^default/schema: up: done$'
+grep -count=2 '^psql ' calls
+! exec grep -r -e shop-test-token -e pg-test-password .opstruss
+
+-- plain.yaml --
+shop_token: shop-test-token
+pg_url: postgres://etl:pg-test-password@db/metrics
+slack_webhook: http://127.0.0.1:18601/slack
+-- api/routes --
+POST /slack 200 ok
+-- orders/default.p1.json --
+{"orders": [{"id": 1, "created_at": "2026-10-01T10:00:00+07:00", "total_price": "10.00", "currency": "USD"}]}
+-- orders/2026-10-10.p1.json --
+{"orders": [{"id": 101, "created_at": "2026-10-10T09:00:00+07:00", "total_price": "12.00", "currency": "USD"}, {"id": 102, "created_at": "2026-10-10T11:00:00+07:00", "total_price": "8.50", "currency": "USD"}]}
+-- orders/2026-10-10.p2.json --
+{"orders": [{"id": 103, "created_at": "2026-10-10T20:00:00+07:00", "total_price": "30.00", "currency": "USD"}]}
+-- checks --
+2026-10-11 [{"rows": 12, "ratio": 0.2}]
+-- fakes/curl --
+#!/bin/sh
+# curl -sS -D <headers> -o <body> -w '%{http_code}' -H @<file> <url>, as the
+# shop API answers: the orders of the day of created_at_min from
+# orders/<day>.p<page>.json, or orders/default.p1.json, with a link to the
+# next page when there is one, and 429 once while rate.on exists.
+dir=${0%/*}/..
+while [ $# -gt 1 ]; do
+  case "$1" in
+  -D) headers=$2; shift ;;
+  -o) body=$2; shift ;;
+  -H) hfile=${2#@}; shift ;;
+  esac
+  shift
+done
+url=$1
+day=$(echo "$url" | sed -n 's/.*created_at_min=\([0-9-]*\)T.*/\1/p')
+page=1
+case "$url" in *page_info=2*) page=2 ;; esac
+token=bad
+grep -qx 'X-Shopify-Access-Token: shop-test-token' "$hfile" && token=ok
+echo "curl $day page=$page token=$token" >> "$dir/calls"
+: > "$headers"
+if [ -d "$dir/rate.on" ] && mkdir "$dir/rate.hit" 2>/dev/null; then
+  echo '{"errors": "Exceeded 2 calls per second"}' > "$body"
+  printf 429
+  exit 0
+fi
+f=$dir/orders/$day.p$page.json
+[ -f "$f" ] || f=$dir/orders/default.p1.json
+cp "$f" "$body"
+[ "$page" = 1 ] && [ -f "$dir/orders/$day.p2.json" ] && echo "link: <$url&page_info=2>; rel=\"next\"" > "$headers"
+printf 200
+-- fakes/psql --
+#!/bin/sh
+echo "psql $* pg=${PGDATABASE:+set}" >> "${0%/*}/../calls"
+-- fakes/duckdb --
+#!/bin/sh
+# duckdb -bail -c ".read etl/load.sql" loads RAW for DAY; duckdb -json -c
+# ".read etl/check.sql" prints the check of DAY from checks, or a good one.
+dir=${0%/*}/..
+echo "duckdb $* DAY=$DAY rows=$(cat "${RAW:-/dev/null}" | wc -l | tr -d ' ') pg=${PGDATABASE:+set}" >> "$dir/calls"
+case "$*" in
+*check.sql*)
+  r=$(sed -n "s/^$DAY //p" "$dir/checks")
+  if [ -n "$r" ]; then echo "$r"; else echo '[{"rows": 120, "ratio": 1.0}]'; fi
+  ;;
+esac
+-- opstruss.yaml --
+# opstruss.yaml
+name: metrics
+description: Daily shop orders into Postgres, with checks and backfill
+
+uses:
+  slack:
+    source: opstruss.http
+    with:
+      method: POST
+      url: ${{ secrets.slack_webhook }}
+
+inputs:
+  shop:
+    type: string
+    default: acme.myshopify.com
+
+secrets:
+  shop_token: {sops: secrets.sops.yaml, field: shop_token}
+  pg_url: {sops: secrets.sops.yaml, field: pg_url}
+  slack_webhook: {sops: secrets.sops.yaml, field: slack_webhook}
+
+units:
+  schema:                                  # migrasi sederhana: jalan ulang hanya bila file berubah
+    run: [psql, --set=ON_ERROR_STOP=1, --quiet, --file=etl/schema.sql]
+    env:
+      PGDATABASE: ${{ secrets.pg_url }}    # connection string lewat env, bukan argv
+    sources: [etl/schema.sql]
+    approval: auto
+
+tasks:
+  nightly:
+    description: Load yesterday's orders
+    on:
+      schedule: {cron: "0 1 * * *", timezone: Asia/Jakarta, persistent: true}
+    concurrency: skip
+    steps:
+      - name: Load yesterday
+        task: load-day
+        with:                              # event.time: jadwal, juga saat susulan; manual: waktu mulai
+          day: ${{ (event.time - duration('24h')).strftime('%Y-%m-%d', 'Asia/Jakarta') }}
+
+  backfill:
+    description: Load a range of days, three days at a time
+    inputs:
+      from:
+        type: string
+        pattern: '^\d{4}-\d{2}-\d{2}$'
+        required: true
+      to:
+        type: string
+        pattern: '^\d{4}-\d{2}-\d{2}$'
+        required: true
+    steps:
+      - name: Days
+        id: days
+        set:
+          list: "${{ cel.bind(start, timestamp(inputs.from + 'T00:00:00Z'), lists.range((timestamp(inputs.to + 'T00:00:00Z') - start).getHours() / 24 + 1).map(i, (start + duration(string(i * 24) + 'h')).strftime('%Y-%m-%d'))) }}"
+      - name: Load
+        id: load
+        task: load-days                    # steps.load['2026-10-10']: map hasil per hari
+        with:
+          days: ${{ steps.days.outputs.list }}
+        continue_on_error: true
+      - name: Report
+        slack:
+          body:
+            text: "backfill ${{ inputs.from }} sampai ${{ inputs.to }}: ${{ steps.load.transformList(d, r, d + '=' + r.outcome).join(', ') }}"
+
+  load-days:
+    description: Load several days in parallel
+    internal: true
+    inputs:
+      days:
+        type: array
+        items: {type: string}
+        required: true
+    for_each: ${{ inputs.days }}           # paralel; key: 2026-10-10, 2026-10-11, …
+    max_parallel: 3                        # API toko dan Postgres: tiga hari sekaligus
+    steps:
+      - task: load-day
+        with:
+          day: ${{ each.value }}
+
+  load-day:
+    description: Extract, transform, load, and check one day of orders
+    internal: true
+    concurrency:
+      group: ${{ inputs.day }}             # hari yang sama berurutan, hari lain paralel (default: satu per task)
+    inputs:
+      day:
+        type: string
+        pattern: '^\d{4}-\d{2}-\d{2}$'
+        required: true
+    outputs:
+      rows:
+        value: ${{ steps.check.outputs.result[0].rows }}
+    steps:
+      - name: Schema
+        task: up
+        units: [schema]
+      - name: Extract
+        id: extract
+        run: [./etl/extract.sh, "${{ inputs.day }}"]
+        env:
+          SHOP: ${{ inputs.shop }}
+          SHOP_HEADER_FILE:
+            file: "X-Shopify-Access-Token: ${{ secrets.shop_token }}"   # file 0600; token tidak masuk argv curl
+        retry:
+          attempts: 5
+          delay: 10ms
+          backoff: 2
+          until: outputs.exit_code != 75   # dinilai juga di percobaan gagal: hanya rate limit yang diulang
+        outputs:
+          file: {type: string}
+          count: {type: integer}
+      - name: Transform and load
+        run: [duckdb, -bail, -c, ".read etl/load.sql"]
+        env:
+          DAY: ${{ inputs.day }}
+          RAW: ${{ steps.extract.outputs.file }}
+          PGDATABASE: ${{ secrets.pg_url }}
+      - name: Check
+        id: check
+        run: [duckdb, -json, -c, ".read etl/check.sql"]
+        env:
+          DAY: ${{ inputs.day }}
+          PGDATABASE: ${{ secrets.pg_url }}
+        outputs:
+          result: {from: stdout, format: json}
+      - name: Quality gate
+        assert:
+          that: steps.check.outputs.result[0].rows > 0 && steps.check.outputs.result[0].ratio > 0.5 && steps.check.outputs.result[0].ratio < 2.0
+          msg: "order ${{ inputs.day }} tidak wajar: ${{ toJSON(steps.check.outputs.result[0]) }}"
+      - name: Report
+        slack:
+          body:
+            text: "${{ inputs.day }}: ${{ steps.check.outputs.result[0].rows }} order, rasio ${{ steps.check.outputs.result[0].ratio }}"
+-- etl/extract.sh --
+#!/usr/bin/env bash
+# extract.sh <day>: order satu hari sebagai JSON lines.  Exit 75 bila kena rate limit (429).
+# File per hari: hari lain di run yang sama jalan paralel dan memakai $OPSTRUSS_ARTIFACTS yang sama.
+set -euo pipefail
+day="$1"
+out="$OPSTRUSS_ARTIFACTS/orders-$day.jsonl"
+url="https://$SHOP/admin/api/2024-10/orders.json?status=any&limit=250&created_at_min=${day}T00:00:00%2B07:00&created_at_max=${day}T23:59:59%2B07:00"
+: > "$out"
+while [ -n "$url" ]; do
+  code=$(curl -sS -D "$OPSTRUSS_ARTIFACTS/headers-$day" -o "$OPSTRUSS_ARTIFACTS/body-$day" -w '%{http_code}' \
+    -H @"$SHOP_HEADER_FILE" "$url")
+  [ "$code" = 429 ] && exit 75
+  [ "$code" = 200 ] || { echo "HTTP $code" >&2; exit 1; }
+  jq -c '.orders[]' "$OPSTRUSS_ARTIFACTS/body-$day" >> "$out"
+  url=$(grep -i '^link:' "$OPSTRUSS_ARTIFACTS/headers-$day" | grep -o '<[^>]*>; rel="next"' |
+    sed 's/[<>]//g; s/; rel="next"//' || true)
+done
+jq -n --arg file "$out" --argjson count "$(wc -l < "$out" | tr -d ' ')" \
+  '{file: $file, count: $count}' > "$OPSTRUSS_OUTPUT"
+-- etl/schema.sql --
+-- etl/schema.sql (psql)
+CREATE TABLE IF NOT EXISTS orders (
+  id         BIGINT PRIMARY KEY,
+  created_at TIMESTAMPTZ NOT NULL,
+  total      NUMERIC(12, 2) NOT NULL,
+  currency   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS orders_day ON orders ((created_at::date));
+-- etl/load.sql --
+-- etl/load.sql (DuckDB): satu hari dari JSON lines mentah ke Postgres, aman diulang
+INSTALL postgres;
+LOAD postgres;
+ATTACH '' AS pg (TYPE postgres);            -- koneksi dari PGDATABASE
+CREATE TEMP TABLE day AS
+  SELECT id, created_at::TIMESTAMPTZ AS created_at, total_price::DECIMAL(12, 2) AS total, currency
+  FROM read_json_auto(getenv('RAW'));
+BEGIN;
+DELETE FROM pg.public.orders WHERE created_at::DATE = getenv('DAY')::DATE;
+INSERT INTO pg.public.orders SELECT * FROM day;
+COMMIT;
+-- etl/check.sql --
+-- etl/check.sql (DuckDB): jumlah hari itu dibanding rata-rata tujuh hari sebelumnya
+LOAD postgres;
+ATTACH '' AS pg (TYPE postgres);
+WITH d AS (
+  SELECT created_at::DATE AS day, count(*) AS n
+  FROM pg.public.orders
+  WHERE created_at::DATE BETWEEN getenv('DAY')::DATE - 7 AND getenv('DAY')::DATE
+  GROUP BY 1
+)
+SELECT coalesce((SELECT n FROM d WHERE day = getenv('DAY')::DATE), 0) AS rows,
+       coalesce((SELECT n FROM d WHERE day = getenv('DAY')::DATE), 0)
+         / nullif((SELECT avg(n) FROM d WHERE day < getenv('DAY')::DATE), 0) AS ratio;

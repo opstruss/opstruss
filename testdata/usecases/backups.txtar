@@ -1,0 +1,417 @@
+# Nightly backups without units: a dump goes to three restic repositories
+# through a local plugin, one destination failing does not stop the
+# others, Telegram hears the result through the http task, a failure
+# alerts through after, kv remembers the last good backup so a stale check
+# alerts once, and a monthly restore test reads the dump back. The
+# triggers live in the daemon that up -d starts. Telegram is fakeapi,
+# restic and PostgreSQL are fakes, the dump lives in the project, and the
+# waits are short.
+
+env HOME=$WORK/home
+env SOPS_AGE_KEY_FILE=$WORK/age/keys.txt
+env PATH=$WORK/fakes:$PATH
+exec chmod 755 fakes/restic fakes/pg_dump fakes/createdb fakes/dropdb fakes/pg_restore fakes/psql plugins/restic/restic.sh scripts/pg-dump.sh scripts/pg-verify.sh
+! exec fakeapi -listen 127.0.0.1:18401 api &api&
+waitfile api/port
+exec opstruss init
+exec sh -c 'printf "  - path_regex: secrets.sops.yaml\n    age: %s\n" "$(sed -n "s/^# public key: //p" age/keys.txt)" >> .sops.yaml'
+exec sops encrypt --filename-override secrets.sops.yaml --output secrets.sops.yaml plain.yaml
+
+# no units: up -d only starts the daemon with the triggers; the stale check
+# finds no good backup yet and alerts once
+exec opstruss up -d
+waitgrep '^POST /bot123:tg-test-token/sendMessage {"chat_id":"-1001234567890","text":"backup .*: tidak ada backup berhasil sejak awal"}$' api/requests
+
+# the nas is down: the other destinations still get the dump, each with
+# its own credentials, the report names every outcome, the assert fails
+# the run, and after alerts the chat
+exec sh -c 'echo "sftp:backup@nas.office.lan:/volume1/backup/db-01" > down.txt'
+! exec opstruss nightly
+stderr 'some backup destinations failed'
+grep '^pg_dump --format=custom --file=backups/app/app.dump.tmp PGDATABASE=app password=set$' calls
+grep '^restic backup s3:s3.ap-southeast-1.amazonaws.com/acme-backup/db-01 password=set aws=AKIATEST b2=$' calls
+grep '^restic backup b2:acme-backup:db-01 password=set aws= b2=b2-test-id$' calls
+grep -count=3 '^restic init sftp:backup@nas.office.lan:/volume1/backup/db-01 ' calls
+grep '^POST /bot.* {"chat_id":"-1001234567890","text":"backup .*: b2=success, nas=failure, s3=success"}$' api/requests
+waitgrep '^POST /bot.*"text":"backup .* gagal; lihat record run terakhir task nightly"}$' api/requests
+
+# the stale check alerted once, and kv keeps it quiet for a day
+exec sleep 2
+grep -count=1 'tidak ada backup berhasil' api/requests
+
+# with the nas back, every destination succeeds, and kv keeps the time of
+# the last good backup
+rm down.txt
+exec opstruss nightly
+grep '^POST /bot.*"text":"backup .*: b2=success, nas=success, s3=success"}$' api/requests
+exists .opstruss/state/default/_kv/backup.last_ok
+! exists .opstruss/state/default/_kv/backup.stale_alerted
+
+# prune forgets old snapshots in every destination
+exec opstruss prune
+grep -count=3 '^restic forget ' calls
+
+# the monthly test restores the dump from B2 and reads it back
+exec opstruss verify
+grep '^restic restore b2:acme-backup:db-01 password=set aws= b2=b2-test-id$' calls
+grep '^POST /bot.*"text":"uji restore .*: 12 table terbaca"}$' api/requests
+grep '^dropdb --if-exists app_verify_' calls
+! exec grep -r -e restic-test-password -e pg-test-password -e aws-test-secret -e tg-test-token .opstruss
+exec opstruss stop
+
+-- plain.yaml --
+pg_password: pg-test-password
+restic_password: restic-test-password
+backends:
+  s3: {AWS_ACCESS_KEY_ID: AKIATEST, AWS_SECRET_ACCESS_KEY: aws-test-secret}
+  b2: {B2_ACCOUNT_ID: b2-test-id, B2_ACCOUNT_KEY: b2-test-key}
+  nas: {}
+telegram_token: "123:tg-test-token"
+-- api/routes --
+POST /bot* 200 {"ok": true}
+-- fakes/restic --
+#!/bin/sh
+# restic with each repository as a directory of repos/, named after
+# RESTIC_REPOSITORY; a repository listed in down.txt cannot be reached.
+dir=${0%/*}/..
+repo=$dir/repos/$(printf %s "$RESTIC_REPOSITORY" | tr -c 'A-Za-z0-9._-' _)
+echo "restic $1 $RESTIC_REPOSITORY password=${RESTIC_PASSWORD:+set} aws=${AWS_ACCESS_KEY_ID:-} b2=${B2_ACCOUNT_ID:-}" >> "$dir/calls"
+if grep -qxF "$RESTIC_REPOSITORY" "$dir/down.txt" 2>/dev/null; then
+  echo "Fatal: unable to open repository at $RESTIC_REPOSITORY" >&2
+  exit 1
+fi
+case "$1" in
+cat) [ -d "$repo" ] ;;
+init) mkdir -p "$repo" ;;
+backup)
+  id=snap$(ls "$repo" | wc -l | tr -d ' ')
+  shift 2
+  echo "$*" > "$repo/$id"
+  echo '{"message_type": "status", "percent_done": 1}'
+  echo "{\"message_type\": \"summary\", \"snapshot_id\": \"$id\", \"data_added\": 1024}"
+  ;;
+forget) echo '[{"remove": [{"id": "old1"}, {"id": "old2"}]}]' ;;
+restore)
+  target=$4
+  shift 4
+  for inc in "$@"; do
+    f=$target/${inc#--include=}
+    mkdir -p "${f%/*}"
+    echo "dump of app" > "$f"
+  done
+  ;;
+esac
+-- fakes/pg_dump --
+#!/bin/sh
+# pg_dump --format=custom --file=<path>
+echo "pg_dump $* PGDATABASE=$PGDATABASE password=${PGPASSWORD:+set}" >> "${0%/*}/../calls"
+echo "dump of app" > "${2#--file=}"
+-- fakes/createdb --
+#!/bin/sh
+echo "createdb $*" >> "${0%/*}/../calls"
+-- fakes/dropdb --
+#!/bin/sh
+echo "dropdb $*" >> "${0%/*}/../calls"
+-- fakes/pg_restore --
+#!/bin/sh
+# pg_restore --no-owner --dbname=<db> <dump>
+echo "pg_restore $*" >> "${0%/*}/../calls"
+grep -q "dump of app" "$3"
+-- fakes/psql --
+#!/bin/sh
+echo 12
+-- opstruss.yaml --
+# opstruss.yaml
+name: backup
+description: Nightly backups of the app database and uploads
+
+uses:
+  restic: ./plugins/restic
+  restic-b2:                               # alias per tujuan: input bersama ditulis sekali
+    source: ./plugins/restic
+    with:
+      repository: ${{ inputs.destinations.b2 }}
+      password: ${{ secrets.restic_password }}
+      credentials: ${{ secrets.backends.b2 }}
+  telegram:                                # Telegram Bot API lewat http bawaan, tanpa plugin
+    source: opstruss.http
+    with:
+      method: POST
+      url: http://127.0.0.1:18401/bot${{ secrets.telegram_token }}/sendMessage
+
+inputs:
+  chat:
+    type: string
+    description: Telegram chat that receives reports
+    default: "-1001234567890"
+  destinations:
+    type: object
+    description: Restic repository per destination
+    default:
+      s3: s3:s3.ap-southeast-1.amazonaws.com/acme-backup/db-01
+      b2: b2:acme-backup:db-01
+      nas: sftp:backup@nas.office.lan:/volume1/backup/db-01   # kunci SSH dari ~/.ssh/config
+
+secrets:
+  pg_password: {sops: secrets.sops.yaml, field: pg_password}
+  restic_password: {sops: secrets.sops.yaml, field: restic_password}
+  backends: {sops: secrets.sops.yaml, field: backends}   # {s3: {AWS_*}, b2: {B2_*}, nas: {}}
+  telegram_token: {sops: secrets.sops.yaml, field: telegram_token}
+
+tasks:
+  nightly:
+    description: Dump the database and back up to every destination
+    on:
+      schedule:
+        cron: "0 2 * * *"
+        timezone: Asia/Jakarta
+        persistent: true                   # server mati jam 02:00: jalan sekali saat hidup lagi
+    concurrency: skip                      # malam berikutnya tidak menumpuk
+    timeout: 4h
+    steps:
+      - name: Dump database
+        id: dump
+        run: [./scripts/pg-dump.sh, backups/app/app.dump]
+        env:
+          PGHOST: 127.0.0.1
+          PGUSER: backup
+          PGDATABASE: app
+          PGPASSWORD: ${{ secrets.pg_password }}
+        outputs:
+          path:
+            type: string
+          bytes:
+            type: integer
+      - name: Back up
+        id: push
+        for_each: ${{ inputs.destinations }}   # s3, b2, nas: berurutan
+        continue_on_error: true            # satu tujuan gagal, yang lain tetap jalan
+        retry:
+          attempts: 3
+          delay: 10ms
+          backoff: 2
+        restic.backup:
+          repository: ${{ each.value }}
+          password: ${{ secrets.restic_password }}
+          credentials: ${{ secrets.backends[each.key] }}   # rujukan statis, value-nya yang diindeks
+          paths: ["${{ steps.dump.outputs.path }}", /srv/uploads]
+          tags: [nightly]
+      - name: Report
+        telegram:
+          body:
+            chat_id: ${{ inputs.chat }}
+            text: "backup ${{ opstruss.host }}: ${{ steps.push.transformList(k, v, k + '=' + v.outcome).join(', ') }}"
+      - name: Every destination succeeded
+        assert:
+          that: steps.push.all(k, v, v.outcome == 'success')
+          msg: some backup destinations failed
+      - name: Remember the last good backup
+        kv:
+          key: backup.last_ok
+          value: ${{ string(opstruss.time) }}
+      - name: Allow the next stale alert
+        kv:
+          key: backup.stale_alerted
+          value: null
+
+  backup-alert:
+    description: Tell the chat when the nightly backup fails
+    internal: true
+    on:
+      after:
+        task: nightly
+        outcome: failure
+    telegram:
+      body:
+        chat_id: ${{ inputs.chat }}
+        text: "backup ${{ opstruss.host }} gagal; lihat record run terakhir task nightly"
+
+  stale-check:
+    description: Alert once a day when no backup succeeded for 26 hours
+    internal: true
+    on:
+      every: 1s
+    if: "kv('backup.last_ok', '') == '' || opstruss.time - timestamp(kv('backup.last_ok')) > duration('26h')"
+    steps:
+      - name: Alert once per day
+        if: kv('backup.stale_alerted') == null
+        block:
+          - telegram:
+              body:
+                chat_id: ${{ inputs.chat }}
+                text: "backup ${{ opstruss.host }}: tidak ada backup berhasil sejak ${{ kv('backup.last_ok', 'awal') }}"
+          - kv:
+              key: backup.stale_alerted
+              value: true
+              ttl: 24h
+
+  prune:
+    description: Forget old snapshots and prune every destination
+    on:
+      schedule:
+        cron: "0 3 * * 0"
+        timezone: Asia/Jakarta
+    concurrency: skip
+    steps:
+      - name: Forget and prune
+        id: forget
+        for_each: ${{ inputs.destinations }}
+        continue_on_error: true
+        restic.forget:
+          repository: ${{ each.value }}
+          password: ${{ secrets.restic_password }}
+          credentials: ${{ secrets.backends[each.key] }}
+          keep: {daily: 7, weekly: 4, monthly: 12}
+
+  verify:
+    description: Restore the latest offsite snapshot and check the dump
+    on:
+      schedule:
+        cron: "0 4 1 * *"
+        timezone: Asia/Jakarta
+        persistent: true                   # uji bulanan tidak boleh hilang karena server mati
+    steps:
+      - name: Restore from B2
+        id: restore
+        restic-b2.restore:                 # repository, password, credentials dari alias
+          include: [backups/app/app.dump]
+      - name: Restore into a scratch database
+        id: check
+        run: [./scripts/pg-verify.sh]
+        env:
+          DUMP: ${{ steps.restore.outputs.dir }}/backups/app/app.dump
+          PGHOST: 127.0.0.1
+          PGUSER: backup
+          PGPASSWORD: ${{ secrets.pg_password }}
+        outputs:
+          tables:
+            type: integer
+      - name: Report
+        telegram:
+          body:
+            chat_id: ${{ inputs.chat }}
+            text: "uji restore ${{ opstruss.host }}: ${{ steps.check.outputs.tables }} table terbaca"
+-- plugins/restic/opstruss.plugin.yaml --
+# plugins/restic/opstruss.plugin.yaml
+name: restic
+description: Back up, prune, and restore with restic
+requires: [restic, jq]
+x-repo: &repo                              # input yang sama di setiap task
+  repository:
+    type: string
+    required: true
+  password:
+    type: string
+    required: true
+    sensitive: true
+  credentials:
+    type: object
+    sensitive: true
+    default: {}
+    description: Environment for the repository backend (AWS_*, B2_*)
+tasks:
+  backup:
+    description: Back up paths to one repository
+    inputs:
+      <<: *repo
+      paths:
+        type: array
+        items: {type: string}
+        required: true
+      tags:
+        type: array
+        items: {type: string}
+        default: []
+    run: [./restic.sh, backup]
+    timeout: 3h
+    stop:
+      signal: SIGINT                       # restic melepas lock repository sebelum keluar
+      grace: 2m
+    outputs:
+      snapshot: {type: string}
+      added_bytes: {type: integer}
+  forget:
+    description: Forget old snapshots and prune unused data
+    inputs:
+      <<: *repo
+      keep:
+        type: object
+        required: true
+        properties:
+          daily: {type: integer}
+          weekly: {type: integer}
+          monthly: {type: integer}
+    run: [./restic.sh, forget]
+    timeout: 3h
+    outputs:
+      removed: {type: integer}
+  restore:
+    description: Restore a snapshot into the run's artifacts directory
+    inputs:
+      <<: *repo
+      snapshot:
+        type: string
+        default: latest
+      include:
+        type: array
+        items: {type: string}
+        default: []
+    run: [./restic.sh, restore]
+    outputs:
+      dir: {type: string}
+-- plugins/restic/restic.sh --
+#!/usr/bin/env bash
+# Kontrak program: argument pertama memilih aksi; INPUT_* masuk, $OPSTRUSS_OUTPUT keluar.
+set -euo pipefail
+action=$1
+export RESTIC_REPOSITORY="$INPUT_REPOSITORY" RESTIC_PASSWORD="$INPUT_PASSWORD"
+# credentials (object JSON, sensitive) menjadi environment backend restic
+while IFS='=' read -r key value; do
+  export "$key=$value"
+done < <(jq -r 'to_entries[] | "\(.key)=\(.value)"' <<<"$INPUT_CREDENTIALS")
+restic cat config >/dev/null 2>&1 || restic init
+log="$OPSTRUSS_ARTIFACTS/restic-$action.json"
+# item list JSON menjadi argument satu per satu, tanpa mapfile, supaya jalan juga di bash 3.2 macOS
+set --
+case "$action" in
+  backup)
+    while IFS= read -r a; do set -- "$@" "$a"; done < <(jq -r '(.[] | "--tag=" + .)' <<<"$INPUT_TAGS")
+    while IFS= read -r a; do set -- "$@" "$a"; done < <(jq -r '.[]' <<<"$INPUT_PATHS")
+    restic backup --json "$@" > "$log"
+    jq -s 'map(select(.message_type == "summary")) | last
+           | {snapshot: .snapshot_id, added_bytes: .data_added}' "$log" > "$OPSTRUSS_OUTPUT"
+    jq '{changed: (.added_bytes > 0)}' "$OPSTRUSS_OUTPUT" > "$OPSTRUSS_RESULT" ;;
+  forget)
+    restic forget --prune --json \
+      --keep-daily "$(jq -r .daily <<<"$INPUT_KEEP")" \
+      --keep-weekly "$(jq -r .weekly <<<"$INPUT_KEEP")" \
+      --keep-monthly "$(jq -r .monthly <<<"$INPUT_KEEP")" > "$log"
+    jq '{removed: ([.[].remove // [] | length] | add // 0)}' "$log" > "$OPSTRUSS_OUTPUT" ;;
+  restore)
+    dir="$OPSTRUSS_ARTIFACTS/restore"
+    while IFS= read -r a; do set -- "$@" "$a"; done < <(jq -r '.[] | "--include=" + .' <<<"$INPUT_INCLUDE")
+    restic restore "$INPUT_SNAPSHOT" --target "$dir" "$@"
+    jq -n --arg dir "$dir" '{dir: $dir}' > "$OPSTRUSS_OUTPUT"
+    echo '{"changed": false}' > "$OPSTRUSS_RESULT" ;;
+esac
+-- scripts/pg-dump.sh --
+#!/usr/bin/env bash
+# scripts/pg-dump.sh: dump ke path tetap, supaya restic melihat file yang sama setiap malam.
+set -euo pipefail
+path="$1"
+mkdir -p "$(dirname "$path")"
+pg_dump --format=custom --file="$path.tmp"
+mv "$path.tmp" "$path"
+jq -n --arg path "$path" --argjson bytes "$(wc -c < "$path")" \
+  '{path: $path, bytes: $bytes}' > "$OPSTRUSS_OUTPUT"
+-- scripts/pg-verify.sh --
+#!/usr/bin/env bash
+# scripts/pg-verify.sh: restore ke database sementara, hitung table, lalu hapus database itu.
+set -euo pipefail
+db="app_verify_$(date +%s)"
+createdb "$db"
+trap 'dropdb --if-exists "$db"' EXIT
+pg_restore --no-owner --dbname="$db" "$DUMP"
+tables=$(psql -d "$db" -Atc "select count(*) from information_schema.tables where table_schema = 'public'")
+test "$tables" -gt 0
+jq -n --argjson tables "$tables" '{tables: $tables}' > "$OPSTRUSS_OUTPUT"
