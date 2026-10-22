@@ -1,0 +1,57 @@
+name: chat
+description: Telegram, Slack, and Discord as files, for the use cases; each alias of uses takes the tasks of its service, every call writes a line to chat.log, ask waits for answer.json, and the sources print what the test appends to updates.in and interactions.in
+requires: [jq]
+tasks:
+  updates:                                 # Telegram: one update a line
+    inputs:
+      token: {type: string, required: true, sensitive: true}
+    run: [./chat.sh, updates]
+  interactions:                            # Discord: one slash command a line, signature checked and answer deferred
+    inputs:
+      listen: {type: string, required: true}
+      public_key: {type: string, required: true}
+    run: [./chat.sh, interactions]
+  send:                                    # Telegram
+    inputs:
+      token: {type: string, required: true, sensitive: true}
+      chat: {type: integer, required: true}
+      text: {type: string, required: true}
+    outputs:
+      message_id: {type: integer}
+    run: [./chat.sh, send]
+  post:                                    # Slack
+    inputs:
+      token: {type: string, required: true, sensitive: true}
+      channel: {type: string, required: true}
+      text: {type: string, required: true}
+      code: {type: string, default: ""}
+      thread_ts: {type: string, default: ""}
+    outputs:
+      ts: {type: string}
+    run: [./chat.sh, post]
+  ask:                                     # Telegram with chat, Slack with channel
+    inputs:
+      token: {type: string, required: true, sensitive: true}
+      chat: {type: integer}
+      channel: {type: string}
+      thread_ts: {type: string, default: ""}
+      text: {type: string, required: true}
+      options:
+        type: array
+        items: {type: string}
+        required: true
+      allowed:
+        type: array
+        items: {type: string}
+        default: []
+    outputs:
+      approved: {type: boolean}
+      answer: {type: string}
+      by: {type: string}
+    run: [./chat.sh, ask]
+  followup:                                # Discord
+    inputs:
+      application_id: {type: string, required: true}
+      token: {type: string, required: true, sensitive: true}
+      content: {type: string, required: true}
+    run: [./chat.sh, followup]

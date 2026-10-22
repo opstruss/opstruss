@@ -1,0 +1,247 @@
+# An incident runbook behind Alertmanager: its webhook, checked by a
+# bearer token, makes a run that diagnoses a new alert with fixed
+# commands, posts the results in a Slack thread, and offers a safe fix
+# that on-call approves with a button; kv keeps an alert from being
+# handled twice and remembers its thread until it resolves. A failing
+# check does not hold the others. Slack is the chat test plugin, and the
+# commands on the server are fakes.
+
+env HOME=$WORK/home
+env SOPS_AGE_KEY_FILE=$WORK/age/keys.txt
+env PATH=$WORK/fakes:$PATH
+exec chmod 755 fakes/df fakes/free fakes/uptime fakes/docker
+exec opstruss init
+exec sh -c 'printf "  - path_regex: secrets.sops.yaml\n    age: %s\n" "$(sed -n "s/^# public key: //p" age/keys.txt)" >> .sops.yaml'
+exec sops encrypt --filename-override secrets.sops.yaml --output secrets.sops.yaml plain.yaml
+exec git init -q
+exec git config user.email ops@example.com
+exec git config user.name ops
+exec git add opstruss.yaml compose.yaml
+exec git commit -q -m 'deploy: worker 1.8.2'
+exec opstruss validate
+stdout '^valid$'
+
+# no units: up -d only starts the daemon with the webhook
+exec opstruss up -d
+
+# WorkerDown fires: six checks run, their output goes to a thread, and
+# on-call is offered a restart of the worker
+webhook POST /hooks/alertmanager '{"status":"firing","alerts":[{"status":"firing","labels":{"alertname":"WorkerDown","instance":"app-01"},"annotations":{"summary":"worker berhenti memproses job"},"fingerprint":"3f1c9a0e2b7d4c11"}]}' -bearer am-test-token
+stdout '^202 '
+waitgrep '^ask ' chat.log
+grep '^post \{"channel":"C0123ONCALL","code":"\$ containers\\n.*worker\\texited.*\$ deploy\\n[0-9a-f]+ ops .*: deploy: worker 1.8.2.*\$ disk\\n.*93%.*\$ load\\n.*\$ logs\\n.*out of memory.*\$ memory\\n.*","text":"WorkerDown di app-01: worker berhenti memproses job","thread_ts":"","token":"set"\}$' chat.log
+grep '^ask \{"allowed":\["U01ALICE","U02BUDI"\],"channel":"C0123ONCALL","options":\["Jalankan","Biarkan"\],"text":"Jalankan restart-worker\?","thread_ts":"1729278840.000001","token":"set"\}$' chat.log
+
+# on-call presses the button: the worker restarts without a question, and
+# kv remembers the alert with its thread
+cp answers/alice-run answer.json
+waitfile .opstruss/state/default/_kv/alert.3f1c9a0e2b7d4c11
+grep '^docker compose restart worker$' calls
+! grep '^docker image prune' calls
+
+# the same group again, as Alertmanager repeats it: nothing new to do
+webhook POST /hooks/alertmanager '{"status":"firing","alerts":[{"status":"firing","labels":{"alertname":"WorkerDown","instance":"app-01"},"annotations":{"summary":"worker berhenti memproses job"},"fingerprint":"3f1c9a0e2b7d4c11"}]}' -bearer am-test-token
+stdout '^202 '
+waitgrep '(?s)"step":"Diagnose","message":"skipped".*"type":"run"' '.opstruss/runs/default/*/events.jsonl'
+grep -count=1 '^post ' chat.log
+grep -count=1 '^df ' calls
+
+# resolved: a reply in the same thread, and kv forgets the alert
+webhook POST /hooks/alertmanager '{"status":"resolved","alerts":[{"status":"resolved","labels":{"alertname":"WorkerDown","instance":"app-01"},"annotations":{"summary":"worker berhenti memproses job"},"fingerprint":"3f1c9a0e2b7d4c11"}]}' -bearer am-test-token
+waitgrep '^post \{"channel":"C0123ONCALL","code":"","text":"Selesai: WorkerDown di app-01","thread_ts":"1729278840.000001","token":"set"\}$' chat.log
+waitgone .opstruss/state/default/_kv/alert.3f1c9a0e2b7d4c11
+
+# DiskAlmostFull while df fails: the other checks still run, and on-call
+# leaves the prune for later
+exec sh -c 'touch df.broken'
+webhook POST /hooks/alertmanager '{"status":"firing","alerts":[{"status":"firing","labels":{"alertname":"DiskAlmostFull","instance":"app-01"},"annotations":{"summary":"disk / 93%"},"fingerprint":"8a2d4c6e0f1b3d5a"}]}' -bearer am-test-token
+waitgrep '^ask .*"text":"Jalankan prune-images\?","thread_ts":"1729278840.000003"' chat.log
+grep -count=2 '^free -m$' calls
+cp answers/budi-leave answer.json
+waitfile .opstruss/state/default/_kv/alert.8a2d4c6e0f1b3d5a
+! grep '^docker image prune' calls
+
+# a token that is not Alertmanager's makes no run
+webhook POST /hooks/alertmanager '{"status":"firing","alerts":[]}' -bearer wrong-token
+stdout '^401 '
+
+# prune-images by hand asks first, which a run without a terminal cannot
+! exec opstruss prune-images
+stdout 'needs approval'
+! grep '^docker image prune' calls
+exec opstruss prune-images --yes
+grep '^docker image prune --all --force --filter until=72h$' calls
+
+exec opstruss stop
+! exec grep -r -e slack-test-token -e am-test-token .opstruss chat.log
+
+-- plain.yaml --
+slack_token: xoxb-slack-test-token
+am_token: am-test-token
+-- answers/alice-run --
+{"answer": "Jalankan", "by": "U01ALICE"}
+-- answers/budi-leave --
+{"answer": "Biarkan", "by": "U02BUDI"}
+-- compose.yaml --
+# compose.yaml (milik Compose, dipotong)
+services:
+  web:
+    image: ghcr.io/acme/web:2.4.0
+  worker:
+    image: ghcr.io/acme/worker:1.8.2
+  db:
+    image: postgres:17
+-- fakes/df --
+#!/bin/sh
+# df -h <paths>: the disks of the server, or an error while df.broken is
+# beside fakes/; a line to calls there.
+d=$(dirname "$0")/..
+echo "df $*" >> "$d/calls"
+if [ -f "$d/df.broken" ]; then
+  echo "df: /var/lib/docker: No such file or directory" >&2
+  exit 1
+fi
+printf 'Filesystem  Size  Used Avail Use%% Mounted on\n/dev/sda1    80G   74G  6.0G  93%% /\n'
+-- fakes/free --
+#!/bin/sh
+# free -m: the memory of the server; a line to calls beside fakes/.
+echo "free $*" >> "$(dirname "$0")/../calls"
+printf '               total        used        free\nMem:            7951        6120         412\n'
+-- fakes/uptime --
+#!/bin/sh
+# uptime: the load of the server.
+echo " 02:14:05 up 12 days,  3:02,  0 users,  load average: 3.10, 2.80, 2.10"
+-- fakes/docker --
+#!/bin/sh
+# docker: what the containers of the app answer; a line to calls beside
+# fakes/ for every command.
+echo "docker $*" >> "$(dirname "$0")/../calls"
+case "$1 $2" in
+"compose ps") printf 'SERVICE\tSTATE\tSTATUS\nweb\trunning\tUp 3 days\nworker\texited\tExited (137) 2 minutes ago\ndb\trunning\tUp 3 days\n' ;;
+"compose logs") echo "worker-1  | fatal: out of memory" ;;
+"compose restart") echo " Container oncall-worker-1  Restarting" ;;
+"image prune") echo "Total reclaimed space: 2.3GB" ;;
+esac
+-- opstruss.yaml --
+# opstruss.yaml
+name: oncall
+description: Collect diagnostics for Alertmanager alerts and offer safe fixes in Slack
+
+uses:
+  slack:
+    source: ./testplugins/chat
+    with:
+      token: ${{ secrets.slack_token }}
+      channel: ${{ inputs.channel }}
+
+inputs:
+  channel:
+    type: string
+    default: C0123ONCALL                   # #oncall
+  oncall:
+    type: array
+    items: {type: string}
+    default: [U01ALICE, U02BUDI]           # yang boleh menekan tombol
+  actions:
+    type: object
+    description: Safe fix offered per alertname
+    default:
+      WorkerDown: restart-worker
+      DiskAlmostFull: prune-images
+
+runtime:
+  listen: 127.0.0.1:0                      # Caddy memegang TLS di depannya
+
+secrets:
+  slack_token: {sops: secrets.sops.yaml, field: slack_token}
+  am_token: {sops: secrets.sops.yaml, field: am_token}   # sama dengan /etc/alertmanager/oncall-token
+
+x-checks: &checks                          # argv statis, bukan dari event
+  disk: [df, -h, /, /var/lib/docker]
+  memory: [free, -m]
+  load: [uptime]
+  containers: [docker, compose, ps, --format, "table {{.Service}}\t{{.State}}\t{{.Status}}"]
+  logs: [docker, compose, logs, --since, 15m, --tail, "200"]
+  deploy: [git, log, "-1", "--format=%h %an %ar: %s"]
+
+tasks:
+  alert:
+    description: Handle one Alertmanager notification
+    internal: true
+    on:
+      webhook:
+        path: /hooks/alertmanager
+        secret: ${{ secrets.am_token }}
+        signature: bearer                  # Authorization: Bearer <secret>; gagal: 401, tanpa run
+        respond: accepted                  # Alertmanager mengulang bila tidak 2xx
+    concurrency: queue                     # notifikasi bersamaan tidak balapan di kv
+    steps:
+      - name: New firing alerts
+        id: new
+        set:
+          alerts: "${{ event.body.alerts.filter(a, a.status == 'firing' && kv('alert.' + a.fingerprint) == null).transformMapEntry(i, a, {a.fingerprint: a}) }}"
+      - name: Resolved alerts
+        id: resolved
+        set:
+          alerts: "${{ event.body.alerts.filter(a, a.status == 'resolved' && kv('alert.' + a.fingerprint) != null).transformMapEntry(i, a, {a.fingerprint: a}) }}"
+      - name: Diagnose
+        id: diag
+        if: size(steps.new.outputs.alerts) > 0
+        for_each: *checks                  # berurutan; satu pemeriksaan gagal tidak menahan yang lain
+        continue_on_error: true
+        timeout: 30s
+        command:
+          argv: ${{ each.value }}          # list utuh: type tetap, tanpa shell
+      - name: Report each alert
+        id: report
+        for_each: ${{ steps.new.outputs.alerts }}   # key = fingerprint
+        slack.post:
+          text: "${{ each.value.labels.alertname }} di ${{ each.value.labels.instance }}: ${{ each.value.annotations.summary }}"
+          code: |-
+            ${{ steps.diag.transformList(k, r, has(r.outputs.stdout), '$ ' + k + '\n' + r.outputs.stdout).join('\n\n') }}
+      - name: Offer a safe fix
+        id: ask
+        for_each: "${{ steps.new.outputs.alerts.filter(f, steps.new.outputs.alerts[f].labels.alertname in inputs.actions) }}"
+        timeout: 15m
+        continue_on_error: true            # waktu habis: alert tetap ditandai
+        slack.ask:
+          thread_ts: ${{ steps.report[each.value].outputs.ts }}
+          text: "Jalankan ${{ inputs.actions[steps.new.outputs.alerts[each.value].labels.alertname] }}?"
+          options: [Jalankan, Biarkan]
+          allowed: ${{ inputs.oncall }}
+      - name: Restart the worker
+        id: restart
+        if: "steps.ask.exists(f, r, r.outcome == 'success' && r.outputs.approved && inputs.actions[steps.new.outputs.alerts[f].labels.alertname] == 'restart-worker')"
+        task: restart-worker
+        yes: true                          # yang menyetujui on-call di Slack, bukan engine
+      - name: Prune old images
+        id: prune
+        if: "steps.ask.exists(f, r, r.outcome == 'success' && r.outputs.approved && inputs.actions[steps.new.outputs.alerts[f].labels.alertname] == 'prune-images')"
+        task: prune-images
+        yes: true
+      - name: Remember handled alerts
+        for_each: ${{ steps.new.outputs.alerts }}
+        kv:
+          key: alert.${{ each.key }}
+          value: "${{ {'ts': steps.report[each.key].outputs.ts, 'name': each.value.labels.alertname} }}"
+          ttl: 4h
+      - name: Resolved in the thread
+        for_each: ${{ steps.resolved.outputs.alerts }}
+        slack.post:
+          thread_ts: ${{ kv('alert.' + each.key).ts }}
+          text: "Selesai: ${{ each.value.labels.alertname }} di ${{ each.value.labels.instance }}"
+      - name: Forget resolved alerts
+        for_each: ${{ steps.resolved.outputs.alerts }}
+        kv:
+          key: alert.${{ each.key }}
+          value: null
+
+  restart-worker:
+    description: Restart the worker service
+    approval: ask                          # dari CLI: y/N; dari alert: yes true sesudah tombol
+    run: [docker, compose, restart, worker]
+
+  prune-images:
+    description: Remove unused images older than three days
+    approval: ask
+    run: [docker, image, prune, --all, --force, --filter, until=72h]

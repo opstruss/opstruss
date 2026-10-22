@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -23,6 +24,7 @@ import (
 	"time"
 
 	"github.com/opstruss/opstruss/internal/cli"
+	"github.com/opstruss/opstruss/internal/daemon"
 	"github.com/opstruss/opstruss/internal/failpoint"
 	"github.com/rogpeppe/go-internal/testscript"
 )
@@ -49,11 +51,25 @@ func TestUseCases(t *testing.T) {
 	testscript.Run(t, params("testdata/usecases"))
 }
 
+// waitLimit is how long the wait commands wait: a chain of programs that
+// a daemon runs can take that long under the race detector on a busy
+// machine.
+const waitLimit = 30 * time.Second
+
 func params(dir string) testscript.Params {
 	return testscript.Params{Dir: dir, Setup: func(env *testscript.Env) error {
 		// How long the load scripts run: 30 seconds in make criteria, ten
 		// minutes in the daily load workflow.
 		env.Setenv("LOAD_SECONDS", cmp.Or(os.Getenv("OPSTRUSS_LOAD_SECONDS"), "30"))
+		// A script that fails before opstruss stop leaves its daemons, with
+		// their services and sources, running and holding their ports.
+		env.Defer(func() {
+			root := filepath.Join(env.WorkDir, ".opstruss")
+			files, _ := filepath.Glob(filepath.Join(root, "daemon", "*.json"))
+			for _, f := range files {
+				_, _ = daemon.Stop(root, strings.TrimSuffix(filepath.Base(f), ".json"))
+			}
+		})
 		// The plugins of the tests, for uses: ./testplugins/<name>.
 		return copyDir("testdata/plugins", filepath.Join(env.WorkDir, "testplugins"))
 	}, Condition: func(cond string) (bool, error) {
@@ -62,18 +78,29 @@ func params(dir string) testscript.Params {
 		}
 		return false, fmt.Errorf("unknown condition %s", cond)
 	}, Cmds: map[string]func(*testscript.TestScript, bool, []string){
-		// waitfile waits up to 10 seconds for a file that a command in the
+		// waitfile waits up to waitLimit for a file that a command in the
 		// background makes, so a script acts after it, not after a guess.
 		"waitfile": func(ts *testscript.TestScript, _ bool, args []string) {
 			p := ts.MkAbs(args[0])
-			for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+			for deadline := time.Now().Add(waitLimit); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
 				if _, err := os.Stat(p); err == nil {
 					return
 				}
 			}
 			ts.Fatalf("%s did not appear", args[0])
 		},
-		// waitgrep waits up to 10 seconds until a file that a process in
+		// waitgone waits up to waitLimit until a file is gone, such as a
+		// key of kv that a run in the background deletes.
+		"waitgone": func(ts *testscript.TestScript, _ bool, args []string) {
+			p := ts.MkAbs(args[0])
+			for deadline := time.Now().Add(waitLimit); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+				if _, err := os.Stat(p); errors.Is(err, fs.ErrNotExist) {
+					return
+				}
+			}
+			ts.Fatalf("%s is still there", args[0])
+		},
+		// waitgrep waits up to waitLimit until a file that a process in
 		// the background writes, such as the log of a service, or one of
 		// the files a glob matches, matches a regular expression.
 		"waitgrep": func(ts *testscript.TestScript, _ bool, args []string) {
@@ -82,7 +109,7 @@ func params(dir string) testscript.Params {
 			}
 			re, err := regexp.Compile("(?m)" + args[0])
 			ts.Check(err)
-			for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+			for deadline := time.Now().Add(waitLimit); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
 				paths, _ := filepath.Glob(ts.MkAbs(args[1]))
 				for _, p := range paths {
 					if data, err := os.ReadFile(p); err == nil && re.Match(data) {
@@ -95,10 +122,10 @@ func params(dir string) testscript.Params {
 		// webhook sends a request to the webhooks of the daemon of stack
 		// default, at the address its file names, and prints the status and
 		// body of the answer: webhook <method> <path> <body> [-bearer s]
-		// [-github s].
+		// [-github s] [-header 'name: value']...
 		"webhook": func(ts *testscript.TestScript, _ bool, args []string) {
 			if len(args) < 3 {
-				ts.Fatalf("usage: webhook <method> <path> <body> [-bearer secret] [-github secret]")
+				ts.Fatalf("usage: webhook <method> <path> <body> [-bearer secret] [-github secret] [-header 'name: value']...")
 			}
 			var file struct {
 				Listen string `json:"listen"`
@@ -117,6 +144,9 @@ func params(dir string) testscript.Params {
 					m := hmac.New(sha256.New, []byte(args[i+1]))
 					m.Write([]byte(args[2]))
 					req.Header.Set("X-Hub-Signature-256", "sha256="+hex.EncodeToString(m.Sum(nil)))
+				case "-header":
+					name, value, _ := strings.Cut(args[i+1], ":")
+					req.Header.Set(name, strings.TrimSpace(value))
 				}
 			}
 			resp, err := http.DefaultClient.Do(req)

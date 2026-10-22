@@ -3,7 +3,9 @@
 # fails, nginx errors watched and batched to Slack, and guards included
 # from another file: a daily plan that opens or comments an issue on
 # drift, a certificate check, and heartbeats that report failure from
-# always:. The example's URLs point at fakeapi, and its waits are short.
+# always:. The example's URLs point at fakeapi, and its waits are short;
+# the health check runs by hand, once a year on its schedule, so that the
+# daemon does not run it in the middle of the test.
 
 env HOME=$WORK/home
 env SOPS_AGE_KEY_FILE=$WORK/age/keys.txt
@@ -245,7 +247,7 @@ tasks:
   health:
     description: Check the public site
     on:
-      schedule: "*/5 * * * *"
+      schedule: "0 3 1 1 *"
     concurrency: skip                      # check yang masih jalan tidak ditumpuk
     retry:
       attempts: 3

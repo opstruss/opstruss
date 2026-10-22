@@ -1,0 +1,291 @@
+# One preview per pull request: GitHub's webhooks, checked by their
+# signature, change the set of previews in kv through one writer, and the
+# instances of a unit follow that set, a key that leaves it going down as
+# planned; a limit turns more away, and a nightly sweep takes down the
+# previews whose pull request closed without a webhook. GitHub is
+# fakeapi, Compose is the compose test plugin, and the limit is two.
+
+env HOME=$WORK/home
+env SOPS_AGE_KEY_FILE=$WORK/age/keys.txt
+exec chmod 755 scripts/previews.sh
+! exec fakeapi -listen 127.0.0.1:18901 api &api&
+waitfile api/port
+exec opstruss init
+exec sh -c 'printf "  - path_regex: secrets.sops.yaml\n    age: %s\n" "$(sed -n "s/^# public key: //p" age/keys.txt)" >> .sops.yaml'
+exec sops encrypt --filename-override secrets.sops.yaml --output secrets.sops.yaml plain.yaml
+exec opstruss validate
+stdout '^valid$'
+
+# no previews yet, so only the proxy comes up; the daemon listens for
+# GitHub, with a limit of two previews
+exec opstruss up -d --yes --input max=2
+stdout '^default/proxy: up: done$'
+! stdout 'site'
+grep '^up \S+ traefik=traefik:v3.1$' compose.log
+
+# a pull request opens: its preview comes up, and GitHub gets the URL
+webhook POST /hooks/github '{"action":"opened","pull_request":{"number":790,"head":{"sha":"a790"}},"repository":{"full_name":"acme/web"}}' -github hook-test-secret -header 'X-GitHub-Event: pull_request'
+stdout '^202 '
+waitgrep '^POST /repos/acme/web/issues/790/comments auth=Bearer gh-test-token \{"body":"Preview: https://pr-790.preview.example.com"\}$' api/requests
+grep '^up web-pr-790 web=ghcr.io/acme/web:\$\{IMAGE_TAG\} HOST=pr-790.preview.example.com IMAGE_TAG=a790 PREVIEW=pr-790$' compose.log
+
+# a second one, then a push to it brings its preview to the new commit
+webhook POST /hooks/github '{"action":"opened","pull_request":{"number":812,"head":{"sha":"b812"}},"repository":{"full_name":"acme/web"}}' -github hook-test-secret -header 'X-GitHub-Event: pull_request'
+waitgrep '^POST /repos/acme/web/issues/812/comments ' api/requests
+webhook POST /hooks/github '{"action":"synchronize","pull_request":{"number":812,"head":{"sha":"c812"}},"repository":{"full_name":"acme/web"}}' -github hook-test-secret -header 'X-GitHub-Event: pull_request'
+waitgrep '^up web-pr-812 .* IMAGE_TAG=c812 ' compose.log
+
+# a third is over the limit: GitHub hears why, and no preview comes up
+webhook POST /hooks/github '{"action":"opened","pull_request":{"number":813,"head":{"sha":"d813"}},"repository":{"full_name":"acme/web"}}' -github hook-test-secret -header 'X-GitHub-Event: pull_request'
+waitgrep '^POST /repos/acme/web/issues/813/comments auth=Bearer gh-test-token \{"body":"Preview tidak dibuat: sudah 2 preview aktif."\}$' api/requests
+! grep 'web-pr-813' compose.log
+
+# 812 is merged: its key leaves the set, so its preview goes down as
+# planned, and a push to 813 now finds room
+webhook POST /hooks/github '{"action":"closed","pull_request":{"number":812,"head":{"sha":"c812"}},"repository":{"full_name":"acme/web"}}' -github hook-test-secret -header 'X-GitHub-Event: pull_request'
+waitgrep '^down web-pr-812$' compose.log
+webhook POST /hooks/github '{"action":"synchronize","pull_request":{"number":813,"head":{"sha":"e813"}},"repository":{"full_name":"acme/web"}}' -github hook-test-secret -header 'X-GitHub-Event: pull_request'
+waitgrep '^up web-pr-813 .* IMAGE_TAG=e813 ' compose.log
+
+# the closed webhook of 790 never came: the sweep finds it closed on
+# GitHub and takes its preview down
+exec opstruss sweep
+grep '^GET /repos/acme/web/pulls\?state=open&per_page=100 auth=Bearer gh-test-token$' api/requests
+grep '^down web-pr-790$' compose.log
+exec opstruss list
+stdout '^  default/site\[pr-813\] +plugin +up$'
+! stdout 'pr-790|pr-812'
+
+# a request with a wrong signature makes no run; GitHub's ping is no pull
+# request, so its run ends at the task's if
+webhook POST /hooks/github '{"action":"opened","pull_request":{"number":900,"head":{"sha":"f900"}},"repository":{"full_name":"acme/web"}}' -github wrong-secret -header 'X-GitHub-Event: pull_request'
+stdout '^401 '
+webhook POST /hooks/github '{"zen":"Keep it logically awesome.","hook_id":1}' -github hook-test-secret -header 'X-GitHub-Event: ping'
+stdout '^202 '
+waitgrep '"task":"pr-event","message":"skipped: if is false"' '.opstruss/runs/default/*/events.jsonl'
+! grep 'pr-900' compose.log
+! grep 'pr-900|/900/' api/requests
+
+exec opstruss stop
+! exec grep -r -e gh-test-token -e hook-test-secret .opstruss
+
+-- plain.yaml --
+github_token: gh-test-token
+github_hook_secret: hook-test-secret
+-- api/routes --
+POST /repos/acme/web/issues/* 201 {"id": 1}
+GET /repos/acme/web/pulls 200 [{"number": 813}]
+-- opstruss.yaml --
+# opstruss.yaml
+name: previews
+description: One preview environment per open pull request of acme/web
+
+uses:
+  compose: ./testplugins/compose
+  github:                                  # API GitHub lewat http bawaan
+    source: opstruss.http
+    with:
+      headers:
+        Authorization: Bearer ${{ secrets.github_token }}
+        Accept: application/vnd.github+json
+
+inputs:
+  repo:
+    type: string
+    default: acme/web
+  domain:
+    type: string
+    default: preview.example.com
+  max:
+    type: integer
+    default: 10
+  ttl_days:
+    type: integer
+    default: 7
+
+runtime:
+  listen: 127.0.0.1:0
+
+secrets:
+  github_token: {sops: secrets.sops.yaml, field: github_token}
+  github_hook: {sops: secrets.sops.yaml, field: github_hook_secret}
+
+units:
+  proxy:                                   # Traefik membaca label container setiap preview
+    uses: compose
+    with:
+      file: ./proxy.compose.yaml
+  site:
+    uses: compose
+    for_each: ${{ kv('previews', {}) }}    # memori stack, sumber plan-time seperti file()
+    needs: [proxy]
+    approval: auto
+    with:
+      file: ./preview.compose.yaml
+      project: web-${{ each.key }}
+    env:
+      PREVIEW: ${{ each.key }}
+      IMAGE_TAG: ${{ each.value.sha }}
+      HOST: ${{ each.key }}.${{ inputs.domain }}
+
+tasks:
+  pr-event:
+    description: React to pull request webhooks from GitHub
+    internal: true
+    on:
+      webhook:
+        path: /hooks/github
+        secret: ${{ secrets.github_hook }}
+        signature: github                  # X-Hub-Signature-256: sha256=<hex>; gagal: 401, tanpa run
+        respond: accepted                  # GitHub hanya menunggu beberapa detik
+    if: event.headers['x-github-event'] == 'pull_request' && event.body.repository.full_name == inputs.repo
+    steps:
+      - name: Update the desired set
+        id: update
+        task: set-previews
+        with:
+          change: "${{ event.body.action in ['opened', 'reopened', 'synchronize'] ? 'upsert' : (event.body.action == 'closed' ? 'remove' : 'none') }}"
+          key: pr-${{ event.body.pull_request.number }}
+          sha: ${{ event.body.pull_request.head.sha }}
+      - name: Comment the URL
+        if: event.body.action == 'opened' && !steps.update.outputs.refused
+        github:
+          method: POST
+          url: http://127.0.0.1:18901/repos/${{ inputs.repo }}/issues/${{ event.body.pull_request.number }}/comments
+          status_code: [201]
+          body:
+            body: "Preview: https://pr-${{ event.body.pull_request.number }}.${{ inputs.domain }}"
+      - name: Comment the limit
+        if: steps.update.outputs.refused
+        github:
+          method: POST
+          url: http://127.0.0.1:18901/repos/${{ inputs.repo }}/issues/${{ event.body.pull_request.number }}/comments
+          status_code: [201]
+          body:
+            body: "Preview tidak dibuat: sudah ${{ inputs.max }} preview aktif."
+
+  set-previews:
+    description: Change the set of previews, then bring the units in line
+    internal: true
+    concurrency: queue                     # satu penulis kv previews, juga lewat task:
+    inputs:
+      change:
+        type: string
+        enum: [upsert, remove, sweep, none]
+        required: true
+      key:
+        type: string
+        default: ""
+      sha:
+        type: string
+        default: ""
+      open:
+        type: array
+        items: {type: string}
+        default: []
+    outputs:
+      removed:
+        value: ${{ steps.set.outputs.removed }}
+      refused:
+        value: ${{ steps.set.outputs.refused }}
+    steps:
+      - name: Compute the desired set
+        id: set
+        run: [./scripts/previews.sh]
+        stdin:
+          format: json
+          value:
+            current: ${{ kv('previews', {}) }}
+            open: ${{ inputs.open }}
+        env:
+          CHANGE: ${{ inputs.change }}
+          KEY: ${{ inputs.key }}
+          SHA: ${{ inputs.sha }}
+          MAX: ${{ inputs.max }}
+          TTL_DAYS: ${{ inputs.ttl_days }}
+        outputs:
+          value: {type: object}
+          removed: {type: array}
+          refused: {type: boolean}
+      - name: Store the desired set
+        kv:
+          key: previews
+          value: ${{ steps.set.outputs.value }}
+      - name: Apply
+        task: up
+        units: [site]                      # key yang hilang menjadi down terencana
+
+  sweep:
+    description: Remove previews whose pull request is closed or idle
+    on:
+      schedule: {cron: "0 3 * * *", timezone: UTC}
+    steps:
+      - name: Open pull requests
+        id: open
+        github:
+          url: http://127.0.0.1:18901/repos/${{ inputs.repo }}/pulls?state=open&per_page=100
+      - name: Sweep
+        id: sweep
+        task: set-previews
+        with:
+          change: sweep
+          open: "${{ steps.open.outputs.body.map(p, 'pr-' + string(p.number)) }}"
+      - name: Report
+        if: size(steps.sweep.outputs.removed) > 0
+        log:
+          msg: "sweep membongkar ${{ steps.sweep.outputs.removed.join(', ') }}"
+-- scripts/previews.sh --
+#!/usr/bin/env bash
+# stdin {current, open}: set sekarang dan PR terbuka.  Output: set baru, key yang dibuang,
+# dan apakah upsert ditolak karena batas.  Tidak menulis apa pun; step kv sesudahnya yang menyimpan.
+set -euo pipefail
+now=$(date -u +%FT%TZ)
+cutoff=$(jq -nr --argjson days "$TTL_DAYS" 'now - $days * 86400 | todate')
+jq --arg change "$CHANGE" --arg key "$KEY" --arg sha "$SHA" --arg now "$now" \
+   --arg cutoff "$cutoff" --argjson max "$MAX" '
+  .open as $open
+  | .current as $old
+  | ($old
+     | if $change == "upsert" and (has($key) or length < $max) then . + {($key): {sha: $sha, updated: $now}}
+       elif $change == "remove" then del(.[$key])
+       elif $change == "sweep" then with_entries(select((.key | IN($open[])) and .value.updated >= $cutoff))
+       else . end) as $new
+  | {value: $new,
+     removed: (($old | keys) - ($new | keys)),
+     refused: ($change == "upsert" and ($new | has($key) | not))}
+' > "$OPSTRUSS_OUTPUT"
+-- preview.compose.yaml --
+# preview.compose.yaml
+services:
+  web:
+    image: ghcr.io/acme/web:${IMAGE_TAG}
+    environment:
+      DATABASE_URL: sqlite:////data/preview.db
+    labels:
+      - "traefik.http.routers.${PREVIEW}.rule=Host(`${HOST}`)"
+      - "traefik.http.routers.${PREVIEW}.tls.certresolver=le"
+    networks: [previews]
+networks:
+  previews:
+    external: true
+-- proxy.compose.yaml --
+# proxy.compose.yaml
+services:
+  traefik:
+    image: traefik:v3.1
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=true
+      - --entrypoints.websecure.address=:443
+      - --certificatesresolvers.le.acme.tlschallenge=true
+      - --certificatesresolvers.le.acme.storage=/acme/acme.json
+    ports: ["443:443"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - acme:/acme
+    networks: [previews]
+networks:
+  previews:
+    name: previews
+volumes:
+  acme: {}

@@ -1,0 +1,454 @@
+# A Minecraft server that runs only while people play: a service that
+# saves the world through RCON before it stops, players announced from
+# its log in batches, slash commands from Discord through a plugin source,
+# a stop after it has been empty for a while with kv keeping the time, and
+# a morning backup that always resumes saving, also when the snapshot
+# fails. Discord is the chat test plugin with fakeapi for its webhook, the
+# server, RCON, and restic are fakes, the waits are short, and the server
+# may be empty for no minutes.
+
+env HOME=$WORK/home
+env SOPS_AGE_KEY_FILE=$WORK/age/keys.txt
+env PATH=$WORK/fakes:$PATH
+exec chmod 755 fakes/java fakes/mcrcon fakes/restic plugins/restic/restic.sh
+! exec fakeapi -listen 127.0.0.1:19101 api &api&
+waitfile api/port
+exec opstruss init
+exec sh -c 'printf "  - path_regex: secrets.sops.yaml\n    age: %s\n" "$(sed -n "s/^# public key: //p" age/keys.txt)" >> .sops.yaml'
+exec sops encrypt --filename-override secrets.sops.yaml --output secrets.sops.yaml plain.yaml
+exec opstruss validate
+stdout '^valid$'
+
+# the server starts, and two people are playing
+exec opstruss up -d --input idle_minutes=0
+stdout '^default/mc: up: done$'
+grep '^java -Xms2G -Xmx4G -jar paper.jar --nogui$' calls
+
+# joins in one batch reach the channel; other lines of the log do not
+exec sh -c 'printf "[21:03:12 INFO]: Steve joined the game\n[21:03:40 INFO]: Alex joined the game\n[21:04:02 INFO]: Steve fell from a high place\n" >> server/console.in'
+waitgrep '^POST /api/webhooks/1100/discord-test-token \{"content":"Steve joined the game\\nAlex joined the game"\}$' api/requests
+! grep 'high place' api/requests
+
+# nobody is left: idle notes the time in kv, then stops the server, which
+# saves the world through RCON first
+exec sh -c 'echo 0 > server/online'
+waitgrep '^POST /api/webhooks/1100/discord-test-token \{"content":"Server dimatikan: kosong 0 menit. Ketik /mc start untuk main lagi."\}$' api/requests
+grep '^mcrcon list pass=set$' calls
+grep '^mcrcon stop pass=set$' calls
+grep '^java saved the world$' calls
+! grep '^java got' calls
+waitgone .opstruss/state/default/_kv/mc.empty_since
+
+# /mc start in Discord starts it again, and the reply follows the
+# deferred answer
+exec sh -c 'echo 1 > server/online'
+exec sh -c 'cat interactions/start >> interactions.in'
+waitgrep '^followup \{"application_id":"1100","content":"start: selesai","token":"set"\}$' chat.log
+grep '^interactions listen=127.0.0.1:7900 public_key=3f9a' chat.log
+grep -count=2 '^java -Xms2G' calls
+
+# restart is for admins: budi is told no, and the server keeps running
+exec sh -c 'cat interactions/restart-budi >> interactions.in'
+waitgrep '^followup \{"application_id":"1100","content":"gagal, lihat log server","token":"set"\}$' chat.log
+grep -count=1 '^java saved the world$' calls
+
+# an admin restarts it: RCON saves the world, and it starts again
+exec sh -c 'cat interactions/restart-rina >> interactions.in'
+waitgrep '^followup \{"application_id":"1100","content":"restart: selesai","token":"set"\}$' chat.log
+grep -count=2 '^java saved the world$' calls
+grep -count=3 '^java -Xms2G' calls
+
+# who is online
+exec sh -c 'cat interactions/online >> interactions.in'
+waitgrep '^followup \{"application_id":"1100","content":"There are 1 of a max of 20 players online","token":"set"\}$' chat.log
+
+# the morning backup pauses saving while the server runs, takes a
+# snapshot, and saves again
+exec opstruss backup
+stdout '^backup: success$'
+grep '^mcrcon save-off save-all flush pass=set$' calls
+grep '^restic backup b2:acme-mc:world password=set aws= b2=b2-test-id$' calls
+grep -count=1 '^mcrcon save-on pass=set$' calls
+
+# B2 cannot be reached: the snapshot fails, and saving resumes anyway
+exec sh -c 'echo b2:acme-mc:world > down.txt'
+! exec opstruss backup
+grep -count=2 '^mcrcon save-on pass=set$' calls
+
+exec opstruss stop
+! exec grep -r -e rcon-test-pass -e restic-test-password -e b2-test-key -e discord-test-token .opstruss chat.log
+
+-- plain.yaml --
+rcon_password: rcon-test-pass
+restic_password: restic-test-password
+b2: {B2_ACCOUNT_ID: b2-test-id, B2_ACCOUNT_KEY: b2-test-key}
+discord_webhook: http://127.0.0.1:19101/api/webhooks/1100/discord-test-token
+-- api/routes --
+POST /api/webhooks/1100/discord-test-token 204
+-- interactions/start --
+{"command": "start", "user": {"id": "5551", "username": "budi", "roles": []}, "application_id": "1100", "token": "itok-1"}
+-- interactions/restart-budi --
+{"command": "restart", "user": {"id": "5551", "username": "budi", "roles": []}, "application_id": "1100", "token": "itok-2"}
+-- interactions/restart-rina --
+{"command": "restart", "user": {"id": "5552", "username": "rina", "roles": ["1029384756102938475"]}, "application_id": "1100", "token": "itok-3"}
+-- interactions/online --
+{"command": "online", "user": {"id": "5551", "username": "budi", "roles": []}, "application_id": "1100", "token": "itok-4"}
+-- server/server.properties --
+server-port=19102
+rcon.port=25575
+enable-rcon=true
+-- server/online --
+2
+-- fakes/java --
+#!/bin/sh
+# java -jar paper.jar: a Minecraft server for the tests, in the directory
+# of server.properties. It listens on server-port, prints the lines that
+# the test appends to console.in, and saves the world and stops when
+# mcrcon stop asks; a line to calls beside fakes/ for each.
+calls=$(dirname "$0")/../calls
+echo "java $*" >> "$calls"
+port=$(sed -n 's/^server-port=//p' server.properties)
+rm -f stop.requested
+touch running
+: > console.in
+tail -n +1 -f console.in &
+tail=$!
+mkdir -p tcp
+fakeapi -listen "127.0.0.1:$port" tcp &
+api=$!
+trap 'echo "java got SIGTERM" >> "$calls"; rm -f running; kill $tail $api; exit 143' TERM
+while [ ! -f stop.requested ]; do sleep 0.1; done
+echo "[21:45:09 INFO]: Saving worlds"
+echo "java saved the world" >> "$calls"
+rm -f running
+kill $tail $api
+-- fakes/mcrcon --
+#!/bin/sh
+# mcrcon <command>...: RCON to the server of the tests, which answers
+# while it runs: list counts the players in server/online, stop asks the
+# server to save and stop; a line to calls beside fakes/ for each, saying
+# whether MCRCON_PASS came.
+d=$(dirname "$0")/..
+echo "mcrcon $* pass=${MCRCON_PASS:+set}" >> "$d/calls"
+if [ ! -f "$d/server/running" ]; then
+  echo "Connection failed." >&2
+  exit 1
+fi
+case "$1" in
+list) echo "There are $(cat "$d/server/online") of a max of 20 players online" ;;
+stop) touch "$d/server/stop.requested" ;;
+esac
+-- fakes/restic --
+#!/bin/sh
+# restic with each repository as a directory of repos/, named after
+# RESTIC_REPOSITORY; a repository listed in down.txt cannot be reached.
+dir=${0%/*}/..
+repo=$dir/repos/$(printf %s "$RESTIC_REPOSITORY" | tr -c 'A-Za-z0-9._-' _)
+echo "restic $1 $RESTIC_REPOSITORY password=${RESTIC_PASSWORD:+set} aws=${AWS_ACCESS_KEY_ID:-} b2=${B2_ACCOUNT_ID:-}" >> "$dir/calls"
+if grep -qxF "$RESTIC_REPOSITORY" "$dir/down.txt" 2>/dev/null; then
+  echo "Fatal: unable to open repository at $RESTIC_REPOSITORY" >&2
+  exit 1
+fi
+case "$1" in
+cat) [ -d "$repo" ] ;;
+init) mkdir -p "$repo" ;;
+backup)
+  id=snap$(ls "$repo" | wc -l | tr -d ' ')
+  shift 2
+  echo "$*" > "$repo/$id"
+  echo '{"message_type": "status", "percent_done": 1}'
+  echo "{\"message_type\": \"summary\", \"snapshot_id\": \"$id\", \"data_added\": 1024}"
+  ;;
+forget) echo '[{"remove": [{"id": "old1"}, {"id": "old2"}]}]' ;;
+restore)
+  target=$4
+  shift 4
+  for inc in "$@"; do
+    f=$target/${inc#--include=}
+    mkdir -p "${f%/*}"
+    echo "dump of app" > "$f"
+  done
+  ;;
+esac
+-- opstruss.yaml --
+# opstruss.yaml
+name: mc
+description: A Minecraft server that starts from Discord and stops when empty
+
+uses:
+  discord: ./testplugins/chat
+  restic: ./plugins/restic
+  announce:                                # webhook channel #minecraft
+    source: opstruss.http
+    with:
+      method: POST
+      url: ${{ secrets.discord_webhook }}
+
+inputs:
+  admins:
+    type: array
+    items: {type: string}
+    default: ["1029384756102938475"]       # id role Discord yang boleh restart
+  idle_minutes:
+    type: integer
+    default: 20
+  discord_public_key:
+    type: string
+    default: 3f9a…                         # public key aplikasi Discord; bukan rahasia
+
+secrets:
+  rcon: {sops: secrets.sops.yaml, field: rcon_password}
+  restic_password: {sops: secrets.sops.yaml, field: restic_password}
+  b2: {sops: secrets.sops.yaml, field: b2}   # {B2_ACCOUNT_ID, B2_ACCOUNT_KEY}
+  discord_webhook: {sops: secrets.sops.yaml, field: discord_webhook}
+
+x-rcon: &rcon                              # mcrcon membaca password dari MCRCON_PASS, bukan argv
+  MCRCON_HOST: 127.0.0.1
+  MCRCON_PORT: "25575"
+  MCRCON_PASS: ${{ secrets.rcon }}
+
+units:
+  mc:
+    service: [java, -Xms2G, -Xmx4G, -jar, paper.jar, --nogui]
+    dir: ./server                          # paper.jar dan world/ dibaca java dari sini
+    env: *rcon                             # juga untuk stop.run
+    stop:
+      # dunia disimpan dulu, seperti preStop Kubernetes; stop.run menunggu RCON tutup,
+      # karena signal dikirim begitu stop.run selesai
+      run: [sh, -c, 'mcrcon stop && while mcrcon list > /dev/null 2>&1; do sleep 1; done']
+      signal: SIGTERM                      # bila masih hidup sesudah stop.run
+      grace: 2m
+    ready:
+      tcp: 127.0.0.1:19102
+      timeout: 3m
+    restart: on-failure
+    approval: auto                         # dinyalakan dan dimatikan dari Discord
+
+tasks:
+  players:
+    description: Announce players joining and leaving
+    internal: true
+    on:
+      watch:
+        unit: mc
+        stream: stdout
+        if: event.line.matches('(joined|left) the game')
+        batch: 1s
+    announce:
+      body:
+        content: '${{ event.lines.map(l, l.split("]: ")[1]).join("\n") }}'
+
+  discord:
+    description: Run slash commands from the community Discord
+    internal: true
+    on:
+      watch:
+        discord.interactions:              # listener plugin: Ed25519, jawaban defer dalam 3 detik
+          listen: 127.0.0.1:7900
+          public_key: ${{ inputs.discord_public_key }}
+    concurrency: queue
+    steps:
+      - name: Command
+        id: cmd
+        block:
+          - name: Start
+            if: event.data.command == 'start'
+            task: up
+            units: [mc]
+          - name: Not an admin
+            if: event.data.command == 'restart' && !event.data.user.roles.exists(r, r in inputs.admins)
+            assert:
+              that: false
+              msg: hanya admin yang boleh restart
+          - name: Restart
+            if: event.data.command == 'restart'
+            task: up
+            units: [mc]
+            force: true                    # tidak berubah tetap jalan: service di-restart
+          - name: Who is online
+            id: list
+            if: event.data.command == 'online'
+            run: [mcrcon, list]
+            env: *rcon
+            outputs:
+              text: {from: stdout}
+        always:
+          - name: Reply
+            discord.followup:
+              application_id: ${{ event.data.application_id }}
+              token: ${{ event.data.token }}
+              content: "${{ steps.cmd.outcome != 'success' ? 'gagal, lihat log server' : (event.data.command == 'online' ? steps.list.outputs.text : event.data.command + ': selesai') }}"
+
+  idle:
+    description: Stop the server after it has been empty for a while
+    internal: true
+    on:
+      every: 1s
+    concurrency: skip
+    steps:
+      - name: Server state
+        id: st
+        task: status
+        units: [mc]
+      - name: Players online
+        id: list
+        if: steps.st.units['mc'].outputs.state == 'running'
+        run: [mcrcon, list]
+        env: *rcon
+        outputs:
+          text: {from: stdout}
+      - name: Count
+        id: count
+        if: steps.list.outcome == 'success'
+        set:
+          n: ${{ int(steps.list.outputs.text.split(' ')[2]) }}   # "There are 0 of a max of 20 players online"
+      - name: Someone is playing
+        if: steps.count.outcome == 'success' && steps.count.outputs.n > 0
+        kv: {key: mc.empty_since, value: null}
+      - name: Empty from now
+        if: "steps.count.outcome == 'success' && steps.count.outputs.n == 0 && kv('mc.empty_since') == null"
+        kv:
+          key: mc.empty_since
+          value: ${{ string(opstruss.time) }}
+      - name: Stop when empty long enough
+        if: "steps.count.outcome == 'success' && steps.count.outputs.n == 0 && kv('mc.empty_since') != null && opstruss.time - timestamp(kv('mc.empty_since')) > duration(string(inputs.idle_minutes) + 'm')"
+        block:
+          - task: down
+            units: [mc]
+          - kv: {key: mc.empty_since, value: null}
+          - announce:
+              body:
+                content: "Server dimatikan: kosong ${{ inputs.idle_minutes }} menit. Ketik /mc start untuk main lagi."
+
+  backup:
+    description: Back up the world without stopping the server
+    on:
+      schedule: {cron: "0 4 * * *", timezone: Asia/Jakarta, persistent: true}
+    concurrency: skip
+    steps:
+      - name: Server state
+        id: st
+        task: status
+        units: [mc]                        # stopped: dunia sudah tersimpan, backup langsung
+      - name: Back up
+        id: main
+        block:
+          - name: Pause saving
+            if: steps.st.units['mc'].outputs.state == 'running'
+            run: [mcrcon, save-off, "save-all flush"]
+            env: *rcon
+          - name: Snapshot to B2
+            restic.backup:
+              repository: b2:acme-mc:world
+              password: ${{ secrets.restic_password }}
+              credentials: ${{ secrets.b2 }}
+              paths: [./server/world, ./server/world_nether, ./server/world_the_end]
+              tags: [daily]
+        always:
+          - name: Resume saving
+            if: steps.st.units['mc'].outputs.state == 'running'
+            run: [mcrcon, save-on]         # MC-78635: save-off tidak boleh tertinggal
+            env: *rcon
+-- plugins/restic/opstruss.plugin.yaml --
+# plugins/restic/opstruss.plugin.yaml
+name: restic
+description: Back up, prune, and restore with restic
+requires: [restic, jq]
+x-repo: &repo                              # input yang sama di setiap task
+  repository:
+    type: string
+    required: true
+  password:
+    type: string
+    required: true
+    sensitive: true
+  credentials:
+    type: object
+    sensitive: true
+    default: {}
+    description: Environment for the repository backend (AWS_*, B2_*)
+tasks:
+  backup:
+    description: Back up paths to one repository
+    inputs:
+      <<: *repo
+      paths:
+        type: array
+        items: {type: string}
+        required: true
+      tags:
+        type: array
+        items: {type: string}
+        default: []
+    run: [./restic.sh, backup]
+    timeout: 3h
+    stop:
+      signal: SIGINT                       # restic melepas lock repository sebelum keluar
+      grace: 2m
+    outputs:
+      snapshot: {type: string}
+      added_bytes: {type: integer}
+  forget:
+    description: Forget old snapshots and prune unused data
+    inputs:
+      <<: *repo
+      keep:
+        type: object
+        required: true
+        properties:
+          daily: {type: integer}
+          weekly: {type: integer}
+          monthly: {type: integer}
+    run: [./restic.sh, forget]
+    timeout: 3h
+    outputs:
+      removed: {type: integer}
+  restore:
+    description: Restore a snapshot into the run's artifacts directory
+    inputs:
+      <<: *repo
+      snapshot:
+        type: string
+        default: latest
+      include:
+        type: array
+        items: {type: string}
+        default: []
+    run: [./restic.sh, restore]
+    outputs:
+      dir: {type: string}
+-- plugins/restic/restic.sh --
+#!/usr/bin/env bash
+# Kontrak program: argument pertama memilih aksi; INPUT_* masuk, $OPSTRUSS_OUTPUT keluar.
+set -euo pipefail
+action=$1
+export RESTIC_REPOSITORY="$INPUT_REPOSITORY" RESTIC_PASSWORD="$INPUT_PASSWORD"
+# credentials (object JSON, sensitive) menjadi environment backend restic
+while IFS='=' read -r key value; do
+  export "$key=$value"
+done < <(jq -r 'to_entries[] | "\(.key)=\(.value)"' <<<"$INPUT_CREDENTIALS")
+restic cat config >/dev/null 2>&1 || restic init
+log="$OPSTRUSS_ARTIFACTS/restic-$action.json"
+# item list JSON menjadi argument satu per satu, tanpa mapfile, supaya jalan juga di bash 3.2 macOS
+set --
+case "$action" in
+  backup)
+    while IFS= read -r a; do set -- "$@" "$a"; done < <(jq -r '(.[] | "--tag=" + .)' <<<"$INPUT_TAGS")
+    while IFS= read -r a; do set -- "$@" "$a"; done < <(jq -r '.[]' <<<"$INPUT_PATHS")
+    restic backup --json "$@" > "$log"
+    jq -s 'map(select(.message_type == "summary")) | last
+           | {snapshot: .snapshot_id, added_bytes: .data_added}' "$log" > "$OPSTRUSS_OUTPUT"
+    jq '{changed: (.added_bytes > 0)}' "$OPSTRUSS_OUTPUT" > "$OPSTRUSS_RESULT" ;;
+  forget)
+    restic forget --prune --json \
+      --keep-daily "$(jq -r .daily <<<"$INPUT_KEEP")" \
+      --keep-weekly "$(jq -r .weekly <<<"$INPUT_KEEP")" \
+      --keep-monthly "$(jq -r .monthly <<<"$INPUT_KEEP")" > "$log"
+    jq '{removed: ([.[].remove // [] | length] | add // 0)}' "$log" > "$OPSTRUSS_OUTPUT" ;;
+  restore)
+    dir="$OPSTRUSS_ARTIFACTS/restore"
+    while IFS= read -r a; do set -- "$@" "$a"; done < <(jq -r '.[] | "--include=" + .' <<<"$INPUT_INCLUDE")
+    restic restore "$INPUT_SNAPSHOT" --target "$dir" "$@"
+    jq -n --arg dir "$dir" '{dir: $dir}' > "$OPSTRUSS_OUTPUT"
+    echo '{"changed": false}' > "$OPSTRUSS_RESULT" ;;
+esac
