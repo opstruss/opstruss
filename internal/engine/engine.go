@@ -254,23 +254,26 @@ func load(opts Options) (*engine, error) {
 // of temporary files.
 func (e *engine) start(command, task string) error {
 	p, opts := e.p, e.opts
-	interrupted, err := record.Interrupted(e.root, p.StackName)
-	if err != nil {
-		return err
-	}
 	rec := &record.Record{Project: p.Name, Stack: p.StackName, Command: command, Task: task, Args: opts.Units,
 		Trigger: e.event["trigger"].(string), Host: e.host, PID: os.Getpid(), Started: e.started.Format(time.RFC3339Nano)}
 	if len(e.parents) > 0 {
 		rec.Parent = e.parents[len(e.parents)-1]
 	}
-	rec.Hostname, _ = os.Hostname()
-	if u, err := user.Current(); err == nil {
-		rec.User = u.Username
-	}
+	rec.Hostname, rec.User = hostname(), username()
+	var err error
 	if e.rec, err = record.Create(e.root, state.NewRunID, rec, e.sink()); err != nil {
 		return err
 	}
 	e.runID = e.rec.ID()
+	// The run is in its record now, which is what a webhook answers after;
+	// the rest of the start comes after that answer.
+	if opts.Started != nil {
+		opts.Started(e.runID)
+	}
+	interrupted, err := record.Interrupted(e.root, p.StackName)
+	if err != nil {
+		return err
+	}
 	for _, run := range interrupted {
 		e.warn("", "run %s ended without finishing its record; it is marked cancelled, as interrupted", run)
 	}
@@ -342,6 +345,11 @@ func (e *engine) cleanTemp() {
 		// that is starting is alive by its record before its programs hold
 		// the directory's lock.
 		if run == e.runID || record.Alive(e.root, run) {
+			continue
+		}
+		// A run that just finished removed its directory itself; only one
+		// that a crash left needs the processes looked through.
+		if _, err := os.Stat(e.tempOf(run)); err != nil {
 			continue
 		}
 		ps, held, err := plugin.Marker(run, e.tempOf(run)).Alive()
@@ -483,6 +491,14 @@ func (e *engine) stopAtPlan() {
 func (e *engine) result() *Result {
 	return &Result{Run: e.runID, ExitCode: e.exit, Outcome: e.outcome, Outputs: e.outputs}
 }
+
+// username is the name of the user, read once.
+var username = sync.OnceValue(func() string {
+	if u, err := user.Current(); err == nil {
+		return u.Username
+	}
+	return ""
+})
 
 // hostname is the name of this machine, read once.
 var hostname = sync.OnceValue(func() string {

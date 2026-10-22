@@ -213,9 +213,6 @@ func Fire(ctx context.Context, opts Options, t *Trigger) (*Result, error) {
 	if err := e.start("task", t.Task); err != nil {
 		return nil, err
 	}
-	if opts.Started != nil {
-		opts.Started(e.runID)
-	}
 	return e.task(ctx, t.Task, given), nil
 }
 

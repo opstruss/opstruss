@@ -135,9 +135,14 @@ func Create(root string, newID func() string, rec *Record, sink func(Event)) (*R
 			return nil, err
 		}
 		r.out = bufio.NewWriterSize(r.events, 64<<10)
+		live.Store(rec.Run, &Record{Run: rec.Run, Command: rec.Command, Task: rec.Task, Status: Running})
 		return r, write(dir, rec)
 	}
 }
+
+// live are the runs of this process that have not finished, which are
+// alive without a look at their locks.
+var live sync.Map // run → what Prune needs of its record
 
 // ID is the name of the run.
 func (r *Run) ID() string { return r.rec.Run }
@@ -218,6 +223,7 @@ func (r *Run) Finish(update func(*Record)) error {
 		err = cerr
 	}
 	_ = r.lock.Close()
+	live.Delete(r.rec.Run)
 	return err
 }
 

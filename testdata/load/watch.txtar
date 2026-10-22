@@ -1,0 +1,28 @@
+# Load: a service writes 1,000 lines a second for LOAD_SECONDS seconds to a
+# watch that gathers them a second at a time: the daemon keeps at most 200
+# MiB, the runs keep up, and the log of the service turns over.
+
+env HOME=$WORK/home
+exec opstruss up -d --yes
+exec sleep $LOAD_SECONDS
+rss 200
+exec sh -c 'for i in $(seq 30); do s=$(awk "{s+=\$1} END {print s+0}" counted 2> /dev/null); [ "$s" -ge $((990 * LOAD_SECONDS)) ] && { echo "kept up"; exit 0; }; sleep 1; done; echo "behind $s"; grep -c dropped .opstruss/logs/default/_daemon.jsonl'
+stdout '^kept up$'
+exec opstruss stop
+
+-- opstruss.yaml --
+name: load
+units:
+  noisy:
+    service: lines 1000 "$LOAD_SECONDS"
+    pass: [LOAD_SECONDS]
+    approval: auto
+tasks:
+  count:
+    run: echo "$N" >> counted
+    env: {N: '${{ string(event.count) }}'}
+    on:
+      watch:
+        unit: noisy
+        if: event.line.contains('error')
+        batch: 1s

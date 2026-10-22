@@ -1,0 +1,86 @@
+# Crash for services: the daemon killed at every point of starting a
+# service, and while it runs: after up again, one process of the service
+# runs, its record reads, and an interrupted start shows in plan.
+
+[!failpoints] skip 'needs a build with -tags failpoints'
+env HOME=$WORK/home
+env OPSTRUSS_FAILPOINT_LOG=$WORK/visited
+
+exec opstruss up -d --yes
+stdout 'default/web: running'
+exec sh -c 'n=0; for p in $(cat pids); do kill -0 "$p" 2> /dev/null && n=$((n+1)); done; echo "alive $n"'
+stdout '^alive 1$'
+
+env OPSTRUSS_FAILPOINT=up-before-pending=kill
+exec opstruss stop
+! exec opstruss up -d --yes --force
+env OPSTRUSS_FAILPOINT=
+exec opstruss up -d --yes
+stdout 'default/web: running'
+exec sh -c 'n=0; for p in $(cat pids); do kill -0 "$p" 2> /dev/null && n=$((n+1)); done; echo "alive $n"'
+stdout '^alive 1$'
+
+env OPSTRUSS_FAILPOINT=up-before-program=kill
+exec opstruss stop
+! exec opstruss up -d --yes --force
+env OPSTRUSS_FAILPOINT=
+exec opstruss plan
+stdout 'default/web: will run: up of run .* did not finish'
+exec opstruss up -d --yes
+exec sh -c 'n=0; for p in $(cat pids); do kill -0 "$p" 2> /dev/null && n=$((n+1)); done; echo "alive $n"'
+stdout '^alive 1$'
+
+# killed after the entry and before the gate lets the program run: it
+# never runs
+env OPSTRUSS_FAILPOINT=service-before-go=kill
+exec opstruss stop
+exec sh -c 'wc -l < pids'
+cp stdout before
+! exec opstruss up -d --yes --force
+env OPSTRUSS_FAILPOINT=
+exec sh -c 'wc -l < pids'
+cmp stdout before
+exec opstruss up -d --yes
+exec sh -c 'n=0; for p in $(cat pids); do kill -0 "$p" 2> /dev/null && n=$((n+1)); done; echo "alive $n"'
+stdout '^alive 1$'
+
+# killed while the service runs: the next daemon stops it before it starts
+# it again
+env OPSTRUSS_FAILPOINT=up-after-program=kill
+exec opstruss stop
+! exec opstruss up -d --yes --force
+env OPSTRUSS_FAILPOINT=
+exec opstruss up -d --yes
+exec sh -c 'n=0; for p in $(cat pids); do kill -0 "$p" 2> /dev/null && n=$((n+1)); done; echo "alive $n"'
+stdout '^alive 1$'
+
+env OPSTRUSS_FAILPOINT=up-before-put=kill
+exec opstruss stop
+! exec opstruss up -d --yes --force
+env OPSTRUSS_FAILPOINT=
+exec opstruss up -d --yes
+exec sh -c 'n=0; for p in $(cat pids); do kill -0 "$p" 2> /dev/null && n=$((n+1)); done; echo "alive $n"'
+stdout '^alive 1$'
+exec opstruss state pull web
+stdout '"kind": "service"'
+
+exec opstruss stop
+exec sh -c 'n=0; for p in $(cat pids); do kill -0 "$p" 2> /dev/null && n=$((n+1)); done; echo "alive $n"'
+stdout '^alive 0$'
+exec sh -c 'sort -u visited'
+cmp stdout points
+
+-- points --
+service-before-go
+up-after-program
+up-before-pending
+up-before-program
+up-before-put
+-- opstruss.yaml --
+name: shop
+units:
+  web:
+    service: |
+      echo $$ >> pids
+      exec sleep 300
+    approval: auto

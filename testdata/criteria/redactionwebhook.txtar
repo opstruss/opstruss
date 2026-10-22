@@ -1,0 +1,28 @@
+# Redaction for respond: wait: the sensitive output of a run that a webhook
+# waits for comes back hidden, and the token that it was made of is in no
+# answer, record, or log.
+
+env HOME=$WORK/home
+env HOOK=w4it-token-secret
+exec opstruss up -d --yes
+waitgrep 'webhooks listen on' .opstruss/logs/default/_daemon.jsonl
+webhook POST /token '{}' -bearer w4it-token-secret
+stdout '^200 .*"outputs":\{"token":"\*\*\*"\}'
+! stdout w4it
+exec opstruss stop
+! exec sh -c 'grep -r w4it-token-secret .opstruss'
+
+-- opstruss.yaml --
+name: shop
+inputs:
+  hook: {type: string, sensitive: true, env: HOOK}
+runtime:
+  listen: 127.0.0.1:0
+tasks:
+  token:
+    run: echo "token=Bearer $T" > "$OPSTRUSS_OUTPUT"
+    env: {T: '${{ inputs.hook }}'}
+    outputs:
+      token: {}
+    on:
+      webhook: {path: /token, secret: '${{ inputs.hook }}', signature: bearer, respond: wait}

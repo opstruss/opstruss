@@ -122,8 +122,10 @@ func TestInterruptedAndPrune(t *testing.T) {
 	if got, _ := Interrupted(root, "dev"); len(got) != 0 {
 		t.Fatalf("a live run is interrupted: %v", got)
 	}
-	// A crash lets go of the lock without finishing the record.
+	// A crash lets go of the lock without finishing the record, and the
+	// process that knew the run is gone.
 	_ = r.lock.Close()
+	live.Delete(r.ID())
 	got, err := Interrupted(root, "dev")
 	if err != nil || len(got) != 1 || got[0] != r.ID() {
 		t.Fatalf("interrupted: %v %v", got, err)

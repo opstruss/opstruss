@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/opstruss/opstruss/internal/engine"
+	"github.com/opstruss/opstruss/internal/failpoint"
 	"github.com/opstruss/opstruss/internal/plugin"
 	"github.com/opstruss/opstruss/internal/proc"
 	"github.com/opstruss/opstruss/internal/record"
@@ -593,6 +594,7 @@ func (s *service) start() (_ *child, err error) {
 		kill()
 		return nil, err
 	}
+	failpoint.Hit("service-before-go")
 	if _, err := gateW.Write([]byte("go\n")); err != nil {
 		kill()
 		return nil, err

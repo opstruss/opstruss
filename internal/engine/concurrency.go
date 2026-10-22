@@ -29,7 +29,14 @@ var taskMutexes sync.Map // lock path → *sync.Mutex, for calls in one process
 // taskHolders keeps the cancel of each call that holds a task lock in this
 // process, so a call with concurrency: cancel stops it from any run of the
 // process, as the runs of a daemon are.
-var taskHolders sync.Map // lock path → context.CancelCauseFunc
+var taskHolders sync.Map // lock path → heldTask
+
+// heldTask is a call that holds a task lock in this process.
+type heldTask struct {
+	cancel context.CancelCauseFunc
+	run    string
+	root   string // the root task of its run
+}
 
 // taskLock takes the concurrency lock of a call of a task in this stack
 // and checkout, .opstruss/tasks/<stack>/<task>.lock, or
@@ -114,7 +121,7 @@ func (e *engine) holdTask(ctx context.Context, p string, f *os.File, mu *sync.Mu
 		_, _ = f.WriteAt(data, 0)
 	}
 	ctx, cancel := context.WithCancelCause(ctx)
-	taskHolders.Store(p, cancel)
+	taskHolders.Store(p, heldTask{cancel: cancel, run: e.runID, root: e.rootTask})
 	release := func() {
 		taskHolders.Delete(p)
 		cancel(nil)
@@ -131,8 +138,15 @@ func (e *engine) holdTask(ctx context.Context, p string, f *os.File, mu *sync.Mu
 // root task of that run is this task, so a deploy that calls notify does
 // not stop with it.
 func (e *engine) cancelHolder(p string, f *os.File, name string) {
-	if cancel, ok := taskHolders.Load(p); ok {
-		cancel.(context.CancelCauseFunc)(errors.New("cancelled by a call with concurrency: cancel"))
+	if v, ok := taskHolders.Load(p); ok {
+		// A run of this process, as in a daemon, is stopped by the same
+		// rule as one of another.
+		h := v.(heldTask)
+		if h.root != name && h.run != e.runID {
+			e.warn("", "concurrency: cancel waits for run %s, whose root task is %s, not %s", h.run, h.root, name)
+			return
+		}
+		h.cancel(errors.New("cancelled by a call with concurrency: cancel"))
 		return
 	}
 	var h taskHolder

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -18,6 +19,10 @@ const (
 	Keep    = 100
 	MaxRuns = 1 << 30
 )
+
+// done keeps the runs that this process saw finished, which never run
+// again, so a daemon that starts many runs reads each record once.
+var done sync.Map // directory of the run → true
 
 // Interrupted marks the runs of stack under root that a crash left
 // running: their .lock is free while their record says running. It
@@ -35,7 +40,16 @@ func Interrupted(root, stack string) ([]string, error) {
 	var out []string
 	for _, ent := range ents {
 		dir := filepath.Join(base, ent.Name())
+		if _, ok := done.Load(dir); ok {
+			continue
+		}
+		if _, ok := live.Load(ent.Name()); ok {
+			continue
+		}
 		if rec, err := Read(dir); err != nil || rec.Status != Running {
+			if err == nil {
+				done.Store(dir, true)
+			}
 			continue
 		}
 		// The owner lets go of its lock only after it wrote its record as
@@ -67,6 +81,9 @@ func Interrupted(root, stack string) ([]string, error) {
 // Alive reports whether the run named run, of any stack under root, still
 // holds the lock of its record.
 func Alive(root, run string) bool {
+	if _, ok := live.Load(filepath.Base(run)); ok {
+		return true
+	}
 	locks, _ := filepath.Glob(filepath.Join(root, "runs", "*", filepath.Base(run), ".lock"))
 	for _, p := range locks {
 		if held(p) {
@@ -89,25 +106,44 @@ func held(p string) bool {
 // Prune drops the oldest runs of stack under root beyond Keep per task,
 // then beyond MaxRuns in all. It never drops a run still running, nor the
 // last run that touched each unit, which logs reads.
+// pruned keeps what Prune read of each finished run: its record and size.
+var pruned sync.Map // directory → run
+
+type run struct {
+	dir  string
+	rec  *Record
+	size int64
+}
+
 func Prune(root, stack string) error {
 	base := filepath.Join(root, "runs", stack)
 	ents, err := os.ReadDir(base)
 	if err != nil {
 		return err
 	}
-	type run struct {
-		dir  string
-		rec  *Record
-		size int64
-	}
 	var runs []run
 	for _, ent := range ents {
 		dir := filepath.Join(base, ent.Name())
+		// A run of this process that runs is kept, and counts among the
+		// newest of its task; its record is not read.
+		if v, ok := live.Load(ent.Name()); ok {
+			runs = append(runs, run{dir: dir, rec: v.(*Record)})
+			continue
+		}
+		if v, ok := pruned.Load(dir); ok {
+			runs = append(runs, v.(run))
+			continue
+		}
 		rec, err := Read(dir)
 		if err != nil {
 			continue
 		}
-		runs = append(runs, run{dir: dir, rec: rec, size: size(dir)})
+		r := run{dir: dir, rec: rec, size: size(dir)}
+		// A finished run does not change, so a daemon reads it once.
+		if rec.Status == Finished {
+			pruned.Store(dir, r)
+		}
+		runs = append(runs, r)
 	}
 	// Names start with the time, so they sort oldest first.
 	slices.SortFunc(runs, func(a, b run) int { return compare(a.rec.Run, b.rec.Run) })
@@ -132,6 +168,8 @@ func Prune(root, stack string) error {
 		}
 		gone[r.rec.Run] = true
 		total -= r.size
+		pruned.Delete(r.dir)
+		done.Delete(r.dir)
 		return os.RemoveAll(r.dir)
 	}
 	perTask := map[string][]run{}

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bufio"
+	"cmp"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -10,6 +12,7 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -27,6 +30,7 @@ func TestMain(m *testing.M) {
 	testscript.Main(m, map[string]func(){
 		"opstruss":  func() { os.Exit(cli.Main()) },
 		"fakecloud": func() { os.Exit(fakecloud(os.Args[1:])) },
+		"lines":     func() { os.Exit(lines(os.Args[1:])) },
 	})
 }
 
@@ -38,6 +42,9 @@ func TestScripts(t *testing.T) {
 
 func params(dir string) testscript.Params {
 	return testscript.Params{Dir: dir, Setup: func(env *testscript.Env) error {
+		// How long the load scripts run: 30 seconds in make criteria, ten
+		// minutes in the daily load workflow.
+		env.Setenv("LOAD_SECONDS", cmp.Or(os.Getenv("OPSTRUSS_LOAD_SECONDS"), "30"))
 		// The plugins of the tests, for uses: ./testplugins/<name>.
 		return copyDir("testdata/plugins", filepath.Join(env.WorkDir, "testplugins"))
 	}, Condition: func(cond string) (bool, error) {
@@ -109,6 +116,89 @@ func params(dir string) testscript.Params {
 			body, _ := io.ReadAll(resp.Body)
 			_, _ = fmt.Fprintf(ts.Stdout(), "%d %s", resp.StatusCode, body)
 		},
+		// rss fails when the daemon of stack default takes more than max MiB
+		// of memory: rss <max>.
+		"rss": func(ts *testscript.TestScript, _ bool, args []string) {
+			var file struct {
+				PID int `json:"pid"`
+			}
+			data, err := os.ReadFile(ts.MkAbs(".opstruss/daemon/default.json"))
+			ts.Check(err)
+			ts.Check(json.Unmarshal(data, &file))
+			// Linux tells it in /proc, macOS through ps.
+			var kib int
+			if status, err := os.ReadFile("/proc/" + strconv.Itoa(file.PID) + "/status"); err == nil {
+				for _, l := range strings.Split(string(status), "\n") {
+					if v, ok := strings.CutPrefix(l, "VmRSS:"); ok {
+						kib, err = strconv.Atoi(strings.TrimSuffix(strings.TrimSpace(v), " kB"))
+						ts.Check(err)
+					}
+				}
+			} else {
+				out, err := exec.Command("ps", "-o", "rss=", "-p", strconv.Itoa(file.PID)).Output()
+				ts.Check(err)
+				kib, err = strconv.Atoi(strings.TrimSpace(string(out)))
+				ts.Check(err)
+			}
+			limit, err := strconv.Atoi(args[0])
+			ts.Check(err)
+			ts.Logf("the daemon takes %d MiB", kib/1024)
+			if kib/1024 > limit {
+				ts.Fatalf("the daemon takes %d MiB, more than %d", kib/1024, limit)
+			}
+		},
+		// burst sends n requests with a bearer token to a webhook of the
+		// daemon of stack default within a second, and fails when one gets
+		// another answer than 202 or 503, or when the 99th percentile of the
+		// answers takes longer than max: burst <path> <n> <secret> <max>.
+		"burst": func(ts *testscript.TestScript, _ bool, args []string) {
+			var file struct {
+				Listen string `json:"listen"`
+			}
+			data, err := os.ReadFile(ts.MkAbs(".opstruss/daemon/default.json"))
+			ts.Check(err)
+			ts.Check(json.Unmarshal(data, &file))
+			n, err := strconv.Atoi(args[1])
+			ts.Check(err)
+			limit, err := time.ParseDuration(args[3])
+			ts.Check(err)
+			type result struct {
+				code int
+				took time.Duration
+			}
+			results := make(chan result, n)
+			for i := range n {
+				go func() {
+					time.Sleep(time.Duration(i) * time.Second / time.Duration(n))
+					req, _ := http.NewRequest("POST", "http://"+file.Listen+args[0], strings.NewReader("{}"))
+					req.Header.Set("Authorization", "Bearer "+args[2])
+					began := time.Now()
+					resp, err := http.DefaultClient.Do(req)
+					if err != nil {
+						results <- result{0, time.Since(began)}
+						return
+					}
+					_ = resp.Body.Close()
+					results <- result{resp.StatusCode, time.Since(began)}
+				}()
+			}
+			codes := map[int]int{}
+			var took []time.Duration
+			for range n {
+				r := <-results
+				codes[r.code]++
+				took = append(took, r.took)
+			}
+			slices.Sort(took)
+			p99 := took[len(took)*99/100]
+			_, _ = fmt.Fprintf(ts.Stdout(), "202 %d 503 %d other %d p99 %s slowest %v\n", codes[202], codes[503], n-codes[202]-codes[503], p99, took[len(took)-3:])
+			if codes[202]+codes[503] != n {
+				ts.Fatalf("answers %v", codes)
+			}
+			if p99 > limit {
+				ts.Fatalf("p99 %s, more than %s", p99, limit)
+			}
+		},
 		// daemonrun fails unless the newest run of a stack ran in its
 		// daemon, or with ! unless it did not: the record of the run names
 		// the pid that daemon/<stack>.json names.
@@ -168,6 +258,26 @@ func params(dir string) testscript.Params {
 			}
 		},
 	}}
+}
+
+// lines writes rate lines a second for seconds seconds, numbered, as a
+// service whose output a watch reads: lines <rate> <seconds>.
+func lines(args []string) int {
+	rate, _ := strconv.Atoi(args[0])
+	secs, _ := strconv.Atoi(args[1])
+	tick := time.NewTicker(time.Second / time.Duration(rate))
+	defer tick.Stop()
+	w := bufio.NewWriter(os.NewFile(1, "stdout"))
+	for i := 0; i < rate*secs; i++ {
+		<-tick.C
+		_, _ = fmt.Fprintf(w, "line %d error\n", i)
+		if i%100 == 0 {
+			_ = w.Flush()
+		}
+	}
+	_ = w.Flush()
+	time.Sleep(time.Hour)
+	return 0
 }
 
 func parseTime(s string) time.Time {

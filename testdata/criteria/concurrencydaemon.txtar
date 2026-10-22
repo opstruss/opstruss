@@ -1,0 +1,62 @@
+# Concurrency with a daemon: the same calls as without one go to the
+# daemon of the stack, and still no two calls of one lock overlap, queue
+# runs every call, and cancel leaves a run whose root task is another
+# alone.
+
+env HOME=$WORK/home
+exec opstruss up -d
+
+exec sh -c 'for p in $(seq 20); do (for i in $(seq 50); do opstruss queued > /dev/null 2>> errors || echo failed >> errors; done) & done; wait'
+! exists overlap-queued
+exec sh -c 'cat errors 2> /dev/null; true'
+! stdout .
+exec sh -c 'wc -l < ran-queued'
+stdout '^ *1000$'
+
+exec sh -c 'for p in $(seq 20); do (for i in $(seq 50); do opstruss skipped > /dev/null 2>> errors || echo failed >> errors; done) & done; wait'
+! exists overlap-skipped
+exec sh -c 'cat errors 2> /dev/null; true'
+! stdout .
+exists ran-skipped
+
+exec sh -c 'for p in $(seq 20); do (for i in $(seq 50); do opstruss grouped --key "k$((p % 2))" > /dev/null 2>> errors || echo failed >> errors; done) & done; wait'
+! exists overlap-k0
+! exists overlap-k1
+exec sh -c 'cat errors 2> /dev/null; true'
+! stdout .
+exec sh -c 'cat ran-k0 ran-k1 | wc -l'
+stdout '^ *1000$'
+
+# cancel stops only a run that started with the task itself
+exec opstruss deploy &
+waitfile started-notify
+exec opstruss notify
+stderr 'concurrency: cancel waits for run .*, whose root task is deploy, not notify'
+wait
+cmp notify.log notify.want
+daemonrun default
+exec opstruss stop
+
+-- opstruss.yaml --
+name: shop
+tasks:
+  queued:
+    run: mkdir busy-queued 2> /dev/null || { touch overlap-queued; exit 1; }; echo x >> ran-queued; rmdir busy-queued
+  skipped:
+    concurrency: skip
+    run: mkdir busy-skipped 2> /dev/null || { touch overlap-skipped; exit 1; }; echo x >> ran-skipped; rmdir busy-skipped
+  grouped:
+    inputs:
+      key: {type: string, required: true}
+    concurrency:
+      group: ${{ inputs.key }}
+    run: [sh, -c, 'mkdir "busy-$1" 2> /dev/null || { touch "overlap-$1"; exit 1; }; echo x >> "ran-$1"; rmdir "busy-$1"', grouped, "${{ inputs.key }}"]
+  deploy:
+    steps:
+      - task: notify
+  notify:
+    concurrency: cancel
+    run: touch started-notify; sleep 1; echo done >> notify.log
+-- notify.want --
+done
+done
