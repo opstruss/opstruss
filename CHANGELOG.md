@@ -290,9 +290,10 @@ minor release can change what a project, a component, or a plugin relies on.
   header names, `status_code` with patterns such as `2xx`, extra roots
   from `ca`, and `tls` with the certificates of an https answer), `read`,
   `write` (only when the content or mode differs, through a rename),
-  `set`, `assert`, `wait` (seconds, a TCP port, or a URL), and `log`. Each
-  is also `opstruss.<name>`, and `retry` evaluates the inputs of a call
-  again at each attempt.
+  `set`, `assert` (conditions in `that`, with or without `${{ }}`, as in
+  `if`), `wait` (seconds, a TCP port, or a URL), and `log`. Each is also
+  `opstruss.<name>`, and `retry` evaluates the inputs of a call again at
+  each attempt.
 - `kv` keeps one JSON value per name for the stack between runs, in the
   backend under `<stack>/_kv/`: a `kv` step without `value` reads, with
   `value` writes, and `value: null` removes; `ttl` makes a value expire,

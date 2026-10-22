@@ -41,7 +41,7 @@ tasks:
       - id: s
         set: {first: "${{ steps.r.outputs.content[0] }}"}
       - assert:
-          that: ["${{ steps.w.changed }}", "${{ !steps.again.changed }}"]
+          that: ["${{ steps.w.changed }}", "${{ !steps.again.changed }}", size(steps.r.outputs.content) == 2]
       - name: say
         say: {msg: "wrote ${{ size(steps.r.outputs.content) }} lines"}
     outputs:

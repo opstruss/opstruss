@@ -115,6 +115,9 @@ func decodeCalls(b []byte, v any) (Calls, error) {
 			if err := decodeJSON(m, &args); err != nil {
 				return nil, fmt.Errorf("%s: %w", k, err)
 			}
+			if k == "assert" || k == "opstruss.assert" {
+				assertConditions(args)
+			}
 			if calls == nil {
 				calls = Calls{}
 			}
@@ -126,6 +129,22 @@ func decodeCalls(b []byte, v any) (Calls, error) {
 		return nil, err
 	}
 	return calls, decodeJSON(fb, v)
+}
+
+// assertConditions writes each condition of assert.that as the expression
+// it is: that is a condition key, which, like if, may be written without
+// ${{ }}.
+func assertConditions(args map[string]any) {
+	switch that := args["that"].(type) {
+	case string:
+		args["that"] = condition(that)
+	case []any:
+		for i, c := range that {
+			if s, ok := c.(string); ok {
+				that[i] = condition(s)
+			}
+		}
+	}
 }
 
 func isString(b []byte) bool { return len(b) > 0 && b[0] == '"' }
