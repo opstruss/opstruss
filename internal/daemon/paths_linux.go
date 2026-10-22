@@ -12,8 +12,10 @@ import (
 
 // paths sends the changes of the files that the watch tr names, as
 // inotify reports them under the directory of its task and the fixed part
-// of each absolute pattern, also in directories made later.
-func (t *triggers) paths(ctx context.Context, tr *engine.Trigger, push func(map[string]any)) {
+// of each absolute pattern, also in directories made later. It calls
+// armed once those directories are watched.
+func (t *triggers) paths(ctx context.Context, tr *engine.Trigger, push func(map[string]any), armed func()) {
+	defer armed()
 	w, err := fsnotify.NewWatcher()
 	if err != nil {
 		t.d.event("trigger", "error", tr.Task, "%s: %v", tr, err)
@@ -51,6 +53,7 @@ func (t *triggers) paths(ctx context.Context, tr *engine.Trigger, push func(map[
 	for _, root := range pathRoots(tr) {
 		add(root, false)
 	}
+	armed()
 	for {
 		select {
 		case <-ctx.Done():

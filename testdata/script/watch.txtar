@@ -1,14 +1,21 @@
 # A watch makes runs of the lines of a service, the changes of files, or
 # the lines of a program it runs as a source; if: chooses each event and
-# debounce gathers them. A task of a plugin as a source reads a secret
-# and works in the directory of the task that watches. after makes a run
-# when another run ends, and a chain of after stops past three.
+# debounce gathers them. up -d returns once each watch is ready, so a file
+# written at once makes an event. A task of a plugin as a source reads a
+# secret and works in the directory of the task that watches. after makes
+# a run when another run ends, and a chain of after stops past three.
 
 env HOME=$WORK/home
 env FEED_TOKEN=feed-secret
 exec chmod 755 feed/lines.sh
 
+# 500 files come before inbox/ in its watch, so its first stat reaches
+# inbox/ only after a while on macOS; a file written as soon as up -d
+# returns still makes an event
+exec sh -c 'mkdir -p bulk inbox && cd bulk && seq 500 | xargs touch'
 exec opstruss up -d --yes
+cp note.md inbox/note.md
+waitgrep '^inbox inbox/note.md$' fired
 waitgrep '^line error: disk full$' fired
 ! grep 'all good' fired
 waitgrep '^source one -$' fired
@@ -30,6 +37,8 @@ waitgrep 'after t4: run [0-9T]+Z-[0-9a-f]+ is 3 deep in a chain of after, so it 
 ! grep '^t5' fired
 exec opstruss stop
 
+-- note.md --
+a note
 -- opstruss.yaml --
 name: shop
 inputs:
@@ -73,6 +82,12 @@ tasks:
       watch:
         paths: ['${{ inputs.src }}/**']   # read as the daemon installs the trigger
         debounce: 2s
+  inbox:
+    run: echo "inbox $P" >> fired
+    env: {P: '${{ event.paths.map(p, p.path).join(",") }}'}
+    on:
+      watch:
+        paths: [bulk/**, inbox/*.md]
   t1:
     run: echo t1 >> fired
   t2:

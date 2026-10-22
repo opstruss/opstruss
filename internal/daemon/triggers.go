@@ -91,6 +91,9 @@ func (t *triggers) install(opts engine.Options) {
 		}
 		f.Schedules = keep
 	})
+	// A change made after install returns, and so after up does, is an
+	// event: each watch is armed before it returns.
+	var armed sync.WaitGroup
 	for _, tr := range list {
 		switch tr.Kind {
 		case "schedule":
@@ -98,9 +101,11 @@ func (t *triggers) install(opts engine.Options) {
 		case "every":
 			go t.every(ctx, tr)
 		case "watch":
-			go t.watch(ctx, tr)
+			armed.Add(1)
+			go t.watch(ctx, tr, armed.Done)
 		}
 	}
+	armed.Wait()
 	if err := t.hooks.set(listen, list); err != nil {
 		t.d.event("trigger", "error", "", "%v", err)
 	}

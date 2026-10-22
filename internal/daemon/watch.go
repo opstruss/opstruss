@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bmatcuk/doublestar/v4"
@@ -26,7 +27,10 @@ const (
 // watch makes runs of the events of the watch tr: the lines of a service,
 // the lines of a program that it runs as a source, or changes of files.
 // if: chooses each event, and batch or debounce gathers them into one run.
-func (t *triggers) watch(ctx context.Context, tr *engine.Trigger) {
+// It calls armed once its source sees events, or once it gives up.
+func (t *triggers) watch(ctx context.Context, tr *engine.Trigger, armed func()) {
+	ready := sync.OnceFunc(armed)
+	defer ready()
 	opts := t.options()
 	f, err := engine.NewFilter(opts, tr)
 	if err != nil {
@@ -56,12 +60,15 @@ func (t *triggers) watch(ctx context.Context, tr *engine.Trigger) {
 		})
 		defer stop()
 	case len(tr.Paths) > 0:
-		go t.paths(ctx, tr, push)
+		go t.paths(ctx, tr, push, ready)
 	default:
 		if err := t.source(ctx, tr, push); err != nil {
 			t.d.event("trigger", "error", tr.Task, "%s: %v", tr, err)
 			return
 		}
+	}
+	if len(tr.Paths) == 0 {
+		ready()
 	}
 	gather := tr.Batch + tr.Debounce
 	var batch []map[string]any

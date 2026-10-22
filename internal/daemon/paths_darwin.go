@@ -20,8 +20,10 @@ type stamp struct {
 
 // paths sends the changes of the files that the watch tr names, by the
 // stat of each every second, under the directory of its task and the
-// fixed part of each absolute pattern.
-func (t *triggers) paths(ctx context.Context, tr *engine.Trigger, push func(map[string]any)) {
+// fixed part of each absolute pattern. It calls armed after the first
+// stat of each.
+func (t *triggers) paths(ctx context.Context, tr *engine.Trigger, push func(map[string]any), armed func()) {
+	defer armed()
 	roots := pathRoots(tr)
 	scan := func() (map[string]stamp, bool) {
 		seen := map[string]stamp{}
@@ -52,6 +54,7 @@ func (t *triggers) paths(ctx context.Context, tr *engine.Trigger, push func(map[
 		return seen, len(seen) < MaxPolled
 	}
 	last, ok := scan()
+	armed()
 	if !ok {
 		t.d.event("diagnostic", "error", tr.Task, "%s: its paths hold more than %d files; narrow them or add exclude:", tr, MaxPolled)
 		return
