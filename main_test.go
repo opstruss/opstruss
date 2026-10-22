@@ -265,21 +265,23 @@ func params(dir string) testscript.Params {
 }
 
 // lines writes rate lines a second for seconds seconds, numbered, as a
-// service whose output a watch reads: lines <rate> <seconds>.
+// service whose output a watch reads, keeping to the rate by the clock
+// rather than by a ticker that drops ticks on a slow machine, and then
+// writes how many it wrote to the file emitted: lines <rate> <seconds>.
 func lines(args []string) int {
 	rate, _ := strconv.Atoi(args[0])
 	secs, _ := strconv.Atoi(args[1])
-	tick := time.NewTicker(time.Second / time.Duration(rate))
-	defer tick.Stop()
 	w := bufio.NewWriter(os.NewFile(1, "stdout"))
-	for i := 0; i < rate*secs; i++ {
-		<-tick.C
-		_, _ = fmt.Fprintf(w, "line %d error\n", i)
-		if i%100 == 0 {
-			_ = w.Flush()
+	began, total, i := time.Now(), rate*secs, 0
+	for i < total {
+		due := min(total, int(time.Since(began).Seconds()*float64(rate)))
+		for ; i < due; i++ {
+			_, _ = fmt.Fprintf(w, "line %d error\n", i)
 		}
+		_ = w.Flush()
+		time.Sleep(10 * time.Millisecond)
 	}
-	_ = w.Flush()
+	_ = os.WriteFile("emitted", []byte(strconv.Itoa(total)+"\n"), 0o600)
 	time.Sleep(time.Hour)
 	return 0
 }

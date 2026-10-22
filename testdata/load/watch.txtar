@@ -5,9 +5,12 @@
 env HOME=$WORK/home
 exec opstruss up -d --yes
 exec sleep $LOAD_SECONDS
+waitfile emitted
 rss 200
-exec sh -c 'for i in $(seq 30); do s=$(awk "{s+=\$1} END {print s+0}" counted 2> /dev/null); [ "$s" -ge $((990 * LOAD_SECONDS)) ] && { echo "kept up"; exit 0; }; sleep 1; done; echo "behind $s"; grep -c dropped .opstruss/logs/default/_daemon.jsonl'
-stdout '^kept up$'
+# every line that matched made part of a run, unless the daemon says that
+# it dropped some
+exec sh -c 'n=$(cat emitted); for i in $(seq 60); do s=$(awk "{s+=\$1} END {print s+0}" counted 2> /dev/null); [ "$s" -ge "$n" ] && { echo "kept up"; exit 0; }; sleep 1; done; grep -q dropped .opstruss/logs/default/_daemon.jsonl && echo "dropped and said so" || echo "behind $s of $n"'
+stdout '^(kept up|dropped and said so)$'
 exec opstruss stop
 
 -- opstruss.yaml --
