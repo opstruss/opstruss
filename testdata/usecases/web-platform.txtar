@@ -1,0 +1,498 @@
+# A web platform: DNS through a component with tofu, an app with compose,
+# nginx as a service, a health check on a schedule with an alert after it
+# fails, nginx errors watched and batched to Slack, and guards included
+# from another file: a daily plan that opens or comments an issue on
+# drift, a certificate check, and heartbeats that report failure from
+# always:. The example's URLs point at fakeapi, and its waits are short.
+
+env HOME=$WORK/home
+env SOPS_AGE_KEY_FILE=$WORK/age/keys.txt
+env PATH=$WORK/fakes:$PATH
+exec chmod 755 fakes/nginx fakes/tofu scripts/drift-body.sh
+! exec fakeapi -listen 127.0.0.1:18101 api &api&
+! exec fakeapi -listen 127.0.0.1:18103 -tls -days 12 api-tls &tls&
+waitfile api/port
+waitfile api-tls/port
+exec opstruss init
+exec sh -c 'printf "  - path_regex: secrets.sops.yaml\n    age: %s\n" "$(sed -n "s/^# public key: //p" age/keys.txt)" >> .sops.yaml'
+mkdir dev prod
+exec sops encrypt --filename-override dev/secrets.sops.yaml --output dev/secrets.sops.yaml plain.yaml
+exec sops encrypt --filename-override prod/secrets.sops.yaml --output prod/secrets.sops.yaml plain.yaml
+exec opstruss validate
+stdout '^valid$'
+
+# dev needs no approval; up -d starts the daemon with nginx and the
+# triggers; the token reaches tofu through the component's sensitive input
+exec opstruss up -d --stack dev
+stdout '^dev/dns/records: will run: new; plan: create cloudflare_record.apex, create cloudflare_record.www$'
+stdout '^dev/app: up: done$'
+stdout '^dev/nginx: up: done$'
+grep '^up \S+ web=sha256:1111 worker=sha256:1111 db=sha256:5555 APP_DOMAIN=example.dev WEB_REPLICAS=1$' compose.log
+grep '^apply \. CLOUDFLARE_API_TOKEN$' components/dns/tofu.log
+exec opstruss status dns --stack dev
+stdout 'www.example.dev'
+! exec grep -r cf-test-token .opstruss
+
+# deploy runs in the daemon: nothing changed, so nobody is told
+exec opstruss deploy --stack dev
+stdout '^dev/app: unchanged$'
+! exists api/requests
+
+# a new image: deploy runs app again and tells the team
+cp registry.new registry.json
+exec opstruss deploy --stack dev
+stdout '^dev/app: up: done$'
+grep '^POST /slack {"text":"dev: example.dev deployed, 1 web replica"}$' api/requests
+
+# a new nginx.conf restarts nginx at the next up
+exec sh -c 'echo "# tuned" >> nginx.conf'
+exec opstruss up --stack dev
+stdout '^dev/nginx: up: done$'
+
+# the health check fails three times, so site-down tells the team
+cp api/routes.down api/routes
+! exec opstruss health --stack dev
+waitgrep '^POST /slack .*gagal health check tiga kali' api/requests
+grep -count=3 '^GET /healthz$' api/requests
+cp api/routes.ok api/routes
+
+# an [error] line of nginx reaches Slack in one batch, and logs shows it
+exec sh -c 'echo "2026/10/22 10:00:00 [error] 7#7: *1 upstream timed out" >> errors.in'
+waitgrep '^POST /slack .*1 error nginx' api/requests
+exec opstruss logs nginx --stack dev
+stdout 'upstream timed out'
+
+# drift: plan finds nothing, and the heartbeat says so
+exec opstruss drift --stack dev
+grep '^POST /ping/drift$' api/requests
+
+# an image changed outside OpsTruss: the issue cannot be made, so the
+# heartbeat reports a failure
+cp registry.drift registry.json
+cp api/routes api/routes.ok
+exec sh -c 'grep -v "^POST /repos/acme/platform/issues " api/routes.ok > api/routes; echo "POST /repos/acme/platform/issues 500 {}" >> api/routes'
+! exec opstruss drift --stack dev
+stdout '^drift: New issue: failed$'
+grep '^POST /ping/drift/fail$' api/requests
+
+# with GitHub back, an issue opens; the next day, it gets a comment
+cp api/routes.ok api/routes
+exec opstruss drift --stack dev
+grep '^POST /repos/acme/platform/issues auth=Bearer gh-test-token {"body":"Plan menemukan .*- `app`: .*","labels":\["drift"\],"title":"Drift di dev"}$' api/requests
+cp api/routes.open api/routes
+exec opstruss drift --stack dev
+grep '^POST /repos/acme/platform/issues/57/comments auth=Bearer gh-test-token ' api/requests
+
+# 12 days left is under 21, so Slack hears of the certificate
+exec opstruss certs --stack dev
+grep '^POST /slack .*sertifikat hampir habis: localhost:18103 1[12] hari' api/requests
+grep '^POST /ping/certs$' api/requests
+
+# exec runs a program with the tool's state
+exec opstruss exec dns/records --stack dev -- tofu state list
+stdout '^cloudflare_record.apex$'
+stdout '^cloudflare_record.www$'
+
+# prod asks for approval, which a run without a terminal does not have
+! exec opstruss up --stack prod
+stdout 'needs approval, stopped at plan'
+
+# protect refuses down of the whole stack before anything goes down
+! exec opstruss down --stack dev --yes
+stderr 'protect'
+exec opstruss stop --stack dev
+
+-- plain.yaml --
+cloudflare_token: cf-test-token
+slack_webhook: http://127.0.0.1:18101/slack
+github_token: gh-test-token
+hc_drift_url: http://127.0.0.1:18101/ping/drift
+hc_certs_url: http://127.0.0.1:18101/ping/certs
+-- api/routes --
+POST /slack 200 ok
+GET /healthz 200 ok
+POST /ping/* 200 OK
+GET /repos/acme/platform/issues 200 []
+POST /repos/acme/platform/issues 500 {"message": "GitHub is down"}
+-- api/routes.down --
+POST /slack 200 ok
+GET /healthz 503 down
+POST /ping/* 200 OK
+-- api/routes.ok --
+POST /slack 200 ok
+GET /healthz 200 ok
+POST /ping/* 200 OK
+GET /repos/acme/platform/issues 200 []
+POST /repos/acme/platform/issues 201 {"number": 57}
+-- api/routes.open --
+POST /slack 200 ok
+GET /healthz 200 ok
+POST /ping/* 200 OK
+GET /repos/acme/platform/issues 200 [{"number": 57}]
+POST /repos/acme/platform/issues/57/comments 201 {"id": 1}
+-- api-tls/routes --
+HEAD / 200
+-- registry.json --
+{"ghcr.io/acme/web:1.4.3": "sha256:1111", "postgres:17": "sha256:5555"}
+-- registry.new --
+{"ghcr.io/acme/web:1.4.3": "sha256:2222", "postgres:17": "sha256:5555"}
+-- registry.drift --
+{"ghcr.io/acme/web:1.4.3": "sha256:3333", "postgres:17": "sha256:5555"}
+-- fakes/nginx --
+#!/bin/sh
+# nginx -p . -c nginx.conf -g "daemon off;": answers /healthz on the port
+# of nginx.conf, and writes to stderr the lines that the test appends to
+# errors.in, as error_log stderr does.
+port=$(sed -n 's/^ *listen \([0-9]*\);/\1/p' nginx.conf)
+mkdir -p nginx-api
+echo "GET /healthz 200 ok" > nginx-api/routes
+fakeapi -listen "127.0.0.1:$port" nginx-api &
+touch errors.in
+exec tail -f errors.in >&2
+-- fakes/tofu --
+#!/bin/sh
+# tofu state list: the resources of the state that the exec hook names.
+[ "$1 $2" = "state list" ] && jq -r '.resources[]' "$FAKE_TOFU_STATE"
+-- opstruss.yaml --
+# opstruss.yaml
+name: platform
+description: Web platform for example.com
+opstruss: "0.1"
+include:
+  - tasks/guard.yaml
+
+uses:
+  compose: ./testplugins/compose
+  slack:                                   # alias satu task: http bawaan dengan default
+    source: opstruss.http
+    with:
+      method: POST
+      url: ${{ secrets.slack_webhook }}
+
+inputs:
+  domain:
+    type: string
+    description: Public domain of the site
+    required: true
+  origin_ip:
+    type: string
+    description: Public IP of the server behind Cloudflare
+    required: true
+  replicas:
+    type: integer
+    minimum: 1
+    default: 1
+
+stacks:
+  dev:
+    with:
+      domain: example.dev
+      origin_ip: 203.0.113.10
+    approval: auto                         # dev tidak ditanya
+  prod:
+    with:
+      domain: example.com
+      origin_ip: 203.0.113.20
+      replicas: 3
+
+secrets:
+  cloudflare:
+    sops: ${{ stack }}/secrets.sops.yaml
+    field: cloudflare_token
+  slack_webhook:
+    sops: ${{ stack }}/secrets.sops.yaml
+    field: slack_webhook
+
+units:
+  dns:                                     # menghasilkan unit dns/records
+    uses: ./components/dns
+    with:
+      zone: ${{ inputs.domain }}
+      origin_ip: ${{ inputs.origin_ip }}
+      api_token: ${{ secrets.cloudflare }}
+
+  app:
+    uses: compose
+    with:
+      file: ./compose.yaml
+    env:                                   # dibaca interpolasi Compose: ${APP_DOMAIN}, ${WEB_REPLICAS}
+      APP_DOMAIN: ${{ inputs.domain }}
+      WEB_REPLICAS: ${{ inputs.replicas }}
+
+  nginx:
+    service: [nginx, -p, ., -c, nginx.conf, -g, "daemon off;"]
+    needs: [app]
+    restart: on-failure
+    stop:
+      signal: SIGQUIT                      # nginx menyelesaikan request dulu
+      grace: 30s
+    ready:
+      http: http://127.0.0.1:18102/healthz
+      timeout: 30s
+    sources: [nginx.conf]                  # config berubah: di-restart di up berikutnya
+
+tasks:
+  deploy:
+    description: Bring the platform up, then tell the team
+    steps:
+      - task: up
+      - name: Tell the team
+        if: units.app.changed || units.dns.changed   # dns: gabungan unit di component
+        slack:
+          body:
+            text: "${{ stack }}: ${{ inputs.domain }} deployed, ${{ inputs.replicas }} web replica"
+
+  health:
+    description: Check the public site
+    on:
+      schedule: "*/5 * * * *"
+    concurrency: skip                      # check yang masih jalan tidak ditumpuk
+    retry:
+      attempts: 3
+      delay: 20ms
+    http:
+      url: http://127.0.0.1:18101/healthz
+      timeout: 10s
+
+  site-down:
+    description: Alert when the health check keeps failing
+    internal: true
+    on:
+      after:
+        task: health
+        outcome: failure
+    slack:
+      body:
+        text: "${{ stack }}: https://${{ inputs.domain }} gagal health check tiga kali"
+
+  nginx-errors:
+    description: Send nginx errors to Slack
+    internal: true
+    on:
+      watch:
+        unit: nginx
+        stream: stderr
+        if: event.line.contains('[error]')
+        batch: 1s
+    slack:
+      body:
+        text: |-
+          ${{ stack }}: ${{ event.count }} error nginx
+          ${{ event.lines.join('\n') }}
+-- components/dns/opstruss.yaml --
+# components/dns/opstruss.yaml
+description: Cloudflare records for one zone
+uses:
+  tofu: ../../testplugins/tofu            # state: tool, outputs: tool
+inputs:
+  zone:
+    type: string
+    required: true
+  origin_ip:
+    type: string
+    required: true
+  api_token:
+    type: string
+    required: true
+    sensitive: true                       # component menerima secret lewat input sensitive
+outputs:
+  zone_id: ${{ units.records.outputs.zone_id }}
+  names: ${{ units.records.outputs.names }}
+units:
+  records:
+    uses: tofu
+    with:
+      source: .                           # main.tf di directory component ini
+      vars:
+        zone: ${{ inputs.zone }}
+        origin_ip: ${{ inputs.origin_ip }}
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ inputs.api_token }}
+    protect: true                         # down, delete, dan replace ditolak
+-- components/dns/main.tf --
+terraform {
+  required_providers {
+    cloudflare = { source = "cloudflare/cloudflare", version = "~> 4.40" }
+  }
+}
+
+variable "zone" { type = string }
+variable "origin_ip" { type = string }
+
+data "cloudflare_zone" "this" { name = var.zone }
+
+resource "cloudflare_record" "apex" {
+  zone_id = data.cloudflare_zone.this.id
+  name    = "@"
+  type    = "A"
+  content = var.origin_ip
+  proxied = true
+}
+
+resource "cloudflare_record" "www" {
+  zone_id = data.cloudflare_zone.this.id
+  name    = "www"
+  type    = "CNAME"
+  content = var.zone
+  proxied = true
+}
+
+output "zone_id" { value = data.cloudflare_zone.this.id }
+output "names" { value = [cloudflare_record.apex.hostname, cloudflare_record.www.hostname] }
+-- components/dns/outputs.jq --
+{zone_id: ("zone-" + $vars.zone), names: [$vars.zone, ("www." + $vars.zone)]}
+-- compose.yaml --
+# compose.yaml
+services:
+  web:
+    image: ghcr.io/acme/web:1.4.3
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN}
+    deploy:
+      replicas: ${WEB_REPLICAS:-1}
+    ports: ["127.0.0.1:8001-8003:8000"]
+  worker:
+    image: ghcr.io/acme/web:1.4.3
+    command: [worker]
+  db:
+    image: postgres:17
+    volumes:
+      - db:/var/lib/postgresql/data
+volumes:
+  db: {}
+-- nginx.conf --
+# nginx.conf
+error_log stderr warn;                 # dibaca watch unit nginx (stream stderr)
+events {}
+http {
+  upstream web { server 127.0.0.1:8001; server 127.0.0.1:8002; server 127.0.0.1:8003; }
+  server {
+    listen 18102;
+    location = /healthz { return 200 "ok\n"; }
+    location / { proxy_pass http://web; }
+  }
+}
+-- tasks/guard.yaml --
+# tasks/guard.yaml: digabung ke project platform; nama uses, secrets, dan inputs dibagi dengan root
+uses:
+  github:                                  # API GitHub lewat http bawaan
+    source: opstruss.http
+    with:
+      headers:
+        Authorization: Bearer ${{ secrets.github_token }}
+        Accept: application/vnd.github+json
+  ping:                                    # dead man's switch di healthchecks.io
+    source: opstruss.http
+    with:
+      method: POST
+
+inputs:
+  watched_domains:
+    type: array
+    items: {type: string}
+    default: [localhost:18103]
+  cert_warn_days:
+    type: integer
+    default: 21
+
+secrets:                                   # path sops relatif terhadap file ini
+  github_token: {sops: "../${{ stack }}/secrets.sops.yaml", field: github_token}
+  hc_drift: {sops: "../${{ stack }}/secrets.sops.yaml", field: hc_drift_url}
+  hc_certs: {sops: "../${{ stack }}/secrets.sops.yaml", field: hc_certs_url}
+
+tasks:
+  drift:
+    description: Plan every unit and open an issue when something changed outside OpsTruss
+    on:
+      schedule: {cron: "0 6 * * *", timezone: Asia/Jakarta, persistent: true}
+    concurrency: skip
+    steps:
+      - name: Guard
+        id: main
+        block:
+          - name: Plan everything
+            id: plan
+            task: plan                     # steps.plan.units['<address>']: dns, app, nginx
+          - name: Changed units
+            id: changed
+            set:
+              units: ${{ steps.plan.units.filter(a, size(steps.plan.units[a].plan.changes) > 0) }}
+          - name: Issue body
+            id: body
+            if: size(steps.changed.outputs.units) > 0
+            run: [../scripts/drift-body.sh]   # relatif terhadap tasks/, directory file ini
+            stdin:
+              format: json
+              value: "${{ steps.changed.outputs.units.map(a, {'unit': a, 'summary': steps.plan.units[a].plan.summary}) }}"
+            outputs:
+              text: {from: stdout}
+          - name: Open drift issues
+            id: existing
+            if: size(steps.changed.outputs.units) > 0
+            github:
+              url: http://127.0.0.1:18101/repos/acme/platform/issues?labels=drift&state=open
+          - name: New issue
+            if: size(steps.changed.outputs.units) > 0 && size(steps.existing.outputs.body) == 0
+            github:
+              method: POST
+              url: http://127.0.0.1:18101/repos/acme/platform/issues
+              status_code: [201]
+              body:
+                title: "Drift di ${{ stack }}"
+                body: ${{ steps.body.outputs.text }}
+                labels: [drift]
+          - name: Comment on the open issue
+            if: size(steps.changed.outputs.units) > 0 && size(steps.existing.outputs.body) > 0
+            github:
+              method: POST
+              url: http://127.0.0.1:18101/repos/acme/platform/issues/${{ steps.existing.outputs.body[0].number }}/comments
+              status_code: [201]
+              body:
+                body: ${{ steps.body.outputs.text }}
+        always:
+          - name: Heartbeat
+            ping:
+              url: "${{ secrets.hc_drift + (steps.main.outcome == 'success' ? '' : '/fail') }}"
+
+  certs:
+    description: Warn before TLS certificates expire
+    on:
+      schedule: {cron: "0 7 * * *", timezone: Asia/Jakarta, persistent: true}
+    steps:
+      - name: Guard
+        id: main
+        block:
+          - name: Certificates
+            id: tls
+            for_each: ${{ inputs.watched_domains }}   # key: example.com, www.example.com, …
+            http:
+              url: https://${{ each.value }}/
+              method: HEAD
+              status_code: [2xx, 3xx, 4xx]   # yang dinilai sertifikatnya, bukan halamannya
+              ca: ${{ file('../api-tls/ca.pem') }}   # test: CA milik fakeapi
+          - name: Days left
+            id: days
+            set:
+              left: "${{ inputs.watched_domains.transformMapEntry(i, d, {d: (timestamp(steps.tls[d].outputs.tls.certificates[0].not_after) - opstruss.time).getHours() / 24}) }}"
+          - name: Expiring
+            id: expiring
+            set:
+              domains: ${{ inputs.watched_domains.filter(d, steps.days.outputs.left[d] < inputs.cert_warn_days) }}
+          - name: Alert
+            if: size(steps.expiring.outputs.domains) > 0
+            slack:                         # alias dari opstruss.yaml use case 01
+              body:
+                text: "${{ stack }}: sertifikat hampir habis: ${{ steps.expiring.outputs.domains.map(d, d + ' ' + string(steps.days.outputs.left[d]) + ' hari').join(', ') }}"
+        always:
+          - name: Heartbeat
+            ping:
+              url: "${{ secrets.hc_certs + (steps.main.outcome == 'success' ? '' : '/fail') }}"
+-- scripts/drift-body.sh --
+#!/usr/bin/env bash
+# drift-body.sh: stdin [{unit, summary}] menjadi isi issue markdown.
+set -euo pipefail
+echo "Plan menemukan perubahan yang belum diterapkan, atau dibuat di luar OpsTruss:"
+echo
+jq -r '.[] | "- `\(.unit)`: \(.summary)"'
+echo
+echo "Periksa dengan \`opstruss plan --stack $OPSTRUSS_STACK\`."

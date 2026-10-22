@@ -31,6 +31,7 @@ func TestMain(m *testing.M) {
 	testscript.Main(m, map[string]func(){
 		"opstruss":  func() { os.Exit(cli.Main()) },
 		"fakecloud": func() { os.Exit(fakecloud(os.Args[1:])) },
+		"fakeapi":   func() { os.Exit(fakeapi(os.Args[1:])) },
 		"lines":     func() { os.Exit(lines(os.Args[1:])) },
 	})
 }

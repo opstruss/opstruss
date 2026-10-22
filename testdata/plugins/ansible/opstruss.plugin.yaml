@@ -1,0 +1,10 @@
+name: ansible
+description: Ansible as files, for the use cases; a run of the playbook gives the set_stats data of stats.json beside it
+requires: [jq]
+inputs:
+  playbook: {type: string, required: true}
+  inventory: {type: string}
+outputs: tool
+tasks:
+  up:
+    run: [./ansible.sh]

@@ -1,0 +1,16 @@
+name: compose
+description: Docker Compose as files, for the use cases; an image resolves to its digest in registry.json, and pin wins
+requires: [jq]
+inputs:
+  file: {type: string, required: true}
+  project: {type: string}
+  pin: {type: object, default: {}}
+outputs:
+  images: {type: object}
+tasks:
+  plan:
+    run: [./compose.sh, plan]
+  up:
+    run: [./compose.sh, up]
+  down:
+    run: [./compose.sh, down]

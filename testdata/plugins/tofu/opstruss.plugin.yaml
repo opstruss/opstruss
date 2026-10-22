@@ -1,0 +1,17 @@
+name: tofu
+description: OpenTofu as files, for the use cases; plan lists the resource blocks of the .tf files, and outputs.jq gives the outputs from the vars
+state: tool
+requires: [jq]
+inputs:
+  source: {type: string, required: true}
+  vars: {type: object, default: {}}
+outputs: tool
+tasks:
+  plan:
+    run: [./tofu.sh, plan]
+  up:
+    run: [./tofu.sh, up]
+  down:
+    run: [./tofu.sh, down]
+  exec:
+    run: [./exec.sh]

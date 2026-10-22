@@ -1,0 +1,267 @@
+# Weekly container updates on a homelab: plan finds the stacks with new
+# images, a Proxmox snapshot comes first, each stack updates on its own and
+# rolls back to its old digests through kv when its health check fails,
+# and old snapshots go. Proxmox is fakeapi over HTTPS with its own CA,
+# ntfy and the health checks are fakeapi, and the waits are short.
+
+env HOME=$WORK/home
+env SOPS_AGE_KEY_FILE=$WORK/age/keys.txt
+! exec fakeapi -listen 127.0.0.1:18301 -tls api-pve &pve&
+! exec fakeapi -listen 127.0.0.1:18302 api &api&
+waitfile api-pve/port
+waitfile api/port
+cp api-pve/ca.pem pve-root-ca.pem
+exec opstruss init
+exec sh -c 'printf "  - path_regex: secrets.sops.yaml\n    age: %s\n" "$(sed -n "s/^# public key: //p" age/keys.txt)" >> .sops.yaml'
+exec sops encrypt --filename-override secrets.sops.yaml --output secrets.sops.yaml plain.yaml
+
+# the stacks come up with the digests their tags have now
+exec opstruss up
+stdout '^default/stack\[immich\]: up: done$'
+stdout '^default/stack\[vaultwarden\]: up: done$'
+grep '^up immich immich-server=sha256:i1 database=sha256:p1$' compose.log
+
+# Sunday: immich and jellyfin have new images; immich breaks, so it goes
+# back to its old digests and stays pinned there, while jellyfin updates
+cp registry.new registry.json
+exec opstruss weekly-update
+stdout '^weekly-update: Snapshot finished: attempt 2 of 30 did not succeed; again in 10ms$'
+stdout '^weekly-update: success$'
+grep '^POST /api2/json/nodes/pve/qemu/120/snapshot auth=PVEAPIToken=opstruss@pam!opstruss=pve-test-token {"description":"sebelum update immich, jellyfin","snapname":"auto-[0-9]{8}"}$' api-pve/requests
+grep '^up immich immich-server=sha256:i2 database=sha256:p1$' compose.log
+grep -count=12 '^GET /health/immich$' api/requests
+grep '^POST /homelab auth=Bearer ntfy-test-token immich: gagal health check, kembali ke digest lama' api/requests
+grep '^up jellyfin jellyfin=sha256:j2$' compose.log
+grep '^POST /homelab .* immich: rolled-back, jellyfin: updated$' api/requests
+grep '^DELETE /api2/json/nodes/pve/qemu/120/snapshot/auto-20231114 ' api-pve/requests
+! grep 'snapshot/auto-21000101' api-pve/requests
+grep -count=2 '^up immich immich-server=sha256:i1 database=sha256:p1$' compose.log
+exists .opstruss/state/default/_kv/pin.immich
+
+# the next Sunday: immich stays on its pinned digests, so nothing is new
+exec opstruss weekly-update
+grep '^POST /homelab .* Tidak ada image baru minggu ini$' api/requests
+
+# once immich is fixed, unpin lets it follow its tag again
+exec opstruss unpin --name immich
+stdout '^default/stack\[immich\]: up: done$'
+! exists .opstruss/state/default/_kv/pin.immich
+exec sh -c 'tail -1 compose.log'
+stdout '^up immich immich-server=sha256:i2 database=sha256:p1$'
+
+-- plain.yaml --
+proxmox_token: opstruss@pam!opstruss=pve-test-token
+ntfy_token: ntfy-test-token
+-- api-pve/routes --
+POST /api2/json/nodes/pve/qemu/120/snapshot 200 {"data": "UPID:pve:0003A1F2:qmsnapshot:120"}
+GET /api2/json/nodes/pve/tasks/UPID:pve:0003A1F2:qmsnapshot:120/status 200 {"data": {"status": "running"}}
+GET /api2/json/nodes/pve/tasks/UPID:pve:0003A1F2:qmsnapshot:120/status 200 {"data": {"status": "running"}}
+GET /api2/json/nodes/pve/tasks/UPID:pve:0003A1F2:qmsnapshot:120/status 200 {"data": {"status": "stopped", "exitstatus": "OK"}}
+GET /api2/json/nodes/pve/qemu/120/snapshot 200 @snapshots.json
+DELETE /api2/json/nodes/pve/qemu/120/snapshot/* 200 {"data": "UPID:pve:delete"}
+-- api-pve/snapshots.json --
+{"data": [
+  {"name": "auto-20231114", "snaptime": 1700000000},
+  {"name": "auto-21000101", "snaptime": 4102444800},
+  {"name": "current", "running": 1}
+]}
+-- api/routes --
+POST /homelab 200 {"id": "n1"}
+GET /health/immich 503 down
+GET /health/jellyfin 200 ok
+GET /health/paperless 200 ok
+GET /health/vaultwarden 200 ok
+-- registry.json --
+{"ghcr.io/immich-app/immich-server:release": "sha256:i1", "ghcr.io/immich-app/postgres:14-vectorchord0.4.3": "sha256:p1",
+ "jellyfin/jellyfin:latest": "sha256:j1", "ghcr.io/paperless-ngx/paperless-ngx:latest": "sha256:n1", "vaultwarden/server:latest": "sha256:v1"}
+-- registry.new --
+{"ghcr.io/immich-app/immich-server:release": "sha256:i2", "ghcr.io/immich-app/postgres:14-vectorchord0.4.3": "sha256:p1",
+ "jellyfin/jellyfin:latest": "sha256:j2", "ghcr.io/paperless-ngx/paperless-ngx:latest": "sha256:n1", "vaultwarden/server:latest": "sha256:v1"}
+-- stacks/immich/compose.yaml --
+# stacks/immich/compose.yaml
+services:
+  immich-server:
+    image: ghcr.io/immich-app/immich-server:release
+    ports: ["2283:2283"]
+    volumes:
+      - /srv/immich/upload:/usr/src/app/upload
+  database:
+    image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3   # major dipaku, tidak ikut update otomatis
+-- stacks/jellyfin/compose.yaml --
+services:
+  jellyfin:
+    image: jellyfin/jellyfin:latest
+-- stacks/paperless/compose.yaml --
+services:
+  webserver:
+    image: ghcr.io/paperless-ngx/paperless-ngx:latest
+-- stacks/vaultwarden/compose.yaml --
+services:
+  vaultwarden:
+    image: vaultwarden/server:latest
+-- opstruss.yaml --
+# opstruss.yaml
+name: homelab
+description: Weekly container updates with a VM snapshot and per-stack rollback
+
+uses:
+  compose: ./testplugins/compose                     # asumsi: plan membaca digest registry; input pin
+  proxmox:                                 # API Proxmox lewat http bawaan
+    source: opstruss.http
+    with:
+      ca: ${{ file('pve-root-ca.pem') }}   # ditambah ke root sistem; verifikasi tetap jalan
+      headers:
+        Authorization: PVEAPIToken=${{ secrets.proxmox_token }}
+  ntfy:
+    source: opstruss.http
+    with:
+      method: POST
+      url: http://127.0.0.1:18302/homelab
+      headers:
+        Authorization: Bearer ${{ secrets.ntfy_token }}
+
+inputs:
+  stacks:
+    type: object
+    description: Compose stacks and their health URL
+    default:
+      immich: {health: "http://127.0.0.1:18302/health/immich"}
+      jellyfin: {health: "http://127.0.0.1:18302/health/jellyfin"}
+      paperless: {health: "http://127.0.0.1:18302/health/paperless"}
+      vaultwarden: {health: "http://127.0.0.1:18302/health/vaultwarden"}
+  pve:
+    type: string
+    default: https://localhost:18301/api2/json/nodes/pve
+  vmid:
+    type: integer
+    default: 120
+  keep_days:
+    type: integer
+    default: 28
+
+secrets:
+  proxmox_token: {sops: secrets.sops.yaml, field: proxmox_token}   # user@pam!opstruss=<uuid>
+  ntfy_token: {sops: secrets.sops.yaml, field: ntfy_token}
+
+units:
+  stack:
+    uses: compose
+    for_each: ${{ inputs.stacks }}         # stack[immich], stack[jellyfin], …
+    approval: auto                         # homelab: keputusan ada di task weekly-update
+    with:
+      file: ./stacks/${{ each.key }}/compose.yaml
+      pin: ${{ kv('pin.' + each.key, {}) }}   # service → digest; kosong: tag di compose.yaml
+
+tasks:
+  weekly-update:
+    description: Update every stack that has new images, with a snapshot and rollback
+    on:
+      schedule:
+        cron: "0 3 * * 0"
+        timezone: Asia/Jakarta
+        persistent: true                   # server mati hari Minggu: susulkan saat hidup
+    if: opstruss.time - event.time < duration('4h')   # susulan siang dilewati; run manual: event.time = waktu mulai
+    concurrency: skip
+    steps:
+      - name: What has new images
+        id: plan
+        task: plan
+        units: [stack]
+      - name: Stacks to update
+        id: todo
+        set:
+          stacks: "${{ inputs.stacks.filter(s, size(steps.plan.units['stack[' + s + ']'].plan.changes) > 0) }}"
+      - name: Nothing to do
+        if: size(steps.todo.outputs.stacks) == 0
+        ntfy:
+          body: Tidak ada image baru minggu ini
+      - name: Update
+        if: size(steps.todo.outputs.stacks) > 0
+        block:
+          - name: Snapshot the VM
+            id: snap
+            proxmox:
+              method: POST
+              url: ${{ inputs.pve }}/qemu/${{ inputs.vmid }}/snapshot
+              body:
+                snapname: auto-${{ opstruss.time.strftime('%Y%m%d', 'Asia/Jakarta') }}
+                description: sebelum update ${{ steps.todo.outputs.stacks.join(', ') }}
+          - name: Snapshot finished
+            proxmox:
+              url: ${{ inputs.pve }}/tasks/${{ steps.snap.outputs.body.data }}/status
+            retry:
+              attempts: 30
+              delay: 10ms
+              until: outputs.body.data.status == 'stopped'
+          - name: Remember current digests
+            for_each: ${{ steps.todo.outputs.stacks }}
+            kv:
+              key: rollback.${{ each.value }}
+              value: ${{ units.stack[each.value].outputs.images }}   # service → digest sebelum update
+          - name: Each stack
+            id: each
+            for_each: ${{ steps.todo.outputs.stacks }}   # berurutan: satu stack sekaligus
+            continue_on_error: true
+            task: update-stack
+            with:
+              name: ${{ each.value }}
+          - name: Report
+            ntfy:
+              body: "${{ steps.each.transformList(s, r, s + ': ' + (r.outcome == 'success' ? r.outputs.result : 'gagal')).join(', ') }}"
+      - name: Snapshots
+        id: snaps
+        proxmox:
+          url: ${{ inputs.pve }}/qemu/${{ inputs.vmid }}/snapshot
+      - name: Remove old snapshots
+        for_each: "${{ steps.snaps.outputs.body.data.filter(s, s.name.startsWith('auto-') && int(opstruss.time) - s.snaptime > inputs.keep_days * 86400).map(s, s.name) }}"
+        continue_on_error: true
+        proxmox:
+          method: DELETE
+          url: ${{ inputs.pve }}/qemu/${{ inputs.vmid }}/snapshot/${{ each.value }}
+
+  update-stack:
+    description: Update one stack, check its health, and roll back on failure
+    internal: true
+    inputs:
+      name:
+        type: string
+        required: true
+    outputs:
+      result:
+        value: "${{ steps.main.outcome == 'success' ? 'updated' : 'rolled-back' }}"
+    steps:
+      - name: Update and check
+        id: main
+        block:
+          - task: up
+            units: ["stack[${{ inputs.name }}]"]   # [name] adalah key instance, bukan glob
+          - name: Healthy
+            http:
+              url: ${{ inputs.stacks[inputs.name].health }}
+            retry:
+              attempts: 12
+              delay: 10ms
+              until: outputs.status == 200   # juga dinilai saat koneksi ditolak
+        rescue:
+          - name: Pin the old digests
+            kv:
+              key: pin.${{ inputs.name }}
+              value: ${{ kv('rollback.' + inputs.name) }}
+          - name: Roll back
+            task: up
+            units: ["stack[${{ inputs.name }}]"]
+          - ntfy:
+              body: "${{ inputs.name }}: gagal health check, kembali ke digest lama. Sesudah diperbaiki: opstruss unpin --name ${{ inputs.name }}"
+
+  unpin:
+    description: Let a rolled-back stack follow its compose tags again
+    inputs:
+      name:
+        type: string
+        required: true
+    steps:
+      - kv:
+          key: pin.${{ inputs.name }}
+          value: null
+      - task: up
+        units: ["stack[${{ inputs.name }}]"]
