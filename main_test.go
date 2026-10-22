@@ -62,12 +62,15 @@ func params(dir string) testscript.Params {
 		// minutes in the daily load workflow.
 		env.Setenv("LOAD_SECONDS", cmp.Or(os.Getenv("OPSTRUSS_LOAD_SECONDS"), "30"))
 		// A script that fails before opstruss stop leaves its daemons, with
-		// their services and sources, running and holding their ports.
+		// their services and sources, running and holding their ports; a
+		// project may be in a directory of the script's own.
 		env.Defer(func() {
-			root := filepath.Join(env.WorkDir, ".opstruss")
-			files, _ := filepath.Glob(filepath.Join(root, "daemon", "*.json"))
-			for _, f := range files {
-				_, _ = daemon.Stop(root, strings.TrimSuffix(filepath.Base(f), ".json"))
+			for _, pattern := range []string{".opstruss/daemon/*.json", "*/.opstruss/daemon/*.json"} {
+				files, _ := filepath.Glob(filepath.Join(env.WorkDir, pattern))
+				for _, f := range files {
+					root := filepath.Dir(filepath.Dir(f))
+					_, _ = daemon.Stop(root, strings.TrimSuffix(filepath.Base(f), ".json"))
+				}
 			}
 		})
 		// The plugins of the tests, for uses: ./testplugins/<name>.

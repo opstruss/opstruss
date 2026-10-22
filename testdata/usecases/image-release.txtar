@@ -1,0 +1,399 @@
+# One source built into a Docker image, an LXC rootfs, and a VM disk by
+# instances of a unit that a task of the project implements, scanned two
+# at a time by a local plugin, and promoted only when no scan finds
+# anything; a held release fails the run. Builds run again only when the
+# source changes, and the environment reaches the programs only through
+# pass:. Docker, distrobuilder, packer, aws, and trivy are fakes with S3
+# as directories, the team's webhook is fakeapi, and the s3 backend and
+# --locked, which come with sources from git, are left out.
+
+env HOME=$WORK/home
+env PATH=$WORK/fakes:$PATH
+env AWS_REGION=ap-southeast-1
+env DOCKER_CONFIG=$WORK/docker
+env TEAM_WEBHOOK=http://127.0.0.1:19201/team
+env UNRELATED_TOKEN=unrelated-test-token
+exec chmod 755 fakes/docker fakes/sudo fakes/distrobuilder fakes/packer fakes/aws fakes/trivy plugins/trivy/scan.sh scripts/build.sh scripts/promote.sh
+! exec fakeapi -listen 127.0.0.1:19201 api &api&
+waitfile api/port
+exec opstruss validate
+stdout '^valid$'
+
+# v1.4.0: the three targets build, the scans run two at a time, and the VM
+# disk has findings, so nothing is promoted, the team hears why, and the
+# run fails
+! exec opstruss release --version v1.4.0
+stdout '^default/image\[docker\]: up: done$'
+stdout '^default/image\[lxc\]: up: done$'
+stdout '^default/image\[vm\]: up: done$'
+stderr 'release blocked by scan findings'
+grep '^docker build ghcr.io/acme/base:staging ./image config=set token=$' calls
+grep '^sudo distrobuilder$' calls
+grep '^aws s3 cp file s3://acme-images-staging/lxc/[0-9a-f]{64}/rootfs.tar.xz region=ap-southeast-1 token=$' calls
+grep '^aws s3 cp s3://acme-images-staging/vm/[0-9a-f]{64}/disk.img file region=ap-southeast-1 token=$' calls
+grep -count=3 '^trivy ' calls
+grep '^trivy vm HIGH,CRITICAL ' calls
+grep 'at-once=2' calls
+! grep 'at-once=3' calls
+grep '^POST /team \{"text":"images v1.4.0 ditahan scan: vm"\}$' api/requests
+! exists dist/v1.4.0.json
+! exists s3/acme-images
+
+# the package is fixed: the source changed, so the targets build again,
+# pass the scan, are promoted, and get release notes
+cp trivy.clean trivy.json
+exec sh -c 'echo "RUN apk upgrade --no-cache openssl" >> image/Containerfile'
+exec opstruss release --version v1.4.1
+stdout '^default/image\[vm\]: up: done$'
+grep '^docker tag ghcr.io/acme/base:v1.4.1 ghcr.io/acme/base@sha256:[0-9a-f]{64}$' calls
+exists s3/acme-images/v1.4.1/lxc/rootfs.tar.xz
+exists s3/acme-images/v1.4.1/vm/disk.img
+exec jq -r '.version, (.images[] | "\(.target) \(.url) \(.sha256 | startswith("sha256:"))")' dist/v1.4.1.json
+cmp stdout notes.want
+grep '^POST /team \{"text":"images v1.4.1 dirilis: docker, lxc, vm"\}$' api/requests
+
+# in CI, with the same source, nothing builds again, and the scans still
+# run, since the database of trivy changes
+exec opstruss release --version v1.4.2 --yes
+stdout '^default/image\[docker\]: unchanged$'
+stdout '^default/image\[lxc\]: unchanged$'
+stdout '^default/image\[vm\]: unchanged$'
+grep -count=2 '^docker build ' calls
+grep -count=9 '^trivy ' calls
+exists dist/v1.4.2.json
+! grep 'unrelated' calls
+! grep 'unrelated' api/requests
+
+-- notes.want --
+v1.4.1
+docker ghcr.io/acme/base:v1.4.1 true
+lxc s3://acme-images/v1.4.1/lxc/rootfs.tar.xz true
+vm s3://acme-images/v1.4.1/vm/disk.img true
+-- api/routes --
+POST /team 200 ok
+-- trivy.json --
+{"image": 0, "rootfs": 0, "vm": 2}
+-- trivy.clean --
+{"image": 0, "rootfs": 0, "vm": 0}
+-- dist/.keep --
+-- fakes/docker --
+#!/bin/sh
+# docker buildx build pushes the image of a source and writes its digest,
+# the hash of its files, to the metadata file; imagetools create tags it.
+# A line to calls beside fakes/ for each, saying which variables came.
+d=$(dirname "$0")/..
+case "$2" in
+build)
+  # docker buildx build --push --metadata-file <file> -t <tag> <source>
+  sum=$(cat "$8"/* | { sha256sum 2>/dev/null || shasum -a 256; } | cut -d' ' -f1)
+  printf '{"containerimage.digest": "sha256:%s"}\n' "$sum" > "$5"
+  echo "docker build $7 $8 config=${DOCKER_CONFIG:+set} token=${UNRELATED_TOKEN:+unrelated}" >> "$d/calls"
+  ;;
+imagetools)
+  # docker buildx imagetools create -t <tag> <ref>
+  echo "docker tag $5 $6" >> "$d/calls"
+  ;;
+esac
+-- fakes/sudo --
+#!/bin/sh
+# sudo <program>...: runs it; a line to calls beside fakes/.
+echo "sudo $1" >> "$(dirname "$0")/../calls"
+exec "$@"
+-- fakes/distrobuilder --
+#!/bin/sh
+# distrobuilder build-lxc <lxc.yaml> <out>: a rootfs with the file in it,
+# as out/rootfs.tar.xz.
+mkdir -p "$3/rootfs/etc"
+cp "$2" "$3/rootfs/etc/lxc.yaml"
+tar -cJf "$3/rootfs.tar.xz" -C "$3/rootfs" .
+-- fakes/packer --
+#!/bin/sh
+# packer build -var output_dir=<out> <vm.pkr.hcl>: a disk with the file in
+# it, as out/disk.img.
+out=${3#output_dir=}
+mkdir -p "$out"
+cp "$4" "$out/disk.img"
+-- fakes/aws --
+#!/bin/sh
+# aws s3 cp --quiet <from> <to>: S3 as directories under s3/ beside
+# fakes/, and - as stdout; a line to calls with the S3 side, "file" for a
+# local one, and which variables came.
+d=$(dirname "$0")/..
+side() { case "$1" in s3://* | -) echo "$1" ;; *) echo file ;; esac; }
+path() { case "$1" in s3://*) echo "$d/s3/${1#s3://}" ;; *) echo "$1" ;; esac; }
+echo "aws s3 cp $(side "$4") $(side "$5") region=${AWS_REGION:-} token=${UNRELATED_TOKEN:+unrelated}" >> "$d/calls"
+from=$(path "$4")
+if [ "$5" = - ]; then
+  cat "$from"
+else
+  mkdir -p "$(dirname "$(path "$5")")"
+  cp "$from" "$(path "$5")"
+fi
+-- fakes/trivy --
+#!/bin/sh
+# trivy <kind> --quiet --format json --severity <sev> --output <report>
+# <target>: as many findings as trivy.json beside fakes/ gives the kind,
+# and a line to calls that says how many scans ran at once.
+d=$(dirname "$0")/..
+mkdir -p "$d/scans"
+touch "$d/scans/$$"
+sleep 1
+n=$(ls "$d/scans" | wc -l | tr -d ' ')
+count=$(jq -r --arg k "$1" '.[$k] // 0' "$d/trivy.json")
+jq -n --argjson n "$count" '{Results: [{Vulnerabilities: [range($n) | {VulnerabilityID: "CVE-2026-\(.)"}]}]}' > "$8"
+echo "trivy $1 $6 at-once=$n" >> "$d/calls"
+rm -f "$d/scans/$$"
+-- image/Containerfile --
+FROM alpine:3.22
+RUN apk add --no-cache ca-certificates openssl
+-- image/lxc.yaml --
+image:
+  distribution: alpine
+  release: "3.22"
+-- image/vm.pkr.hcl --
+source "qemu" "base" {
+  iso_url = "https://dl-cdn.alpinelinux.org/alpine/v3.22/releases/x86_64/alpine-virt-3.22.0-x86_64.iso"
+}
+-- opstruss.yaml --
+# opstruss.yaml
+name: images
+description: Ready-to-use base images for Docker, LXC, and VMs
+
+uses:
+  trivy:
+    source: ./plugins/trivy
+    pass: [AWS_*, DOCKER_CONFIG]           # izin untuk permintaan env: plugin trivy
+  team:
+    source: opstruss.http
+    with:
+      method: POST
+      url: ${{ secrets.team_webhook }}
+
+inputs:
+  targets:
+    type: array
+    items:
+      type: string
+      enum: [docker, lxc, vm]
+    default: [docker, lxc, vm]
+  staging:
+    type: string
+    description: Bucket where builds wait for the scan
+    default: s3://acme-images-staging
+
+secrets:
+  team_webhook:
+    env: TEAM_WEBHOOK
+
+units:
+  image:
+    uses: build                            # task project sebagai implementation
+    for_each: ${{ inputs.targets }}        # image[docker], image[lxc], image[vm]
+    with:
+      source: ./image
+      target: ${{ each.value }}
+    sources: [image/**]                    # build.sh ikut sendiri: program ber-path relatif
+    pass: [AWS_*, DOCKER_CONFIG]
+    approval: auto                         # hanya menulis ke staging
+    timeout: 2h
+
+tasks:
+  build:
+    description: Build one image target and push it to staging
+    inputs:
+      source:
+        type: string
+        required: true
+      target:
+        type: string
+        enum: [docker, lxc, vm]
+        required: true
+    run: [./scripts/build.sh]              # input lewat INPUT_SOURCE dan INPUT_TARGET
+    requires: "${{ {'docker': ['jq', 'docker'], 'lxc': ['jq', 'distrobuilder', 'aws'], 'vm': ['jq', 'packer', 'aws']}[inputs.target] }}"   # per target, dinilai saat plan
+    env:
+      STAGING: ${{ inputs.staging }}
+    outputs:
+      ref:
+        type: string
+        description: Registry digest or staging URL
+      sha256:
+        type: string
+      kind:
+        type: string
+        description: What trivy scans (image, rootfs, vm)
+
+  scan-all:
+    description: Scan every image target in parallel
+    internal: true
+    for_each: ${{ inputs.targets }}        # paralel; hasil per target di steps.<id>['<target>']
+    max_parallel: 2                        # disk VM besar: dua scan sekaligus
+    trivy.scan:                            # task satu panggilan: output scan diteruskan apa adanya
+      kind: ${{ units.image[each.value].outputs.kind }}
+      ref: ${{ units.image[each.value].outputs.ref }}
+
+  release:
+    description: Build, scan, and publish every image target
+    inputs:
+      version:
+        type: string
+        required: true
+        pattern: '^v[0-9]+\.[0-9]+\.[0-9]+$'
+    outputs:
+      blocked:
+        value: ${{ steps.gate.outputs.blocked }}
+    steps:
+      - name: Build what changed
+        task: up
+        units: [image]
+      - name: Scan
+        id: scan
+        task: scan-all                     # steps.scan['<target>']: map hasil per instance
+      - name: Gate
+        id: gate
+        set:
+          blocked: ${{ inputs.targets.filter(t, steps.scan[t].outputs.findings > 0) }}
+      - name: Publish
+        if: size(steps.gate.outputs.blocked) == 0
+        block:
+          - name: Promote
+            id: promote
+            for_each: ${{ inputs.targets }}
+            run: [./scripts/promote.sh]
+            env:
+              TARGET: ${{ each.value }}
+              REF: ${{ units.image[each.value].outputs.ref }}
+              VERSION: ${{ inputs.version }}
+            pass: [AWS_*, DOCKER_CONFIG]
+            outputs:
+              url:
+                from: stdout
+          - name: Release notes
+            write:
+              path: dist/${{ inputs.version }}.json
+              format: json
+              content:
+                version: ${{ inputs.version }}
+                images: "${{ inputs.targets.map(t, {'target': t, 'url': steps.promote[t].outputs.url, 'sha256': units.image[t].outputs.sha256}) }}"
+          - team:
+              body:
+                text: "images ${{ inputs.version }} dirilis: ${{ inputs.targets.join(', ') }}"
+        rescue:
+          - team:
+              body:
+                text: "images ${{ inputs.version }}: publish gagal, lihat run ${{ opstruss.run }}"
+      - name: Blocked
+        if: size(steps.gate.outputs.blocked) > 0
+        team:
+          body:
+            text: "images ${{ inputs.version }} ditahan scan: ${{ steps.gate.outputs.blocked.join(', ') }}"
+      - name: Fail the run when blocked
+        assert:
+          that: size(steps.gate.outputs.blocked) == 0
+          msg: release blocked by scan findings
+-- plugins/trivy/opstruss.plugin.yaml --
+# plugins/trivy/opstruss.plugin.yaml
+name: trivy
+description: Scan images, root filesystems, and VM disks with Trivy
+requires: [trivy, jq, aws]
+env:                                       # permintaan; baru diteruskan bila project memberi pass:
+  - AWS_PROFILE
+  - AWS_REGION
+  - AWS_ACCESS_KEY_ID
+  - AWS_SECRET_ACCESS_KEY
+  - AWS_SESSION_TOKEN
+  - DOCKER_CONFIG
+tasks:
+  scan:
+    description: Scan one artifact and count findings
+    inputs:
+      kind:
+        type: string
+        enum: [image, rootfs, vm]
+        required: true
+      ref:
+        type: string
+        description: Image reference, or s3:// URL of a rootfs tarball or disk
+        required: true
+      severity:
+        type: array
+        items:
+          type: string
+          enum: [LOW, MEDIUM, HIGH, CRITICAL]
+        default: [HIGH, CRITICAL]
+    run: [./scan.sh]                       # dibaca dari directory plugin
+    timeout: 30m
+    outputs:
+      findings:
+        type: integer
+      summary:
+        type: string
+      report:
+        type: string
+        description: Path of the full JSON report, valid in this run only
+-- plugins/trivy/scan.sh --
+#!/usr/bin/env bash
+# Kontrak program: input dari INPUT_*, hasil satu object JSON di $OPSTRUSS_OUTPUT.
+set -euo pipefail
+sev=$(jq -r 'join(",")' <<<"$INPUT_SEVERITY")       # array datang sebagai JSON
+work="$OPSTRUSS_ARTIFACTS/trivy-$INPUT_KIND"
+report="$work/report.json"                          # laporan penuh bisa lebih dari 1 MiB
+mkdir -p "$work"
+case "$INPUT_KIND" in
+  image)
+    target="$INPUT_REF" ;;
+  rootfs)
+    target="$work/rootfs"
+    mkdir -p "$target"
+    aws s3 cp --quiet "$INPUT_REF" - | tar -xJ -C "$target" ;;
+  vm)
+    target="$work/disk.img"
+    aws s3 cp --quiet "$INPUT_REF" "$target" ;;
+esac
+trivy "$INPUT_KIND" --quiet --format json --severity "$sev" --output "$report" "$target"
+findings=$(jq '[.Results[]?.Vulnerabilities[]?] | length' "$report")
+jq -n --argjson findings "$findings" --arg report "$report" \
+  --arg summary "$findings temuan $sev di $INPUT_REF" \
+  '{findings: $findings, summary: $summary, report: $report}' > "$OPSTRUSS_OUTPUT"
+echo '{"changed": false}' > "$OPSTRUSS_RESULT"
+-- scripts/build.sh --
+#!/usr/bin/env bash
+# scripts/build.sh: satu target per panggilan; output hanya referensi ke hasilnya.
+set -euo pipefail
+out="$OPSTRUSS_ARTIFACTS/$INPUT_TARGET"
+mkdir -p "$out"
+case "$INPUT_TARGET" in
+  docker)
+    docker buildx build --push --metadata-file "$out/meta.json" \
+      -t ghcr.io/acme/base:staging "$INPUT_SOURCE"
+    sha=$(jq -r '."containerimage.digest"' "$out/meta.json")
+    ref="ghcr.io/acme/base@$sha"
+    kind=image ;;
+  lxc)
+    sudo distrobuilder build-lxc "$INPUT_SOURCE/lxc.yaml" "$out"
+    file="$out/rootfs.tar.xz"
+    kind=rootfs ;;
+  vm)
+    packer build -var "output_dir=$out" "$INPUT_SOURCE/vm.pkr.hcl"
+    file="$out/disk.img"
+    kind=vm ;;
+esac
+if [ "$kind" != image ]; then
+  sha="sha256:$(sha256sum "$file" | cut -d' ' -f1)"
+  ref="$STAGING/$INPUT_TARGET/${sha#sha256:}/$(basename "$file")"
+  aws s3 cp --quiet "$file" "$ref"
+fi
+jq -n --arg ref "$ref" --arg sha "$sha" --arg kind "$kind" \
+  '{ref: $ref, sha256: $sha, kind: $kind}' > "$OPSTRUSS_OUTPUT"
+-- scripts/promote.sh --
+#!/usr/bin/env bash
+# scripts/promote.sh: pindah dari staging ke lokasi rilis; stdout berisi URL rilis.
+set -euo pipefail
+case "$TARGET" in
+  docker)
+    docker buildx imagetools create -t "ghcr.io/acme/base:$VERSION" "$REF" >&2
+    echo "ghcr.io/acme/base:$VERSION" ;;
+  *)
+    dest="s3://acme-images/$VERSION/$TARGET/$(basename "$REF")"
+    aws s3 cp --quiet "$REF" "$dest"
+    echo "$dest" ;;
+esac

@@ -1,0 +1,634 @@
+# A personal project that a developer calls from any repository with -C:
+# a morning brief in the daily note, start, review, and ship for the
+# repository the command starts in, a review posted only after approval,
+# an evening log, and #linear lines of new notes in the inbox turned into
+# issues by a watch with debounce. Secrets come from gh and op. GitHub
+# is a fake gh with bare repositories as origins, Linear is fakeapi, the
+# paths of the example under /Users/me move into the test, the waits are
+# short, and the MCP server is left out.
+
+env HOME=$WORK/home
+env PATH=$WORK/fakes:$PATH
+exec chmod 755 fakes/gh fakes/op fakes/osascript fakes/claude setup.sh ops/scripts/daily-note.sh ops/scripts/inbox.sh ops/scripts/sync-repo.sh ops/scripts/merged-today.sh ops/scripts/pr-worktree.sh ops/scripts/draft-pr.sh ops/scripts/ready-pr.sh ops/plugins/agent/review.sh
+! exec fakeapi -listen 127.0.0.1:19401 api &api&
+waitfile api/port
+exec ./setup.sh
+exec sh -c 'sed "s|/Users/me|$WORK|g" ops/opstruss.yaml > ops/opstruss.tmp && mv ops/opstruss.tmp ops/opstruss.yaml'
+exec opstruss -C ops validate
+stdout '^valid$'
+
+# morning: api fast-forwards, web has diverged, infra is cloned; the brief
+# goes to the daily note beside what was written by hand
+exec opstruss -C ops morning
+stdout '^morning: Sync repositories\[acme/web\]: failed$'
+exists code/infra/Makefile
+exec sh -c 'cat Notes/Daily/*.md'
+stdout '^Rapat jam 10 dengan tim infra\.$'
+stdout '^- \[ \] Review acme/api#812: Add login rate limiter \(https://github.com/acme/api/pull/812\)$'
+stdout '^- PR saya acme/api#809: Cache sessions in Redis \(draft\)$'
+stdout '^- \[ \] ENG-123 Rate limit the login endpoint \(Todo\)$'
+stdout '^- Sync: acme/api success, acme/infra success, acme/web failure$'
+grep '^osascript 1 review, 1 issue$' calls
+grep '^POST /graphql auth=lin_api_test \{"query":"query \{\\n  viewer \{' api/requests
+
+# start, from the repository of the work: a branch from Linear, In
+# Progress, and a draft pull request
+cd code/api
+exec opstruss -C $WORK/ops start --issue ENG-123
+cd $WORK
+exec git -C code/api branch --show-current
+stdout '^eng-123-rate-limit-the-login-endpoint$'
+grep '"variables":\{"id":"9a3f-issue","state":"7d1c…"\}' api/requests
+grep '^gh pr create --draft --title ENG-123: Rate limit the login endpoint --body Linear: ENG-123 token=set$' calls
+exec git -C origin/api.git branch --list eng-123-rate-limit-the-login-endpoint
+stdout 'eng-123'
+exec sh -c 'cat Notes/Daily/*.md'
+stdout '^- [0-9]{2}:[0-9]{2} mulai ENG-123: https://github.com/acme/api/pull/815$'
+
+# review: its tests fail, the AI draft goes to my notes, and posting it
+# waits for approval, which a run without a terminal does not have
+cd code/api
+! exec opstruss -C $WORK/ops review --pr 812
+stdout 'post-review needs approval; stopped'
+cd $WORK
+grep '^Test: failure$' Notes/Reviews/812.md
+grep '^## Ringkasan$' Notes/Reviews/812.md
+grep '^claude review tests=false key=set$' calls
+! grep '^gh pr review' calls
+
+# after editing the note, I post it myself
+cd code/api
+exec opstruss -C $WORK/ops post-review --pr 812 --file $WORK/Notes/Reviews/812.md --yes
+cd $WORK
+grep '^gh pr review 812 --comment from api: # PR 812: Add login rate limiter token=set$' calls
+
+# ship: the tests pass, the pull request is ready, and the issue is In
+# Review
+cd code/api
+exec opstruss -C $WORK/ops ship
+cd $WORK
+grep '^gh pr ready token=set$' calls
+grep '"variables":\{"id":"ENG-123","state":"0b9e…"\}' api/requests
+exec sh -c 'cat Notes/Daily/*.md'
+stdout '^- [0-9]{2}:[0-9]{2} ship https://github.com/acme/api/pull/815$'
+
+# evening: my commits of today, merged pull requests, and finished issues
+exec opstruss -C ops evening
+exec sh -c 'cat Notes/Daily/*.md'
+stdout '^- acme/api: 1 commit$'
+stdout '^- acme/web: 1 commit$'
+! stdout 'acme/infra: '
+stdout '^- merged acme/api#809: Cache sessions in Redis$'
+stdout '^- selesai ENG-118 Fix flaky session test$'
+
+# the daemon watches the inbox: a #linear line of a new note becomes an
+# issue, and the line becomes its link
+exec opstruss -C ops up -d
+cp idea.md Notes/Inbox/idea.md
+waitgrep '^- \[ \] \[ENG-130\]\(https://linear.app/acme/issue/ENG-130\) Tambah rate limit di signup$' Notes/Inbox/idea.md
+grep '^- \[ \] Baca ulang dokumen API$' Notes/Inbox/idea.md
+grep '^POST /graphql auth=lin_api_test \{  "query": "mutation\(\$t: String!' api/requests
+grep '"t": "Tambah rate limit di signup",    "team": "5c3f…"' api/requests
+exec opstruss -C ops stop
+! exec grep -r -e lin_api_test -e gh-test-token -e sk-ant-test-key ops/.opstruss calls
+
+-- idea.md --
+# Ide
+
+- [ ] Tambah rate limit di signup #linear
+- [ ] Baca ulang dokumen API
+-- api/routes --
+POST /graphql 200 @linear.json
+-- api/linear.json --
+{"data": {
+  "viewer": {"assignedIssues": {"nodes": [{"identifier": "ENG-123", "title": "Rate limit the login endpoint", "url": "https://linear.app/acme/issue/ENG-123", "state": {"name": "Todo"}}]}},
+  "issue": {"id": "9a3f-issue", "title": "Rate limit the login endpoint", "branchName": "eng-123-rate-limit-the-login-endpoint", "url": "https://linear.app/acme/issue/ENG-123"},
+  "issueUpdate": {"success": true},
+  "issues": {"nodes": [{"identifier": "ENG-118", "title": "Fix flaky session test"}]},
+  "issueCreate": {"issue": {"identifier": "ENG-130", "url": "https://linear.app/acme/issue/ENG-130"}}
+}}
+-- setup.sh --
+#!/bin/sh
+# setup.sh: three repositories, each on a bare origin under origin/, with
+# a Makefile whose test passes while status.txt says ok; api has a pull
+# request 812 whose test fails, all written by the team. api is cloned one
+# commit behind, web has a commit of mine, infra is not cloned yet, and the
+# vault has a daily note with a line written by hand.
+set -e
+for r in api web infra; do
+  git init -q -b main "seed/$r"
+  git -C "seed/$r" config user.email team@example.com
+  git -C "seed/$r" config user.name team
+  printf 'test:\n\t@grep -qx ok status.txt\n' > "seed/$r/Makefile"
+  echo ok > "seed/$r/status.txt"
+  git -C "seed/$r" add -A
+  git -C "seed/$r" commit -q -m "$r: first"
+  echo two > "seed/$r/two.txt"
+  git -C "seed/$r" add -A
+  git -C "seed/$r" commit -q -m "$r: second"
+  git clone -q --bare "seed/$r" "origin/$r.git"
+done
+git -C seed/api switch -q -c pr-812
+echo bad > seed/api/status.txt
+git -C seed/api commit -q -am "Add login rate limiter"
+git -C seed/api push -q "$PWD/origin/api.git" pr-812
+for r in api web; do
+  git clone -q "origin/$r.git" "code/$r"
+  git -C "code/$r" config user.email me@example.com
+  git -C "code/$r" config user.name me
+  git -C "code/$r" reset -q --hard HEAD~1
+done
+echo mine > code/web/mine.txt
+git -C code/web add -A
+git -C code/web commit -q -m "web: mine"
+mkdir -p Notes/Daily Notes/Reviews Notes/Inbox
+printf '# Hari ini\n\nRapat jam 10 dengan tim infra.\n' > "Notes/Daily/$(date +%F).md"
+-- fakes/gh --
+#!/bin/sh
+# gh as GitHub would answer for acme, with the bare repositories under
+# origin/ beside fakes/ as remotes; a line to calls for what changes
+# something, saying whether GH_TOKEN came.
+d=$(cd "$(dirname "$0")/.." && pwd)
+log() { echo "gh $* token=${GH_TOKEN:+set}" >> "$d/calls"; }
+case "$1 $2" in
+"auth token")
+  echo gh-test-token
+  ;;
+"search prs")
+  case "$*" in
+  *--review-requested=@me*)
+    echo '[{"number": 812, "title": "Add login rate limiter", "url": "https://github.com/acme/api/pull/812", "repository": {"nameWithOwner": "acme/api"}}]' ;;
+  *--merged=*)
+    echo '[{"number": 809, "title": "Cache sessions in Redis", "url": "https://github.com/acme/api/pull/809", "repository": {"nameWithOwner": "acme/api"}}]' ;;
+  *)
+    echo '[{"number": 809, "title": "Cache sessions in Redis", "url": "https://github.com/acme/api/pull/809", "repository": {"nameWithOwner": "acme/api"}, "isDraft": true}]' ;;
+  esac
+  ;;
+"repo clone")
+  git clone -q "$d/origin/${3#acme/}.git" "$4"
+  ;;
+"pr create")
+  shift 2
+  log pr create "$@"
+  ;;
+"pr view")
+  case "$*" in
+  *title*) echo "Add login rate limiter" ;;
+  *) echo "https://github.com/acme/api/pull/815" ;;
+  esac
+  ;;
+"pr ready")
+  log pr ready
+  ;;
+"pr checkout")
+  git fetch -q origin "pr-$3"
+  git checkout -q --detach FETCH_HEAD
+  ;;
+"pr review")
+  log pr review "$3" "$4" from "$(basename "$PWD"):" "$(head -1 "$6")"
+  ;;
+esac
+-- fakes/op --
+#!/bin/sh
+# op read op://<vault>/<item>/credential: the key of the item.
+case "$2" in
+*/Linear/*) echo lin_api_test ;;
+*/Anthropic/*) echo sk-ant-test-key ;;
+*)
+  echo "op: no item $2" >&2
+  exit 1
+  ;;
+esac
+-- fakes/osascript --
+#!/bin/sh
+# osascript -e … <text>: a notification; its text to calls beside fakes/.
+for a; do text=$a; done
+echo "osascript $text" >> "$(dirname "$0")/../calls"
+-- fakes/claude --
+#!/bin/sh
+# claude -p <prompt> --output-format json: a review of the diff on stdin,
+# as the result of claude's JSON; a line to calls beside fakes/.
+d=$(cd "$(dirname "$0")/.." && pwd)
+tests=$(echo "$2" | sed -n 's/.*Tests passed: \([a-z]*\)\..*/\1/p')
+lines=$(wc -l | tr -d ' ')
+echo "claude review tests=$tests key=${ANTHROPIC_API_KEY:+set}" >> "$d/calls"
+jq -n --arg n "$lines" '{type: "result", result: "## Ringkasan\n\nDiff \($n) baris; test perlu diperbaiki dulu."}'
+-- ops/opstruss.yaml --
+# ~/ops/opstruss.yaml
+name: workspace
+description: My daily developer workspace for reviews, issues, tests, and notes
+
+uses:
+  linear:                                  # Linear GraphQL API lewat http bawaan
+    source: opstruss.http
+    with:
+      method: POST
+      url: http://127.0.0.1:19401/graphql
+      headers:
+        Authorization: ${{ secrets.linear }}
+  agent: ./plugins/agent
+
+inputs:
+  vault:
+    type: string
+    default: /Users/me/Notes
+  code:
+    type: string
+    description: Where repositories are cloned
+    default: /Users/me/code
+  repos:                                   # list string: key for_each di step boleh berisi "/"
+    type: array
+    items: {type: string}
+    default: [acme/api, acme/web, acme/infra]
+  linear_team:
+    type: string
+    default: 5c3f…                         # id team Linear
+  linear_states:
+    type: object
+    default:
+      started: 7d1c…                       # id state "In Progress"
+      review: 0b9e…                        # id state "In Review"
+
+secrets:
+  github:
+    run: [gh, auth, token]
+  linear:
+    run: [op, read, "op://Private/Linear/credential"]
+  anthropic:
+    run: [op, read, "op://Private/Anthropic/credential"]
+
+x-repo-input: &repo-input                  # input task: flag --repo dan argument MCP
+  type: string
+  description: Repository directory to work on; default is where the command was started
+  default: ""
+x-here: &here "${{ inputs.repo == '' ? opstruss.cwd : inputs.repo }}"   # repo saat ini, atau --repo
+
+tasks:
+  morning:
+    description: Sync repositories and write today's plan into the daily note
+    on:
+      schedule:
+        cron: "30 8 * * 1-5"
+        timezone: Asia/Jakarta
+        persistent: true                   # laptop tidur jam 08:30: jalan sekali saat bangun
+    steps:
+      - name: Sync repositories
+        id: sync
+        for_each: ${{ inputs.repos }}       # key = acme/api
+        continue_on_error: true            # satu repo konflik tidak menahan yang lain
+        run: [./scripts/sync-repo.sh, "${{ inputs.code }}/${{ each.value.split('/')[1] }}", "${{ each.value }}"]
+        env:
+          GH_TOKEN: ${{ secrets.github }}
+      - name: Reviews waiting for me
+        id: reviews
+        run: [gh, search, prs, --review-requested=@me, --state=open, --json, "number,title,url,repository"]
+        env:
+          GH_TOKEN: ${{ secrets.github }}
+        outputs:
+          list: {from: stdout, format: json}
+      - name: My open pull requests
+        id: mine
+        run: [gh, search, prs, --author=@me, --state=open, --json, "number,title,url,repository,isDraft"]
+        env:
+          GH_TOKEN: ${{ secrets.github }}
+        outputs:
+          list: {from: stdout, format: json}
+      - name: My Linear issues
+        id: issues
+        linear:
+          body:
+            query: |
+              query {
+                viewer {
+                  assignedIssues(filter: {state: {type: {in: ["started", "unstarted"]}}}, first: 50) {
+                    nodes { identifier title url state { name } }
+                  }
+                }
+              }
+      - name: Daily note
+        run: [./scripts/daily-note.sh, morning, "${{ inputs.vault }}"]
+        stdin:
+          format: json
+          value:
+            reviews: ${{ steps.reviews.outputs.list }}
+            mine: ${{ steps.mine.outputs.list }}
+            issues: ${{ steps.issues.outputs.body.data.viewer.assignedIssues.nodes }}
+            sync: "${{ steps.sync.transformList(k, r, {'repo': k, 'outcome': r.outcome}) }}"
+      - name: Notify
+        run: [osascript, -e, "on run argv", -e, "display notification (item 1 of argv) with title \"ops\"", -e, "end run", "${{ size(steps.reviews.outputs.list) }} review, ${{ size(steps.issues.outputs.body.data.viewer.assignedIssues.nodes) }} issue"]
+
+  evening:
+    description: Append today's work log to the daily note
+    on:
+      schedule:
+        cron: "0 18 * * 1-5"
+        timezone: Asia/Jakarta
+        persistent: true
+    steps:
+      - name: Commits today
+        id: commits
+        for_each: ${{ inputs.repos }}
+        run: [git, -C, "${{ inputs.code }}/${{ each.value.split('/')[1] }}", log, --since=midnight, --author=me@example.com, "--format=%h %s"]
+        outputs:
+          lines: {from: stdout, format: lines}
+      - name: Merged today
+        id: merged
+        run: [./scripts/merged-today.sh]
+        env:
+          GH_TOKEN: ${{ secrets.github }}
+        outputs:
+          list: {from: stdout, format: json}
+      - name: Done today
+        id: done
+        linear:
+          body:
+            query: |
+              query {
+                issues(filter: {assignee: {isMe: {eq: true}}, completedAt: {gte: "-P1D"}}) {
+                  nodes { identifier title }
+                }
+              }
+      - name: Daily note
+        run: [./scripts/daily-note.sh, evening, "${{ inputs.vault }}"]
+        stdin:
+          format: json
+          value:
+            commits: "${{ steps.commits.transformList(k, r, {'repo': k, 'lines': r.outputs.lines}) }}"
+            merged: ${{ steps.merged.outputs.list }}
+            done: ${{ steps.done.outputs.body.data.issues.nodes }}
+      - name: Weekly summary on Friday
+        if: opstruss.time.getDayOfWeek('Asia/Jakarta') == 5
+        run: [./scripts/daily-note.sh, weekly, "${{ inputs.vault }}"]
+
+  start:
+    description: Start a Linear issue with a branch, In Progress, and a draft pull request
+    inputs:
+      issue:
+        type: string
+        pattern: '^[A-Z]+-[0-9]+$'
+        required: true
+      repo: *repo-input
+    steps:
+      - name: Issue
+        id: issue
+        linear:
+          body:
+            query: 'query($id: String!) { issue(id: $id) { id title branchName url } }'
+            variables:
+              id: ${{ inputs.issue }}
+      - name: Branch
+        dir: *here
+        run: [git, switch, -c, "${{ steps.issue.outputs.body.data.issue.branchName }}", origin/main]
+      - name: In Progress
+        linear:
+          body:
+            query: 'mutation($id: String!, $state: String!) { issueUpdate(id: $id, input: {stateId: $state}) { success } }'
+            variables:
+              id: ${{ steps.issue.outputs.body.data.issue.id }}
+              state: ${{ inputs.linear_states.started }}
+      - name: Draft pull request
+        id: pr
+        dir: *here
+        run: ["${{ opstruss.dir }}/scripts/draft-pr.sh"]   # program relatif dibaca dari dir, jadi script project lewat opstruss.dir
+        env:
+          GH_TOKEN: ${{ secrets.github }}
+          ISSUE: ${{ inputs.issue }}
+          TITLE: ${{ steps.issue.outputs.body.data.issue.title }}
+        outputs:
+          url: {type: string}
+      - name: Log
+        run: [./scripts/daily-note.sh, append, "${{ inputs.vault }}", "mulai ${{ inputs.issue }}: ${{ steps.pr.outputs.url }}"]
+
+  review:
+    description: Check out a pull request, run its tests, and draft a review into my notes
+    inputs:
+      pr:
+        type: integer
+        required: true
+      repo: *repo-input
+    steps:
+      - name: Worktree for the PR
+        id: tree
+        dir: *here
+        run: ["${{ opstruss.dir }}/scripts/pr-worktree.sh", "${{ inputs.pr }}"]
+        env:
+          GH_TOKEN: ${{ secrets.github }}
+        outputs:
+          dir: {type: string}
+          title: {type: string}
+      - name: Tests
+        id: test
+        dir: ${{ steps.tree.outputs.dir }}
+        run: [make, test]
+        timeout: 20m
+        continue_on_error: true
+      - name: AI review draft
+        id: ai
+        agent.review:
+          dir: ${{ steps.tree.outputs.dir }}
+          tests_passed: ${{ steps.test.outcome == 'success' }}
+          credentials:
+            ANTHROPIC_API_KEY: ${{ secrets.anthropic }}
+      - name: Review note
+        write:
+          path: ${{ inputs.vault }}/Reviews/${{ inputs.pr }}.md
+          content: '${{ "# PR " + string(inputs.pr) + ": " + steps.tree.outputs.title + "\n\nTest: " + steps.test.outcome + "\n\n" + steps.ai.outputs.markdown }}'
+      - name: Post the review
+        task: post-review
+        with:
+          pr: ${{ inputs.pr }}
+          file: ${{ inputs.vault }}/Reviews/${{ inputs.pr }}.md
+          repo: ${{ inputs.repo }}
+
+  post-review:
+    description: Post my edited review note as a pull request comment
+    approval: ask                          # catatan dibaca dan diedit dulu
+    inputs:
+      pr:
+        type: integer
+        required: true
+      file:
+        type: string
+        required: true
+      repo: *repo-input
+    dir: *here
+    run: [gh, pr, review, "${{ inputs.pr }}", --comment, --body-file, "${{ inputs.file }}"]
+    env:
+      GH_TOKEN: ${{ secrets.github }}
+
+  ship:
+    description: Test, push, mark the pull request ready, and move the issue to In Review
+    inputs:
+      repo: *repo-input
+    steps:
+      - name: Tests
+        dir: *here
+        run: [make, test]
+      - name: Push and ready
+        id: ready
+        dir: *here
+        run: ["${{ opstruss.dir }}/scripts/ready-pr.sh"]
+        env:
+          GH_TOKEN: ${{ secrets.github }}
+        outputs:
+          url: {type: string}
+          issue: {type: string}
+      - name: In Review
+        if: steps.ready.outputs.issue != ''
+        linear:
+          body:
+            query: 'mutation($id: String!, $state: String!) { issueUpdate(id: $id, input: {stateId: $state}) { success } }'
+            variables:
+              id: ${{ steps.ready.outputs.issue }}
+              state: ${{ inputs.linear_states.review }}
+      - name: Log
+        run: [./scripts/daily-note.sh, append, "${{ inputs.vault }}", "ship ${{ steps.ready.outputs.url }}"]
+
+  inbox:
+    description: Turn "#linear" tasks in new notes into Linear issues
+    internal: true
+    on:
+      watch:
+        paths: ["${{ inputs.vault }}/Inbox/*.md"]   # dievaluasi saat trigger dipasang
+        debounce: 1s                       # Obsidian menulis berkali-kali saat mengetik
+    env:
+      LINEAR_TEAM: ${{ inputs.linear_team }}
+      LINEAR_HEADER_FILE:
+        file: "Authorization: ${{ secrets.linear }}"   # file 0600; token tidak masuk argv curl
+    steps:
+      - name: Each changed note
+        for_each: ${{ event.paths.filter(p, p.op in ['create', 'write']).map(p, p.path).distinct() }}   # key = path
+        run: [./scripts/inbox.sh, "${{ each.value }}"]
+-- ops/scripts/daily-note.sh --
+#!/usr/bin/env bash
+# daily-note.sh <morning|evening|weekly|append> <vault> [text]
+# Menulis bagian bertanda di catatan harian tanpa menimpa yang ditulis tangan.
+set -euo pipefail
+mode="$1" vault="$2"
+note="$vault/Daily/$(date +%F).md"
+mkdir -p "$(dirname "$note")"
+[ -f "$note" ] || printf '# %s\n\n' "$(date +%F)" > "$note"
+section() {   # ganti isi antara <!-- ops:NAME --> dan <!-- /ops:NAME -->, atau tambahkan di akhir
+  local name="$1" body="$2" tmp
+  tmp=$(mktemp)
+  if grep -q "<!-- ops:$name -->" "$note"; then
+    awk -v name="$name" -v body="$body" '
+      $0 == "<!-- ops:" name " -->" { print; print body; skip = 1; next }
+      $0 == "<!-- /ops:" name " -->" { skip = 0 }
+      !skip' "$note" > "$tmp"
+  else
+    { cat "$note"; printf '\n<!-- ops:%s -->\n%s\n<!-- /ops:%s -->\n' "$name" "$body" "$name"; } > "$tmp"
+  fi
+  mv "$tmp" "$note"
+}
+case "$mode" in
+  morning)
+    section pagi "$(jq -r '
+      "## Pagi",
+      (.reviews[] | "- [ ] Review \(.repository.nameWithOwner)#\(.number): \(.title) (\(.url))"),
+      (.mine[] | "- PR saya \(.repository.nameWithOwner)#\(.number): \(.title)\(if .isDraft then " (draft)" else "" end)"),
+      (.issues[] | "- [ ] \(.identifier) \(.title) (\(.state.name))"),
+      "- Sync: \([.sync[] | "\(.repo) \(.outcome)"] | join(", "))"')" ;;
+  evening)
+    section log "$(jq -r '
+      "## Log",
+      (.commits[] | select(.lines | length > 0) | "- \(.repo): \(.lines | length) commit"),
+      (.merged[] | "- merged \(.repository.nameWithOwner)#\(.number): \(.title)"),
+      (.done[] | "- selesai \(.identifier) \(.title)")')" ;;
+  weekly)
+    week="$vault/Weekly/$(date +%G-W%V).md"
+    mkdir -p "$(dirname "$week")"
+    for day in $(seq 4 -1 0); do
+      file="$vault/Daily/$(jq -nr --argjson d "$day" 'now - $d * 86400 | strftime("%Y-%m-%d")').md"   # date -v hanya ada di BSD
+      [ -f "$file" ] && sed -n '/<!-- ops:log -->/,/<!-- \/ops:log -->/p' "$file"
+    done > "$week" ;;
+  append)
+    printf -- '- %s %s\n' "$(date +%H:%M)" "$3" >> "$note" ;;
+esac
+-- ops/scripts/inbox.sh --
+#!/usr/bin/env bash
+# inbox.sh <note>: baris "- [ ] … #linear" menjadi issue, lalu diganti link-nya.
+# Perubahan ini memicu event lagi, tetapi baris tanpa #linear tidak diproses dua kali.
+set -euo pipefail
+note="$1"
+[ -f "$note" ] || exit 0
+{ grep -n -- '- \[ \] .*#linear' "$note" || true; } | while IFS=: read -r line text; do
+  title=$(sed -E 's/^- \[ \] //; s/ ?#linear//' <<<"$text")
+  link=$(jq -n --arg t "$title" --arg team "$LINEAR_TEAM" \
+      '{query: "mutation($t: String!, $team: String!) { issueCreate(input: {title: $t, teamId: $team}) { issue { identifier url } } }",
+        variables: {t: $t, team: $team}}' |
+    curl -sS http://127.0.0.1:19401/graphql -H 'Content-Type: application/json' -H @"$LINEAR_HEADER_FILE" -d @- |
+    jq -r '.data.issueCreate.issue | "[\(.identifier)](\(.url))"')
+  sed -i.bak "${line}s|.*|- [ ] $link $title|" "$note" && rm -f "$note.bak"   # -i.bak: GNU dan BSD sed
+done
+-- ops/scripts/sync-repo.sh --
+#!/usr/bin/env bash
+# sync-repo.sh <dir> <owner/repo>: clone bila belum ada; selain itu fetch dan fast-forward.
+set -euo pipefail
+if [ -d "$1/.git" ]; then
+  git -C "$1" fetch -q --prune
+  git -C "$1" merge -q --ff-only '@{upstream}'
+else
+  gh repo clone "$2" "$1" -- -q
+fi
+-- ops/scripts/merged-today.sh --
+#!/usr/bin/env bash
+# merged-today.sh: PR saya yang di-merge hari ini, sebagai JSON.
+set -euo pipefail
+gh search prs --author=@me --merged=">=$(date +%F)" --json number,title,url,repository
+-- ops/scripts/pr-worktree.sh --
+#!/usr/bin/env bash
+# pr-worktree.sh <pr>: worktree di <code>/.reviews/<repo>-<pr> dengan gh pr checkout; output dir dan title.
+set -euo pipefail
+dir="$(dirname "$PWD")/.reviews/$(basename "$PWD")-$1"
+git worktree add -q --detach "$dir"
+cd "$dir"
+gh pr checkout "$1"
+jq -n --arg dir "$dir" --arg title "$(gh pr view "$1" --json title -q .title)" \
+  '{dir: $dir, title: $title}' > "$OPSTRUSS_OUTPUT"
+-- ops/scripts/draft-pr.sh --
+#!/usr/bin/env bash
+# draft-pr.sh: commit kosong supaya PR draft bisa dibuat sebelum ada perubahan.
+set -euo pipefail
+git commit -q --allow-empty -m "$ISSUE: $TITLE"
+git push -q -u origin HEAD
+gh pr create --draft --title "$ISSUE: $TITLE" --body "Linear: $ISSUE" > /dev/null
+jq -n --arg url "$(gh pr view --json url -q .url)" '{url: $url}' > "$OPSTRUSS_OUTPUT"
+-- ops/scripts/ready-pr.sh --
+#!/usr/bin/env bash
+# ready-pr.sh: push, tandai PR siap, kembalikan id issue dari nama branch (eng-123-…).
+set -euo pipefail
+git push -q
+gh pr ready > /dev/null 2>&1 || true
+issue=$(git branch --show-current | grep -oiE '^[a-z]+-[0-9]+' | tr '[:lower:]' '[:upper:]' || true)
+jq -n --arg url "$(gh pr view --json url -q .url)" --arg issue "$issue" \
+  '{url: $url, issue: $issue}' > "$OPSTRUSS_OUTPUT"
+-- ops/plugins/agent/opstruss.plugin.yaml --
+# plugins/agent/opstruss.plugin.yaml
+name: agent
+description: CLI AI agents for coding work
+requires: [git, jq, claude]
+tasks:
+  review:
+    description: Draft a code review of the current branch against its base
+    inputs:
+      dir: {type: string, required: true}
+      base: {type: string, default: main}
+      tests_passed: {type: boolean, required: true}
+      credentials: {type: object, sensitive: true, default: {}}
+    run: [./review.sh]
+    timeout: 15m
+    outputs:
+      markdown: {type: string}
+-- ops/plugins/agent/review.sh --
+#!/usr/bin/env bash
+# review.sh: diff branch terhadap base ke agent; hasilnya markdown untuk catatan review.
+set -euo pipefail
+while IFS='=' read -r key value; do export "$key=$value"; done \
+  < <(jq -r 'to_entries[] | "\(.key)=\(.value)"' <<<"$INPUT_CREDENTIALS")
+cd "$INPUT_DIR"
+markdown=$(git diff "origin/$INPUT_BASE...HEAD" |
+  claude -p "Review this diff for bugs, missing tests, and risky changes. Tests passed: $INPUT_TESTS_PASSED. Answer in markdown: a short summary, then findings." \
+    --output-format json | jq -r .result)
+jq -n --arg markdown "$markdown" '{markdown: $markdown}' > "$OPSTRUSS_OUTPUT"
+echo '{"changed": false}' > "$OPSTRUSS_RESULT"
