@@ -383,9 +383,10 @@ minor release can change what a project, a component, or a plugin relies on.
   of `block:` as `steps.<id>.outcome`. `if`, `for_each`, `retry`,
   `timeout`, `failed_when`, `changed_when`, and `continue_on_error` apply to
   steps; `steps.<id>` holds `outputs` (with `stdout`, `stderr`, and
-  `exit_code` for `run`), `changed`, and `outcome`, and `value:` gives the
-  outputs of a task with steps, also when it failed, as far as they can be
-  computed.
+  `exit_code` for `run`), `changed`, and `outcome`, and for a `task:` step
+  of units `units`, one entry for each instance it touched, also one that
+  `up` took down or forgot; `value:` gives the outputs of a task with
+  steps, also when it failed, as far as they can be computed.
 - `needs` runs each task it names once per run; `for_each` on a task runs
   its instances in parallel, at most `max_parallel` at once, starting them
   in the order of their keys. A task with `approval: ask` stops without
@@ -413,11 +414,11 @@ minor release can change what a project, a component, or a plugin relies on.
   and `runs <run>` the events as they are stored.
 - `OPSTRUSS_LOG=debug` writes the diagnostics of the engine to stderr.
 - Every run keeps `record.json` (who ran what and when, the units it
-  touched with their outcome, plan, and approval, and the outcome, exit
-  code, and outputs of the run) and `events.jsonl` in
-  `.opstruss/runs/<stack>/<run>/`, whose name an exclusive mkdir makes
-  unique. A run stores at most 10 MiB of program output; the middle of
-  more is dropped, with one diagnostic event.
+  touched with their outcome, plan, and approval, also the instances that
+  `up` took down or forgot, and the outcome, exit code, and outputs of the
+  run) and `events.jsonl` in `.opstruss/runs/<stack>/<run>/`, whose name
+  an exclusive mkdir makes unique. A run stores at most 10 MiB of program
+  output; the middle of more is dropped, with one diagnostic event.
 - `--json` prints every event of a run on a line of its own, with `v`,
   `seq`, `time`, `run`, `type`, `level`, and `message`, and the address,
   task, step, or stream it belongs to. The last event, of type `run`,

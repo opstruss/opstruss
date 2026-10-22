@@ -34,6 +34,14 @@ type leftover struct {
 	outcome string
 }
 
+// summary is the line of plan for a leftover of up.
+func (l *leftover) summary() string {
+	if l.forget {
+		return "will be forgotten without going down: removed: with destroy: false"
+	}
+	return "will go down: " + l.reason
+}
+
 // downPass takes the selected units down, units that depend on others
 // first, each with the down contract in its record.
 func (e *engine) downPass(ctx context.Context) ([]*leftover, error) {
@@ -164,7 +172,7 @@ func (e *engine) previewLeftovers() []*leftover {
 				continue
 			}
 			l.reason = "its instance is no longer in if or for_each"
-			e.say("plan", l.address, "will go down: %s", l.reason)
+			e.say("plan", l.address, "%s", l.summary())
 		case !e.sel.all:
 			continue
 		case rm == nil:
@@ -172,10 +180,10 @@ func (e *engine) previewLeftovers() []*leftover {
 			continue
 		case rm.Destroy:
 			l.reason = "removed: with destroy: true"
-			e.say("plan", l.address, "will go down: %s", l.reason)
+			e.say("plan", l.address, "%s", l.summary())
 		default:
 			l.forget = true
-			e.say("plan", l.address, "will be forgotten without going down: removed: with destroy: false")
+			e.say("plan", l.address, "%s", l.summary())
 		}
 		out = append(out, l)
 	}
@@ -218,9 +226,10 @@ func (e *engine) settle(ctx context.Context, items []*leftover) {
 		}
 		if err := e.forget(ctx, l.address); err != nil {
 			e.fail(l.address, err)
-			l.forget = false
+			l.forget, l.outcome = false, failure
 			continue
 		}
+		l.outcome = success
 		e.say("unit", l.address, "forgotten; a tombstone stays at the address")
 	}
 	e.downAll(ctx, downs)

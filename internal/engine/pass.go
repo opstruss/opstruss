@@ -104,6 +104,12 @@ func (e *engine) unitPass(ctx context.Context, op string, p pass) (map[string]an
 			}
 		}
 	}
+	// What left if or for_each, or what removed: decides, went down or was
+	// forgotten in the same pass.
+	for _, l := range leftovers {
+		out[e.short(l.address)] = map[string]any{"outcome": l.outcome, "changed": l.outcome == success, "outputs": map[string]any{}}
+		e.touch(e.short(l.address), &record.Unit{Outcome: l.outcome, Changed: l.outcome == success, Plan: l.summary()})
+	}
 	return out, marks, nil
 }
 

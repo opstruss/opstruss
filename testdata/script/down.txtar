@@ -32,6 +32,9 @@ stdout '^default/app\[us\]: will go down: its instance is no longer in if or for
 exec opstruss up --yes
 stdout '^default/app\[us\]: down: done$'
 grep '^app\[us\]$' downs
+# the record of that run names the instance it took down
+exec sh -c 'ls -t .opstruss/runs/default/*/record.json | head -n 1 | xargs cat'
+stdout '"app\[us\]": \{\s+"outcome": "success",\s+"changed": true,\s+"plan": "will go down: its instance is no longer in if or for_each"'
 
 # a unit that leaves the files is an orphan until removed: decides
 cp opstruss3.yaml opstruss.yaml
