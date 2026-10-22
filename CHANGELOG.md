@@ -215,18 +215,18 @@ minor release can change what a project, a component, or a plugin relies on.
   `base64.encode()`, and when a run only reads it back from a record, as
   `down` does. A value of one `${{ }}` is sensitive as a whole, while a
   map or a list written in YAML keeps it to its keys or items, so the
-  other fields beside a password stay readable. Inputs with
-  `sensitive: true` of the project, a task, or a plugin task are
-  sensitive, and so are outputs that are declared so, that a program
-  names in `sensitive` of `$OPSTRUSS_RESULT`, or that hold a sensitive
-  value, with a warning that names them. A sensitive input is never taken
-  from a flag or `--input`, but from its `env:` or typed without echo at
-  the terminal. A sensitive value cannot be an item of argv, which
-  `validate` checks where the files show it and the run checks before a
-  program starts, and it is never a key of `for_each`, a
-  `concurrency.group`, or a name in `units:`; `write` keeps sensitive
-  content in a file with mode 0600. A value shorter than 4 characters is
-  not hidden, and the run warns about it.
+  other fields beside a password stay readable, also as `each.value` of a
+  `for_each` over it. Inputs with `sensitive: true` of the project, a
+  task, or a plugin task are sensitive, and so are outputs that are
+  declared so, that a program names in `sensitive` of `$OPSTRUSS_RESULT`,
+  or that hold a sensitive value, with a warning that names them. A
+  sensitive input is never taken from a flag or `--input`, but from its
+  `env:` or typed without echo at the terminal. A sensitive value cannot
+  be an item of argv, which `validate` checks where the files show it and
+  the run checks before a program starts, and it is never a key of
+  `for_each`, a `concurrency.group`, or a name in `units:`; `write` keeps
+  sensitive content in a file with mode 0600. A value shorter than 4
+  characters is not hidden, and the run warns about it.
 - The data key of a stack, made the first time a value needs it, plan
   included, is kept in `<stack>/_meta`, wrapped by the `sops` program with
   the keys of the rule in `.sops.yaml` that matches `<stack>/_meta`, and a

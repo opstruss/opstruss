@@ -25,7 +25,7 @@ type frame struct {
 	parent    *frame
 	key       string
 	each      any
-	eachMarks any    // each.value is sensitive
+	eachMarks any    // the marks of each: what of each.value is sensitive
 	address   string // <stack>, or the address of the instance, such as <stack>/site[eu]
 }
 
@@ -82,7 +82,7 @@ func (e *engine) framesOf(n *model.Node) ([]*frame, error) {
 	fs = &frameSet{}
 	parents, err := e.framesOf(n.Parent)
 	for _, pf := range parents {
-		keys, items, eachMarks, kerr := e.keysOf(pf, n)
+		keys, items, marks, kerr := e.keysOf(pf, n)
 		if kerr != nil {
 			err = fmt.Errorf("%s: %w", e.short(pf.address+"/"+n.Name), kerr)
 			break
@@ -92,7 +92,7 @@ func (e *engine) framesOf(n *model.Node) ([]*frame, error) {
 			if n.Unit.ForEach != nil {
 				id += "[" + k + "]"
 			}
-			fs.frames = append(fs.frames, &frame{node: n, in: n.Component(), parent: pf, key: k, each: items[k], eachMarks: eachMarks,
+			fs.frames = append(fs.frames, &frame{node: n, in: n.Component(), parent: pf, key: k, each: items[k], eachMarks: itemMarks(marks, k),
 				address: pf.address + "/" + id})
 		}
 	}

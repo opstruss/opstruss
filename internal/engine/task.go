@@ -425,7 +425,7 @@ func (e *engine) callTask(ctx context.Context, name string, t *model.Task, dir s
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			s := scope.WithMarks("each", map[string]any{"key": k, "value": items[k]}, eachMarks)
+			s := scope.WithMarks("each", map[string]any{"key": k, "value": items[k]}, itemMarks(eachMarks, k))
 			r := e.taskOnce(ctx, name, label+"["+k+"]", t, dir, s, c)
 			mu.Lock()
 			results[k] = r
@@ -688,7 +688,7 @@ func (tc *taskCtx) step(ctx context.Context, s *model.Step, label string, d defa
 	}
 	results := map[string]*taskResult{}
 	for _, k := range slices.Sorted(maps.Keys(items)) {
-		r := tc.stepOnce(ctx, s, label+"["+k+"]", d, scope.WithMarks("each", map[string]any{"key": k, "value": items[k]}, eachMarks))
+		r := tc.stepOnce(ctx, s, label+"["+k+"]", d, scope.WithMarks("each", map[string]any{"key": k, "value": items[k]}, itemMarks(eachMarks, k)))
 		results[k] = r
 		if r.outcome == failure && !s.ContinueOnError {
 			break
@@ -944,10 +944,8 @@ func (e *engine) forEach(v any, s *expr.Scope) (map[string]any, any, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	var eachMarks any
 	if marks != nil {
 		e.hide(val, marks)
-		eachMarks = map[string]any{"value": true}
 		if _, list := val.([]any); list {
 			return nil, nil, errors.New("a sensitive list would make its items keys, which events and records show; give each item a key of its own with a map")
 		}
@@ -958,7 +956,26 @@ func (e *engine) forEach(v any, s *expr.Scope) (map[string]any, any, error) {
 			err = errors.New("a key holds a sensitive value, and keys show in events and records")
 		}
 	}
-	return items, eachMarks, err
+	return items, marks, err
+}
+
+// itemMarks gives the marks of each for item k of a for_each whose value
+// has marks: the whole item when the value is sensitive as a whole, or the
+// parts of the item that are, as a map written in YAML keeps them.
+func itemMarks(marks any, k string) any {
+	var m any
+	switch x := marks.(type) {
+	case bool:
+		if x {
+			m = true
+		}
+	case map[string]any:
+		m = x[k]
+	}
+	if m == nil {
+		return nil
+	}
+	return map[string]any{"value": m}
 }
 
 func forEachItems(val any) (map[string]any, error) {

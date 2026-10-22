@@ -21,7 +21,7 @@ type instance struct {
 	key       string
 	keys      []string // those of the instances of the components it is in, outermost first, and its own
 	each      any
-	eachMarks any    // each.value is sensitive
+	eachMarks any    // the marks of each: what of each.value is sensitive
 	address   string // <frame address>/<name>, or <frame address>/<name>[<key>]
 	node      *model.Node
 	frame     *frame
@@ -271,7 +271,7 @@ func (e *engine) expand(path string) ([]*instance, error) {
 	def := n.Def()
 	var out []*instance
 	for _, f := range frames {
-		keys, items, eachMarks, err := e.keysOf(f, n)
+		keys, items, marks, err := e.keysOf(f, n)
 		if err != nil {
 			return nil, err
 		}
@@ -280,7 +280,7 @@ func (e *engine) expand(path string) ([]*instance, error) {
 			if n.Unit.ForEach != nil {
 				id += "[" + k + "]"
 			}
-			out = append(out, &instance{unit: path, key: k, keys: append(f.keys(), k), each: items[k], eachMarks: eachMarks, address: f.address + "/" + id,
+			out = append(out, &instance{unit: path, key: k, keys: append(f.keys(), k), each: items[k], eachMarks: itemMarks(marks, k), address: f.address + "/" + id,
 				node: n, frame: f, def: def, dir: n.Dir(), done: make(chan struct{})})
 		}
 	}
@@ -291,7 +291,7 @@ func (e *engine) expand(path string) ([]*instance, error) {
 // one empty key without for_each, and one per item with it, in key order.
 // Both read only what is known when the run starts, so the outputs they
 // read come from units this run leaves as they are.
-// each.value is sensitive when for_each is; a key never is.
+// each.value keeps the marks of its item, and a key is never sensitive.
 func (e *engine) keysOf(f *frame, n *model.Node) ([]string, map[string]any, any, error) {
 	u := n.Unit
 	for _, v := range []any{u.If, u.ForEach} {
@@ -319,13 +319,11 @@ func (e *engine) keysOf(f *frame, n *model.Node) ([]string, map[string]any, any,
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("for_each: %w", err)
 	}
-	var eachMarks any
 	if marks != nil {
 		if _, list := v.([]any); list {
 			return nil, nil, nil, errors.New("for_each: a sensitive list would make its items keys, which addresses show; give each item a key of its own with a map")
 		}
 		e.hide(v, marks)
-		eachMarks = map[string]any{"value": true}
 	}
 	items := map[string]any{}
 	switch x := v.(type) {
@@ -354,5 +352,5 @@ func (e *engine) keysOf(f *frame, n *model.Node) ([]string, map[string]any, any,
 			return nil, nil, nil, fmt.Errorf("for_each key %q has more than lower-case letters, digits, '.', '-', and '_'", k)
 		}
 	}
-	return keys, items, eachMarks, nil
+	return keys, items, marks, nil
 }

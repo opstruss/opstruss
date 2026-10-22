@@ -30,6 +30,12 @@ exec opstruss vault
 stdout '^vault: item \| {"fields":\[{"id":"username","value":"rina@acme.com"},{"id":"password","value":"\*\*\*"}\],"title":"Akun rina@acme.com"}$'
 stdout '^vault: later \| hello rina@acme.com$'
 
+# each.value of a for_each over a map keeps the marks of its item, so its
+# plain fields stay plain, also in argv, in a step and in a task
+exec opstruss people
+stdout '^people: greet\[ana\] \| hello Andriani$'
+stdout '^team\[ana\] \| hello Andriani$'
+
 # a value that fails its schema is not in the error
 env KEY=bad-key-value
 ! exec opstruss show
@@ -140,6 +146,17 @@ tasks:
               - {id: password, value: '${{ inputs.token }}'}
       - name: later
         run: [echo, hello rina@acme.com]
+  people:
+    steps:
+      - name: greet
+        for_each:
+          ana: {name: Andriani, token: '${{ inputs.token }}'}
+        run: [echo, hello, '${{ each.value.name }}']
+      - task: team
+  team:
+    for_each:
+      ana: {name: Andriani, token: '${{ inputs.token }}'}
+    run: [echo, hello, '${{ each.value.name }}']
   keep:
     write:
       path: secret.txt
