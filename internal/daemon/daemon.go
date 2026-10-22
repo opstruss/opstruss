@@ -41,6 +41,7 @@ type File struct {
 	Socket    string      `json:"socket"`
 	Processes []*Process  `json:"processes,omitempty"`
 	Schedules []*Schedule `json:"schedules,omitempty"`
+	Listen    string      `json:"listen,omitempty"` // where the webhooks listen, also the port of :0
 }
 
 // maxSocket is the longest path of a Unix socket: 104 bytes with its NUL
@@ -170,6 +171,7 @@ func Start(opts Options) (_ *Daemon, err error) {
 	go d.sup.recover()
 	d.runs, d.cancelRuns = context.WithCancel(context.Background())
 	d.trig = &triggers{d: d, flight: map[string]bool{}, pending: map[string]int{}}
+	d.trig.hooks = &webhooks{t: d.trig}
 	d.trig.install(runOptions(opts.Dir, opts.Stack, opts.Inputs, opts.Environ))
 	return d, nil
 }

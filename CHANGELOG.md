@@ -162,6 +162,20 @@ minor release can change what a project, a component, or a plugin relies on.
   each `up` through it, with the files, inputs, and environment of that
   time, and its runs keep that project; `opstruss list` shows the
   triggers of each task and, while the daemon runs, when it comes next.
+- A task with `on: webhook` runs when a request comes to its `path` and
+  `method` on `runtime.listen` of the daemon, which every project with a
+  webhook writes. `signature` checks `secret` before any run is made:
+  `github`, `gitlab`, `slack`, `stripe`, `standard`, `bearer`, or an HMAC
+  over the body in a header of choice; the schemes with a timestamp refuse
+  one more than five minutes away, and a refused request gets 401 and a
+  line in the log of the daemon. `respond: accepted` answers 202 with the
+  id of the run once its record is there, and `respond: wait` answers with
+  the outcome and outputs of the run, sensitive ones hidden. `if` that
+  leaves a request out answers 202 without a run, `with` that the task's
+  inputs do not take answers 422, a task with 100 runs unfinished answers
+  503 with `Retry-After`, and a body above 1 MiB gets 413. `event` holds
+  `method`, `path`, `headers` by lower-case name, `query`, and `body`,
+  parsed when it is JSON.
 - `event.trigger` and `event.time` say what made a run and its logical
   time: the time of the schedule, or when a run from the command line
   started; the record of a run keeps `trigger`.

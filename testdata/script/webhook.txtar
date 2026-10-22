@@ -1,0 +1,72 @@
+# A task with on: webhook runs when a request with the right signature
+# comes to runtime.listen of the daemon: accepted answers 202 with the id
+# of the run, wait answers with its outputs; if: leaves a request out with
+# 202 and no run, with: that the inputs do not take answers 422, and a
+# wrong signature 401, which the log of the daemon names.
+
+env HOME=$WORK/home
+env HOOK=t0ken-for-hooks
+
+exec opstruss up -d --yes
+waitgrep '"message":"webhooks listen on 127.0.0.1:[0-9]+"' .opstruss/logs/default/_daemon.jsonl
+
+webhook POST /hooks/deploy '{"ref":"main"}' -bearer t0ken-for-hooks
+stdout '^202 \{"run":"[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}"\}'
+waitgrep '^main webhook POST$' deployed
+
+webhook POST /hooks/deploy '{"ref":"main","action":"skip"}' -bearer t0ken-for-hooks
+stdout '^202 \{\}'
+webhook POST /hooks/deploy '{"ref":5}' -bearer t0ken-for-hooks
+stdout '^422 \{"error":"with: '
+webhook POST /hooks/deploy '{"ref":"main"}' -bearer wrong
+stdout '^401 '
+grep 'refused a request from 127.0.0.1:[0-9]+ with 401: the bearer token does not match' .opstruss/logs/default/_daemon.jsonl
+! grep t0ken-for-hooks .opstruss/logs/default/_daemon.jsonl
+webhook GET /hooks/deploy '' -bearer t0ken-for-hooks
+stdout '^405 '
+webhook POST /nowhere '' -bearer t0ken-for-hooks
+stdout '^404 '
+
+webhook POST /hooks/hello '{"who":"ana"}' -github gh-secret
+stdout '^200 \{"exit_code":0,"outcome":"success","outputs":\{"greeting":"hi ana"\},"run":"[0-9]'
+exec opstruss stop
+
+-- opstruss.yaml --
+name: shop
+inputs:
+  hook: {type: string, env: HOOK}
+runtime:
+  listen: 127.0.0.1:0
+tasks:
+  deploy:
+    inputs:
+      ref: {type: string, required: true}
+    run: echo "$REF $TRIGGER $METHOD" >> deployed
+    env:
+      REF: ${{ inputs.ref }}
+      TRIGGER: ${{ event.trigger }}
+      METHOD: ${{ event.method }}
+    on:
+      webhook:
+        path: /hooks/deploy
+        secret: ${{ inputs.hook }}
+        signature: bearer
+        if: "!has(event.body.action) || event.body.action != 'skip'"
+        with:
+          ref: ${{ event.body.ref }}
+  hello:
+    inputs:
+      who: {type: string, required: true}
+    run: echo "greeting=hi $WHO" > "$OPSTRUSS_OUTPUT"
+    env:
+      WHO: ${{ inputs.who }}
+    outputs:
+      greeting: {}
+    on:
+      webhook:
+        path: /hooks/hello
+        secret: gh-secret
+        signature: github
+        respond: wait
+        with:
+          who: ${{ event.body.who }}

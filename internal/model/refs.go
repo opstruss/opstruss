@@ -42,13 +42,14 @@ var readable = map[string][]string{
 	"output":       {"inputs", "locals", "units", "stack", "opstruss"},
 	"secret":       {"inputs", "locals", "stack", "opstruss"},
 	"trigger":      {"inputs", "locals", "units", "secrets", "stack", "event", "opstruss"},
+	"install":      {"inputs", "locals", "units", "secrets", "stack", "opstruss"},
 }
 
 var placeNames = map[string]string{
 	"unit": "a unit", "until": "retry.until of a unit", "cond": "if and for_each of a unit", "local": "locals",
 	"task": "a task", "check": "failed_when, changed_when, and retry.until", "output": "project outputs",
 	"plugin": "a plugin task", "plugin-check": "failed_when, changed_when, and retry.until of a plugin task",
-	"secret": "secret sources", "trigger": "if and with of a trigger",
+	"secret": "secret sources", "trigger": "if and with of a trigger", "install": "the secret of a webhook",
 }
 
 // refs checks the expressions in v, written at path, and returns the units
@@ -327,6 +328,15 @@ func (c *checker) references() {
 				}
 				c.refs(at(sp, "if"), condition(s.If), place{kind: "trigger"})
 				c.refs(at(sp, "with"), s.With, place{kind: "trigger"})
+			}
+			for i, w := range t.On.Webhook {
+				wp := []string{"tasks", name, "on", "webhook"}
+				if len(t.On.Webhook) > 1 {
+					wp = at(wp, strconv.Itoa(i))
+				}
+				c.refs(at(wp, "secret"), w.Secret, place{kind: "install"})
+				c.refs(at(wp, "if"), condition(w.If), place{kind: "trigger"})
+				c.refs(at(wp, "with"), w.With, place{kind: "trigger"})
 			}
 		}
 		calls[name] = slices.DeleteFunc(slices.Clone(t.Needs), func(n string) bool { return p.Tasks[n] == nil })

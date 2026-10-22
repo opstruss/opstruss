@@ -1,9 +1,14 @@
 package main
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -70,6 +75,39 @@ func params(dir string) testscript.Params {
 				}
 			}
 			ts.Fatalf("no match for %q in %s", args[0], args[1])
+		},
+		// webhook sends a request to the webhooks of the daemon of stack
+		// default, at the address its file names, and prints the status and
+		// body of the answer: webhook <method> <path> <body> [-bearer s]
+		// [-github s].
+		"webhook": func(ts *testscript.TestScript, _ bool, args []string) {
+			if len(args) < 3 {
+				ts.Fatalf("usage: webhook <method> <path> <body> [-bearer secret] [-github secret]")
+			}
+			var file struct {
+				Listen string `json:"listen"`
+			}
+			data, err := os.ReadFile(ts.MkAbs(".opstruss/daemon/default.json"))
+			ts.Check(err)
+			ts.Check(json.Unmarshal(data, &file))
+			req, err := http.NewRequest(args[0], "http://"+file.Listen+args[1], strings.NewReader(args[2]))
+			ts.Check(err)
+			req.Header.Set("Content-Type", "application/json")
+			for i := 3; i+1 < len(args); i += 2 {
+				switch args[i] {
+				case "-bearer":
+					req.Header.Set("Authorization", "Bearer "+args[i+1])
+				case "-github":
+					m := hmac.New(sha256.New, []byte(args[i+1]))
+					m.Write([]byte(args[2]))
+					req.Header.Set("X-Hub-Signature-256", "sha256="+hex.EncodeToString(m.Sum(nil)))
+				}
+			}
+			resp, err := http.DefaultClient.Do(req)
+			ts.Check(err)
+			defer func() { _ = resp.Body.Close() }()
+			body, _ := io.ReadAll(resp.Body)
+			_, _ = fmt.Fprintf(ts.Stdout(), "%d %s", resp.StatusCode, body)
 		},
 		// daemonrun fails unless the newest run of a stack ran in its
 		// daemon, or with ! unless it did not: the record of the run names

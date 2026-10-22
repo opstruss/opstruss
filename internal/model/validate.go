@@ -465,6 +465,14 @@ func (c *checker) tasks() {
 			webhooks[key] = name
 		}
 	}
+	if len(webhooks) > 0 && (c.p.Runtime == nil || c.p.Runtime.Listen == "") {
+		c.add([]string{"runtime", "listen"}, "a task has on: webhook, so the daemon needs runtime.listen, the address it listens on, such as 127.0.0.1:7878")
+	}
+	if c.p.Runtime != nil && c.p.Runtime.Listen != "" {
+		if _, _, err := net.SplitHostPort(c.p.Runtime.Listen); err != nil {
+			c.add([]string{"runtime", "listen"}, "%s is not host:port: %v", c.p.Runtime.Listen, err)
+		}
+	}
 }
 
 // schedules checks the schedule and every triggers of a task: cron as
@@ -792,7 +800,7 @@ func (c *checker) triggers(path []string, t *Task) {
 	if t.On == nil {
 		return
 	}
-	for name, n := range map[string]int{"webhook": len(t.On.Webhook), "watch": len(t.On.Watch), "after": len(t.On.After)} {
+	for name, n := range map[string]int{"watch": len(t.On.Watch), "after": len(t.On.After)} {
 		if n > 0 {
 			c.add(at(path, "on", name), "not supported yet")
 		}

@@ -57,6 +57,8 @@ type Options struct {
 	Model *model.Project
 	// Event is what made the run; without it, the command line did.
 	Event *TriggerEvent
+	// Started hears the id of a run made by Fire once its record is there.
+	Started func(run string)
 }
 
 // Question is a change that waits for approval.
@@ -74,6 +76,8 @@ type Event = record.Event
 type Result struct {
 	Run      string
 	ExitCode int // 0 success, 1 failure, 2 stopped at plan for approval
+	Outcome  string
+	Outputs  map[string]any // of a task, with sensitive values as secret.Mask
 }
 
 // Outcomes of units, tasks, and steps.
@@ -119,6 +123,8 @@ type engine struct {
 	rootTask string
 	needed   map[string]*taskOnce // tasks of needs, which run once per run
 	event    map[string]any       // event: what made the run
+	outcome  string               // how the run ended, once it closed
+	outputs  map[string]any       // and what it gave, as shown
 
 	insts  []*instance            // in graph order
 	byUnit map[string][]*instance // by the path of the unit
@@ -303,6 +309,7 @@ func (e *engine) close(outcome string, outputs, marks map[string]any) {
 		e.warn("", "removing the run's temporary files: %v", err)
 	}
 	outputs = e.shown(outputs, marks)
+	e.outcome, e.outputs = outcome, outputs
 	code := e.exit
 	e.emit(Event{Type: "run", Level: "info", Task: e.rec.Task(), Message: outcome, Outcome: outcome, ExitCode: &code, Outputs: outputs})
 	e.mu.Lock()
@@ -473,7 +480,9 @@ func (e *engine) stopAtPlan() {
 	e.mu.Unlock()
 }
 
-func (e *engine) result() *Result { return &Result{Run: e.runID, ExitCode: e.exit} }
+func (e *engine) result() *Result {
+	return &Result{Run: e.runID, ExitCode: e.exit, Outcome: e.outcome, Outputs: e.outputs}
+}
 
 // hostname is the name of this machine, read once.
 var hostname = sync.OnceValue(func() string {

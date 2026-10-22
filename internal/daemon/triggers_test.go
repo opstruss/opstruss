@@ -72,7 +72,7 @@ tasks:
         with:
           day: ${{ string(event.time.getDayOfWeek()) }}
 `, nil)
-	list, err := engine.Triggers(runOptions(dir, "default", nil, []string{"PATH=" + os.Getenv("PATH")}))
+	list, _, err := engine.Triggers(runOptions(dir, "default", nil, []string{"PATH=" + os.Getenv("PATH")}))
 	if err != nil || len(list) != 1 {
 		t.Fatalf("triggers %v %v", list, err)
 	}
@@ -109,7 +109,7 @@ tasks:
       schedule: {cron: "* * * * *", timezone: UTC, persistent: true}
 `
 	_, dir := triggerDaemon(t, yaml, func(root string) {
-		list, err := engine.Triggers(runOptions(filepath.Dir(root), "default", nil, nil))
+		list, _, err := engine.Triggers(runOptions(filepath.Dir(root), "default", nil, nil))
 		if err != nil || len(list) != 1 {
 			t.Fatalf("triggers %v %v", list, err)
 		}

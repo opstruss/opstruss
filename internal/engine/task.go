@@ -171,7 +171,7 @@ func (e *engine) task(ctx context.Context, name string, inputs map[string]any) *
 		e.exit = 1
 	}
 	e.close(res.outcome, res.outputs, res.marks)
-	return &Result{Run: e.runID, ExitCode: e.exit}
+	return e.result()
 }
 
 // unitTasks runs the task name of each unit that has it, in graph order,

@@ -33,8 +33,9 @@ type Schedule struct {
 // triggers are the triggers that the daemon installed: from the project
 // as it was then, with the inputs and environment of that time.
 type triggers struct {
-	d    *Daemon
-	opts engine.Options
+	d     *Daemon
+	opts  engine.Options
+	hooks *webhooks
 
 	mu      sync.Mutex
 	stop    context.CancelFunc
@@ -52,9 +53,10 @@ func keyOf(t *engine.Trigger) string { return t.Task + "/" + t.Kind + "/" + t.Ke
 func (t *triggers) install(opts engine.Options) {
 	p, err := model.Load(opts.Dir, opts.Stack)
 	var list []*engine.Trigger
+	var listen string
 	if err == nil {
 		opts.Model = p
-		list, err = engine.Triggers(opts)
+		list, listen, err = engine.Triggers(opts)
 	}
 	if err != nil {
 		t.d.event("trigger", "warn", "", "the triggers installed before stay: %v", err)
@@ -70,6 +72,9 @@ func (t *triggers) install(opts engine.Options) {
 	_ = t.d.reg.update(func(f *File) {
 		var keep []*Schedule
 		for _, tr := range list {
+			if tr.Kind == "webhook" {
+				continue
+			}
 			s := &Schedule{Task: tr.Task, Kind: tr.Kind, Key: tr.Key}
 			for _, old := range f.Schedules {
 				if old.Task == s.Task && old.Kind == s.Kind && old.Key == s.Key {
@@ -88,8 +93,49 @@ func (t *triggers) install(opts engine.Options) {
 			go t.every(ctx, tr)
 		}
 	}
+	if err := t.hooks.set(listen, list); err != nil {
+		t.d.event("trigger", "error", "", "%v", err)
+	}
 	if len(list) > 0 {
 		t.d.event("trigger", "info", "", "installed %d triggers", len(list))
+	}
+}
+
+// options are those of the runs of the triggers installed now.
+func (t *triggers) options() engine.Options {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.opts
+}
+
+// begin counts a run of task as unfinished, unless it has MaxPending.
+func (t *triggers) begin(task string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.pending[task] >= MaxPending {
+		return false
+	}
+	t.pending[task]++
+	return true
+}
+
+func (t *triggers) end(task string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.pending[task]--; t.pending[task] == 0 {
+		delete(t.pending, task)
+	}
+}
+
+// report writes how the run that tr made for the time at ended.
+func (t *triggers) report(tr *engine.Trigger, at time.Time, res *engine.Result, err error) {
+	switch {
+	case err != nil:
+		t.d.event("trigger", "error", tr.Task, "%s: %v", tr, err)
+	case res == nil:
+		t.d.event("trigger", "info", tr.Task, "%s: if: left the time of %s out", tr, at.Format(time.RFC3339))
+	default:
+		t.d.event("trigger", "info", tr.Task, "%s: run %s exited with %d", tr, res.Run, res.ExitCode)
 	}
 }
 
@@ -101,6 +147,9 @@ func (t *triggers) close() {
 		t.stop()
 	}
 	t.mu.Unlock()
+	t.hooks.mu.Lock()
+	t.hooks.close()
+	t.hooks.mu.Unlock()
 	t.runs.Wait()
 }
 
@@ -108,7 +157,7 @@ func (t *triggers) close() {
 func (t *triggers) active() bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return len(t.flight) > 0
+	return len(t.pending) > 0
 }
 
 // schedule makes a run at each time that the cron of tr names. The daemon
@@ -185,20 +234,23 @@ func (t *triggers) every(ctx context.Context, tr *engine.Trigger) {
 func (t *triggers) fire(tr *engine.Trigger, at time.Time) {
 	t.mu.Lock()
 	key := keyOf(tr)
-	switch {
-	case t.flight[key]:
-		t.mu.Unlock()
+	inFlight := t.flight[key]
+	if !inFlight {
+		t.flight[key] = true
+	}
+	t.mu.Unlock()
+	if inFlight {
 		t.d.event("trigger", "info", tr.Task, "%s: the run it made last runs or waits still, and takes the time of %s too", tr, at.Format(time.RFC3339))
 		return
-	case t.pending[tr.Task] >= MaxPending:
+	}
+	if !t.begin(tr.Task) {
+		t.mu.Lock()
+		delete(t.flight, key)
 		t.mu.Unlock()
 		t.d.event("diagnostic", "warn", tr.Task, "%s: dropped the time of %s, since task %s has %d runs unfinished", tr, at.Format(time.RFC3339), tr.Task, MaxPending)
 		return
 	}
-	t.flight[key] = true
-	t.pending[tr.Task]++
-	opts := t.opts
-	t.mu.Unlock()
+	opts := t.options()
 	if tr.Kind == "schedule" {
 		t.setLast(tr, at)
 	}
@@ -206,22 +258,15 @@ func (t *triggers) fire(tr *engine.Trigger, at time.Time) {
 	go func() {
 		defer t.runs.Done()
 		defer func() {
+			t.end(tr.Task)
 			t.mu.Lock()
 			delete(t.flight, key)
-			t.pending[tr.Task]--
 			t.mu.Unlock()
 		}()
 		opts.Event = &engine.TriggerEvent{Trigger: tr.Kind, Time: at.UTC()}
 		opts.Supervisor = t.d.sup
 		res, err := engine.Fire(t.d.runs, opts, tr)
-		switch {
-		case err != nil:
-			t.d.event("trigger", "error", tr.Task, "%s: %v", tr, err)
-		case res == nil:
-			t.d.event("trigger", "info", tr.Task, "%s: if: left the time of %s out", tr, at.Format(time.RFC3339))
-		default:
-			t.d.event("trigger", "info", tr.Task, "%s: run %s exited with %d", tr, res.Run, res.ExitCode)
-		}
+		t.report(tr, at, res, err)
 	}()
 }
 

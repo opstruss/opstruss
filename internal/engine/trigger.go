@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/opstruss/opstruss/internal/expr"
+	"github.com/opstruss/opstruss/internal/model"
 )
 
 // Trigger is a trigger of a task of the project as a daemon installs it.
@@ -25,6 +27,14 @@ type Trigger struct {
 	Timezone   string // empty is the time zone of the machine
 	Persistent bool
 	Every      time.Duration
+
+	// A webhook: where it listens, its secret as the trigger was
+	// installed, how the secret is checked, and how it answers.
+	Path      string
+	Method    string
+	Secret    string
+	Signature model.Signature
+	Respond   string
 }
 
 // TriggerEvent is what makes a run: where it comes from, as event.trigger
@@ -35,13 +45,17 @@ type TriggerEvent struct {
 	Fields  map[string]any
 }
 
-// Triggers returns the schedule and every triggers of the tasks of the
-// project, as a daemon installs them.
-func Triggers(opts Options) ([]*Trigger, error) {
+// Triggers returns the schedule, every, and webhook triggers of the tasks
+// of the project, as a daemon installs them, and the address the webhooks
+// listen on. The secret of a webhook is evaluated then, with the sources
+// of plan time and the secrets.
+func Triggers(opts Options) ([]*Trigger, string, error) {
 	e, err := load(opts)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
+	e.ctx = context.Background()
+	var scope *expr.Scope
 	var out []*Trigger
 	for _, name := range slices.Sorted(maps.Keys(e.p.Tasks)) {
 		on := e.p.Tasks[name].On
@@ -55,13 +69,41 @@ func Triggers(opts Options) ([]*Trigger, error) {
 		for i, every := range on.Every {
 			d, err := time.ParseDuration(every)
 			if err != nil {
-				return nil, fmt.Errorf("task %s: every: %w", name, err)
+				return nil, "", fmt.Errorf("task %s: every: %w", name, err)
 			}
 			out = append(out, &Trigger{Task: name, Kind: "every", Index: i, Key: keyOf(every), Every: d})
 		}
+		for i, w := range on.Webhook {
+			if scope == nil {
+				e.pass = pass{}
+				if err := e.selectUnits(false); err != nil {
+					return nil, "", err
+				}
+				e.previewQuiet()
+				scope = e.triggerScope()
+			}
+			secret, err := expr.EvalText(w.Secret, scope)
+			if err != nil {
+				return nil, "", e.redact.Err(fmt.Errorf("task %s: webhook secret: %w", name, err))
+			}
+			method := cmp.Or(w.Method, "POST")
+			out = append(out, &Trigger{Task: name, Kind: "webhook", Index: i, Key: keyOf(method, w.Path), Path: w.Path,
+				Method: method, Secret: secret, Signature: *w.Signature, Respond: cmp.Or(w.Respond, "accepted")})
+		}
 	}
-	return out, nil
+	listen := ""
+	if e.p.Runtime != nil {
+		listen = e.p.Runtime.Listen
+	}
+	return out, listen, nil
 }
+
+// WithError is a with: of a trigger whose values the inputs of its task do
+// not take, so no run is made; a webhook answers it with 422.
+type WithError struct{ Err error }
+
+func (e *WithError) Error() string { return e.Err.Error() }
+func (e *WithError) Unwrap() error { return e.Err }
 
 func keyOf(parts ...string) string {
 	h := sha256.New()
@@ -86,8 +128,11 @@ func Fire(ctx context.Context, opts Options, t *Trigger) (*Result, error) {
 	}
 	var cond any
 	var with map[string]any
-	if t.Kind == "schedule" && t.Index < len(task.On.Schedule) {
+	switch {
+	case t.Kind == "schedule" && t.Index < len(task.On.Schedule):
 		cond, with = task.On.Schedule[t.Index].If, task.On.Schedule[t.Index].With
+	case t.Kind == "webhook" && t.Index < len(task.On.Webhook):
+		cond, with = task.On.Webhook[t.Index].If, task.On.Webhook[t.Index].With
 	}
 	e.ctx = ctx
 	given := map[string]any{}
@@ -115,13 +160,16 @@ func Fire(ctx context.Context, opts Options, t *Trigger) (*Result, error) {
 			e.hide(v, marks)
 			given, _ = v.(map[string]any)
 			if _, err := conform(task.Inputs, given); err != nil {
-				return nil, e.redact.Err(fmt.Errorf("with: %w", err))
+				return nil, &WithError{e.redact.Err(fmt.Errorf("with: %w", err))}
 			}
 		}
 		e.resetUnits()
 	}
 	if err := e.start("task", t.Task); err != nil {
 		return nil, err
+	}
+	if opts.Started != nil {
+		opts.Started(e.runID)
 	}
 	return e.task(ctx, t.Task, given), nil
 }
@@ -161,6 +209,8 @@ func eventOf(ev *TriggerEvent, started time.Time) map[string]any {
 // String says what t is, as list and the log of the daemon show it.
 func (t *Trigger) String() string {
 	switch t.Kind {
+	case "webhook":
+		return "webhook " + t.Method + " " + t.Path
 	case "schedule":
 		if t.Timezone != "" {
 			return fmt.Sprintf("schedule %s (%s)", t.Cron, t.Timezone)
