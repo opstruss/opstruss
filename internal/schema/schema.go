@@ -27,6 +27,7 @@ const (
 	Project Kind = "project.json"
 	Include Kind = "project.json#/$defs/includeFile"
 	Plugin  Kind = "plugin.json"
+	Lock    Kind = "lock.json"
 	Record  Kind = "record.json"
 	Meta    Kind = "meta.json"
 	Run     Kind = "run.json"
@@ -72,7 +73,7 @@ var compiled = sync.OnceValues(func() (map[Kind]*jsonschema.Schema, error) {
 		}
 	}
 	out := map[Kind]*jsonschema.Schema{}
-	for _, k := range []Kind{Project, Include, Plugin, Record, Meta, Run, Event, Daemon,
+	for _, k := range []Kind{Project, Include, Plugin, Lock, Record, Meta, Run, Event, Daemon,
 		APIInitialize, APIRequest, APIResult, APIQuestion, APIApproval, APIAsk, APIAnswer, APIEvent} {
 		s, err := c.Compile(base + string(k))
 		if err != nil {
