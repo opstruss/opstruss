@@ -1,0 +1,34 @@
+# Services retain remote snapshots through restarts; prune also protects trigger snapshots.
+env HOME=$WORK/home
+sourcerepo repo
+exec opstruss plugins fetch
+exec opstruss up -d --yes --locked
+waitgrep 'remote-service' .opstruss/logs/default/site/worker.jsonl
+agecache $HOME/.opstruss/cache
+exec opstruss plugins prune --json
+stdout '"removed": null'
+exec opstruss down --yes --locked
+exec opstruss stop
+agecache $HOME/.opstruss/cache
+exec opstruss plugins prune --json
+stdout 'git-'
+exists opstruss.lock
+
+-- opstruss.yaml --
+name: services
+uses:
+  site: github.com/opstruss/plugins/component@v1
+units:
+  site:
+    uses: site
+-- repo/component/opstruss.yaml --
+units:
+  worker:
+    service: [sh, '${{ opstruss.dir }}/worker.sh']
+    restart: always
+    stop: {signal: SIGTERM, grace: 100ms}
+-- repo/component/worker.sh --
+#!/bin/sh
+trap 'exit 0' TERM
+echo remote-service
+while :; do sleep 0.1; done

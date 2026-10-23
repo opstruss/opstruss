@@ -32,7 +32,7 @@ import (
 
 func TestMain(m *testing.M) {
 	testscript.Main(m, map[string]func(){
-		"opstruss":  func() { os.Exit(cli.Main()) },
+		"opstruss":  func() { fixtureAssets(); os.Exit(cli.Main()) },
 		"fakecloud": func() { os.Exit(fakecloud(os.Args[1:])) },
 		"fakeapi":   func() { os.Exit(fakeapi(os.Args[1:])) },
 		"fakesops":  func() { os.Exit(fakesops(os.Args[1:])) },
@@ -64,6 +64,7 @@ func params(dir string) testscript.Params {
 		// How long the load scripts run: 30 seconds in make criteria, ten
 		// minutes in the daily load workflow.
 		env.Setenv("LOAD_SECONDS", cmp.Or(os.Getenv("OPSTRUSS_LOAD_SECONDS"), "30"))
+		env.Defer(func() { writableFixtureCache(filepath.Join(env.WorkDir, "home", ".opstruss", "cache")) })
 		// A script that fails before opstruss stop leaves its daemons, with
 		// their services and sources, running and holding their ports; a
 		// project may be in a directory of the script's own.
@@ -84,6 +85,8 @@ func params(dir string) testscript.Params {
 		}
 		return false, fmt.Errorf("unknown condition %s", cond)
 	}, Cmds: map[string]func(*testscript.TestScript, bool, []string){
+		"sourcerepo": sourceRepo,
+		"agecache":   ageCache,
 		// agekey makes an age key file, as age-keygen -o does, for a
 		// machine whose public key a script needs before OpsTruss makes
 		// one, and with a variable name, sets it to the public key:

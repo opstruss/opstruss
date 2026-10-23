@@ -1,0 +1,108 @@
+# Remote provenance survives local cache paths, includes, and nested components.
+env HOME=$WORK/home
+env GRANTED_A=allowed-a
+env GRANTED_B=allowed-b
+env DENIED=hidden-value
+sourcerepo repo
+exec opstruss plugins fetch
+cp opstruss.lock before.lock
+exec opstruss up --yes
+stdout 'unit-intersection'
+stdout 'nested-intersection'
+exec opstruss check site
+stdout 'task-intersection'
+
+# A remote component cannot grant input env or automatic approval, even through include.
+cp invalid.yaml repo/component/permissions.yaml
+exec git -C repo config user.name Fixture
+exec git -C repo config user.email fixture@example.invalid
+exec git -C repo add .
+exec git -C repo commit -qm invalid
+exec git -C repo tag -f v1
+! exec opstruss plugins update site
+stderr 'remote components cannot grant approval'
+stderr 'env: of an input is for the files of the project'
+cmp opstruss.lock before.lock
+
+# Relative uses cannot leave the snapshot to turn into trusted local code.
+cp escape.yaml repo/component/opstruss.yaml
+exec git -C repo add .
+exec git -C repo commit -qm escape
+exec git -C repo tag -f v1
+! exec opstruss plugins update site
+stderr 'escapes repository root'
+cmp opstruss.lock before.lock
+
+# Choosing the same working tree explicitly as a local path grants trust.
+cp local.yaml opstruss.yaml
+cp trusted.yaml repo/component/opstruss.yaml
+cp empty.yaml repo/component/permissions.yaml
+exec opstruss validate
+stdout '^valid$'
+
+-- opstruss.yaml --
+name: trust
+uses:
+  site: github.com/opstruss/plugins/component@v1
+units:
+  site:
+    uses: site
+    pass: [GRANTED_A, GRANTED_B]
+-- local.yaml --
+name: trust
+units:
+  site:
+    uses: ./repo/component
+-- repo/component/opstruss.yaml --
+include: [permissions.yaml]
+units:
+  check:
+    pass: [GRANTED_A, DENIED]
+    run: 'test "$GRANTED_A" = allowed-a && test -z "$GRANTED_B" && test -z "$DENIED" && echo unit-intersection'
+  nested:
+    uses: ./child
+    pass: [GRANTED_A]
+tasks:
+  check:
+    pass: [GRANTED_A, DENIED]
+    run: 'test "$GRANTED_A" = allowed-a && test -z "$GRANTED_B" && test -z "$DENIED" && echo task-intersection'
+-- repo/component/permissions.yaml --
+locals:
+  safe: true
+-- repo/component/child/opstruss.yaml --
+units:
+  check:
+    pass: [GRANTED_A, GRANTED_B, DENIED]
+    run: 'test "$GRANTED_A" = allowed-a && test -z "$GRANTED_B" && test -z "$DENIED" && echo nested-intersection'
+-- invalid.yaml --
+inputs:
+  unsafe: {type: string, env: DENIED}
+tasks:
+  unsafe:
+    approval: auto
+    steps:
+      - task: up
+        yes: true
+-- escape.yaml --
+units:
+  escape:
+    uses: ../../../outside
+-- trusted.yaml --
+inputs:
+  local: {type: string, env: DENIED}
+units:
+  command:
+    run: [echo, trusted]
+    approval: auto
+tasks:
+  local:
+    steps:
+      - task: up
+        yes: true
+-- empty.yaml --
+locals:
+  empty: true
+-- outside/opstruss.yaml --
+units:
+  unsafe:
+    run: [echo, escaped]

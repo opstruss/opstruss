@@ -1,0 +1,158 @@
+# Remote pins, metadata discovery, whole-project fetching, immutable cleanup.
+env HOME=$WORK/home
+sourcerepo repo
+
+# Discovery and inventory neither fetch nor write pins.
+exec opstruss --help
+! exists opstruss.lock
+exec opstruss plugins --json
+stdout '"cache": "unlocked"'
+! exists opstruss.lock
+! exec opstruss plan --stack alpha --locked
+stderr 'requires a pin change'
+! exists opstruss.lock
+! exec opstruss remote-task
+stderr 'plugins fetch first'
+! exec opstruss plugins fetch --stack alpha
+stderr 'whole project and all stacks'
+
+exec opstruss plugins fetch
+exists opstruss.lock
+grep 'plugins/extra@main' opstruss.lock
+cp opstruss.lock before.lock
+exec opstruss plugins fetch --locked
+cmp opstruss.lock before.lock
+
+# Main project tasks still discover flags before sources are fetched.
+exec opstruss root-task --stack alpha --locked --message hello
+stdout 'task-v1 hello'
+exec opstruss remote-task site --stack alpha --locked
+stdout 'task-v1 component'
+exec opstruss up --stack alpha --yes
+stdout 'up-v1 first'
+stdout 'component-v1'
+exec opstruss plan --stack alpha --locked
+! stdout 'will run'
+
+# A moving ref stays pinned until explicit update, including aliases in its group.
+exec git -C repo config user.name Fixture
+exec git -C repo config user.email fixture@example.invalid
+cp v2.sh repo/demo/tool.sh
+exec git -C repo add .
+exec git -C repo commit -qm v2
+exec git -C repo tag -f v1
+exec opstruss plugins fetch
+cmp opstruss.lock before.lock
+exec opstruss plugins update demo
+! cmp opstruss.lock before.lock
+exec opstruss plugins --json
+stdout '"kind": "plugin"'
+
+# The stored cleanup remains v1, even after removing definitions and all source bytes.
+cp removed.yaml opstruss.yaml
+exec sh -c 'chmod -R u+w "$HOME/.opstruss/cache/git"; rm -rf "$HOME/.opstruss/cache/git"'
+exec opstruss up --stack alpha --yes
+stdout 'down-v1 first'
+! stdout 'down-v2'
+! exists .opstruss/state/alpha/db/state.json
+
+# A cached source executes offline across projects; a cold one fails before programs.
+cp full.yaml opstruss.yaml
+exec opstruss plugins fetch
+exec touch offline
+exec opstruss root-task --locked --message offline
+stdout 'task-v2 offline'
+cp opstruss.lock pinned.lock
+exec sh -c 'chmod -R u+w "$HOME/.opstruss/cache/git"; rm -rf "$HOME/.opstruss/cache/git"'
+! exec opstruss root-task --locked --message cold
+stderr 'cannot fetch pinned commit'
+cmp opstruss.lock pinned.lock
+
+-- opstruss.yaml --
+name: sources
+uses:
+  demo: github.com/opstruss/plugins/demo@v1
+  alias: github.com/opstruss/plugins/demo@v1
+  site: github.com/opstruss/plugins/demo/components/site@v1
+stacks:
+  alpha: {}
+  beta:
+    include: [beta.yaml]
+units:
+  db:
+    uses: demo
+    with: {name: first}
+  site:
+    uses: site
+tasks:
+  root-task:
+    inputs:
+      message: {type: string, required: true}
+    demo.echo: {message: '${{ inputs.message }}'}
+-- full.yaml --
+name: sources
+uses:
+  demo: github.com/opstruss/plugins/demo@v1
+tasks:
+  root-task:
+    inputs:
+      message: {type: string, required: true}
+    demo.echo: {message: '${{ inputs.message }}'}
+-- beta.yaml --
+units:
+  extra:
+    uses: github.com/opstruss/plugins/extra@main
+-- removed.yaml --
+name: sources
+stacks:
+  alpha: {}
+  beta: {}
+removed:
+  - {from: db, destroy: true}
+  - {from: site, destroy: true}
+-- repo/demo/opstruss.plugin.yaml --
+name: demo
+inputs:
+  name: {type: string, default: unused}
+tasks:
+  up:
+    run: [sh, '${{ opstruss.dir }}/tool.sh', up]
+  down:
+    run: [sh, '${{ opstruss.dir }}/tool.sh', down]
+  echo:
+    inputs:
+      message: {type: string, required: true}
+    run: [sh, '${{ opstruss.dir }}/tool.sh', task]
+-- repo/demo/tool.sh --
+#!/bin/sh
+case "$1" in
+up) echo "up-v1 $INPUT_NAME" ;;
+down) echo "down-v1 $INPUT_NAME" ;;
+task) echo "task-v1 $INPUT_MESSAGE" ;;
+esac
+-- v2.sh --
+#!/bin/sh
+case "$1" in
+up) echo "up-v2 $INPUT_NAME" ;;
+down) echo "down-v2 $INPUT_NAME" ;;
+task) echo "task-v2 $INPUT_MESSAGE" ;;
+esac
+-- repo/demo/components/site/opstruss.yaml --
+include: [../common.yaml]
+uses:
+  parent: ../..
+units:
+  command:
+    run: [echo, component-v1]
+    down: [echo, component-down-v1]
+tasks:
+  remote-task:
+    parent.echo: {message: component}
+-- repo/demo/components/common.yaml --
+locals:
+  included: true
+-- repo/extra/opstruss.plugin.yaml --
+name: extra
+tasks:
+  up:
+    run: [echo, extra]

@@ -1,0 +1,80 @@
+# Every pending and abandoned attempt restores its own immutable source.
+[!failpoints] skip 'needs failpoints'
+env HOME=$WORK/home
+env KEEP=same-value
+sourcerepo repo
+exec opstruss plugins fetch
+env OPSTRUSS_FAILPOINT=up-after-program=kill
+! exec opstruss up --yes
+exists resource-v1
+exec opstruss state pull resource
+stdout '"pending"'
+stdout '"remote"'
+env OPSTRUSS_FAILPOINT=
+
+# The next attempt has another source and contract; it keeps the first as abandoned.
+cp v2.sh repo/demo/tool.sh
+exec git -C repo config user.name Fixture
+exec git -C repo config user.email fixture@example.invalid
+exec git -C repo add .
+exec git -C repo commit -qm v2
+exec git -C repo tag -f v1
+exec opstruss plugins update demo
+env OPSTRUSS_FAILPOINT=up-before-program=kill
+! exec opstruss up --yes
+env OPSTRUSS_FAILPOINT=
+exec opstruss state pull resource
+stdout '"abandoned"'
+stdout '"pending"'
+cp removed.yaml opstruss.yaml
+exec sh -c 'chmod -R u+w "$HOME/.opstruss/cache/git"; rm -rf "$HOME/.opstruss/cache/git"'
+exec touch offline
+! exec opstruss up --yes
+stderr 'cannot fetch pinned commit'
+exists .opstruss/state/default/resource/state.json
+rm offline
+
+# Stored pass fingerprints still apply before cleanup; force cannot skip source integrity.
+env KEEP=changed-value
+! exec opstruss up --yes
+stderr 'pass values differ'
+exists resource-v1
+env KEEP=same-value
+exec opstruss up --yes
+stdout 'down-v1'
+stdout 'down-v2'
+! exists resource-v1
+! exists .opstruss/state/default/resource/state.json
+
+-- opstruss.yaml --
+name: attempts
+uses:
+  demo: github.com/opstruss/plugins/demo@v1
+units:
+  resource:
+    uses: demo
+    pass: [KEEP]
+-- removed.yaml --
+name: attempts
+removed:
+  - {from: resource, destroy: true}
+-- repo/demo/opstruss.plugin.yaml --
+name: demo
+env: [KEEP]
+tasks:
+  up:
+    run: [sh, '${{ opstruss.dir }}/tool.sh', up]
+  down:
+    run: [sh, '${{ opstruss.dir }}/tool.sh', down]
+-- repo/demo/tool.sh --
+#!/bin/sh
+case "$1" in
+up) touch resource-v1 ;;
+down) rm -f resource-v1; echo down-v1 ;;
+esac
+-- v2.sh --
+#!/bin/sh
+case "$1" in
+up) touch resource-v2 ;;
+down) rm -f resource-v2; echo down-v2 ;;
+esac

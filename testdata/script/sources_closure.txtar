@@ -1,0 +1,68 @@
+# A transitive closure has one root lock, with one commit per repository/ref.
+env HOME=$WORK/home
+sourcerepo repo
+exec opstruss plugins fetch
+grep 'plugins/a@v1' opstruss.lock
+grep 'plugins/b@main' opstruss.lock
+grep 'plugins/c@main' opstruss.lock
+cp opstruss.lock before.lock
+exec opstruss up --yes
+stdout 'closure-v1'
+
+# A failed update of a dependency cycle cannot publish even the valid earlier pins.
+cp cycle.yaml repo/b/opstruss.yaml
+exec git -C repo config user.name Fixture
+exec git -C repo config user.email fixture@example.invalid
+exec git -C repo add .
+exec git -C repo commit -qm cycle
+! exec opstruss plugins update
+stderr 'uses itself'
+cmp opstruss.lock before.lock
+
+# Two writers/project loaders reuse the same cache without partial snapshots or lost pins.
+cp valid.yaml repo/b/opstruss.yaml
+exec git -C repo add .
+exec git -C repo commit -qm valid
+exec opstruss plugins update
+exec opstruss plugins fetch &
+exec opstruss plugins fetch &
+exec opstruss plugins fetch &
+wait
+exec opstruss up --yes
+exec touch offline
+exec opstruss up --yes --locked
+! stdout 'will run'
+
+-- opstruss.yaml --
+name: closure
+uses:
+  outer: github.com/opstruss/plugins/a@v1
+units:
+  closure:
+    uses: outer
+-- repo/a/opstruss.yaml --
+uses:
+  middle: github.com/opstruss/plugins/b@main
+units:
+  nested:
+    uses: middle
+-- repo/b/opstruss.yaml --
+uses:
+  inner: github.com/opstruss/plugins/c@main
+units:
+  nested:
+    uses: inner
+-- valid.yaml --
+uses:
+  inner: github.com/opstruss/plugins/c@main
+units:
+  nested:
+    uses: inner
+-- cycle.yaml --
+units:
+  cycle:
+    uses: ./
+-- repo/c/opstruss.yaml --
+units:
+  command:
+    run: [echo, closure-v1]

@@ -1,0 +1,60 @@
+# A crash never publishes a partial source or lock, and concurrent projects share complete entries.
+[!failpoints] skip 'needs failpoints'
+env HOME=$WORK/home
+env OPSTRUSS_FAILPOINT_LOG=$WORK/visited
+sourcerepo repo
+exec sh -c 'for f in source-before-publish source-after-publish sources-before-lock sources-after-lock; do for i in 1 2 3; do if test -d "$HOME/.opstruss/cache/git"; then chmod -R u+w "$HOME/.opstruss/cache/git"; rm -rf "$HOME/.opstruss/cache/git"; fi; rm -f opstruss.lock; if OPSTRUSS_FAILPOINT="$f=kill" opstruss plugins fetch > /dev/null 2>&1; then echo "lived past $f"; exit 1; fi; opstruss plugins fetch > /dev/null || exit 1; opstruss plan --locked > /dev/null || exit 1; done; done'
+! stdout 'lived past'
+grep '^source-before-publish$' visited
+grep '^source-after-publish$' visited
+grep '^sources-before-lock$' visited
+grep '^sources-after-lock$' visited
+
+# Active temporary work survives prune, while abandoned temporary work is collected.
+exec sh -c 'chmod -R u+w "$HOME/.opstruss/cache/git"; rm -rf "$HOME/.opstruss/cache/git"'
+env OPSTRUSS_FAILPOINT=source-before-publish=pause
+env OPSTRUSS_FAILPOINT_PAUSE=$WORK/pause
+exec opstruss plugins fetch &fetch&
+waitfile pause
+exec opstruss plugins prune
+exists pause
+rm pause
+wait fetch
+env OPSTRUSS_FAILPOINT=
+exec opstruss plugins prune
+exec sh -c 'test -z "$(ls -A "$HOME/.opstruss/cache/tmp")"'
+
+# Separate projects contend on the shared cache, and project writers serialize root pins.
+exec sh -c 'for i in $(seq 20); do opstruss -C one plugins fetch > /dev/null & a=$!; opstruss -C two plugins fetch > /dev/null & b=$!; opstruss plugins fetch > /dev/null & c=$!; opstruss plugins prune > /dev/null & d=$!; wait "$a" && wait "$b" && wait "$c" && wait "$d" || exit 1; done'
+exec touch offline
+exec opstruss -C one up --yes --locked
+stdout 'source-criteria'
+exec opstruss -C two up --yes --locked
+stdout 'source-criteria'
+
+-- opstruss.yaml --
+name: sources
+uses:
+  demo: github.com/opstruss/plugins/demo@v1
+units:
+  demo:
+    uses: demo
+-- one/opstruss.yaml --
+name: one
+uses:
+  demo: github.com/opstruss/plugins/demo@v1
+units:
+  demo:
+    uses: demo
+-- two/opstruss.yaml --
+name: two
+uses:
+  demo: github.com/opstruss/plugins/demo@v1
+units:
+  demo:
+    uses: demo
+-- repo/demo/opstruss.plugin.yaml --
+name: demo
+tasks:
+  up:
+    run: [echo, source-criteria]

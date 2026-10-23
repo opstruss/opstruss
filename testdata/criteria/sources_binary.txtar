@@ -1,0 +1,92 @@
+# A killed binary publisher cannot expose partial payloads or executables.
+[!failpoints] skip 'needs failpoints'
+env HOME=$WORK/home
+env OPSTRUSS_TEST_ASSETS=$WORK/assets
+env OPSTRUSS_FAILPOINT_LOG=$WORK/visited
+sourcerepo repo
+exec sh -c 'for f in binary-before-publish binary-after-publish; do for i in 1 2 3; do if test -d "$HOME/.opstruss/cache/bin"; then chmod -R u+w "$HOME/.opstruss/cache/bin"; rm -rf "$HOME/.opstruss/cache/bin"; fi; if OPSTRUSS_FAILPOINT="$f=kill" opstruss plugins fetch > /dev/null 2>&1; then echo "lived past $f"; exit 1; fi; opstruss plugins fetch > /dev/null || exit 1; opstruss up --yes --locked > /dev/null || exit 1; done; done'
+! stdout 'lived past'
+grep '^binary-before-publish$' visited
+grep '^binary-after-publish$' visited
+exec opstruss plugins prune
+exec sh -c 'test -z "$(ls -A "$HOME/.opstruss/cache/tmp")"'
+exec opstruss down --yes --locked
+stdout 'binary-down-v1 resource'
+
+-- opstruss.yaml --
+name: binary
+uses:
+  compiled: github.com/opstruss/plugins/compiled@v1
+units:
+  db:
+    uses: compiled
+    with: {name: resource}
+tasks:
+  root-path:
+    run: 'test -z "$(command -v demo-tool)" && echo private-path'
+-- full.yaml --
+name: binary
+uses:
+  compiled: github.com/opstruss/plugins/compiled@v1
+units:
+  db:
+    uses: compiled
+    with: {name: resource}
+-- removed.yaml --
+name: binary
+removed:
+  - {from: db, destroy: true}
+-- repo/compiled/opstruss.plugin.yaml --
+name: compiled
+state: tool
+requires: [demo-tool]
+inputs:
+  name: {type: string, required: true}
+bin:
+  demo-tool:
+    linux/amd64: {url: https://github.com/opstruss/plugins/releases/download/v1/tool-v1, sha256: 24c67af32a3ab69d6577f826c1c3000d233c9a384b2fc1a963fa287c14ca1a54}
+    linux/arm64: {url: https://github.com/opstruss/plugins/releases/download/v1/tool-v1, sha256: 24c67af32a3ab69d6577f826c1c3000d233c9a384b2fc1a963fa287c14ca1a54}
+    darwin/amd64: {url: https://github.com/opstruss/plugins/releases/download/v1/tool-v1, sha256: 24c67af32a3ab69d6577f826c1c3000d233c9a384b2fc1a963fa287c14ca1a54}
+    darwin/arm64: {url: https://github.com/opstruss/plugins/releases/download/v1/tool-v1, sha256: 24c67af32a3ab69d6577f826c1c3000d233c9a384b2fc1a963fa287c14ca1a54}
+tasks:
+  up:
+    run: [demo-tool, up]
+  down:
+    run: [demo-tool, down]
+  echo:
+    run: [demo-tool, echo]
+-- v2.plugin.yaml --
+name: compiled
+state: tool
+requires: [demo-tool]
+inputs:
+  name: {type: string, required: true}
+bin:
+  demo-tool:
+    linux/amd64: {url: https://github.com/opstruss/plugins/releases/download/v2/tool-v2, sha256: e6ae8d3e94115795d4eaa3ba667979fe07968b83e1096658e90d0111f5370184}
+    linux/arm64: {url: https://github.com/opstruss/plugins/releases/download/v2/tool-v2, sha256: e6ae8d3e94115795d4eaa3ba667979fe07968b83e1096658e90d0111f5370184}
+    darwin/amd64: {url: https://github.com/opstruss/plugins/releases/download/v2/tool-v2, sha256: e6ae8d3e94115795d4eaa3ba667979fe07968b83e1096658e90d0111f5370184}
+    darwin/arm64: {url: https://github.com/opstruss/plugins/releases/download/v2/tool-v2, sha256: e6ae8d3e94115795d4eaa3ba667979fe07968b83e1096658e90d0111f5370184}
+tasks:
+  up:
+    run: [demo-tool, up]
+  down:
+    run: [demo-tool, down]
+  echo:
+    run: [demo-tool, echo]
+-- assets/tool-v1 --
+#!/bin/sh
+set -eu
+case "$1" in
+up) echo "binary-up-v1 $INPUT_NAME"; echo v1 > "$OPSTRUSS_STATE_DIR/version" ;;
+down) test "$(cat "$OPSTRUSS_STATE_DIR/version")" = v1; echo "binary-down-v1 $INPUT_NAME" ;;
+echo) echo "binary-task-v1" ;;
+esac
+-- assets/tool-v2 --
+#!/bin/sh
+set -eu
+case "$1" in
+up) echo "binary-up-v2 $INPUT_NAME"; echo v2 > "$OPSTRUSS_STATE_DIR/version" ;;
+down) test "$(cat "$OPSTRUSS_STATE_DIR/version")" = v2; echo "binary-down-v2 $INPUT_NAME" ;;
+echo) echo "binary-task-v2" ;;
+esac

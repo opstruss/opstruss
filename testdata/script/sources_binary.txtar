@@ -1,0 +1,135 @@
+# Binary pins are private to their plugin; cleanup restores old source and payload.
+env HOME=$WORK/home
+env OPSTRUSS_TEST_ASSETS=$WORK/assets
+sourcerepo repo
+exec opstruss plugins fetch
+cp opstruss.lock before.lock
+exec opstruss doctor --json
+stdout '"name": "demo-tool"'
+! stdout '"status": "error"'
+exec opstruss up --yes
+stdout 'binary-up-v1 resource'
+grep '^v1$' .opstruss/state/default/db/tool/version
+exec opstruss root-path
+stdout 'private-path'
+
+# Tampering with extracted bytes fails a run, and explicit fetch repairs the same pin.
+exec sh -c 'for f in "$HOME"/.opstruss/cache/bin/*/exec/demo-tool; do chmod u+w "$f"; echo tampered > "$f"; done'
+! exec opstruss plan
+stderr 'binary cache integrity'
+exec opstruss plugins fetch
+cmp opstruss.lock before.lock
+exec opstruss plan
+! stdout 'will run'
+
+# Update source and all platform checksums without touching existing resources.
+exec git -C repo config user.name Fixture
+exec git -C repo config user.email fixture@example.invalid
+cp v2.plugin.yaml repo/compiled/opstruss.plugin.yaml
+exec git -C repo add .
+exec git -C repo commit -qm v2
+exec git -C repo tag -f v1
+exec opstruss plugins update compiled
+cp removed.yaml opstruss.yaml
+exec sh -c 'chmod -R u+w "$HOME/.opstruss/cache/git" "$HOME/.opstruss/cache/bin"; rm -rf "$HOME/.opstruss/cache/git" "$HOME/.opstruss/cache/bin"'
+exec touch offline
+exec touch assets/offline
+! exec opstruss up --yes
+stderr 'cannot fetch pinned commit'
+exists .opstruss/state/default/db/state.json
+grep '^v1$' .opstruss/state/default/db/tool/version
+rm offline
+rm assets/offline
+exec opstruss up --yes
+stdout 'binary-down-v1 resource'
+! stdout 'binary-down-v2'
+! exists .opstruss/state/default/db/state.json
+! exists .opstruss/state/default/db/tool
+
+# A complete warm cache can execute the new version and take it down offline.
+cp full.yaml opstruss.yaml
+exec opstruss plugins fetch
+exec touch offline
+exec touch assets/offline
+exec opstruss up --yes
+stdout 'binary-up-v2 resource'
+exec opstruss down --yes
+stdout 'binary-down-v2 resource'
+
+-- opstruss.yaml --
+name: binary
+uses:
+  compiled: github.com/opstruss/plugins/compiled@v1
+units:
+  db:
+    uses: compiled
+    with: {name: resource}
+tasks:
+  root-path:
+    run: 'test -z "$(command -v demo-tool)" && echo private-path'
+-- full.yaml --
+name: binary
+uses:
+  compiled: github.com/opstruss/plugins/compiled@v1
+units:
+  db:
+    uses: compiled
+    with: {name: resource}
+-- removed.yaml --
+name: binary
+removed:
+  - {from: db, destroy: true}
+-- repo/compiled/opstruss.plugin.yaml --
+name: compiled
+state: tool
+requires: [demo-tool]
+inputs:
+  name: {type: string, required: true}
+bin:
+  demo-tool:
+    linux/amd64: {url: https://github.com/opstruss/plugins/releases/download/v1/tool-v1, sha256: 24c67af32a3ab69d6577f826c1c3000d233c9a384b2fc1a963fa287c14ca1a54}
+    linux/arm64: {url: https://github.com/opstruss/plugins/releases/download/v1/tool-v1, sha256: 24c67af32a3ab69d6577f826c1c3000d233c9a384b2fc1a963fa287c14ca1a54}
+    darwin/amd64: {url: https://github.com/opstruss/plugins/releases/download/v1/tool-v1, sha256: 24c67af32a3ab69d6577f826c1c3000d233c9a384b2fc1a963fa287c14ca1a54}
+    darwin/arm64: {url: https://github.com/opstruss/plugins/releases/download/v1/tool-v1, sha256: 24c67af32a3ab69d6577f826c1c3000d233c9a384b2fc1a963fa287c14ca1a54}
+tasks:
+  up:
+    run: [demo-tool, up]
+  down:
+    run: [demo-tool, down]
+  echo:
+    run: [demo-tool, echo]
+-- v2.plugin.yaml --
+name: compiled
+state: tool
+requires: [demo-tool]
+inputs:
+  name: {type: string, required: true}
+bin:
+  demo-tool:
+    linux/amd64: {url: https://github.com/opstruss/plugins/releases/download/v2/tool-v2, sha256: e6ae8d3e94115795d4eaa3ba667979fe07968b83e1096658e90d0111f5370184}
+    linux/arm64: {url: https://github.com/opstruss/plugins/releases/download/v2/tool-v2, sha256: e6ae8d3e94115795d4eaa3ba667979fe07968b83e1096658e90d0111f5370184}
+    darwin/amd64: {url: https://github.com/opstruss/plugins/releases/download/v2/tool-v2, sha256: e6ae8d3e94115795d4eaa3ba667979fe07968b83e1096658e90d0111f5370184}
+    darwin/arm64: {url: https://github.com/opstruss/plugins/releases/download/v2/tool-v2, sha256: e6ae8d3e94115795d4eaa3ba667979fe07968b83e1096658e90d0111f5370184}
+tasks:
+  up:
+    run: [demo-tool, up]
+  down:
+    run: [demo-tool, down]
+  echo:
+    run: [demo-tool, echo]
+-- assets/tool-v1 --
+#!/bin/sh
+set -eu
+case "$1" in
+up) echo "binary-up-v1 $INPUT_NAME"; echo v1 > "$OPSTRUSS_STATE_DIR/version" ;;
+down) test "$(cat "$OPSTRUSS_STATE_DIR/version")" = v1; echo "binary-down-v1 $INPUT_NAME" ;;
+echo) echo "binary-task-v1" ;;
+esac
+-- assets/tool-v2 --
+#!/bin/sh
+set -eu
+case "$1" in
+up) echo "binary-up-v2 $INPUT_NAME"; echo v2 > "$OPSTRUSS_STATE_DIR/version" ;;
+down) test "$(cat "$OPSTRUSS_STATE_DIR/version")" = v2; echo "binary-down-v2 $INPUT_NAME" ;;
+echo) echo "binary-task-v2" ;;
+esac
