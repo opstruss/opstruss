@@ -78,6 +78,7 @@ type Result struct {
 	Plan      []byte // OPSTRUSS_PLAN as written
 	Stdout    string // the last Tail bytes of each stream
 	Stderr    string
+	Read      map[string][]byte // each stream that an output reads, at most MaxOutputs, which the caller logs once it knows whether that output is sensitive
 	Warnings  []string
 }
 
@@ -281,10 +282,12 @@ func (r *Run) Exec(ctx context.Context, c *Call) (*Result, error) {
 	if stop.Signal == 0 {
 		stop = DefaultStop
 	}
+	// A second Ctrl-C kills at once what the first one stops.
+	kill := proc.Kill(ctx)
 	select {
 	case <-exited:
 	case <-ctx.Done():
-		if err := g.Stop(stop.Signal, stop.Grace); err != nil {
+		if err := g.Stop(stop.Signal, stop.Grace, kill); err != nil {
 			res.Warnings = append(res.Warnings, err.Error())
 		}
 		<-exited
@@ -293,7 +296,7 @@ func (r *Run) Exec(ctx context.Context, c *Call) (*Result, error) {
 	// once the call returns, as systemd stops the control group of a unit.
 	if !g.Empty() {
 		res.Warnings = append(res.Warnings, "stopped the processes that the program left in its process group")
-		if err := g.Stop(stop.Signal, stop.Grace); err != nil {
+		if err := g.Stop(stop.Signal, stop.Grace, kill); err != nil {
 			res.Warnings = append(res.Warnings, err.Error())
 		}
 	}
@@ -310,6 +313,14 @@ func (r *Run) Exec(ctx context.Context, c *Call) (*Result, error) {
 		res.ExitCode = 128 + int(ws.Signal())
 	}
 	res.Stdout, res.Stderr = streams["stdout"].tail(), streams["stderr"].tail()
+	for name, s := range streams {
+		if s.data {
+			if res.Read == nil {
+				res.Read = map[string][]byte{}
+			}
+			res.Read[name] = s.buf[:min(len(s.buf), MaxOutputs)]
+		}
+	}
 	r.collect(c, dir, res, streams)
 	return res, nil
 }

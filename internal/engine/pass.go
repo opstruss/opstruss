@@ -89,6 +89,13 @@ func (e *engine) unitPass(ctx context.Context, op string, p pass) (map[string]an
 				}
 			}
 		}
+		// What up with the same units takes down or forgets is planned too,
+		// so yes: true approves its down only as it was seen.
+		for _, l := range leftovers {
+			v := l.view()
+			e.read[l.address] = v["digest"].(string)
+			out[e.short(l.address)] = map[string]any{"outcome": success, "changed": false, "outputs": map[string]any{}, "plan": v}
+		}
 		return out, marks, nil
 	}
 	e.applyMoves(ctx)
@@ -107,7 +114,7 @@ func (e *engine) unitPass(ctx context.Context, op string, p pass) (map[string]an
 	// What left if or for_each, or what removed: decides, went down or was
 	// forgotten in the same pass.
 	for _, l := range leftovers {
-		out[e.short(l.address)] = map[string]any{"outcome": l.outcome, "changed": l.outcome == success, "outputs": map[string]any{}}
+		out[e.short(l.address)] = map[string]any{"outcome": l.outcome, "changed": l.outcome == success, "outputs": map[string]any{}, "plan": l.view()}
 		e.touch(e.short(l.address), &record.Unit{Outcome: l.outcome, Changed: l.outcome == success, Plan: l.summary()})
 	}
 	return out, marks, nil

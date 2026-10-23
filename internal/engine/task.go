@@ -81,11 +81,13 @@ func failed(error) *taskResult {
 	return &taskResult{outcome: failure, outputs: map[string]any{}}
 }
 
-// aggregate is the one outcome of several: failure when one failed, then
-// cancelled, then skipped, otherwise success.
+// rank orders outcomes for one that stands for several: failure when one
+// failed, then cancelled, then skipped, otherwise success.
+var rank = map[string]int{success: 0, skipped: 1, cancelled: 2, failure: 3}
+
+// aggregate is the one outcome of several, by rank.
 func aggregate(results map[string]*taskResult) *taskResult {
 	out := &taskResult{outcome: success, keys: results, approval: true}
-	rank := map[string]int{success: 0, skipped: 1, cancelled: 2, failure: 3}
 	for _, r := range results {
 		if rank[r.outcome] > rank[out.outcome] {
 			out.outcome = r.outcome
@@ -459,6 +461,9 @@ func (e *engine) need(ctx context.Context, name string, f *frame) *taskResult {
 			c.frame = f
 		}
 		o.res = e.callTask(ctx, name, f.in.Tasks[name], f.in.DirOf("tasks."+name), nil, c)
+		if f.node == nil {
+			e.ranTask(name, o.res.outcome)
+		}
 	})
 	return o.res
 }
@@ -836,6 +841,9 @@ func (tc *taskCtx) callStep(ctx context.Context, s *model.Step, label string, sc
 			c.frame = f
 		}
 		r := e.callTask(ctx, s.Task, t, f.in.DirOf("tasks."+s.Task), given, c)
+		if f.node == nil {
+			e.ranTask(s.Task, r.outcome)
+		}
 		r.soft = t.ContinueOnError
 		if r.outcome == skipped && r.approval {
 			// What stopped for approval did not run, so the step that called

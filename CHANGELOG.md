@@ -11,24 +11,6 @@ minor release can change what a project, a component, or a plugin relies on.
 
 ## [Unreleased]
 
-### Upgrade notes
-
-- A `_meta` that an earlier build wrote keeps the data key of its stack
-  wrapped by sops in `key`, which this version refuses. To keep such a
-  stack of the `local` backend, wrap its data key again with age for the
-  age key of the machine, from the project's directory, with sops, age,
-  and jq:
-
-  ```sh
-  m=.opstruss/state/<stack>/_meta
-  r=$(age-keygen -y <the age key file>)
-  sops decrypt --input-type json --output-type json "$m" | jq -r .key |
-    base64 -d | age -a -r "$r" > key.age
-  jq --rawfile d key.age --arg r "$r" \
-    'del(.sops) | .key = {age: {to: [$r], data: $d}}' "$m" > "$m.new"
-  mv "$m.new" "$m"
-  ```
-
 ### Added
 
 - `opstruss up -d` runs up in the daemon of the stack, which it starts in
@@ -38,7 +20,8 @@ minor release can change what a project, a component, or a plugin relies on.
   end. While a daemon runs, `plan`, `up`, `down`, `status`, and tasks run
   in it with the caller's files and environment and ask at the caller's
   terminal, so they share its locks and concurrency; Ctrl-C cancels such a
-  run, and one whose caller goes away runs on without answers. The daemon
+  run, a second Ctrl-C kills its programs at once, and one whose caller
+  goes away runs on without answers. The daemon
   listens on a socket for its own user only, refuses a caller of another
   protocol with what to do, writes its events to
   `.opstruss/logs/<stack>/_daemon.jsonl`, which turns over at 10 MiB into
@@ -369,7 +352,10 @@ minor release can change what a project, a component, or a plugin relies on.
   records of a stack under their locks: `push` takes the etag of a `pull`,
   or `--force`, and refuses a stale copy, a record for another address,
   and a record of a newer OpsTruss; `rm` forgets a record without taking
-  anything down and leaves a tombstone, and removes a tombstone.
+  anything down and leaves a tombstone, and removes a tombstone. `list`
+  shows the keys of `kv` too, and `rm _kv/<name>` removes one under the
+  lock of `kv`, with the etag of a `pull` or `--force`, such as a claim
+  that a run left.
 - State lives in `.opstruss/state/`, one record per address, written
   atomically with a backup of the previous content. `_meta` names the
   project a stack belongs to, and a stack of another project, of a newer
@@ -430,13 +416,16 @@ minor release can change what a project, a component, or a plugin relies on.
   steps; `steps.<id>` holds `outputs` (with `stdout`, `stderr`, and
   `exit_code` for `run`), `changed`, and `outcome`, and for a `task:` step
   of units `units`, one entry for each instance it touched, also one that
-  `up` took down or forgot; `value:` gives the outputs of a task with
+  `up` took down or forgot, which `task: plan` lists already with a plan
+  of its own (`delete` or `forget`, exact, with a digest of the operation
+  and the record); `value:` gives the outputs of a task with
   steps, also when it failed, as far as they can be computed.
 - `needs` runs each task it names once per run; `for_each` on a task runs
   its instances in parallel, at most `max_parallel` at once, starting them
   in the order of their keys. A task with `approval: ask` stops without
   `--yes`, and `yes: true` on a `task:` step approves that call, but only
-  plans this run read as exact, with the same digest.
+  plans this run read as exact, with the same digest, also the down of an
+  instance that left `if` or `for_each`.
 - `concurrency` keeps one call of a task at a time in a stack and
   checkout, through a lock file in `.opstruss/tasks/<stack>/`: `queue`
   waits, `skip` leaves the call out, `cancel` stops the run that holds it
@@ -451,8 +440,9 @@ minor release can change what a project, a component, or a plugin relies on.
   each change, one question at a time, and only `y` or `yes` applies it;
   the time an answer takes does not count toward `timeout`. A required
   input of a task that has no value is asked for there too.
-- `opstruss list` shows the tasks with their last run and the units with
-  their state; `opstruss outputs` prints the outputs of the project from
+- `opstruss list` shows the tasks with their last run, also one that ran
+  them inside the run of another task, which it names after `via`, and
+  the units with their state; `opstruss outputs` prints the outputs of the project from
   the stored outputs of its units, read without a lock; `opstruss runs`
   lists the runs of the stack, newest first, and `opstruss runs <run>`
   shows the events of one again. With `--json`, each prints one document,
@@ -460,8 +450,9 @@ minor release can change what a project, a component, or a plugin relies on.
 - `OPSTRUSS_LOG=debug` writes the diagnostics of the engine to stderr.
 - Every run keeps `record.json` (who ran what and when, the units it
   touched with their outcome, plan, and approval, also the instances that
-  `up` took down or forgot, and the outcome, exit code, and outputs of the
-  run) and `events.jsonl` in `.opstruss/runs/<stack>/<run>/`, whose name
+  `up` took down or forgot, the tasks of the project that ran inside it
+  through `task:`, `needs`, or a unit, with one outcome each, and the
+  outcome, exit code, and outputs of the run) and `events.jsonl` in `.opstruss/runs/<stack>/<run>/`, whose name
   an exclusive mkdir makes unique. A run stores at most 10 MiB of program
   output; the middle of more is dropped, with one diagnostic event.
 - `--json` prints every event of a run on a line of its own, with `v`,
@@ -485,15 +476,21 @@ minor release can change what a project, a component, or a plugin relies on.
   lines, `name<<EOF` blocks, or one JSON object, and `changed`, `message`,
   and `sensitive` to `$OPSTRUSS_RESULT`. An output can also come from
   stdout, stderr, or a file, read as `text`, `json`, `yaml`, `lines`, or
-  `dotenv`, the formats of `stdin:` too. The outputs of a unit or task take
-  at most 1 MiB.
+  `dotenv`, the formats of `stdin:` too. A stream that an output reads
+  goes to the log once the program ends, with the sensitive values of the
+  run hidden, and not at all when that output is sensitive. The outputs of
+  a unit or task take at most 1 MiB.
 - Scripts run through `sh -e`, `bash --noprofile --norc -eo pipefail`,
   `python3 -c`, `node -e`, or `pwsh -NoProfile -NonInteractive -Command`,
   as `shell:` says.
 - Each program runs in its own process group. A cancel or a timeout sends
   `stop.signal` (default `SIGINT`) to the group, waits `stop.grace`
   (default one minute), and kills what is left; processes that a program
-  leaves in its group when it exits are stopped the same way.
+  leaves in its group when it exits are stopped the same way. A second
+  Ctrl-C or SIGTERM kills the groups at once, also of services that stop
+  in a daemon in the foreground, and the run still writes its record and
+  pending marks. A run that a signal ended exits with 130 or 143, as a
+  shell reports it.
 - Every program holds the lock of its run on file descriptor 3, which
   tells OpsTruss that programs of an interrupted run still live, also
   where their environment cannot be read; a program leaves it open.

@@ -6,6 +6,7 @@ import (
 	"io"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/opstruss/opstruss/internal/model"
 	"github.com/opstruss/opstruss/internal/state"
@@ -80,7 +81,7 @@ func (e listEntry) status() string {
 func (a *app) stateList() *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
-		Short: "List the addresses that have a record: orphans, pending and abandoned attempts, and tombstones too",
+		Short: "List the addresses that have a record: orphans, pending and abandoned attempts, and tombstones too; then the keys of kv",
 		Args:  cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error {
 			p, s, err := a.store()
@@ -105,15 +106,38 @@ func (a *app) stateList() *cobra.Command {
 				e.Orphan = r.Tombstone == nil && (n == nil || (n.Component() != nil) != (r.Kind == "component"))
 				entries = append(entries, e)
 			}
+			kv, err := s.KVInfos()
+			if err != nil {
+				return err
+			}
 			if a.json {
-				return a.printJSON(map[string]any{"stack": p.StackName, "records": entries})
+				return a.printJSON(map[string]any{"stack": p.StackName, "records": entries, "kv": kv})
 			}
 			for _, e := range entries {
 				fmt.Fprintf(a.stdout, "%s\t%s\n", e.Address, e.status())
 			}
+			for _, k := range kv {
+				fmt.Fprintf(a.stdout, "%s\t%s\n", k.Key, kvStatus(k, time.Now()))
+			}
 			return nil
 		},
 	}
+}
+
+// kvStatus is the line of state list for a key of kv.
+func kvStatus(k state.KVInfo, now time.Time) string {
+	parts := []string{"kv"}
+	if k.Sensitive {
+		parts = append(parts, "sensitive")
+	}
+	if t, err := time.Parse(time.RFC3339Nano, k.Expires); err == nil {
+		if t.After(now) {
+			parts = append(parts, "expires "+k.Expires)
+		} else {
+			parts = append(parts, "expired")
+		}
+	}
+	return strings.Join(parts, ", ")
 }
 
 func (a *app) statePull() *cobra.Command {
@@ -220,15 +244,22 @@ func (a *app) statePush() *cobra.Command {
 }
 
 func (a *app) stateRm() *cobra.Command {
-	var tool bool
+	var tool, force bool
+	var ifMatch string
 	cmd := &cobra.Command{
-		Use:   "rm <address>",
-		Short: "Forget a record without taking anything down, leaving a tombstone; on a tombstone, remove it",
+		Use:   "rm <address|_kv/<name>>",
+		Short: "Forget a record without taking anything down, leaving a tombstone; on a tombstone, remove it; or remove a key of kv",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) (err error) {
 			_, s, err := a.store()
 			if err != nil {
 				return err
+			}
+			if name, ok := strings.CutPrefix(args[0], "_kv/"); ok {
+				return a.rmKV(s, name, ifMatch, force)
+			}
+			if ifMatch != "" || force {
+				return errors.New("--if-match and --force are for a key of kv, _kv/<name>")
 			}
 			address := s.Stack + "/" + args[0]
 			h, err := a.holder()
@@ -260,5 +291,47 @@ func (a *app) stateRm() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&tool, "tool", false, "only move the tool's own state to _forgotten, and keep the record")
+	cmd.Flags().StringVar(&ifMatch, "if-match", "", "for _kv/<name>: the etag that state pull printed")
+	cmd.Flags().BoolVar(&force, "force", false, "for _kv/<name>: remove the key whatever it holds now")
 	return cmd
+}
+
+// rmKV removes the key name of kv under the lock of kv, while it still has
+// the etag of the pull, as consul kv delete -cas does, so a claim that a
+// run left is released without losing one written since.
+func (a *app) rmKV(s *state.Store, name, ifMatch string, force bool) (err error) {
+	if ifMatch == "" && !force {
+		return errors.New("removing a key of kv needs --if-match <etag> from state pull, or --force, so a value written since is not lost")
+	}
+	if err := state.CheckKVName(name); err != nil {
+		return err
+	}
+	key, lock, _ := s.KeyOf("_kv/" + name)
+	h, err := a.holder()
+	if err != nil {
+		return err
+	}
+	token, err := s.Backend.Lock(lock, h)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if uerr := s.Backend.Unlock(lock, token); err == nil {
+			err = uerr
+		}
+	}()
+	_, current, err := s.Backend.Get(key)
+	switch {
+	case errors.Is(err, state.ErrNotExist):
+		return fmt.Errorf("there is no _kv/%s", name)
+	case err != nil:
+		return err
+	case !force && current != ifMatch:
+		return fmt.Errorf("_kv/%s changed since the pull (etag %s, not %s); pull it again", name, current, ifMatch)
+	}
+	if err := s.Backend.Delete(key, current); err != nil {
+		return err
+	}
+	fmt.Fprintf(a.stdout, "_kv/%s: removed\n", name)
+	return nil
 }

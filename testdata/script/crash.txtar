@@ -65,6 +65,48 @@ exec opstruss state pull store
 ! stdout '"pending"'
 stdout '"id": "made-'
 
+# a run nested in one that holds the record of an instance of a component
+# for a moment waits for it to move that record, rather than failing
+cd nested
+exec opstruss up --yes
+cp two.yaml site/opstruss.yaml
+env OPSTRUSS_FAILPOINT=up-before-pending=pause
+env OPSTRUSS_FAILPOINT_PAUSE=$WORK/paused
+exec sh -c 'opstruss up site/new --yes > parent.out 2>&1; echo $? > parent.code' &
+waitfile $WORK/paused
+env OPSTRUSS_FAILPOINT=
+cp renamed.yaml opstruss.yaml
+exec sh -c 'run=$(grep -l running .opstruss/runs/default/*/record.json); run=${run%/record.json}; OPSTRUSS_RUN=${run##*/} opstruss up place/web --yes > nested.out 2>&1; echo $? > nested.code' &
+waitgrep 'waiting for the lock held by run|which this run is nested in' nested.out
+rm $WORK/paused
+wait
+grep '^default/site: waiting for the lock held by run ' nested.out
+grep '^0$' nested.code
+grep '^default/place: moved from default/site$' nested.out
+grep '^0$' parent.code
+
+-- nested/opstruss.yaml --
+name: nested
+units:
+  site:
+    uses: ./site
+-- nested/site/opstruss.yaml --
+units:
+  web:
+    run: echo web
+-- nested/two.yaml --
+units:
+  web:
+    run: echo web
+  new:
+    run: echo new
+-- nested/renamed.yaml --
+name: nested
+units:
+  place:
+    uses: ./site
+moved:
+  - {from: site, to: place}
 -- moved.yaml --
 name: shop
 units:

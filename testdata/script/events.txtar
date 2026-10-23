@@ -22,6 +22,19 @@ exec sh -c 'grep -l greet .opstruss/runs/default/*/record.json | xargs cat'
 stdout '"task": "greet"'
 stdout '"msg": "hi"'
 
+# a stream that an output reads goes to the log once it is parsed, and not
+# at all when that output is sensitive
+cd parse
+exec opstruss up --yes
+stdout '^default/meta \| \{"name":"shop"\}$'
+exec opstruss read
+stdout '^read: info \| \{"name":"shop"\}$'
+stdout '^read: info \| loaded$'
+! stdout 'key-from-stdout'
+exec sh -c 'cat .opstruss/runs/default/*/events.jsonl'
+stdout -count=2 'name.*shop'
+! stdout 'key-from-stdout'
+
 -- opstruss.yaml --
 name: shop
 units:
@@ -32,3 +45,21 @@ tasks:
     run: echo "msg=hi" >> "$OPSTRUSS_OUTPUT"
     outputs:
       msg: {}
+-- parse/opstruss.yaml --
+name: parse
+units:
+  meta:
+    run: echo '{"name":"shop"}'
+    outputs:
+      all: {type: object, from: stdout, format: json}
+tasks:
+  read:
+    steps:
+      - id: info
+        run: echo '{"name":"shop"}'; echo loaded >&2
+        outputs:
+          info: {type: object, from: stdout, format: json}
+      - id: key
+        run: echo key-from-stdout
+        outputs:
+          key: {from: stdout, sensitive: true}

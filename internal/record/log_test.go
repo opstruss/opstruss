@@ -147,3 +147,59 @@ func TestReadLogFollow(t *testing.T) {
 		t.Fatalf("the log did not turn over: %v", err)
 	}
 }
+
+// A log that turns over twice while ReadLog waits is still followed whole:
+// the file in between is read before the new one, as tail -F reads it.
+func TestReadLogFollowTwoTurns(t *testing.T) {
+	maxBefore, every := logMax, followEvery
+	logMax, followEvery = 400, 300*time.Millisecond
+	t.Cleanup(func() { logMax, followEvery = maxBefore, every })
+	p := filepath.Join(t.TempDir(), "web.jsonl")
+	l, err := OpenLog(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = l.Close() }()
+	emit := func(from, to int) {
+		for i := from; i < to; i++ {
+			l.Emit(Event{Type: "log", Level: "info", Address: "default/web", Message: fmt.Sprintf("line %d", i)})
+		}
+	}
+	emit(0, 1)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	lines := make(chan string, 100)
+	done := make(chan error, 1)
+	go func() { done <- ReadLog(ctx, p, true, func(ev Event) { lines <- ev.Message }) }()
+	defer func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Error(err)
+		}
+	}()
+	select {
+	case <-lines:
+	case <-time.After(5 * time.Second):
+		t.Fatal("line 0 was not read")
+	}
+	// ReadLog waits for its next look now; the log turns over twice before.
+	time.Sleep(50 * time.Millisecond)
+	emit(1, 8)
+	if _, err := os.Stat(p + ".2"); err != nil {
+		t.Fatalf("the log did not turn over twice: %v", err)
+	}
+	seen := []string{"line 0"}
+	for deadline := time.After(5 * time.Second); len(seen) < 8; {
+		select {
+		case s := <-lines:
+			seen = append(seen, s)
+		case <-deadline:
+			t.Fatalf("followed %v", seen)
+		}
+	}
+	for i, s := range seen {
+		if want := fmt.Sprintf("line %d", i); s != want {
+			t.Fatalf("followed %v", seen)
+		}
+	}
+}

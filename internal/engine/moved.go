@@ -144,18 +144,24 @@ func (e *engine) applyMoves(ctx context.Context) {
 // addresses, the copy, a tombstone at from, then the mark at to goes. It
 // holds both locks, taken in address order so two runs never wait for
 // each other, and a run interrupted at any stage is finished by the next
-// run whose files have the entry.
+// run whose files have the entry. The record of an instance of a component
+// is held by every run only for a moment, so its locks are taken as such,
+// also from a run this one is nested in.
 func (e *engine) move(ctx context.Context, from, to string) error {
 	first, second := from, to
 	if second < first {
 		first, second = second, first
 	}
-	t1, err := e.lock(ctx, first)
+	lock := e.lock
+	if r := e.moveFrom[to]; r != nil && r.Kind == "component" {
+		lock = e.briefLock
+	}
+	t1, err := lock(ctx, first)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = e.store.Unlock(first, t1) }()
-	t2, err := e.lock(ctx, second)
+	t2, err := lock(ctx, second)
 	if err != nil {
 		return err
 	}

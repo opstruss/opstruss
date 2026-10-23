@@ -4,12 +4,14 @@
 package proc
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"maps"
 	"os/exec"
 	"slices"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -19,6 +21,35 @@ import (
 // KillWait is how long Stop waits for a group to empty after SIGKILL, for
 // processes that the kernel has not removed yet.
 const KillWait = 5 * time.Second
+
+type killKey struct{}
+
+// WithKill returns a copy of parent that carries a kill channel, which
+// kill closes, and which closes too when the one of parent does. A group
+// that a cancel of ctx stops is killed once it closes, without the rest
+// of its grace, as a second Ctrl-C asks. Callers defer kill as they defer
+// a cancel, which also ends the wait for the channel of parent.
+func WithKill(parent context.Context) (ctx context.Context, kill func()) {
+	ch := make(chan struct{})
+	var once sync.Once
+	kill = func() { once.Do(func() { close(ch) }) }
+	if up := Kill(parent); up != nil {
+		go func() {
+			select {
+			case <-up:
+				kill()
+			case <-ch:
+			}
+		}()
+	}
+	return context.WithValue(parent, killKey{}, (<-chan struct{})(ch)), kill
+}
+
+// Kill is the kill channel that ctx carries, or nil, which never closes.
+func Kill(ctx context.Context) <-chan struct{} {
+	ch, _ := ctx.Value(killKey{}).(<-chan struct{})
+	return ch
+}
 
 // Start starts cmd as the leader of a new process group, so a stop reaches
 // every program it starts, such as tofu under sh, and Ctrl-C at the
@@ -61,23 +92,23 @@ func (g Group) Empty() bool {
 	return errors.Is(err, syscall.ESRCH) || errors.Is(err, syscall.EPERM)
 }
 
-// Stop sends sig to the group, waits up to grace for it to empty, and then
-// kills what is left. Whoever started the leader reaps it meanwhile, as
-// cmd.Wait does, or the group never empties.
-func (g Group) Stop(sig syscall.Signal, grace time.Duration) error {
+// Stop sends sig to the group, waits up to grace for it to empty, or
+// until kill closes, and then kills what is left. Whoever started the
+// leader reaps it meanwhile, as cmd.Wait does, or the group never empties.
+func (g Group) Stop(sig syscall.Signal, grace time.Duration, kill <-chan struct{}) error {
 	if g.Empty() {
 		return nil
 	}
 	if err := g.Signal(sig); err != nil {
 		return err
 	}
-	if g.wait(grace) {
+	if g.wait(grace, kill) {
 		return nil
 	}
 	if err := g.Signal(syscall.SIGKILL); err != nil {
 		return err
 	}
-	if g.wait(KillWait) {
+	if g.wait(KillWait, nil) {
 		return nil
 	}
 	return fmt.Errorf("process group %d still has processes %s after SIGKILL", g, KillWait)
@@ -94,8 +125,8 @@ func GroupOf(pid int) (Group, error) {
 // makes, so a process group never does either.
 func Session(pid int) (int, error) { return unix.Getsid(pid) }
 
-// wait polls until the group is empty or d has passed.
-func (g Group) wait(d time.Duration) bool {
+// wait polls until the group is empty, d has passed, or kill closes.
+func (g Group) wait(d time.Duration, kill <-chan struct{}) bool {
 	deadline := time.Now().Add(d)
 	for delay := 5 * time.Millisecond; ; delay = min(2*delay, 100*time.Millisecond) {
 		if g.Empty() {
@@ -105,7 +136,11 @@ func (g Group) wait(d time.Duration) bool {
 		if left <= 0 {
 			return false
 		}
-		time.Sleep(min(delay, left))
+		select {
+		case <-kill:
+			return false
+		case <-time.After(min(delay, left)):
+		}
 	}
 }
 

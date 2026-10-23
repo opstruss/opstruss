@@ -159,7 +159,7 @@ func (l leftover) halt(p *Process) {
 	}
 	var wg sync.WaitGroup
 	for _, g := range l.stop {
-		wg.Go(func() { _ = g.Stop(sig, grace) })
+		wg.Go(func() { _ = g.Stop(sig, grace, nil) })
 	}
 	wg.Wait()
 }

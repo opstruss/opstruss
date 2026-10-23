@@ -70,6 +70,31 @@ exec opstruss state push _meta --force
 stdin orphan.json
 exec opstruss state push gone --force
 
+# a claim of kv that a run left goes with state rm, under the lock of kv,
+# with the etag of the pull or --force, as consul kv delete -cas
+cd claim
+exec opstruss claim
+! exec opstruss claim
+exec opstruss state list
+stdout '^_kv/charge.inv-7\tkv$'
+exec opstruss state list --json
+stdout '"key": "_kv/charge.inv-7"'
+! exec opstruss state rm _kv/charge.inv-7
+stderr 'needs --if-match <etag> from state pull, or --force'
+! exec opstruss state rm _kv/charge.inv-7 --if-match stale
+stderr '_kv/charge.inv-7 changed since the pull \(etag \S+, not stale\); pull it again'
+exec sh -c 'opstruss state pull _kv/charge.inv-7 2>etag'
+exec sh -c 'opstruss state rm _kv/charge.inv-7 --if-match "$(cut -d" " -f2 etag)"'
+stdout '^_kv/charge.inv-7: removed$'
+exec opstruss state list
+! stdout .
+exec opstruss claim
+exec opstruss state rm _kv/charge.inv-7 --force
+! exec opstruss state rm _kv/charge.inv-7 --force
+stderr 'there is no _kv/charge.inv-7'
+! exec opstruss state rm web --force
+stderr '--if-match and --force are for a key of kv'
+
 -- opstruss.yaml --
 name: app
 units:
@@ -90,3 +115,8 @@ units:
 {"version": 1, "id": "1b2c3d4e", "address": "default/gone", "kind": "run"}
 -- meta.json --
 {"version": 1, "project": "renamed"}
+-- claim/opstruss.yaml --
+name: billing
+tasks:
+  claim:
+    kv: {key: charge.inv-7, value: started, expect: null}

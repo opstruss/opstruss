@@ -1,0 +1,48 @@
+# Ctrl-C stops the programs of a run with their stop signal and stop.grace;
+# a second one kills them at once, and the run still writes its record and
+# the pending mark, then exits with 130, as a shell reports SIGINT. The
+# programs here trap SIGINT and go on, so only a kill ends them.
+
+env HOME=$WORK/home
+
+# a run in this process
+exec sh -c 'opstruss up --yes > up.out 2> up.err & echo $! > pid; wait $!; echo $? > code' &up&
+waitfile started
+exec sh -c 'kill -INT $(cat pid)'
+waitfile got-int
+exec sh -c 'kill -INT $(cat pid)'
+wait up
+grep '^130$' code
+grep '^interrupted: the programs stop within their stop.grace; interrupt again to kill them at once$' up.err
+grep '^two interrupts received: killing the programs at once; the next plan shows what did not finish$' up.err
+exec opstruss plan
+stdout '^default/slow: will run: up of run .* did not finish$'
+
+# a run in the daemon that this process follows
+cd daemon
+exec sh -c 'opstruss -d wait > wait.out 2> wait.err & echo $! > pid; wait $!; echo $? > code' &task&
+waitfile started
+exec sh -c 'kill -INT $(cat pid)'
+waitfile got-int
+exec sh -c 'kill -INT $(cat pid)'
+wait task
+grep '^130$' code
+grep '^two interrupts received' wait.err
+exec opstruss stop
+
+-- opstruss.yaml --
+name: shop
+units:
+  slow:
+    run: |
+      trap 'touch got-int' INT
+      touch started
+      while :; do sleep 1 || true; done
+-- daemon/opstruss.yaml --
+name: shop
+tasks:
+  wait:
+    run: |
+      trap 'touch got-int' INT
+      touch started
+      while :; do sleep 1 || true; done

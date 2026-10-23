@@ -95,6 +95,7 @@ type Daemon struct {
 	// runs ends the calls and the runs of triggers, as the daemon stops.
 	runs       context.Context
 	cancelRuns context.CancelFunc
+	kill       func() // kills the programs of runs and the services at once
 
 	mu       sync.Mutex
 	stopping bool
@@ -166,10 +167,14 @@ func Start(opts Options) (_ *Daemon, err error) {
 		return nil, err
 	}
 	d.say("info", "daemon started: pid %d, opstruss %s", f.PID, f.OpsTruss)
+	// What stops the daemon may ask to kill its runs' programs and its
+	// services at once, as a second Ctrl-C or SIGTERM does.
+	runs, kill := proc.WithKill(context.Background())
+	d.kill = kill
 	d.sup = newSupervisor(root, opts.Stack, d.reg, func(ev record.Event) { d.log.Emit(ev) })
-	d.sup.watch = opts.Watch
+	d.sup.watch, d.sup.kill = opts.Watch, proc.Kill(runs)
 	go d.sup.recover()
-	d.runs, d.cancelRuns = context.WithCancel(context.Background())
+	d.runs, d.cancelRuns = context.WithCancel(runs)
 	d.trig = &triggers{d: d, flight: map[string]bool{}, pending: map[string]int{}}
 	d.trig.hooks = &webhooks{t: d.trig}
 	d.trig.install(runOptions(opts.Dir, opts.Stack, opts.Inputs, opts.Environ))
@@ -204,6 +209,15 @@ func socketDir() (string, error) {
 // run, waits for them, and closes.
 func (d *Daemon) Serve(ctx context.Context) error {
 	defer d.cancelRuns()
+	served := make(chan struct{})
+	defer close(served)
+	go func() {
+		select {
+		case <-proc.Kill(ctx):
+			d.kill()
+		case <-served:
+		}
+	}()
 	srv := &api.Server{Version: d.opts.Version, Stopping: d.isStopping,
 		Call: func(ctx context.Context, method string, r api.Request, h api.Handlers) (*api.Result, error) {
 			d.active.Add(1)

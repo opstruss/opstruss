@@ -1,14 +1,11 @@
 package cli
 
 import (
-	"context"
 	"fmt"
 	"maps"
 	"os"
-	"os/signal"
 	"slices"
 	"strings"
-	"syscall"
 
 	"github.com/opstruss/opstruss/internal/expr"
 	"github.com/opstruss/opstruss/internal/model"
@@ -230,16 +227,13 @@ func (a *app) taskCommand(name string, t *model.Task, ofUnits bool) *cobra.Comma
 			return err
 		}
 		req.Yes, req.Task, req.With = yes, name, given
-		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-		defer stop()
-		res, err := a.call(ctx, "run", req)
+		in := a.interrupts()
+		defer in.stop()
+		res, err := a.call(in.ctx, "run", req)
 		if err != nil {
 			return err
 		}
-		if res.ExitCode != 0 {
-			return &exitError{res.ExitCode}
-		}
-		return nil
+		return in.exit(res.ExitCode)
 	}
 	return cmd
 }

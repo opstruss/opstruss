@@ -119,6 +119,7 @@ type engine struct {
 	read     map[string]string // digests of the exact plans read in this run, by address; empty when not exact
 	rec      *record.Run
 	touched  map[string]*record.Unit
+	ran      map[string]*record.Task // the tasks of the project that ran inside the run, through task:, needs, or a unit
 
 	rootTask string
 	needed   map[string]*taskOnce // tasks of needs, which run once per run
@@ -210,7 +211,7 @@ func load(opts Options) (*engine, error) {
 		redact: red, inputMarks: inputMarks, tooShort: short,
 		started: time.Now().UTC(), parallel: DefaultParallel, byUnit: map[string][]*instance{},
 		read: map[string]string{}, needed: map[string]*taskOnce{},
-		touched: map[string]*record.Unit{}, hashes: map[string]string{}, frames: map[string]*frameSet{},
+		touched: map[string]*record.Unit{}, ran: map[string]*record.Task{}, hashes: map[string]string{}, frames: map[string]*frameSet{},
 		sopsFiles: map[string]any{}}
 	e.event = eventOf(opts.Event, e.started)
 	e.secrets = e.secretValues()
@@ -318,12 +319,15 @@ func (e *engine) close(outcome string, outputs, marks map[string]any) {
 	code := e.exit
 	e.emit(Event{Type: "run", Level: "info", Task: e.rec.Task(), Message: outcome, Outcome: outcome, ExitCode: &code, Outputs: outputs})
 	e.mu.Lock()
-	touched := e.touched
+	touched, ran := e.touched, e.ran
 	e.mu.Unlock()
 	err := e.rec.Finish(func(r *record.Record) {
 		r.Outcome, r.ExitCode, r.Outputs = outcome, code, outputs
 		if len(touched) > 0 {
 			r.Units = touched
+		}
+		if len(ran) > 0 {
+			r.Tasks = ran
 		}
 	})
 	if err == nil {
@@ -367,6 +371,16 @@ func (e *engine) resetUnits() {
 	e.mu.Lock()
 	e.insts, e.byUnit, e.frames = nil, map[string][]*instance{}, map[string]*frameSet{}
 	e.mu.Unlock()
+}
+
+// ranTask notes that the task name of the project ran inside the run, for
+// its record; calls of it end as one outcome, as those of for_each do.
+func (e *engine) ranTask(name, outcome string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if t := e.ran[name]; t == nil || rank[outcome] > rank[t.Outcome] {
+		e.ran[name] = &record.Task{Outcome: outcome}
+	}
 }
 
 // touch notes what the run did to a unit, for its record.

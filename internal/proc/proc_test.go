@@ -101,7 +101,7 @@ func TestStopSignal(t *testing.T) {
 	if g.Empty() {
 		t.Fatal("a running group is empty")
 	}
-	if err := g.Stop(syscall.SIGINT, 5*time.Second); err != nil {
+	if err := g.Stop(syscall.SIGINT, 5*time.Second, nil); err != nil {
 		t.Fatal(err)
 	}
 	<-done
@@ -113,7 +113,28 @@ func TestStopSignal(t *testing.T) {
 func TestStopKillsAfterGrace(t *testing.T) {
 	cmd, g, done := start(t, `trap '' INT; echo ready; sleep 30`)
 	began := time.Now()
-	if err := g.Stop(syscall.SIGINT, 100*time.Millisecond); err != nil {
+	if err := g.Stop(syscall.SIGINT, 100*time.Millisecond, nil); err != nil {
+		t.Fatal(err)
+	}
+	<-done
+	if ws := status(cmd); !ws.Signaled() || ws.Signal() != syscall.SIGKILL {
+		t.Fatalf("exit %v, want SIGKILL", ws)
+	}
+	if d := time.Since(began); d > 3*time.Second {
+		t.Fatalf("stop took %s", d)
+	}
+}
+
+// A kill that comes during the grace kills the group at once, as a second
+// Ctrl-C does.
+func TestStopKilledDuringGrace(t *testing.T) {
+	cmd, g, done := start(t, `trap '' INT; echo ready; sleep 30`)
+	ctx, kill := WithKill(context.Background())
+	inner, stop := WithKill(ctx)
+	defer stop()
+	began := time.Now()
+	time.AfterFunc(100*time.Millisecond, kill)
+	if err := g.Stop(syscall.SIGINT, time.Minute, Kill(inner)); err != nil {
 		t.Fatal(err)
 	}
 	<-done
@@ -133,7 +154,7 @@ func TestStopWhatTheLeaderLeft(t *testing.T) {
 	if g.Empty() {
 		t.Fatal("the background job is gone")
 	}
-	if err := g.Stop(syscall.SIGINT, 100*time.Millisecond); err != nil {
+	if err := g.Stop(syscall.SIGINT, 100*time.Millisecond, nil); err != nil {
 		t.Fatal(err)
 	}
 	if !g.Empty() {
@@ -163,7 +184,7 @@ func TestFind(t *testing.T) {
 	if ps, _ := Find("OPSTRUSS_TEST", id[:8]); len(ps) != 0 {
 		t.Fatalf("a prefix of the value found %v", ps)
 	}
-	if err := g.Stop(syscall.SIGTERM, time.Second); err != nil {
+	if err := g.Stop(syscall.SIGTERM, time.Second, nil); err != nil {
 		t.Fatal(err)
 	}
 	<-done
@@ -195,7 +216,7 @@ func TestTracker(t *testing.T) {
 	if ps, held, err := m.Alive(); err != nil || len(ps) != 0 || !held {
 		t.Fatalf("while sleep runs: %v %v %v", ps, held, err)
 	}
-	if err := g.Stop(syscall.SIGTERM, time.Second); err != nil {
+	if err := g.Stop(syscall.SIGTERM, time.Second, nil); err != nil {
 		t.Fatal(err)
 	}
 	<-done

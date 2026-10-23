@@ -68,7 +68,13 @@ type Record struct {
 	Reason   string           `json:"reason,omitempty"`
 	ExitCode int              `json:"exit_code"`
 	Units    map[string]*Unit `json:"units,omitempty"`
+	Tasks    map[string]*Task `json:"tasks,omitempty"` // the tasks of the project that ran inside the run, by name
 	Outputs  map[string]any   `json:"outputs,omitempty"`
+}
+
+// Task is how the calls of one task inside a run ended, as one outcome.
+type Task struct {
+	Outcome string `json:"outcome"`
 }
 
 // Unit is what a run did to one unit.

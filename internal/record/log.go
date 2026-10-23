@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 )
@@ -159,29 +160,12 @@ func ReadLog(ctx context.Context, path string, follow bool, fn func(Event)) erro
 			_ = f.Close()
 		}
 	}()
-	var held os.FileInfo
-	if f != nil {
-		if held, err = f.Stat(); err != nil {
-			return err
-		}
+	held, err := infoOf(f)
+	if err != nil {
+		return err
 	}
-	for i := LogFiles - 1; i > 0; i-- {
-		old, err := os.Open(fmt.Sprintf("%s.%d", path, i))
-		if errors.Is(err, fs.ErrNotExist) {
-			continue
-		}
-		if err != nil {
-			return err
-		}
-		var rest []byte
-		var rerr error
-		if info, err := old.Stat(); err == nil && (held == nil || !os.SameFile(info, held)) {
-			rerr = readEvents(old, &rest, fn)
-		}
-		_ = old.Close()
-		if rerr != nil {
-			return rerr
-		}
+	if err := readTurned(path, nil, held, fn); err != nil {
+		return err
 	}
 	var rest []byte
 	for {
@@ -196,14 +180,24 @@ func ReadLog(ctx context.Context, path string, follow bool, fn func(Event)) erro
 				return err
 			}
 			// A log that turned over is another file at its path now; what
-			// the old one got last is read before the new one.
+			// the old one got last is read, then the files it turned over
+			// into since, then the new one.
 			if now, err := os.Stat(path); err == nil {
 				if info, err := f.Stat(); err == nil && !os.SameFile(info, now) {
 					if err := readEvents(f, &rest, fn); err != nil {
 						return err
 					}
 					_ = f.Close()
-					f = nil
+					if f, err = os.Open(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+						return err
+					}
+					rest = nil
+					if held, err = infoOf(f); err != nil {
+						return err
+					}
+					if err := readTurned(path, info, held, fn); err != nil {
+						return err
+					}
 					continue
 				}
 			}
@@ -217,6 +211,67 @@ func ReadLog(ctx context.Context, path string, follow bool, fn func(Event)) erro
 		case <-time.After(followEvery):
 		}
 	}
+}
+
+// infoOf is the FileInfo of f, or nil for no file.
+func infoOf(f *os.File) (os.FileInfo, error) {
+	if f == nil {
+		return nil, nil
+	}
+	return f.Stat()
+}
+
+// readTurned hands fn the events of the files that the log at path turned
+// over into, oldest first: those newer than after, or all when after is
+// nil, except held, the file at path, which the caller reads next. The
+// files are opened newest first, so one that turns over meanwhile is seen
+// twice rather than missed, and read once.
+func readTurned(path string, after, held os.FileInfo, fn func(Event)) error {
+	var files []*os.File
+	defer func() {
+		for _, f := range files {
+			_ = f.Close()
+		}
+	}()
+	seen := func(info os.FileInfo) bool {
+		if held != nil && os.SameFile(info, held) {
+			return true
+		}
+		return slices.ContainsFunc(files, func(f *os.File) bool {
+			other, err := f.Stat()
+			return err == nil && os.SameFile(info, other)
+		})
+	}
+scan:
+	for i := 1; i < LogFiles; i++ {
+		f, err := os.Open(fmt.Sprintf("%s.%d", path, i))
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		info, err := f.Stat()
+		switch {
+		case err != nil:
+			_ = f.Close()
+			return err
+		case after != nil && os.SameFile(info, after):
+			_ = f.Close()
+			break scan
+		case seen(info):
+			_ = f.Close()
+		default:
+			files = append(files, f)
+		}
+	}
+	for i := len(files) - 1; i >= 0; i-- {
+		var rest []byte
+		if err := readEvents(files[i], &rest, fn); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // readEvents hands each whole line that f has from where it is to fn as an

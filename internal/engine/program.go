@@ -234,6 +234,10 @@ func (e *engine) execProgram(ctx context.Context, p progSpec, c *plugin.Call) (*
 		}
 	}
 	e.hide(judged, anyMarks(marks))
+	if !c.Secret {
+		// What a program that gives a secret prints is that secret.
+		logRead(res, c.Outputs, marks, out, errw)
+	}
 	r := &taskResult{outcome: success, changed: res.Changed, outputs: res.Outputs, marks: marks}
 	if p.step != "" || p.call {
 		r.outputs = judged
@@ -245,4 +249,22 @@ func (e *engine) execProgram(ctx context.Context, p progSpec, c *plugin.Call) (*
 		}
 	}
 	return r, judged, nil
+}
+
+// logRead writes to the log what the streams that outputs read held, once
+// the outputs are parsed, unless one of those outputs is sensitive, as
+// no_log keeps a result out of the log in Ansible; the log hides the
+// sensitive values the run knows in the rest.
+func logRead(res *plugin.Result, outputs map[string]*model.Output, marks map[string]any, out, errw *lineWriter) {
+	for _, w := range []*lineWriter{out, errw} {
+		name := w.stream
+		data, ok := res.Read[name]
+		for k, o := range outputs {
+			ok = ok && (o.From != name || marks[k] == nil)
+		}
+		if ok {
+			_, _ = w.Write(data)
+			w.flush()
+		}
+	}
 }

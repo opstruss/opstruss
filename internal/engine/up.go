@@ -783,6 +783,7 @@ func (e *engine) exec(ctx context.Context, inst *instance, r *resolved, rec *sta
 	for _, w := range res.Warnings {
 		e.warn(inst.address, "%s", w)
 	}
+	logRead(res, c.Outputs, e.outputMarks(inst, r, res, true), out, errw)
 	if command {
 		// A unit that uses command has its outputs.
 		res.Outputs = map[string]any{"stdout": res.Stdout, "stderr": res.Stderr, "exit_code": int64(res.ExitCode)}

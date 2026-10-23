@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 )
@@ -149,6 +150,44 @@ func (s *Store) KVList(prefix string, now time.Time) (map[string]any, map[string
 		}
 	}
 	return out, sensitive, nil
+}
+
+// KVInfo is a name of the memory of a stack as state list shows it,
+// without its value.
+type KVInfo struct {
+	Key       string `json:"key"` // _kv/<name>
+	Sensitive bool   `json:"sensitive,omitempty"`
+	Expires   string `json:"expires,omitempty"`
+}
+
+// KVInfos lists the names of the memory of the stack, also those whose ttl
+// passed, which the next write removes.
+func (s *Store) KVInfos() ([]KVInfo, error) {
+	keys, err := s.Backend.List(kvKey(s.Stack, ""))
+	if err != nil {
+		return nil, err
+	}
+	out := []KVInfo{}
+	for _, k := range keys {
+		name := strings.TrimPrefix(k, kvKey(s.Stack, ""))
+		if CheckKVName(name) != nil {
+			continue
+		}
+		data, _, err := s.Backend.Get(k)
+		if errors.Is(err, ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		e, err := decodeKV(data, name)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, KVInfo{Key: "_kv/" + name, Sensitive: e.Sensitive, Expires: e.Expires})
+	}
+	slices.SortFunc(out, func(a, b KVInfo) int { return strings.Compare(a.Key, b.Key) })
+	return out, nil
 }
 
 // KVLock takes the lock of the memory of the stack without waiting; one

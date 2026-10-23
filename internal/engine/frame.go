@@ -483,7 +483,6 @@ func (e *engine) componentView(g *frame) (map[string]any, any) {
 		marks = map[string]any{"outputs": outMarks}
 	}
 	view := map[string]any{"outputs": outputs}
-	rank := map[string]int{success: 0, skipped: 1, cancelled: 2, failure: 3}
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	outcome, changed, reached, all := success, false, 0, true

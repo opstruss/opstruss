@@ -50,6 +50,7 @@ type app struct {
 	json       bool
 	completion string
 	renderMu   sync.Mutex
+	planned    map[string]map[string]string // the plan line of each address, by run, while the run goes on
 }
 
 // exitError ends a command that already wrote why it failed.

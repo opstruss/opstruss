@@ -165,6 +165,9 @@ func (e *engine) execTask(ctx context.Context, inst *instance, r *resolved, rec 
 	case model.TargetProject:
 		in := inst.node.In
 		res = e.callTask(ctx, t.Task, in.Tasks[t.Task], in.DirOf("tasks."+t.Task), r.task.inputs, c)
+		if in == e.p {
+			e.ranTask(t.Task, res.outcome)
+		}
 	case model.TargetTask:
 		inputs, _ := t.Inputs()
 		c.plugin = &pluginRun{name: t.Package.Name, dir: t.Package.Dir, requires: t.Package.Plugin.Requires, inputs: inputs}

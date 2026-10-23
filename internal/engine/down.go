@@ -3,6 +3,8 @@ package engine
 import (
 	"cmp"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"maps"
@@ -27,6 +29,7 @@ type leftover struct {
 	unit    string   // the path of its unit, as the address names it
 	keys    []string // the keys of its address, one per segment
 	record  *state.Record
+	etag    string // of the record as it was read
 	forget  bool
 	reason  string
 	def     *model.Unit // nil for a unit no longer in the files
@@ -40,6 +43,26 @@ func (l *leftover) summary() string {
 		return "will be forgotten without going down: removed: with destroy: false"
 	}
 	return "will go down: " + l.reason
+}
+
+// view is the plan of a leftover of up, as task: plan gives it: exact,
+// since nothing is left to learn, with one change, delete or, as
+// Terraform calls a removed block without destroy, forget.
+func (l *leftover) view() map[string]any {
+	action := "delete"
+	if l.forget {
+		action = "forget"
+	}
+	return map[string]any{"changes": []any{map[string]any{"action": action}}, "outputs": []any{}, "exact": true,
+		"digest": downDigest(action, l.address, l.etag), "summary": l.summary()}
+}
+
+// downDigest is the digest of taking the record at addr with etag down,
+// or of forgetting it: the same while neither the operation nor the
+// record changes, so yes: true approves only what task: plan showed.
+func downDigest(action, addr, etag string) string {
+	sum := sha256.Sum256([]byte(action + "\n" + addr + "\n" + etag))
+	return "sha256:v1:" + hex.EncodeToString(sum[:])
 }
 
 // downPass takes the selected units down, units that depend on others
@@ -109,14 +132,14 @@ func (e *engine) records(skip map[string]bool) ([]*leftover, error) {
 		if skip[addr] {
 			continue
 		}
-		rec, _, err := e.store.Get(addr)
+		rec, etag, err := e.store.Get(addr)
 		if err != nil {
 			return nil, err
 		}
 		if rec == nil || rec.Tombstone != nil {
 			continue
 		}
-		l := &leftover{address: addr, record: rec, done: make(chan struct{})}
+		l := &leftover{address: addr, record: rec, etag: etag, done: make(chan struct{})}
 		var names []string
 		for _, s := range model.ParseAddress(e.short(addr)) {
 			names, l.keys = append(names, s.Unit), append(l.keys, s.Key)
@@ -346,7 +369,7 @@ func (e *engine) downOne(ctx context.Context, l *leftover) string {
 		approval = cmp.Or(l.def.Approval, approval)
 	}
 	if approval != "auto" {
-		source, why, _ := e.approves(ctx, Question{Address: addr, Summary: "will go down (" + l.reason + ")"}, "")
+		source, why, _ := e.approves(ctx, Question{Address: addr, Summary: "will go down (" + l.reason + ")"}, downDigest("delete", addr, etag))
 		if why != "" {
 			e.say("approval", addr, "will go down (%s); %s, stopped at plan", l.reason, why)
 			e.stopAtPlan()

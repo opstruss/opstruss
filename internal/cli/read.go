@@ -48,6 +48,9 @@ func (a *app) listCommand() *cobra.Command {
 					if t.Run != "" {
 						last = t.Outcome + " in run " + t.Run
 					}
+					if t.Via != "" {
+						last += " via " + t.Via
+					}
 					desc := t.Description
 					if t.Internal {
 						desc = "(internal) " + desc

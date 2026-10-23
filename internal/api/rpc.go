@@ -14,6 +14,7 @@ import (
 
 	"github.com/opstruss/opstruss/internal/engine"
 	"github.com/opstruss/opstruss/internal/model"
+	"github.com/opstruss/opstruss/internal/proc"
 	"github.com/opstruss/opstruss/internal/record"
 	"github.com/opstruss/opstruss/internal/schema"
 	"github.com/santhosh-tekuri/jsonschema/v6"
@@ -193,8 +194,10 @@ func (s *Server) ServeConn(ctx context.Context, nc net.Conn) {
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	ctx, kill := proc.WithKill(ctx)
+	defer kill()
 	q := &questions{c: c, pending: map[string]chan message{}, gone: make(chan struct{})}
-	go q.listen(cancel)
+	go q.listen(cancel, kill)
 	h := Handlers{Event: func(ev record.Event) { _ = c.send(message{Method: "event", Params: raw(ev)}) }}
 	if init.Terminal {
 		h.Approve, h.Ask = q.approve, q.ask
@@ -252,8 +255,9 @@ type questions struct {
 	gone    chan struct{} // closed when the caller is gone
 }
 
-// listen reads what the caller sends while its call runs.
-func (q *questions) listen(cancel context.CancelFunc) {
+// listen reads what the caller sends while its call runs: cancel stops
+// the call, and with force also kills its programs at once.
+func (q *questions) listen(cancel context.CancelFunc, kill func()) {
 	defer close(q.gone)
 	for {
 		m, err := q.c.read(0)
@@ -262,6 +266,10 @@ func (q *questions) listen(cancel context.CancelFunc) {
 		}
 		if m.Method == "cancel" {
 			cancel()
+			var p cancelParams
+			if json.Unmarshal(m.Params, &p) == nil && p.Force {
+				kill()
+			}
 			continue
 		}
 		q.mu.Lock()
@@ -366,9 +374,15 @@ func open(c *conn, version string, terminal bool) (*Client, error) {
 // Close closes a connection that makes no call.
 func (cl *Client) Close() error { return cl.c.nc.Close() }
 
+// cancelParams are the params of a cancel notification.
+type cancelParams struct {
+	Force bool `json:"force,omitempty"` // kill the programs at once, without the rest of their stop.grace
+}
+
 // Call makes the one call of the connection, then closes it. Events and
 // questions go to h while the call runs; when ctx ends, the call is
-// cancelled, and Call waits for its result.
+// cancelled, and Call waits for its result; when the kill channel of ctx
+// closes, the call's programs are killed at once.
 func (cl *Client) Call(ctx context.Context, method string, r Request, h Handlers) (*Result, error) {
 	defer func() { _ = cl.Close() }()
 	id := raw(1)
@@ -377,6 +391,15 @@ func (cl *Client) Call(ctx context.Context, method string, r Request, h Handlers
 	}
 	stop := context.AfterFunc(ctx, func() { _ = cl.c.send(message{Method: "cancel"}) })
 	defer stop()
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		select {
+		case <-proc.Kill(ctx):
+			_ = cl.c.send(message{Method: "cancel", Params: raw(cancelParams{Force: true})})
+		case <-done:
+		}
+	}()
 	for {
 		m, err := cl.c.read(0)
 		if err != nil {

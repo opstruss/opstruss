@@ -11,12 +11,14 @@ import (
 	"os/signal"
 	"slices"
 	"strings"
+	"sync"
 	"syscall"
 
 	"github.com/opstruss/opstruss/internal/api"
 	"github.com/opstruss/opstruss/internal/engine"
 	"github.com/opstruss/opstruss/internal/expr"
 	"github.com/opstruss/opstruss/internal/model"
+	"github.com/opstruss/opstruss/internal/proc"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -37,16 +39,13 @@ func (a *app) unitCommands() []*cobra.Command {
 					return err
 				}
 				req.Yes, req.Force, req.NoDeps = f.yes, f.force, f.noDeps
-				ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-				defer stop()
-				res, err := a.call(ctx, use, req)
+				in := a.interrupts()
+				defer in.stop()
+				res, err := a.call(in.ctx, use, req)
 				if err != nil {
 					return err
 				}
-				if res.ExitCode != 0 {
-					return &exitError{res.ExitCode}
-				}
-				return nil
+				return in.exit(res.ExitCode)
 			},
 		}
 		cmd.Flags().BoolVar(&f.noDeps, "no-deps", false, "leave out the units that the ones named depend on, or for down those that depend on them")
@@ -253,10 +252,14 @@ func (a *app) renderTo(out io.Writer) func(engine.Event) {
 				who += ": " + ev.Step
 			}
 		}
+		if a.repeatsPlan(ev) {
+			return
+		}
 		switch {
 		case ev.Type == "log":
 			fmt.Fprintf(w, "%s | %s\n", who, ev.Message)
 		case ev.Type == "run":
+			delete(a.planned, ev.Run)
 			for _, k := range slices.Sorted(maps.Keys(ev.Outputs)) {
 				fmt.Fprintf(w, "  %s: %s\n", k, expr.Text(ev.Outputs[k]))
 			}
@@ -266,4 +269,98 @@ func (a *app) renderTo(out io.Writer) func(engine.Event) {
 			fmt.Fprintln(w, ev.Message)
 		}
 	}
+}
+
+// repeatsPlan says whether ev is the turn of a unit that ended as the plan
+// line of its run already said, such as unchanged, which the terminal
+// shows once; the event itself stays in --json and the record. The caller
+// holds renderMu.
+func (a *app) repeatsPlan(ev engine.Event) bool {
+	if ev.Address == "" || ev.Level != "info" {
+		return false
+	}
+	switch ev.Type {
+	case "plan":
+		if a.planned == nil {
+			a.planned = map[string]map[string]string{}
+		}
+		if a.planned[ev.Run] == nil {
+			a.planned[ev.Run] = map[string]string{}
+		}
+		a.planned[ev.Run][ev.Address] = ev.Message
+	case "unit":
+		if line, ok := a.planned[ev.Run][ev.Address]; ok && line == ev.Message {
+			delete(a.planned[ev.Run], ev.Address)
+			return true
+		}
+	}
+	return false
+}
+
+// interrupts is how a command that runs stops on SIGINT and SIGTERM: the
+// first cancels ctx, so each program gets its stop signal and stop.grace,
+// and a second kills them at once, as Terraform stops on two interrupts.
+type interrupts struct {
+	ctx  context.Context
+	stop func()
+	mu   sync.Mutex
+	got  syscall.Signal // the first signal
+}
+
+func (a *app) interrupts() *interrupts {
+	ctx, cancel := context.WithCancel(context.Background())
+	ctx, kill := proc.WithKill(ctx)
+	ch := make(chan os.Signal, 2)
+	signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
+	in := &interrupts{ctx: ctx}
+	done := make(chan struct{})
+	go func() {
+		for n := 0; ; n++ {
+			select {
+			case <-done:
+				return
+			case s := <-ch:
+				switch n {
+				case 0:
+					in.mu.Lock()
+					in.got, _ = s.(syscall.Signal)
+					in.mu.Unlock()
+					a.notice("interrupted: the programs stop within their stop.grace; interrupt again to kill them at once")
+					cancel()
+				case 1:
+					a.notice("two interrupts received: killing the programs at once; the next plan shows what did not finish")
+					kill()
+				}
+			}
+		}
+	}()
+	in.stop = func() {
+		signal.Stop(ch)
+		close(done)
+		cancel()
+		kill()
+	}
+	return in
+}
+
+// exit ends a command whose run ended with code: with 128 and the signal
+// when one stopped it, as a shell reports, otherwise with code.
+func (in *interrupts) exit(code int) error {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	if in.got != 0 {
+		code = 128 + int(in.got)
+	}
+	if code != 0 {
+		return &exitError{code}
+	}
+	return nil
+}
+
+// notice writes a line of OpsTruss itself to stderr, between the lines of
+// events.
+func (a *app) notice(msg string) {
+	a.renderMu.Lock()
+	defer a.renderMu.Unlock()
+	fmt.Fprintln(a.stderr, msg)
 }

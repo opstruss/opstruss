@@ -87,6 +87,7 @@ type TaskStatus struct {
 	Triggers    []string `json:"triggers,omitempty"`
 	Next        string   `json:"next,omitempty"` // when its schedule or every comes next, while the daemon runs
 	Run         string   `json:"run,omitempty"`
+	Via         string   `json:"via,omitempty"` // the task of that run, or its command, when the task ran inside it
 	Outcome     string   `json:"outcome,omitempty"`
 	Ended       string   `json:"ended,omitempty"`
 }
@@ -137,9 +138,14 @@ func List(opts Options) (*Status, error) {
 	for _, name := range slices.Sorted(maps.Keys(e.p.Tasks)) {
 		t := &TaskStatus{Name: name, Description: e.p.Tasks[name].Description, Internal: e.p.Tasks[name].Internal,
 			Triggers: triggerNames(e.p.Tasks[name].On)}
+		// The last run that ran it, as its task or inside another.
 		for _, r := range runs {
 			if r.Command == "task" && r.Task == name {
 				t.Run, t.Outcome, t.Ended = r.Run, r.Outcome, r.Ended
+				break
+			}
+			if in := r.Tasks[name]; in != nil {
+				t.Run, t.Via, t.Outcome, t.Ended = r.Run, cmp.Or(r.Task, r.Command), in.Outcome, r.Ended
 				break
 			}
 		}

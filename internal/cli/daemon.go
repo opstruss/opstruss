@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"os/signal"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -164,11 +163,12 @@ func (a *app) daemonCommand() *cobra.Command {
 				_, _ = fmt.Fprintln(ready, err)
 				return err
 			}
-			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-			defer stop()
+			// A daemon that a signal stops ends with 0, as a service should.
+			in := a.interrupts()
+			defer in.stop()
 			_, _ = fmt.Fprintln(ready, "ready")
 			_ = ready.Close()
-			return d.Serve(ctx)
+			return d.Serve(in.ctx)
 		},
 	}
 }
@@ -241,16 +241,13 @@ func (a *app) unlockCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-			defer stop()
-			res, err := a.call(ctx, "unlock", req)
+			in := a.interrupts()
+			defer in.stop()
+			res, err := a.call(in.ctx, "unlock", req)
 			if err != nil {
 				return err
 			}
-			if res.ExitCode != 0 {
-				return &exitError{res.ExitCode}
-			}
-			return nil
+			return in.exit(res.ExitCode)
 		},
 	}
 }

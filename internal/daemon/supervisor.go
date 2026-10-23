@@ -60,6 +60,7 @@ type Supervisor struct {
 	reg         *registry
 	say         func(record.Event) // the daemon's log
 	watch       func(record.Event) // the terminal of a daemon in the foreground, or nil
+	kill        <-chan struct{}    // closed when what stops the services is to kill them at once
 
 	recovered chan struct{} // closed once what a daemon that ended left is stopped
 	done      chan struct{} // closed once the supervisor stops
@@ -794,10 +795,10 @@ func (s *service) run(prog *plugin.Program, c *child, task string, cancel <-chan
 	select {
 	case <-exited:
 	case <-cancel:
-		_ = g.Stop(syscall.SIGTERM, time.Second)
+		_ = g.Stop(syscall.SIGTERM, time.Second, nil)
 		<-exited
 	}
-	_ = g.Stop(syscall.SIGTERM, time.Second)
+	_ = g.Stop(syscall.SIGTERM, time.Second, nil)
 	select {
 	case <-copied:
 	case <-time.After(plugin.PipeWait):
@@ -827,16 +828,28 @@ func (s *service) stop() {
 func (s *service) halt(c *child) {
 	deadline := time.Now().Add(s.spec.Stop.Grace)
 	if s.spec.StopRun != nil && !closed(c.exited) {
+		// stop.run ends with the grace, or at once on a kill.
 		cancel := make(chan struct{})
-		t := time.AfterFunc(s.spec.Stop.Grace, func() { close(cancel) })
+		var once sync.Once
+		end := func() { once.Do(func() { close(cancel) }) }
+		t := time.AfterFunc(s.spec.Stop.Grace, end)
+		ran := make(chan struct{})
+		go func() {
+			select {
+			case <-s.sup.kill:
+				end()
+			case <-ran:
+			}
+		}()
 		if code, err := s.run(s.spec.StopRun, c, "stop", cancel); err != nil {
 			s.sup.event("warn", s.spec.Address, "stop.run: %v", err)
 		} else if code != 0 {
 			s.sup.event("warn", s.spec.Address, "stop.run exited with %d", code)
 		}
+		close(ran)
 		t.Stop()
 	}
-	if err := proc.Group(c.p.PID).Stop(s.spec.Stop.Signal, max(time.Until(deadline), 0)); err != nil {
+	if err := proc.Group(c.p.PID).Stop(s.spec.Stop.Signal, max(time.Until(deadline), 0), s.sup.kill); err != nil {
 		s.sup.event("warn", s.spec.Address, "%v", err)
 	}
 }
@@ -850,7 +863,7 @@ func (s *service) cleanup(c *child) {
 	c.helpers.Wait()
 	if g := proc.Group(c.p.PID); !g.Empty() {
 		s.sup.event("warn", addr, "stopping what pid %d left in its process group", c.p.PID)
-		if err := g.Stop(stop.Signal, stop.Grace); err != nil {
+		if err := g.Stop(stop.Signal, stop.Grace, s.sup.kill); err != nil {
 			s.sup.event("warn", addr, "%v", err)
 		}
 	}
@@ -859,7 +872,7 @@ func (s *service) cleanup(c *child) {
 		var wg sync.WaitGroup
 		for _, p := range ps {
 			if g, err := proc.GroupOf(p.PID); err == nil {
-				wg.Go(func() { _ = g.Stop(stop.Signal, stop.Grace) })
+				wg.Go(func() { _ = g.Stop(stop.Signal, stop.Grace, s.sup.kill) })
 			}
 		}
 		wg.Wait()

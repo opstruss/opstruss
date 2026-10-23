@@ -34,6 +34,18 @@ env OPSTRUSS_LOG=debug
 exec opstruss up --yes
 stderr '^default/web: took the lock; digest sha256:v1:[0-9a-f]+; unchanged$'
 
+# a task that ran inside a run of another, through task:, needs, or a unit
+# that runs it, shows that run in list and in record.json
+exec opstruss release
+exec opstruss list
+stdout '^  greet +Say hello +success in run \S+ via release$'
+stdout '^  lint +success in run \S+ via release$'
+stdout '^  maybe +failure in run \S+ via release$'
+stdout '^  release +success in run \S+$'
+stdout '^  stamp-it +success in run \S+ via up$'
+exec sh -c 'grep -l release .opstruss/runs/default/*/record.json | xargs cat'
+stdout '"tasks": \{\s+"greet": \{\s+"outcome": "success"\s+\},\s+"lint": \{\s+"outcome": "success"\s+\},\s+"maybe": \{\s+"outcome": "failure"'
+
 -- opstruss.yaml --
 name: shop
 outputs:
@@ -43,7 +55,26 @@ units:
     run: echo "url=https://example.com" >> "$OPSTRUSS_OUTPUT"
     outputs:
       url: {}
+  stamp:
+    uses: stamp-it
 tasks:
   greet:
     description: Say hello
     run: echo hello
+  lint:
+    run: echo lint
+  maybe:
+    inputs:
+      fail: {type: boolean}
+    run: [test, "${{ inputs.fail }}", "!=", "true"]
+    continue_on_error: true
+  release:
+    needs: [lint]
+    steps:
+      - task: greet
+      - task: maybe
+        with: {fail: false}
+      - task: maybe
+        with: {fail: true}
+  stamp-it:
+    run: echo stamped
