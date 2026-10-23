@@ -58,7 +58,7 @@ func (a *app) call(ctx context.Context, method string, req api.Request) (*api.Re
 // output of the services it starts at this terminal.
 func (a *app) foreground(ctx context.Context, req api.Request) *daemon.Foreground {
 	stack, _ := model.StackOf(req.Dir, req.Stack)
-	return &daemon.Foreground{Dir: req.Dir, Stack: stack, Version: version(), Ctx: ctx, Watch: a.render(),
+	return &daemon.Foreground{Locked: req.Locked, Dir: req.Dir, Stack: stack, Version: version(), Ctx: ctx, Watch: a.render(),
 		Environ: req.Environ, Inputs: req.Inputs}
 }
 
@@ -115,6 +115,9 @@ func (a *app) startDaemon(dir, stack string) error {
 	}
 	defer func() { _ = r.Close() }()
 	cmd := exec.Command(exe, "-C", dir, daemonName, "--stack", stack)
+	if a.locked {
+		cmd.Args = append(cmd.Args, "--locked")
+	}
 	// The daemon is no program of a run that starts it.
 	cmd.Env = slices.DeleteFunc(slices.Clone(a.environ), func(kv string) bool {
 		return strings.HasPrefix(kv, "OPSTRUSS_RUN=") || strings.HasPrefix(kv, "OPSTRUSS_RUN_PARENTS=")
@@ -152,7 +155,7 @@ func (a *app) daemonCommand() *cobra.Command {
 			dir, err := a.projectDir()
 			var d *daemon.Daemon
 			if err == nil {
-				d, err = daemon.Start(daemon.Options{Dir: dir, Stack: a.stack, Version: version(), Environ: a.environ})
+				d, err = daemon.Start(daemon.Options{Locked: a.locked, Dir: dir, Stack: a.stack, Version: version(), Environ: a.environ})
 			}
 			var running *daemon.RunningError
 			if errors.As(err, &running) {

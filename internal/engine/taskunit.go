@@ -69,7 +69,7 @@ func (e *engine) resolveTask(inst *instance, r *resolved, s *expr.Scope) error {
 		if t.Kind == model.TargetTask && !slices.Contains(t.Package.Plugin.Env, k) {
 			ok = false
 		}
-		if ok {
+		if ok && inst.node.Grants(k) {
 			r.pass[k] = v
 		}
 	}
@@ -159,7 +159,7 @@ func (e *engine) execTask(ctx context.Context, inst *instance, r *resolved, rec 
 	ur := &unitRun{env: r.env, pass: slices.Sorted(maps.Keys(r.pass)), stateKey: rec.StateKey, reason: reason,
 		workdir: e.workdir(inst.address), state: programState(rec)}
 	// The unit's approval covers what its task asks.
-	c := call{unit: inst, yes: true, source: "unit", unitRun: ur}
+	c := call{frame: inst.frame, unit: inst, yes: true, source: "unit", unitRun: ur}
 	var res *taskResult
 	switch t.Kind {
 	case model.TargetProject:

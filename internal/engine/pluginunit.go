@@ -157,7 +157,7 @@ func (e *engine) resolvePlugin(inst *instance, r *resolved, s *expr.Scope) error
 	r.pass = map[string]string{}
 	for _, kv := range e.opts.Environ {
 		k, v, _ := strings.Cut(kv, "=")
-		if slices.Contains(pl.Env, k) && slices.ContainsFunc(allowed, func(p string) bool { ok, _ := path.Match(p, k); return ok }) {
+		if inst.node.Grants(k) && slices.Contains(pl.Env, k) && slices.ContainsFunc(allowed, func(p string) bool { ok, _ := path.Match(p, k); return ok }) {
 			r.pass[k] = v
 		}
 	}

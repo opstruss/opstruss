@@ -39,7 +39,7 @@ stderr 'web changed since the pull'
 # a record of a newer OpsTruss is refused
 stdin newer.json
 ! exec opstruss state push web --force
-stderr 'version 2, written by a newer OpsTruss'
+stderr 'version 3, written by a newer OpsTruss'
 
 # rm leaves a tombstone, and rm on a tombstone removes it
 exec opstruss state rm web
@@ -110,7 +110,7 @@ units:
 -- record2.json --
 {"version": 1, "id": "7f3a9c1e", "address": "default/web", "kind": "run", "outputs": {"url": "https://example.com"}}
 -- newer.json --
-{"version": 2, "id": "7f3a9c1e", "address": "default/web"}
+{"version": 3, "id": "7f3a9c1e", "address": "default/web"}
 -- orphan.json --
 {"version": 1, "id": "1b2c3d4e", "address": "default/gone", "kind": "run"}
 -- meta.json --

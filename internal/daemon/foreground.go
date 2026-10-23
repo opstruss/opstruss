@@ -19,6 +19,8 @@ import (
 // foreground while its services run, as docker compose up does, and the
 // runs of other command lines go to it meanwhile.
 type Foreground struct {
+	Locked bool
+
 	Dir     string
 	Stack   string
 	Version string
@@ -53,7 +55,7 @@ func (f *Foreground) become() (*Daemon, error) {
 	if f.d != nil {
 		return f.d, nil
 	}
-	d, err := Start(Options{Dir: f.Dir, Stack: f.Stack, Version: f.Version, Watch: f.Watch, Environ: f.Environ, Inputs: f.Inputs})
+	d, err := Start(Options{Locked: f.Locked, Dir: f.Dir, Stack: f.Stack, Version: f.Version, Watch: f.Watch, Environ: f.Environ, Inputs: f.Inputs})
 	var running *RunningError
 	if errors.As(err, &running) {
 		return nil, fmt.Errorf("the daemon of stack %s started meanwhile, pid %d; run up again, which goes to it", f.Stack, running.PID)

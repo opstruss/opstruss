@@ -6,19 +6,21 @@ import (
 	"errors"
 	"fmt"
 	"math"
+
+	"github.com/opstruss/opstruss/internal/sources"
 )
 
 // RecordVersion and MetaVersion are the versions this OpsTruss writes. It
 // reads every older version and migrates it when it writes, and it refuses
 // a newer one instead of guessing.
 const (
-	RecordVersion = 1
+	RecordVersion = 2
 	MetaVersion   = 1
 )
 
 // recordMigrations turns a record of version v into version v+1, one
 // function per version.
-var recordMigrations = map[int]func(map[string]any) error{}
+var recordMigrations = map[int]func(map[string]any) error{1: func(map[string]any) error { return nil }}
 
 // Record is the state of one unit at its address: enough to take the unit
 // down without its definition.
@@ -49,17 +51,30 @@ type Record struct {
 
 // Source is where the program of a unit comes from.
 type Source struct {
+	Remote *sources.Identity `json:"remote,omitempty"`
+
 	Uses   string `json:"uses,omitempty"`
 	Commit string `json:"commit,omitempty"`
 	Hash   string `json:"hash,omitempty"`
 }
 
 // Down is what down runs, resolved: the program of a run unit or the
-// plugin's task, with its context. Dir and Plugin are relative to the
-// project root, EnvFiles are env values that the program gets as files,
+// plugin's task, with its context. Dir and Plugin are relative to their
+// explicit source, or to the project root for older/local contracts.
+// EnvFiles are env values that the program gets as files,
 // and Pass holds the sha256 fingerprint of each variable passed from the
 // operator.
+type SourceLocation struct {
+	Source sources.Identity `json:"source"`
+	Root   string           `json:"root"`
+}
+
 type Down struct {
+	Sources      []SourceLocation          `json:"sources,omitempty"`
+	DirSource    *sources.Identity         `json:"dir_source,omitempty"`
+	PluginSource *sources.Identity         `json:"plugin_source,omitempty"`
+	Binaries     map[string]sources.Binary `json:"binaries,omitempty"`
+
 	Run      any               `json:"run,omitempty"`
 	Shell    string            `json:"shell,omitempty"`
 	Dir      string            `json:"dir,omitempty"`

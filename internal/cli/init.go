@@ -175,6 +175,7 @@ func initMeta(dir, stack string, res *initResult) error {
 	if err != nil {
 		return err
 	}
+	defer p.Close()
 	b := state.NewLocal(filepath.Join(dir, ".opstruss", "state"))
 	if _, _, err := b.Get(state.MetaKey(p.StackName)); err == nil {
 		return nil

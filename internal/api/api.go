@@ -16,12 +16,14 @@ import (
 
 // Protocol is the version of the API, which a connection opens with in
 // initialize; a client that meets another one stops.
-const Protocol = 1
+const Protocol = 2
 
 // Request says which project and stack a call is about, with what the
 // caller brings: its directory, environment, and inputs, which a run
 // forwarded to a daemon uses as the caller's.
 type Request struct {
+	Locked bool `json:"locked,omitempty"`
+
 	Dir     string            `json:"dir"`
 	Cwd     string            `json:"cwd,omitempty"`
 	Stack   string            `json:"stack,omitempty"`
@@ -79,7 +81,7 @@ func (a *API) options(r Request) engine.Options {
 			env[k] = v
 		}
 	}
-	return engine.Options{Dir: r.Dir, Cwd: r.Cwd, Stack: r.Stack, Inputs: r.Inputs, Flags: r.Flags, Environ: r.Environ,
+	return engine.Options{Locked: r.Locked, Dir: r.Dir, Cwd: r.Cwd, Stack: r.Stack, Inputs: r.Inputs, Flags: r.Flags, Environ: r.Environ,
 		LookupEnv: func(k string) (string, bool) { v, ok := env[k]; return v, ok },
 		Units:     r.Units, Yes: r.Yes, Force: r.Force, NoDeps: r.NoDeps, Follow: r.Follow, Debug: r.Debug, ShowSensitive: r.ShowSensitive,
 		Emit: a.h.Event, Approve: a.h.Approve, Ask: a.h.Ask, Supervisor: a.Supervisor}
@@ -114,8 +116,8 @@ func (a *API) Call(ctx context.Context, method string, r Request) (*Result, erro
 }
 
 // Plan previews the units of the request.
-func (a *API) Plan(_ context.Context, r Request) (*Result, error) {
-	return result(engine.Plan(a.options(r)))
+func (a *API) Plan(ctx context.Context, r Request) (*Result, error) {
+	return result(engine.PlanContext(ctx, a.options(r)))
 }
 
 // Up brings the units of the request up.

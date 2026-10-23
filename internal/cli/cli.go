@@ -17,8 +17,11 @@ import (
 	"strings"
 	"sync"
 
+	"context"
+
 	"github.com/opstruss/opstruss/internal/model"
 	"github.com/opstruss/opstruss/internal/secret"
+	"github.com/opstruss/opstruss/internal/sources"
 	"github.com/spf13/cobra"
 	"go.yaml.in/yaml/v3"
 )
@@ -32,6 +35,9 @@ func Main() int {
 }
 
 type app struct {
+	locked    bool
+	discovery *model.Project
+
 	stdout, stderr io.Writer
 	args           []string
 	stdin          *bufio.Reader
@@ -79,6 +85,11 @@ func start(args []string, stdin io.Reader, terminal bool, stdout, stderr io.Writ
 	a.args = args
 	if err == nil {
 		root := a.root()
+		defer func() {
+			if a.discovery != nil {
+				a.discovery.Close()
+			}
+		}()
 		root.SetArgs(args)
 		root.SetOut(stdout)
 		root.SetErr(stderr)
@@ -193,6 +204,7 @@ func (a *app) root() *cobra.Command {
 	pf := root.PersistentFlags()
 	pf.StringVar(&a.stack, "stack", "", "the stack to use; defaults to the only one, or $OPSTRUSS_STACK")
 	pf.StringArrayVar(&a.inputs, "input", nil, "set a project input, as name=value")
+	pf.BoolVar(&a.locked, "locked", false, "require existing dependency pins without changing opstruss.lock")
 	pf.BoolVar(&a.json, "json", false, "print JSON")
 	root.Flags().StringVar(&a.completion, "completion", "", "print a completion script for bash, zsh, or fish")
 	root.AddCommand(a.versionCommand(), a.initCommand(), a.validateCommand(), a.explainCommand(), a.stateCommand())
@@ -274,7 +286,7 @@ func (a *app) validateCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			err = model.Validate(dir)
+			err = model.ValidateWith(context.Background(), dir, sources.Options{Locked: a.locked})
 			var probs model.Problems
 			if err != nil && !errors.As(err, &probs) {
 				return err
@@ -309,10 +321,11 @@ func (a *app) explainCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			p, err := model.Load(dir, a.stackName())
+			p, err := model.LoadWith(context.Background(), dir, a.stackName(), sources.Options{Locked: a.locked})
 			if err != nil {
 				return err
 			}
+			defer p.Close()
 			given, err := a.givenInputs()
 			if err != nil {
 				return err

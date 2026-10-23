@@ -144,10 +144,11 @@ func (c call) envPass(t *model.Task) (model.Env, []string) {
 // Task runs the project task name, or the task name of each unit that has
 // it, as one run whose exit code follows the outcome of that call.
 func Task(ctx context.Context, opts Options, name string, inputs map[string]any) (*Result, error) {
-	e, err := load(opts)
+	e, err := loadContext(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
+	defer e.releaseSources()
 	e.ctx = ctx
 	if err := e.checkCall(name, inputs); err != nil {
 		return nil, err
@@ -639,14 +640,14 @@ func (e *engine) taskOnce(ctx context.Context, name, label string, t *model.Task
 	env, pass := c.envPass(t)
 	switch {
 	case t.Run != nil:
-		res = e.program(ctx, progSpec{label: label, task: name, cmd: t.Run, shell: t.Shell, dir: t.Dir, base: dir,
+		res = e.program(ctx, progSpec{frame: c.where(e), label: label, task: name, cmd: t.Run, shell: t.Shell, dir: t.Dir, base: dir,
 			env: env, pass: pass, stdin: t.Stdin, inputs: scope.Vars["inputs"].(map[string]any), outputs: t.Outputs,
 			retry: t.Retry, failedWhen: t.FailedWhen, changedWhen: t.ChangedWhen, stop: t.Stop, unit: c.unit, plugin: c.plugin,
 			unitRun: c.unitRun}, scope)
 	case len(t.Calls) == 1:
 		// A task that calls one task passes on its outputs.
 		for callee, args := range t.Calls {
-			res = e.callByName(ctx, progSpec{label: label, task: name, shell: t.Shell, dir: t.Dir, base: dir, env: env,
+			res = e.callByName(ctx, progSpec{frame: c.where(e), label: label, task: name, shell: t.Shell, dir: t.Dir, base: dir, env: env,
 				pass: pass, stdin: t.Stdin, retry: t.Retry, failedWhen: t.FailedWhen, changedWhen: t.ChangedWhen,
 				stop: t.Stop, unit: c.unit, plugin: c.plugin, unitRun: c.unitRun}, callee, args, scope)
 		}
@@ -877,13 +878,13 @@ func (tc *taskCtx) stepOnce(ctx context.Context, s *model.Step, label string, d 
 	switch {
 	case s.Run != nil:
 		d := d.with(s.Shell, s.Dir, s.Env, s.Pass)
-		res = tc.e.program(ctx, progSpec{label: tc.label, step: label, task: tc.name, cmd: s.Run, shell: d.shell, dir: d.dir, base: tc.dir,
+		res = tc.e.program(ctx, progSpec{frame: tc.c.where(tc.e), label: tc.label, step: label, task: tc.name, cmd: s.Run, shell: d.shell, dir: d.dir, base: tc.dir,
 			env: d.env, pass: d.pass, stdin: s.Stdin, outputs: s.Outputs, retry: s.Retry,
 			failedWhen: s.FailedWhen, changedWhen: s.ChangedWhen, unit: tc.c.unit, plugin: tc.c.plugin, unitRun: tc.c.unitRun}, scope)
 	case len(s.Calls) == 1:
 		d := d.with(s.Shell, s.Dir, s.Env, s.Pass)
 		for callee, args := range s.Calls {
-			res = tc.e.callByName(ctx, progSpec{label: tc.label, step: label, task: tc.name, shell: d.shell, dir: d.dir,
+			res = tc.e.callByName(ctx, progSpec{frame: tc.c.where(tc.e), label: tc.label, step: label, task: tc.name, shell: d.shell, dir: d.dir,
 				base: tc.dir, env: d.env, pass: d.pass, stdin: s.Stdin, retry: s.Retry, failedWhen: s.FailedWhen,
 				changedWhen: s.ChangedWhen, unit: tc.c.unit, plugin: tc.c.plugin, unitRun: tc.c.unitRun}, callee, args, scope)
 		}

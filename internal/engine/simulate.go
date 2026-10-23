@@ -46,10 +46,11 @@ var fieldTypes = map[string]string{
 // trigger it simulated. It returns nil, and makes no run, when the
 // trigger leaves the event out.
 func Simulate(ctx context.Context, opts Options, name string, inputs, ev map[string]any) (*Result, error) {
-	e, err := load(opts)
+	e, err := loadContext(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
+	defer e.releaseSources()
 	e.ctx, e.trigger = ctx, true
 	tr, at, fields, err := simulated(e.p, name, ev)
 	if err != nil {

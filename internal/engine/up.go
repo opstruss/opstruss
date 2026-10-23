@@ -27,7 +27,12 @@ import (
 const MaxRecord = 2 << 20
 
 // Plan previews the selected units: what up would run, and why.
-func Plan(opts Options) (*Result, error) { return runCommand(context.Background(), opts, "plan") }
+func Plan(opts Options) (*Result, error) { return PlanContext(context.Background(), opts) }
+
+// PlanContext previews units with cancellable dependency preparation.
+func PlanContext(ctx context.Context, opts Options) (*Result, error) {
+	return runCommand(ctx, opts, "plan")
+}
 
 // Up runs the turn of each selected unit in graph order, units that do not
 // depend on each other in parallel, then takes down what left the files.
@@ -42,6 +47,7 @@ func runCommand(ctx context.Context, opts Options, op string) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer e.releaseSources()
 	ctx = e.ctx
 	if err := e.syncKey(); err != nil {
 		e.fail("", err)
@@ -179,7 +185,7 @@ func (e *engine) preview(ctx context.Context, inst *instance) {
 // missing says which program of requires: is not in PATH.
 func (e *engine) missing(inst *instance, r *resolved) error {
 	for _, name := range r.requires {
-		if _, err := plugin.LookPath(name, e.path()); err != nil {
+		if _, err := plugin.LookPath(name, e.requiredPath(r)); err != nil {
 			if r.plugin != nil {
 				return fmt.Errorf("plugin %s requires %s, which is not in PATH", r.plugin.target.Package.Name, name)
 			}
@@ -231,10 +237,16 @@ func (e *engine) decide(ctx context.Context, inst *instance, r *resolved, rec *s
 		down := e.downContract(inst, r)
 		for _, a := range rec.Abandoned {
 			if !sameTarget(a.Down, down) {
+				if err := e.checkDown(ctx, a.Down); err != nil {
+					return plan{err: err}
+				}
 				p.teardown = append(p.teardown, a.Run)
 			}
 		}
 		if a := rec.Pending; a != nil && a.Op == "up" && !sameTarget(a.Down, down) {
+			if err := e.checkDown(ctx, a.Down); err != nil {
+				return plan{err: err}
+			}
 			p.teardown = append(p.teardown, a.Run)
 		}
 	}
@@ -678,8 +690,8 @@ func sameTarget(a, b *state.Down) bool {
 	if a == nil || b == nil {
 		return a == b
 	}
-	return same([]any{a.Run, a.Shell, a.Dir, a.Plugin, a.Env, a.EnvFiles, a.Pass},
-		[]any{b.Run, b.Shell, b.Dir, b.Plugin, b.Env, b.EnvFiles, b.Pass})
+	return same([]any{a.Run, a.Shell, a.Dir, a.Plugin, a.Env, a.EnvFiles, a.Pass, downIdentities(a), a.DirSource, a.PluginSource, a.Binaries},
+		[]any{b.Run, b.Shell, b.Dir, b.Plugin, b.Env, b.EnvFiles, b.Pass, downIdentities(b), b.DirSource, b.PluginSource, b.Binaries})
 }
 
 // attempts runs the program as often as retry allows: while an attempt

@@ -74,6 +74,7 @@ func Triggers(opts Options) ([]*Trigger, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
+	defer e.releaseSources()
 	e.ctx, e.trigger = context.Background(), true
 	var scope *expr.Scope
 	installScope := func() (*expr.Scope, error) {
@@ -203,10 +204,11 @@ func keyOf(parts ...string) string {
 // against those of the task. It returns nil, and makes no run, when if:
 // leaves the event out.
 func Fire(ctx context.Context, opts Options, t *Trigger) (*Result, error) {
-	e, err := load(opts)
+	e, err := loadContext(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
+	defer e.releaseSources()
 	e.trigger = true
 	return e.fire(ctx, t, nil, true)
 }

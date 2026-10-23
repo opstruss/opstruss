@@ -3,6 +3,8 @@
 // internal/schema and the rules that a schema cannot express.
 package model
 
+import "github.com/opstruss/opstruss/internal/sources"
+
 // File is opstruss.yaml: a project, or a component when used through uses:.
 // Include files hold a subset of its keys.
 type File struct {
@@ -378,10 +380,7 @@ type PluginOutputs struct {
 	Declared map[string]*Output
 }
 
-type Binary struct {
-	URL    string `json:"url"`
-	SHA256 string `json:"sha256"`
-}
+type Binary = sources.Binary
 
 type PluginBackend struct {
 	Run *Command `json:"run"`

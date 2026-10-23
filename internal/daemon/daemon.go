@@ -59,6 +59,8 @@ func LogPath(root, stack string) string { return filepath.Join(root, "logs", sta
 
 // Options says which daemon to start.
 type Options struct {
+	Locked bool
+
 	Dir     string // the project
 	Stack   string
 	Version string // of OpsTruss
@@ -178,20 +180,20 @@ func Start(opts Options) (_ *Daemon, err error) {
 	d.runs, d.cancelRuns = context.WithCancel(runs)
 	d.trig = &triggers{d: d, sources: map[string]*source{}, pending: map[string]int{}}
 	d.trig.hooks = &webhooks{t: d.trig}
-	d.trig.install(runOptions(opts.Dir, opts.Stack, opts.Inputs, opts.Environ))
+	d.trig.install(runOptions(opts.Dir, opts.Stack, opts.Inputs, opts.Environ, opts.Locked))
 	return d, nil
 }
 
 // runOptions are the options of a run of the project in dir, with the
 // inputs and environment of whoever asked for it.
-func runOptions(dir, stack string, inputs map[string]string, environ []string) engine.Options {
+func runOptions(dir, stack string, inputs map[string]string, environ []string, locked bool) engine.Options {
 	env := map[string]string{}
 	for _, kv := range environ {
 		if k, v, ok := strings.Cut(kv, "="); ok {
 			env[k] = v
 		}
 	}
-	return engine.Options{Dir: dir, Stack: stack, Inputs: inputs, Environ: environ,
+	return engine.Options{Locked: locked, Dir: dir, Stack: stack, Inputs: inputs, Environ: environ,
 		LookupEnv: func(k string) (string, bool) { v, ok := env[k]; return v, ok }}
 }
 
@@ -238,10 +240,10 @@ func (d *Daemon) Serve(ctx context.Context) error {
 			case method == "up":
 				// up installs the triggers again from the files as they are
 				// now, with what its caller brings.
-				d.trig.install(runOptions(r.Dir, r.Stack, r.Inputs, r.Environ))
+				d.trig.install(runOptions(r.Dir, r.Stack, r.Inputs, r.Environ, r.Locked))
 			case method == "rerun" && res.Record != nil && res.Record.Command == "up":
 				// An up again brings the --input of the up it ran again.
-				d.trig.install(runOptions(r.Dir, r.Stack, res.Inputs, r.Environ))
+				d.trig.install(runOptions(r.Dir, r.Stack, res.Inputs, r.Environ, r.Locked))
 			}
 			return res, err
 		}}

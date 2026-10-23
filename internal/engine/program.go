@@ -18,6 +18,8 @@ import (
 // progSpec is the program of a task or a step, before its expressions are
 // evaluated.
 type progSpec struct {
+	frame *frame
+
 	label, task string
 	step        string // the label of a step: its outputs have stdout, stderr, and exit_code too
 	cmd         *model.Command
@@ -147,7 +149,7 @@ func (e *engine) programCall(p progSpec, s *expr.Scope) (*plugin.Call, error) {
 	for _, kv := range e.opts.Environ {
 		k, _, _ := strings.Cut(kv, "=")
 		for _, pat := range p.pass {
-			if ok, _ := path.Match(pat, k); ok && !model.ReservedEnv(k) && !slices.Contains(pass, k) {
+			if ok, _ := path.Match(pat, k); ok && !model.ReservedEnv(k) && !slices.Contains(pass, k) && p.granted(k) {
 				pass = append(pass, k)
 			}
 		}
@@ -174,6 +176,7 @@ func (e *engine) programCall(p progSpec, s *expr.Scope) (*plugin.Call, error) {
 		}
 		reason = cmp.Or(u.reason, reason)
 	}
+	pass = slices.DeleteFunc(pass, func(k string) bool { return !p.granted(k) })
 	// The inputs of a component, which a task of it gets too, may read a
 	// secret, made now.
 	inputs, err := expr.Made(p.inputs)
@@ -267,4 +270,16 @@ func logRead(res *plugin.Result, outputs map[string]*model.Output, marks map[str
 			w.flush()
 		}
 	}
+}
+
+func (p progSpec) granted(name string) bool {
+	if p.frame != nil && p.frame.in.Source != nil && p.frame.node != nil {
+		if !p.frame.node.TaskGrants(name) {
+			return false
+		}
+	}
+	if p.unit != nil && !p.unit.node.Grants(name) {
+		return false
+	}
+	return true
 }

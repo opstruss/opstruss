@@ -24,11 +24,14 @@ import (
 	"github.com/opstruss/opstruss/internal/proc"
 	"github.com/opstruss/opstruss/internal/record"
 	"github.com/opstruss/opstruss/internal/secret"
+	"github.com/opstruss/opstruss/internal/sources"
 	"github.com/opstruss/opstruss/internal/state"
 )
 
 // Options says what a run does.
 type Options struct {
+	Locked bool
+
 	Dir    string            // the project directory
 	Cwd    string            // where OpsTruss started, before -C: opstruss.cwd
 	Stack  string            // empty chooses the only stack
@@ -108,6 +111,8 @@ const DefaultParallel = 10
 const DefaultTimeout = 6 * time.Hour
 
 type engine struct {
+	releaseSources func()
+
 	ctx      context.Context // the run's, for the programs of secrets, which an expression starts without one of its own
 	opts     Options
 	p        *model.Project
@@ -185,24 +190,47 @@ type engine struct {
 // The run's context, e.ctx, also ends on a request in its cancel.jsonl, so
 // callers go on with it, not with ctx.
 func open(ctx context.Context, opts Options, command, task string) (*engine, error) {
-	e, err := load(opts)
+	e, err := loadContext(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
 	e.ctx = ctx
-	return e, e.start(command, task, nil, nil)
+	if err := e.start(command, task, nil, nil); err != nil {
+		e.releaseSources()
+		return nil, err
+	}
+	return e, nil
 }
 
 // load reads the project and opens the state of its stack, for a run or
 // for a command that only reads.
-func load(opts Options) (*engine, error) {
+func load(opts Options) (*engine, error) { return loadContext(context.Background(), opts) }
+
+func loadContext(ctx context.Context, opts Options) (*engine, error) {
 	p := opts.Model
+	if p != nil {
+		session, err := p.Sources.Acquire(ctx)
+		if err != nil {
+			return nil, err
+		}
+		copy := *p
+		copy.Sources = session
+		p = &copy
+	}
 	if p == nil {
 		var err error
-		if p, err = model.Load(opts.Dir, opts.Stack); err != nil {
+		if p, err = model.LoadWith(ctx, opts.Dir, opts.Stack, sources.Options{Locked: opts.Locked}); err != nil {
 			return nil, err
 		}
 	}
+	releaseSources := p.Sources.Retain()
+	p.Close()
+	loaded := false
+	defer func() {
+		if !loaded {
+			releaseSources()
+		}
+	}()
 	// A sensitive input is known before it is checked, so the error of the
 	// check hides it.
 	red := secret.NewRedactor()
@@ -223,7 +251,7 @@ func load(opts Options) (*engine, error) {
 			inputMarks[k] = true
 		}
 	}
-	e := &engine{opts: opts, p: p, inputs: inputs, root: filepath.Join(p.Dir, ".opstruss"),
+	e := &engine{releaseSources: releaseSources, opts: opts, p: p, inputs: inputs, root: filepath.Join(p.Dir, ".opstruss"),
 		redact: red, inputMarks: inputMarks, tooShort: short,
 		started: time.Now().UTC(), parallel: DefaultParallel, byUnit: map[string][]*instance{},
 		read: map[string]string{}, needed: map[string]*taskOnce{},
@@ -265,6 +293,7 @@ func load(opts Options) (*engine, error) {
 	if e.host, err = state.HostID(); err != nil {
 		return nil, err
 	}
+	loaded = true
 	return e, nil
 }
 
@@ -309,7 +338,7 @@ func (e *engine) start(command, task string, with map[string]any, tr *Trigger) e
 	}
 	e.cleanTemp()
 	e.holder = state.NewHolder(e.runID, e.host)
-	run := &plugin.Run{Project: p.Name, Stack: p.StackName, ID: e.runID, Parents: e.parents,
+	run := &plugin.Run{SourceFiles: e.p.Sources.Files, RetainSources: e.p.Sources.Retain, PluginBins: e.p.PluginBinaries(), Project: p.Name, Stack: p.StackName, ID: e.runID, Parents: e.parents,
 		Temp: e.tempOf(e.runID), Artifacts: filepath.Join(e.root, "runs", p.StackName, e.runID, "artifacts"), Environ: opts.Environ,
 		Passed: e.passed}
 	if err := run.Open(); err != nil {

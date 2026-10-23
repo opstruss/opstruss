@@ -2,8 +2,34 @@ package model
 
 import (
 	"path"
+	"reflect"
 	"slices"
 )
+
+// PluginBinaries maps plugin directories to their private executable paths.
+func (p *Project) PluginBinaries() map[string][]string {
+	out := map[string][]string{}
+	var walk func(*Project)
+	walk = func(p *Project) {
+		for _, pkg := range p.Packages {
+			if len(pkg.BinDirs) > 0 {
+				out[pkg.Dir] = pkg.BinDirs
+			}
+		}
+		for _, u := range p.Units {
+			if t := u.Target; t != nil {
+				if t.Package != nil && len(t.Package.BinDirs) > 0 {
+					out[t.Package.Dir] = t.Package.BinDirs
+				}
+				if t.Component != nil {
+					walk(t.Component)
+				}
+			}
+		}
+	}
+	walk(p)
+	return out
+}
 
 func matchesPass(patterns []string, name string) bool {
 	return slices.ContainsFunc(patterns, func(p string) bool { ok, _ := path.Match(p, name); return ok })
@@ -32,4 +58,34 @@ func (n *Node) TaskGrants(name string) bool {
 		return matchesPass(n.Def().Pass, name)
 	}
 	return matchesPass(n.Unit.Pass, name) && n.Grants(name)
+}
+
+// SameDefinition compares saved models without mutable cache locks and leases.
+func (p *Project) SameDefinition(other *Project) bool {
+	var definition func(*Project) any
+	definition = func(p *Project) any {
+		if p == nil {
+			return nil
+		}
+		packages := map[string]any{}
+		for name, pkg := range p.Packages {
+			packages[name] = []any{pkg.Dir, pkg.Plugin, pkg.Source, pkg.Components, pkg.Builtin}
+		}
+		components := map[string]any{}
+		for name, u := range p.Units {
+			if u.Target != nil && u.Target.Component != nil {
+				components[name] = definition(u.Target.Component)
+			}
+			if u.Target != nil && u.Target.Package != nil {
+				pkg := u.Target.Package
+				packages["units."+name] = []any{pkg.Dir, pkg.Plugin, pkg.Source, pkg.Components, pkg.Builtin}
+			}
+		}
+		origins := map[string]string{}
+		for key := range p.origins {
+			origins[key] = p.DirOf(key)
+		}
+		return []any{p.Dir, p.StackName, p.doc, p.Source, packages, components, origins}
+	}
+	return reflect.DeepEqual(definition(p), definition(other))
 }

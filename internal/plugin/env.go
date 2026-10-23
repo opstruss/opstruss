@@ -91,6 +91,13 @@ func (r *Run) environment(c *Call, write func(name string, data []byte) (string,
 		}
 	}
 
+	bins := c.BinDirs
+	if len(bins) == 0 {
+		bins = r.PluginBins[c.PluginDir]
+	}
+	if len(bins) > 0 {
+		env["PATH"] = strings.Join(append(slices.Clone(bins), env["PATH"]), string(os.PathListSeparator))
+	}
 	env["OPSTRUSS_CONTRACT"] = Contract
 	env["OPSTRUSS_PROJECT"] = r.Project
 	env["OPSTRUSS_STACK"] = r.Stack

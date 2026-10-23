@@ -20,7 +20,7 @@ func reinstall(t *testing.T, d *Daemon, dir, yaml string, environ ...string) {
 	if err := os.WriteFile(filepath.Join(dir, "opstruss.yaml"), []byte(yaml), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	d.trig.install(runOptions(dir, "default", nil, append([]string{"PATH=" + os.Getenv("PATH")}, environ...)))
+	d.trig.install(runOptions(dir, "default", nil, append([]string{"PATH=" + os.Getenv("PATH")}, environ...), false))
 }
 
 func sourcesOf(d *Daemon) map[string]*source {

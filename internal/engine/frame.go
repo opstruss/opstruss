@@ -705,6 +705,9 @@ func (e *engine) writeFrame(f *frame) error {
 	}
 	slices.Sort(hidden)
 	src := &state.Source{Uses: f.node.Unit.Uses}
+	if f.in.Source != nil {
+		src = sourceOf(f.in.Source)
+	}
 	if rec != nil && same(rec.Source, src) && same(rec.Inputs, inputs) {
 		return nil
 	}

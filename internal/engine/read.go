@@ -27,6 +27,7 @@ func Outputs(opts Options) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer e.releaseSources()
 	out, marks := map[string]any{}, map[string]any{}
 	for _, name := range slices.Sorted(maps.Keys(e.p.Outputs)) {
 		s := e.frameScope(e.top, e.rootUnits(), e.p.DirOf("outputs."+name), "", nil, nil)
@@ -63,6 +64,7 @@ func e0(opts Options) (*engine, error) {
 	}
 	e.pass = pass{}
 	if err := e.selectUnits(false); err != nil {
+		e.releaseSources()
 		return nil, err
 	}
 	e.previewQuiet()
@@ -129,6 +131,7 @@ func List(opts Options) (*Status, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer e.releaseSources()
 	st := &Status{Stack: e.p.StackName, Tasks: []*TaskStatus{}, Units: []*UnitStatus{}}
 	runs, err := runRecords(e.root, e.p.StackName)
 	if err != nil {
@@ -184,6 +187,9 @@ func Runs(opts Options) ([]*record.Record, error) {
 	if err != nil {
 		return nil, err
 	}
+	if opts.Model == nil {
+		defer p.Close()
+	}
 	return runRecords(filepath.Join(p.Dir, ".opstruss"), p.StackName)
 }
 
@@ -233,6 +239,9 @@ func Events(ctx context.Context, opts Options, id string, emit func(Event)) erro
 	p, err := project(opts)
 	if err != nil {
 		return err
+	}
+	if opts.Model == nil {
+		defer p.Close()
 	}
 	err = record.ReadRun(ctx, filepath.Join(p.Dir, ".opstruss", "runs", p.StackName, filepath.Base(id)), opts.Follow, emit)
 	if errors.Is(err, fs.ErrNotExist) {

@@ -144,7 +144,7 @@ func TestStore(t *testing.T) {
 	if _, err := Open(b, "prod", "platform"); !errors.As(err, &ne) {
 		t.Fatalf("a newer _meta: %v", err)
 	}
-	if _, err := DecodeRecord([]byte(`{"version": 2, "id": "x"}`), "prod/web"); !errors.As(err, &ne) {
+	if _, err := DecodeRecord([]byte(`{"version": 3, "id": "x"}`), "prod/web"); !errors.As(err, &ne) {
 		t.Fatalf("a newer record: %v", err)
 	}
 }

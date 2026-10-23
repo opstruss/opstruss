@@ -43,6 +43,8 @@ type Supervisor interface {
 // of ready.run and stop.run, prepared with the values of the run that
 // starts it, which the supervisor keeps for restarts.
 type Service struct {
+	RetainSources func() func()
+
 	Address string
 	Dir     string // daemon/<stack>/<unit>/: the files of its env: values and the locks its programs inherit
 	Program *plugin.Program
@@ -201,7 +203,7 @@ func (e *engine) running(addr string) bool {
 // this run.
 func (e *engine) serviceOf(inst *instance, r *resolved, rec *state.Record) (*Service, error) {
 	d := r.service
-	s := &Service{Address: inst.address, Restart: d.restart, Stop: r.stop, Redact: e.redact,
+	s := &Service{RetainSources: e.p.Sources.Retain, Address: inst.address, Restart: d.restart, Stop: r.stop, Redact: e.redact,
 		Dir:   filepath.Join(e.root, "daemon", e.p.StackName, filepath.FromSlash(e.short(inst.address))),
 		Ready: Ready{HTTP: d.ready.HTTP, TCP: d.ready.TCP, Interval: d.interval, Timeout: d.timeout}}
 	prepare := func(cmd model.Command, stdin []byte) (*plugin.Program, error) {

@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"maps"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -84,6 +83,9 @@ func (e *engine) downPass(ctx context.Context) ([]*leftover, error) {
 				e.warn(l.address, "orphan: its unit is no longer in the files; decide with removed:")
 			}
 		case e.sel.picked(l.unit, l.keys, false):
+			if err := e.checkDownSources(ctx, l.record); err != nil {
+				return nil, err
+			}
 			l.reason = "requested"
 			items = append(items, l)
 			e.say("plan", l.address, "will go down")
@@ -207,6 +209,12 @@ func (e *engine) previewLeftovers() []*leftover {
 		default:
 			l.forget = true
 			e.say("plan", l.address, "%s", l.summary())
+		}
+		if !l.forget {
+			if err := e.checkDownSources(e.ctx, l.record); err != nil {
+				e.fail(l.address, err)
+				continue
+			}
 		}
 		out = append(out, l)
 	}
@@ -337,6 +345,9 @@ func (e *engine) downOne(ctx context.Context, l *leftover) string {
 		e.say("unit", addr, "already down")
 		return success
 	}
+	if err := e.checkDownSources(ctx, rec); err != nil {
+		return fail(err)
+	}
 	if a := pendingMove(rec); a != nil {
 		return fail(fmt.Errorf("this address is moving to %s in run %s; the files with that moved: finish it", a.Peer, a.Run))
 	}
@@ -355,7 +366,7 @@ func (e *engine) downOne(ctx context.Context, l *leftover) string {
 	// says how.
 	service := rec.Kind == "service"
 	if rec.Down != nil && !service {
-		contracts = append(contracts, &state.Attempt{Inputs: rec.Inputs, Outputs: rec.Outputs, Down: rec.Down, Hidden: rec.Hidden})
+		contracts = append(contracts, &state.Attempt{Source: rec.Source, Inputs: rec.Inputs, Outputs: rec.Outputs, Down: rec.Down, Hidden: rec.Hidden})
 	}
 	if !e.pass.force {
 		for _, c := range contracts {
@@ -377,7 +388,7 @@ func (e *engine) downOne(ctx context.Context, l *leftover) string {
 		}
 		approval = source
 	}
-	rec.Pending = &state.Attempt{Op: "down", Run: e.runID, Holder: e.holder, Approval: approval}
+	rec.Pending = &state.Attempt{Op: "down", Run: e.runID, Holder: e.holder, Approval: approval, Source: rec.Source, Down: rec.Down, Inputs: rec.Inputs, Hidden: rec.Hidden}
 	if etag, err = e.store.Put(addr, rec, etag); err != nil {
 		return fail(err)
 	}
@@ -456,6 +467,11 @@ func (e *engine) runDown(ctx context.Context, addr, stateKey string, c *state.At
 	if d == nil {
 		return nil
 	}
+	dir, pluginDir, bins, files, release, err := e.prepareDown(ctx, d)
+	if err != nil {
+		return err
+	}
+	defer release()
 	cmd, err := downCommand(d.Run)
 	if err != nil {
 		return err
@@ -477,14 +493,14 @@ func (e *engine) runDown(ctx context.Context, addr, stateKey string, c *state.At
 	errw := &lineWriter{e: e, addr: addr, task: "down", stream: "stderr"}
 	defer out.flush()
 	defer errw.flush()
-	call := &plugin.Call{Command: cmd, Shell: d.Shell, Base: e.p.Dir, Dir: d.Dir, Env: env,
+	call := &plugin.Call{Command: cmd, Shell: d.Shell, Base: e.p.Dir, Dir: dir, BinDirs: bins, LeaseFiles: files, Env: env,
 		Pass: slices.Sorted(maps.Keys(d.Pass)), Stop: stop, Task: "down", Reason: "requested",
 		Unit:   &plugin.Unit{Address: addr, StateKey: stateKey, Workdir: e.workdir(addr), State: map[string]any{"inputs": c.Inputs, "outputs": c.Outputs}},
 		Stdout: out, Stderr: errw}
 	if d.Plugin != "" {
 		// down of a plugin runs from its directory with the inputs it was
 		// written with.
-		call.PluginDir, call.Inputs = filepath.Join(e.p.Dir, filepath.FromSlash(d.Plugin)), c.Inputs
+		call.PluginDir, call.Inputs = pluginDir, c.Inputs
 		if call.Inputs == nil {
 			call.Inputs = map[string]any{}
 		}

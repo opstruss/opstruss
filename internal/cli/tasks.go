@@ -13,9 +13,12 @@ import (
 	"strconv"
 	"strings"
 
+	"context"
+
 	"github.com/opstruss/opstruss/internal/engine"
 	"github.com/opstruss/opstruss/internal/expr"
 	"github.com/opstruss/opstruss/internal/model"
+	"github.com/opstruss/opstruss/internal/sources"
 	"github.com/spf13/cobra"
 )
 
@@ -112,10 +115,14 @@ func (a *app) commandProject() *model.Project {
 			stack = stacks[0]
 		}
 	}
-	p, err := model.Load(dir, stack)
+	p, err := model.LoadWith(context.Background(), dir, stack, sources.Options{Discovery: true})
 	if err != nil {
 		a.loadErr = err
 		return nil
+	}
+	a.discovery = p
+	if p.Sources.Unavailable {
+		a.loadErr = errors.New("remote component task metadata may be unavailable; run opstruss plugins fetch first")
 	}
 	return p
 }

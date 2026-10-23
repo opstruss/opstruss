@@ -122,7 +122,7 @@ tasks:
       schedule: {cron: "* * * * *", timezone: UTC, persistent: true}
 `
 	_, dir := triggerDaemon(t, yaml, func(root string) {
-		list, _, err := engine.Triggers(runOptions(filepath.Dir(root), "default", nil, nil))
+		list, _, err := engine.Triggers(runOptions(filepath.Dir(root), "default", nil, nil, false))
 		if err != nil || len(list) != 1 {
 			t.Fatalf("triggers %v %v", list, err)
 		}

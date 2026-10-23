@@ -117,3 +117,17 @@ tasks:
 		t.Fatalf("first call: %+v after %v", res, time.Since(began))
 	}
 }
+
+func TestLocked(t *testing.T) {
+	req := project(t, "name: locked\nuses:\n  remote: github.com/opstruss/plugins/demo@v1\ntasks:\n  root:\n    run: touch must-not-run\n")
+	req.Locked, req.Task = true, "root"
+	_, err := New(Handlers{}).Run(context.Background(), req)
+	if err == nil || !strings.Contains(err.Error(), "requires a pin change") {
+		t.Fatalf("locked: %v", err)
+	}
+	for _, name := range []string{"opstruss.lock", "must-not-run"} {
+		if _, err := os.Stat(filepath.Join(req.Dir, name)); !os.IsNotExist(err) {
+			t.Fatalf("created %s: %v", name, err)
+		}
+	}
+}

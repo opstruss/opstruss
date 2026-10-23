@@ -20,6 +20,7 @@ import (
 type Package struct {
 	Source     *sources.Identity
 	SourceRoot string
+	BinDirs    []string
 
 	Name       string  // the name in uses:, or the path that a unit wrote
 	Decl       *Uses   // the declaration; nil for a path in a unit
@@ -73,7 +74,7 @@ func (p *Project) resolve(name string, unit bool) (*Target, error) {
 	parts := strings.Split(name, ".")
 	switch {
 	case strings.HasPrefix(name, "github.com/"):
-		return nil, errors.New("git sources are not supported yet")
+		return nil, fmt.Errorf("remote paths are resolved as unit sources")
 	case len(parts) > 2:
 		return nil, fmt.Errorf("names of three parts or more are reserved; %s has %d", name, len(parts))
 	case len(parts) == 2 && parts[0] == "opstruss":
@@ -189,6 +190,14 @@ func (t *Target) Inputs() (map[string]*Input, bool) {
 
 // pkg reads the package in dir, once for each directory, and names it.
 func (c *checker) pkg(name string, decl *Uses, dir string) (*Package, error) {
+	explicitRemote := strings.HasPrefix(name, "github.com/") || decl != nil && strings.HasPrefix(decl.Source, "github.com/")
+	if c.p.Source != nil && !explicitRemote {
+		real, err := sources.Within(c.p.SourceRoot, dir)
+		if err != nil {
+			return nil, err
+		}
+		dir = real
+	}
 	base, ok := c.pkgs[dir]
 	if !ok {
 		var err error
@@ -199,6 +208,15 @@ func (c *checker) pkg(name string, decl *Uses, dir string) (*Package, error) {
 	}
 	pkg := *base
 	pkg.Name, pkg.Decl = name, decl
+	if c.p.Source == nil && !explicitRemote {
+		pkg.Source, pkg.SourceRoot = nil, ""
+	}
+	if c.p.Source != nil && !explicitRemote {
+		id := *c.p.Source
+		rel, _ := filepath.Rel(c.p.SourceRoot, dir)
+		id.Path = filepath.ToSlash(rel)
+		pkg.Source, pkg.SourceRoot = &id, c.p.SourceRoot
+	}
 	return &pkg, nil
 }
 
@@ -211,7 +229,11 @@ func (c *checker) readPackage(dir string) (*Package, error) {
 	case !info.IsDir():
 		return nil, fmt.Errorf("%s is not a directory", c.rel(dir))
 	}
-	pkg := &Package{Dir: dir}
+	owner, root, err := c.p.Sources.Owner(dir)
+	if err != nil {
+		return nil, err
+	}
+	pkg := &Package{Dir: dir, Source: owner, SourceRoot: root}
 	has := func(name string) (bool, error) {
 		_, err := os.Stat(filepath.Join(dir, name))
 		if errors.Is(err, fs.ErrNotExist) {
@@ -224,9 +246,20 @@ func (c *checker) readPackage(dir string) (*Package, error) {
 		return nil, err
 	}
 	for _, e := range entries {
+		isDir := e.IsDir()
+		if !isDir && pkg.Source != nil && e.Type()&os.ModeSymlink != 0 {
+			info, err := os.Stat(filepath.Join(dir, "components", e.Name()))
+			if err != nil {
+				return nil, err
+			}
+			isDir = info.IsDir()
+		}
+		if !isDir {
+			continue
+		}
 		if ok, err := has(filepath.Join("components", e.Name(), FileName)); err != nil {
 			return nil, err
-		} else if ok && e.IsDir() {
+		} else if ok && isDir {
 			pkg.Components = append(pkg.Components, e.Name())
 		}
 	}
@@ -236,12 +269,31 @@ func (c *checker) readPackage(dir string) (*Package, error) {
 	}
 	switch {
 	case plugin:
+		if pkg.Source != nil {
+			if _, err := sources.Within(pkg.SourceRoot, filepath.Join(dir, PluginFile)); err != nil {
+				return nil, err
+			}
+		}
 		pl, probs, err := readPlugin(c.p.base, dir)
 		if err != nil {
 			return nil, err
 		}
 		c.probs = append(c.probs, probs...)
-		pkg.Plugin, pkg.broken = pl, pl == nil
+		pkg.Plugin, pkg.broken = pl, pl == nil || len(probs) > 0
+		if !pkg.broken && !c.p.Sources.Options.Discovery {
+			for _, name := range slices.Sorted(maps.Keys(pl.Bin)) {
+				binary := pl.Bin[name][sources.Platform()]
+				if binary == nil {
+					return nil, fmt.Errorf("plugin %s: binary %s has no platform %s", pl.Name, name, sources.Platform())
+				}
+				binDir, lease, err := c.p.Sources.Cache.Binary(c.p.Sources.Context(), name, *binary, c.p.Sources.Options.Repair, false)
+				if err != nil {
+					return nil, err
+				}
+				c.p.Sources.AddBinary(name, *binary, lease)
+				pkg.BinDirs = append(pkg.BinDirs, binDir)
+			}
+		}
 	default:
 		if pkg.Component, err = has(FileName); err != nil {
 			return nil, err
@@ -341,4 +393,21 @@ func (c *checker) with(path, missing []string, t *Target, with map[string]any) {
 		}
 		c.add(missing, "%s needs input %s", t.Name, k)
 	}
+}
+
+// sourcePackage preserves remote provenance for both declarations and direct uses.
+func (c *checker) sourcePackage(name string, decl *Uses, source string) (*Package, error) {
+	id, dir, err := c.p.Sources.Resolve(source)
+	if err != nil {
+		if c.p.Sources.Options.Discovery {
+			return &Package{Name: name, Decl: decl, broken: true}, nil
+		}
+		return nil, err
+	}
+	pkg, err := c.pkg(name, decl, dir)
+	if err != nil {
+		return nil, err
+	}
+	pkg.Source, pkg.SourceRoot = &id, c.p.Sources.Cache.Snapshot(id)
+	return pkg, nil
 }

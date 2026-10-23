@@ -43,7 +43,9 @@ type Call struct {
 
 	// PluginDir is the directory of the plugin whose program this is:
 	// OPSTRUSS_PLUGIN_DIR, and where a relative program in argv starts.
-	PluginDir string
+	PluginDir  string
+	BinDirs    []string
+	LeaseFiles []*os.File
 	// AnyOutputs keeps every output the program writes, for a plugin with
 	// outputs: tool, whose user's code names them.
 	AnyOutputs bool
@@ -208,7 +210,7 @@ func (r *Run) Exec(ctx context.Context, c *Call) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	cmd := &exec.Cmd{Path: path, Args: args, Dir: cwd, ExtraFiles: []*os.File{r.tracker.File()}}
+	cmd := &exec.Cmd{Path: path, Args: args, Dir: cwd, ExtraFiles: r.programFiles(c)}
 	for _, k := range slices.Sorted(maps.Keys(env)) {
 		cmd.Env = append(cmd.Env, k+"="+env[k])
 	}
@@ -347,7 +349,7 @@ func (r *Run) Attach(c *Call, stdin io.Reader, stdout, stderr io.Writer) (int, e
 		return 0, err
 	}
 	cmd := &exec.Cmd{Path: path, Args: args, Dir: cwd, Stdin: stdin, Stdout: stdout, Stderr: stderr,
-		ExtraFiles: []*os.File{r.tracker.File()}}
+		ExtraFiles: r.programFiles(c)}
 	for _, k := range slices.Sorted(maps.Keys(env)) {
 		cmd.Env = append(cmd.Env, k+"="+env[k])
 	}
@@ -367,6 +369,10 @@ func (r *Run) Attach(c *Call, stdin io.Reader, stdout, stderr io.Writer) (int, e
 // environment. Files are the files of its env: values, by path, which are
 // written before it starts.
 type Program struct {
+	SourceFiles    func() []*os.File
+	RetainSources  func() func()
+	ReleaseSources func()
+
 	Path  string
 	Args  []string
 	Dir   string
@@ -392,7 +398,7 @@ func (r *Run) Prepare(c *Call, dir string) (*Program, error) {
 	if err != nil {
 		return nil, err
 	}
-	p := &Program{Path: path, Args: args, Dir: cwd, Files: files, Stdin: c.Stdin}
+	p := &Program{SourceFiles: r.SourceFiles, RetainSources: r.RetainSources, Path: path, Args: args, Dir: cwd, Files: files, Stdin: c.Stdin}
 	for _, k := range slices.Sorted(maps.Keys(env)) {
 		p.Env = append(p.Env, k+"="+env[k])
 	}
@@ -474,4 +480,26 @@ func resolve(base, p string) string {
 		return p
 	}
 	return filepath.Join(base, p)
+}
+
+func (r *Run) programFiles(c *Call) []*os.File {
+	files := []*os.File{r.tracker.File()}
+	if r.SourceFiles != nil {
+		files = append(files, r.SourceFiles()...)
+	}
+	return append(files, c.LeaseFiles...)
+}
+
+// Close releases a prepared watch's initial source ownership.
+func (p *Program) Close() {
+	if p != nil && p.ReleaseSources != nil {
+		p.ReleaseSources()
+	}
+}
+
+func (p *Program) LeaseFiles() []*os.File {
+	if p.SourceFiles != nil {
+		return p.SourceFiles()
+	}
+	return nil
 }

@@ -87,6 +87,11 @@ func StopWith(s *model.Stop, def Stop) (Stop, error) {
 
 // Run is what the programs of one run share.
 type Run struct {
+	SourceFiles   func() []*os.File
+	RetainSources func() func()
+
+	PluginBins map[string][]string
+
 	Project   string
 	Stack     string
 	ID        string

@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"maps"
@@ -10,9 +11,10 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/opstruss/opstruss/internal/sources"
+
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/opstruss/opstruss/internal/schema"
-	"github.com/opstruss/opstruss/internal/sources"
 )
 
 // FileName is the file that marks a project.
@@ -31,6 +33,7 @@ const DefaultStack = "default"
 type Project struct {
 	Source     *sources.Identity
 	SourceRoot string
+	Sources    *sources.Session
 
 	File
 	Dir       string
@@ -131,6 +134,42 @@ func chooseStack(names []string, stack string) (string, error) {
 // Load reads the project in dir for one stack; an empty stack picks the
 // only one.
 func Load(dir, stack string) (*Project, error) {
+	return LoadWith(context.Background(), dir, stack, sources.Options{})
+}
+
+// LoadWith resolves dependencies as one root transaction.
+func LoadWith(ctx context.Context, dir, stack string, opts sources.Options) (*Project, error) {
+	session, err := sources.Begin(ctx, dir, opts)
+	if err != nil {
+		return nil, err
+	}
+	p, err := LoadSession(dir, stack, session)
+	if err == nil {
+		err = session.Finish()
+	}
+	if err != nil {
+		session.Close()
+		return nil, err
+	}
+	return p, nil
+}
+
+// Close releases dependency leases after every consumer has stopped.
+func (p *Project) Close() {
+	if p != nil {
+		p.Sources.Close()
+	}
+}
+
+// LoadSession shares the root dependency transaction across all stacks.
+func LoadSession(dir, stack string, session *sources.Session) (*Project, error) {
+	return readProject(dir, stack, session, true)
+}
+
+// Declarations reads the project and stack includes without loading their dependencies.
+func Declarations(dir, stack string) (*Project, error) { return readProject(dir, stack, nil, false) }
+
+func readProject(dir, stack string, session *sources.Session, check bool) (*Project, error) {
 	root, probs, err := readDocument(dir, FileName, schema.Project)
 	if err != nil {
 		return nil, err
@@ -138,7 +177,7 @@ func Load(dir, stack string) (*Project, error) {
 	if stack, err = chooseStack(stackNames(root.value), stack); err != nil {
 		return nil, err
 	}
-	p := &Project{Dir: dir, StackName: stack, doc: map[string]any{}, root: root, origins: map[string]origin{}, base: dir}
+	p := &Project{Sources: session, Dir: dir, StackName: stack, doc: map[string]any{}, root: root, origins: map[string]origin{}, base: dir}
 	for k, v := range root.value {
 		if k == "include" || k == "stacks" || strings.HasPrefix(k, "x-") {
 			continue
@@ -167,8 +206,10 @@ func Load(dir, stack string) (*Project, error) {
 			return nil, err
 		}
 	}
-	if probs := p.check(); len(probs) > 0 {
-		return nil, probs
+	if check {
+		if probs := p.check(); len(probs) > 0 {
+			return nil, probs
+		}
 	}
 	return p, nil
 }
@@ -181,16 +222,27 @@ var projectOnly = []string{"stacks", "secrets", "encryption_keys", "backend", "r
 // readComponent reads the component in dir for a project in base: its
 // opstruss.yaml merged with its include files, without what only a
 // project has.
-func readComponent(base, dir, stack string) (*Project, Problems, error) {
+func readComponent(base, dir, stack string, session *sources.Session, owner *sources.Identity, sourceRoot string) (*Project, Problems, error) {
 	rel, err := filepath.Rel(base, filepath.Join(dir, FileName))
 	if err != nil {
 		return nil, nil, err
+	}
+	if owner != nil {
+		copy := *owner
+		rel, _ := filepath.Rel(sourceRoot, dir)
+		copy.Path = filepath.ToSlash(rel)
+		owner = &copy
+	}
+	if owner != nil {
+		if _, err := sources.Within(sourceRoot, filepath.Join(dir, FileName)); err != nil {
+			return nil, nil, err
+		}
 	}
 	root, probs, err := readDocument(base, rel, schema.Project)
 	if err != nil {
 		return nil, nil, err
 	}
-	p := &Project{Dir: dir, StackName: stack, doc: map[string]any{}, root: root, origins: map[string]origin{}, base: base,
+	p := &Project{Source: owner, SourceRoot: sourceRoot, Sources: session, Dir: dir, StackName: stack, doc: map[string]any{}, root: root, origins: map[string]origin{}, base: base,
 		component: true}
 	for k, v := range root.value {
 		if k == "include" || strings.HasPrefix(k, "x-") || slices.Contains(projectOnly, k) {
@@ -211,15 +263,22 @@ func readComponent(base, dir, stack string) (*Project, Problems, error) {
 
 // Validate loads every stack of the project in dir and returns all
 // problems found, once each.
-func Validate(dir string) error {
+func Validate(dir string) error { return ValidateWith(context.Background(), dir, sources.Options{}) }
+
+func ValidateWith(ctx context.Context, dir string, opts sources.Options) error {
 	names, err := Stacks(dir)
 	if err != nil {
 		return err
 	}
+	session, err := sources.Begin(ctx, dir, opts)
+	if err != nil {
+		return err
+	}
+	defer session.Close()
 	var all Problems
 	seen := map[string]bool{}
 	for _, s := range names {
-		_, err := Load(dir, s)
+		_, err := LoadSession(dir, s, session)
 		var probs Problems
 		if errors.As(err, &probs) {
 			for _, pr := range probs {
@@ -237,7 +296,7 @@ func Validate(dir string) error {
 	if len(all) > 0 {
 		return all
 	}
-	return nil
+	return session.Finish()
 }
 
 // readDocument reads and parses a file, and returns how it differs from
@@ -314,7 +373,21 @@ func (p *Project) include(d *document, path []string) Problems {
 			continue
 		}
 		at := append(slices.Clone(path), strconv.Itoa(i))
-		matches, err := doublestar.Glob(os.DirFS(p.Dir), filepath.ToSlash(pattern))
+		var matches []string
+		var err error
+		if p.Source != nil {
+			rel, _ := filepath.Rel(p.SourceRoot, filepath.Join(p.Dir, filepath.FromSlash(pattern)))
+			if filepath.IsAbs(pattern) || !filepath.IsLocal(rel) {
+				probs = append(probs, d.problem(at, "include escapes repository root"))
+				continue
+			}
+			matches, err = doublestar.Glob(os.DirFS(p.SourceRoot), filepath.ToSlash(rel))
+			for i, m := range matches {
+				matches[i], _ = filepath.Rel(p.Dir, filepath.Join(p.SourceRoot, filepath.FromSlash(m)))
+			}
+		} else {
+			matches, err = doublestar.Glob(os.DirFS(p.Dir), filepath.ToSlash(pattern))
+		}
 		if err != nil {
 			probs = append(probs, d.problem(at, "%v", err))
 			continue
@@ -325,6 +398,12 @@ func (p *Project) include(d *document, path []string) Problems {
 		}
 		slices.Sort(matches)
 		for _, m := range matches {
+			if p.Source != nil {
+				if _, err := sources.Within(p.SourceRoot, filepath.Join(p.Dir, filepath.FromSlash(m))); err != nil {
+					probs = append(probs, d.problem(at, "%v", err))
+					continue
+				}
+			}
 			inc, ip, err := readDocument(p.base, filepath.Join(p.rel(), filepath.FromSlash(m)), schema.Include)
 			var pp Problems
 			switch {

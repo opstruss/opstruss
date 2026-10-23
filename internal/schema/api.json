@@ -18,6 +18,7 @@
       "description": "params of plan, up, down, status, run, and unlock: the project, the stack, and what the caller brings.",
       "type": "object",
       "properties": {
+        "locked": { "type": "boolean" },
         "dir": { "type": "string", "minLength": 1 },
         "cwd": { "type": "string" },
         "stack": { "type": "string" },

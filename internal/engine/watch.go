@@ -114,6 +114,7 @@ func NewFilter(opts Options, t *Trigger) (*Filter, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer e.releaseSources()
 	w := e.p.Tasks[t.Task].On.Watch[t.Index]
 	if w.If == nil {
 		return &Filter{}, nil
@@ -147,13 +148,21 @@ func WatchSource(opts Options, t *Trigger, dir string) (*plugin.Program, error) 
 	if err != nil {
 		return nil, err
 	}
+	defer e.releaseSources()
 	e.ctx, e.trigger = context.Background(), true
 	e.pass = pass{}
 	if err := e.selectUnits(false); err != nil {
 		return nil, err
 	}
 	e.previewQuiet()
-	run := plugin.Outside(e.p.Name, e.p.StackName, opts.Environ)
+	run := e.outside()
+	prepare := func(c *plugin.Call) (*plugin.Program, error) {
+		p, err := run.Prepare(c, dir)
+		if err == nil {
+			p.ReleaseSources = e.p.Sources.Retain()
+		}
+		return p, err
+	}
 	w := e.p.Tasks[t.Task].On.Watch[t.Index]
 	if w.Unit != "" {
 		insts := e.byUnit[w.Unit]
@@ -173,9 +182,9 @@ func WatchSource(opts Options, t *Trigger, dir string) (*plugin.Program, error) 
 		if err != nil {
 			return nil, fmt.Errorf("watch hook: %w", err)
 		}
-		return run.Prepare(&plugin.Call{Command: cmd, Shell: hook.Shell, Base: inst.dir, Dir: r.dir, Env: r.plugin.env,
+		return prepare(&plugin.Call{Command: cmd, Shell: hook.Shell, Base: inst.dir, Dir: r.dir, Env: r.plugin.env,
 			Pass: slices.Sorted(maps.Keys(r.pass)), Inputs: r.plugin.inputs, PluginDir: r.plugin.dir,
-			Unit: &plugin.Unit{Address: inst.address}}, dir)
+			Unit: &plugin.Unit{Address: inst.address}})
 	}
 	if len(w.Calls) != 1 {
 		return nil, errors.New("a watch has exactly one source")
@@ -200,7 +209,7 @@ func WatchSource(opts Options, t *Trigger, dir string) (*plugin.Program, error) 
 				cmd.Argv = append(cmd.Argv, fmt.Sprint(a))
 			}
 		}
-		return run.Prepare(&plugin.Call{Command: cmd, Base: base}, dir)
+		return prepare(&plugin.Call{Command: cmd, Base: base})
 	case target.Kind == model.TargetTask:
 		task := target.Package.Plugin.Tasks[target.Task]
 		if task.Run == nil {
@@ -220,8 +229,8 @@ func WatchSource(opts Options, t *Trigger, dir string) (*plugin.Program, error) 
 		for k, v := range env {
 			values[k] = v
 		}
-		return run.Prepare(&plugin.Call{Command: cmd, Shell: task.Shell, Base: base, Dir: task.Dir, Env: values,
-			Pass: prog.pass, Inputs: in, PluginDir: target.Package.Dir}, dir)
+		return prepare(&plugin.Call{Command: cmd, Shell: task.Shell, Base: base, Dir: task.Dir, Env: values,
+			Pass: prog.pass, Inputs: in, PluginDir: target.Package.Dir})
 	}
 	return nil, fmt.Errorf("%s is no program that writes a line per event", name)
 }

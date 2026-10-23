@@ -203,10 +203,11 @@ func openReplay(dir string, rec *record.Record, lookupEnv func(string) (string, 
 // rerunEvent runs the task of rec again for its event: by the trigger of
 // the same kind and key in the project as it is now, without its if:.
 func rerunEvent(ctx context.Context, opts Options, rec *record.Record, rp *replay) (*Result, error) {
-	e, err := load(opts)
+	e, err := loadContext(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
+	defer e.releaseSources()
 	e.trigger = true
 	kind := cmp.Or(rec.Simulated, rec.Trigger)
 	var tr *Trigger

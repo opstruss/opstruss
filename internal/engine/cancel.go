@@ -10,6 +10,7 @@ import (
 	"github.com/opstruss/opstruss/internal/model"
 	"github.com/opstruss/opstruss/internal/proc"
 	"github.com/opstruss/opstruss/internal/record"
+	"github.com/opstruss/opstruss/internal/sources"
 )
 
 // errRequested is the cause of a run that a request in its cancel.jsonl
@@ -83,7 +84,7 @@ func project(opts Options) (*model.Project, error) {
 	if opts.Model != nil {
 		return opts.Model, nil
 	}
-	return model.Load(opts.Dir, opts.Stack)
+	return model.LoadWith(context.Background(), opts.Dir, opts.Stack, sources.Options{Locked: opts.Locked})
 }
 
 // runOf reads the record of the run id of the stack of opts, without the
@@ -92,6 +93,9 @@ func runOf(opts Options, id string) (*record.Record, string, error) {
 	p, err := project(opts)
 	if err != nil {
 		return nil, "", err
+	}
+	if opts.Model == nil {
+		defer p.Close()
 	}
 	dir := filepath.Join(p.Dir, ".opstruss", "runs", p.StackName, filepath.Base(id))
 	rec, err := record.Read(dir)

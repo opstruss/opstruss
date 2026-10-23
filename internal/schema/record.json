@@ -39,6 +39,7 @@
     "source": {
       "type": "object",
       "properties": {
+        "remote": {"type": "object", "properties": {"repository": {"const": "github.com/opstruss/plugins"}, "path": {"type": "string"}, "ref": {"type": "string"}, "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"}, "hash": {"type": "string", "pattern": "^h1:[A-Za-z0-9+/]{43}=$"}}, "required": ["repository", "path", "ref", "commit", "hash"], "additionalProperties": false},
         "uses": { "type": "string" },
         "commit": { "type": "string" },
         "hash": { "type": "string" }
@@ -47,6 +48,10 @@
     "down": {
       "type": "object",
       "properties": {
+        "sources": { "type": "array", "items": { "type": "object", "properties": { "source": {"type": "object", "properties": {"repository": {"const": "github.com/opstruss/plugins"}, "path": {"type": "string"}, "ref": {"type": "string"}, "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"}, "hash": {"type": "string", "pattern": "^h1:[A-Za-z0-9+/]{43}=$"}}, "required": ["repository", "path", "ref", "commit", "hash"], "additionalProperties": false}, "root": { "type": "string" } }, "required": ["source", "root"], "additionalProperties": false } },
+        "dir_source": {"type": "object", "properties": {"repository": {"const": "github.com/opstruss/plugins"}, "path": {"type": "string"}, "ref": {"type": "string"}, "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"}, "hash": {"type": "string", "pattern": "^h1:[A-Za-z0-9+/]{43}=$"}}, "required": ["repository", "path", "ref", "commit", "hash"], "additionalProperties": false},
+        "plugin_source": {"type": "object", "properties": {"repository": {"const": "github.com/opstruss/plugins"}, "path": {"type": "string"}, "ref": {"type": "string"}, "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"}, "hash": {"type": "string", "pattern": "^h1:[A-Za-z0-9+/]{43}=$"}}, "required": ["repository", "path", "ref", "commit", "hash"], "additionalProperties": false},
+        "binaries": { "type": "object", "additionalProperties": { "type": "object", "properties": { "url": { "type": "string" }, "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" } }, "required": ["url", "sha256"], "additionalProperties": false } },
         "run": {
           "oneOf": [
             { "type": "string" },

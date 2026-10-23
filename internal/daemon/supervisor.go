@@ -190,7 +190,16 @@ func (sup *Supervisor) Start(ctx context.Context, spec *engine.Service) error {
 	if prev != nil {
 		prev.stop()
 	}
-	go s.loop()
+	retain := spec.RetainSources
+	if retain == nil {
+		retain = spec.Program.RetainSources
+	}
+	if retain != nil {
+		release := retain()
+		go func() { defer release(); s.loop() }()
+	} else {
+		go s.loop()
+	}
 	var timeout <-chan time.Time
 	if spec.Ready.HTTP != "" || spec.Ready.TCP != "" || spec.Ready.Run != nil {
 		t := time.NewTimer(spec.Ready.Timeout)
@@ -422,6 +431,7 @@ func (s *service) loop() {
 		defer func() { _ = s.log.Close() }()
 	}
 	defer s.removeFiles()
+	defer func() { s.spec.Program.Close() }()
 	delay := firstDelay
 	for {
 		if s.isStopping() {
@@ -521,6 +531,7 @@ func (s *service) start() (_ *child, err error) {
 		if err != nil {
 			return nil, err
 		}
+		s.spec.Program.Close()
 		s.spec.Program = p
 	}
 	s.started = true
@@ -588,7 +599,7 @@ func (s *service) start() (_ *child, err error) {
 	}
 	cmd := &exec.Cmd{Path: "/bin/sh", Args: append([]string{"sh", "-c", gate, "opstruss", prog.Path}, prog.Args[1:]...),
 		Dir: prog.Dir, Env: append(slices.Clone(prog.Env), ServiceID+"="+id), Stdout: outW, Stderr: errW,
-		ExtraFiles: []*os.File{c.lock, gateR}, SysProcAttr: &syscall.SysProcAttr{Setsid: true}}
+		ExtraFiles: append([]*os.File{c.lock, gateR}, prog.LeaseFiles()...), SysProcAttr: &syscall.SysProcAttr{Setsid: true}}
 	var stdin *os.File
 	if prog.Stdin != nil {
 		var r *os.File
@@ -788,7 +799,7 @@ func (s *service) run(prog *plugin.Program, c *child, task string, cancel <-chan
 		return 0, err
 	}
 	cmd := &exec.Cmd{Path: prog.Path, Args: prog.Args, Dir: prog.Dir, Env: append(slices.Clone(prog.Env), ServiceID+"="+c.p.ID),
-		Stdout: outW, Stderr: outW, ExtraFiles: []*os.File{c.lock}, SysProcAttr: &syscall.SysProcAttr{Setsid: true}}
+		Stdout: outW, Stderr: outW, ExtraFiles: append([]*os.File{c.lock}, prog.LeaseFiles()...), SysProcAttr: &syscall.SysProcAttr{Setsid: true}}
 	err = cmd.Start()
 	_ = outW.Close()
 	if err != nil {

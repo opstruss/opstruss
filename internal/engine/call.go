@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"os"
 	"path"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/opstruss/opstruss/internal/builtin"
 	"github.com/opstruss/opstruss/internal/expr"
@@ -18,7 +20,11 @@ import (
 // callByName runs a call of a task by name, in a task or a step, as often
 // as retry allows, with its inputs evaluated at each attempt.
 func (e *engine) callByName(ctx context.Context, p progSpec, name string, args map[string]any, s *expr.Scope) *taskResult {
-	t, err := e.p.Resolve(name)
+	in := e.p
+	if p.frame != nil {
+		in = p.frame.in
+	}
+	t, err := in.Resolve(name)
 	if err != nil {
 		e.emit(Event{Type: "step", Level: "error", Task: p.label, Step: p.step, Message: err.Error()})
 		return failed(err)
@@ -58,7 +64,7 @@ func (e *engine) callByName(ctx context.Context, p progSpec, name string, args m
 			dir = filepath.Join(p.base, dir)
 		}
 		if t.Kind == model.TargetTask {
-			r := e.callTask(ctx, name, t.Package.Plugin.Tasks[t.Task], dir, in, call{unit: p.unit, plugin: pluginRunOf(t, p), unitRun: p.unitRun, marks: marks})
+			r := e.callTask(ctx, name, t.Package.Plugin.Tasks[t.Task], dir, in, call{frame: p.frame, unit: p.unit, plugin: pluginRunOf(t, p), unitRun: p.unitRun, marks: marks})
 			return r, r.outputs, nil
 		}
 		var res *builtin.Result
@@ -156,8 +162,12 @@ func (e *engine) checkRequires(t *model.Task, c call, s *expr.Scope) error {
 	if c.plugin != nil {
 		names = append(slices.Clone(c.plugin.requires), names...)
 	}
+	search := e.path()
+	if c.plugin != nil {
+		search = strings.Join(append(slices.Clone(e.p.PluginBinaries()[c.plugin.dir]), search), string(os.PathListSeparator))
+	}
 	for _, n := range names {
-		if _, err := plugin.LookPath(n, e.path()); err != nil {
+		if _, err := plugin.LookPath(n, search); err != nil {
 			if c.plugin != nil {
 				return fmt.Errorf("plugin %s requires %s, which is not in PATH", c.plugin.name, n)
 			}

@@ -110,14 +110,14 @@ func (a *app) logsCommand() *cobra.Command {
 func (a *app) request(units []string) (api.Request, error) {
 	dir, err := a.projectDir()
 	if err != nil {
-		return api.Request{}, err
+		return api.Request{Locked: a.locked}, err
 	}
 	given, err := a.givenInputs()
 	if err != nil {
-		return api.Request{}, err
+		return api.Request{Locked: a.locked}, err
 	}
 	debug, _ := a.lookupEnv("OPSTRUSS_LOG")
-	return api.Request{Dir: dir, Cwd: a.cwd, Stack: a.stackName(), Inputs: given, Environ: a.environ, Units: units,
+	return api.Request{Locked: a.locked, Dir: dir, Cwd: a.cwd, Stack: a.stackName(), Inputs: given, Environ: a.environ, Units: units,
 		Debug: debug == "debug"}, nil
 }
 

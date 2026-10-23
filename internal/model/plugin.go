@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/opstruss/opstruss/internal/schema"
+	"github.com/opstruss/opstruss/internal/sources"
 )
 
 // PluginFile is the file that marks a plugin.
@@ -50,8 +51,15 @@ func (c *checker) pluginRules() {
 			c.add([]string{"env", strconv.Itoa(i)}, "OPSTRUSS_ and INPUT_ variables come from OpsTruss; a plugin cannot ask for them")
 		}
 	}
-	if pl.Bin != nil {
-		c.add([]string{"bin"}, "not supported yet")
+	for name, platforms := range pl.Bin {
+		for platform, b := range platforms {
+			if err := b.Validate(); err != nil {
+				c.add([]string{"bin", name, platform}, "%v", err)
+			}
+		}
+		if platforms[sources.Platform()] == nil {
+			c.add([]string{"bin", name}, "no binary for platform %s", sources.Platform())
+		}
 	}
 	if pl.Backend != nil {
 		c.add([]string{"backend"}, "plugin backends are not supported yet")

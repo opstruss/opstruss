@@ -50,6 +50,7 @@ func Doctor(opts Options) (*Report, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer e.releaseSources()
 	d := &doctor{e: e, r: &Report{Stack: e.p.StackName, Checks: []*Check{}}, need: map[string][]string{},
 		passes: map[*model.Package][]string{}}
 	d.units()
@@ -62,6 +63,8 @@ func Doctor(opts Options) (*Report, error) {
 }
 
 type doctor struct {
+	search string
+
 	e      *engine
 	r      *Report
 	need   map[string][]string // the programs of requires:, with what needs each
@@ -74,8 +77,13 @@ func (d *doctor) add(c *Check) { d.r.Checks = append(d.r.Checks, c) }
 // note notes that what needs the programs names.
 func (d *doctor) note(what string, names ...string) {
 	for _, n := range names {
-		if !slices.Contains(d.need[n], what) {
-			d.need[n] = append(d.need[n], what)
+		search := d.search
+		if search == "" {
+			search = d.e.path()
+		}
+		key := n + "\x00" + search
+		if !slices.Contains(d.need[key], what) {
+			d.need[key] = append(d.need[key], what)
 		}
 	}
 }
@@ -112,6 +120,7 @@ func (d *doctor) requires(what string, r *model.Requires, s *expr.Scope, task bo
 // those of the plugin or the task it uses, with its with: as their inputs.
 func (d *doctor) units() {
 	for _, inst := range d.e.insts {
+		d.search = ""
 		what := "unit " + inst.address
 		s := d.e.scope(inst)
 		d.requires(what, inst.def.Requires, s, false)
@@ -129,6 +138,7 @@ func (d *doctor) units() {
 			task = inst.frame.in.Tasks[t.Task]
 		}
 		if t.Package != nil && t.Package.Plugin != nil {
+			d.search = d.e.pluginPath(t.Package)
 			d.note(what, t.Package.Plugin.Requires...)
 			d.passes[t.Package] = append(d.passes[t.Package], inst.def.Pass...)
 		}
@@ -161,6 +171,7 @@ func (d *doctor) units() {
 // plugins that they and secrets call by name.
 func (d *doctor) tasks() {
 	e := d.e
+	d.search = ""
 	for _, f := range append([]*frame{e.top}, e.allFrames()...) {
 		for _, name := range slices.Sorted(maps.Keys(f.in.Tasks)) {
 			what := "task " + name
@@ -186,6 +197,7 @@ func (d *doctor) tasks() {
 // task notes what t requires for what, and what the tasks of plugins it
 // calls by name require.
 func (d *doctor) task(what string, in *model.Project, t *model.Task, s *expr.Scope) {
+	d.search = ""
 	d.requires(what, t.Requires, s, true)
 	for _, callee := range model.CallNames(t) {
 		d.call(what, in, callee, model.PassesOf(t))
@@ -199,6 +211,9 @@ func (d *doctor) call(what string, in *model.Project, callee string, passes []st
 	if err != nil || t.Kind != model.TargetTask {
 		return
 	}
+	previous := d.search
+	defer func() { d.search = previous }()
+	d.search = d.e.pluginPath(t.Package)
 	d.note(what, t.Package.Plugin.Requires...)
 	d.passes[t.Package] = append(d.passes[t.Package], passes...)
 	d.requires(what, t.Package.Plugin.Tasks[t.Task].Requires, &expr.Scope{Dir: t.Package.Dir,
@@ -207,11 +222,15 @@ func (d *doctor) call(what string, in *model.Project, callee string, passes []st
 
 // programs checks that each program that requires: names is in PATH.
 func (d *doctor) programs() {
-	for _, name := range slices.Sorted(maps.Keys(d.need)) {
-		what := d.need[name]
+	for _, key := range slices.Sorted(maps.Keys(d.need)) {
+		name, search, _ := strings.Cut(key, "\x00")
+		if search == "" {
+			search = d.e.path()
+		}
+		what := d.need[key]
 		slices.Sort(what)
 		c := &Check{Check: "program", Name: name, For: what}
-		if p, err := plugin.LookPath(name, d.e.path()); err == nil {
+		if p, err := plugin.LookPath(name, search); err == nil {
 			c.Status, c.Path, c.Message = "ok", p, fmt.Sprintf("%s at %s, for %s", name, p, strings.Join(what, ", "))
 		} else {
 			c.Status, c.Message = "error", fmt.Sprintf("%s is not in PATH, for %s", name, strings.Join(what, ", "))

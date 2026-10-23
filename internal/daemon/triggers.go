@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"reflect"
 	"slices"
 	"strconv"
 	"sync"
@@ -15,6 +14,7 @@ import (
 	"github.com/opstruss/opstruss/internal/engine"
 	"github.com/opstruss/opstruss/internal/model"
 	"github.com/opstruss/opstruss/internal/record"
+	"github.com/opstruss/opstruss/internal/sources"
 )
 
 // MaxPending is how many runs of one task the daemon keeps unfinished,
@@ -69,7 +69,7 @@ type snapshot struct {
 // same reports whether events handled with s and o end the same: the same
 // project, inputs, and environment.
 func (s *snapshot) same(o *snapshot) bool {
-	return s != nil && o != nil && reflect.DeepEqual(s.opts.Model, o.opts.Model) && maps.Equal(s.opts.Inputs, o.opts.Inputs) &&
+	return s != nil && o != nil && s.opts.Model.SameDefinition(o.opts.Model) && maps.Equal(s.opts.Inputs, o.opts.Inputs) &&
 		slices.Equal(slices.Sorted(slices.Values(s.opts.Environ)), slices.Sorted(slices.Values(o.opts.Environ)))
 }
 
@@ -127,7 +127,13 @@ func (t *triggers) install(opts engine.Options) {
 	if closed {
 		return
 	}
-	p, err := model.Load(opts.Dir, opts.Stack)
+	p, err := model.LoadWith(t.d.runs, opts.Dir, opts.Stack, sources.Options{Locked: opts.Locked})
+	installed := false
+	defer func() {
+		if !installed && p != nil {
+			p.Close()
+		}
+	}()
 	var list []*engine.Trigger
 	var listen string
 	if err == nil {
@@ -167,6 +173,9 @@ func (t *triggers) install(opts engine.Options) {
 				return
 			}
 		}
+		if spec != nil && spec.prog != nil {
+			defer spec.prog.Close()
+		}
 		if s := old[id]; s != nil {
 			if s.w == nil || s.w.same(spec) {
 				keeps = append(keeps, planned{id, s, b, spec})
@@ -194,6 +203,7 @@ func (t *triggers) install(opts engine.Options) {
 	}
 	t.mu.Lock()
 	t.snap, t.sources = snap, sources
+	installed = true
 	t.mu.Unlock()
 	_ = t.d.reg.update(func(f *File) {
 		var keep []*Schedule
@@ -247,6 +257,9 @@ func (t *triggers) install(opts engine.Options) {
 	}
 	if err := t.hooks.set(listen, routes); err != nil {
 		t.d.event("trigger", "error", "", "%v", err)
+	}
+	if prev != nil && prev.opts.Model != nil {
+		prev.opts.Model.Close()
 	}
 	if len(list) > 0 || len(stops) > 0 {
 		t.d.event("trigger", "info", "", "installed %d triggers: %d sources started, %d kept, %d stopped, %d failed",
@@ -368,6 +381,9 @@ func (t *triggers) close() {
 	t.hooks.close()
 	t.hooks.mu.Unlock()
 	t.runs.Wait()
+	if t.snap != nil && t.snap.opts.Model != nil {
+		t.snap.opts.Model.Close()
+	}
 }
 
 // active reports whether a run that a trigger made runs or waits.

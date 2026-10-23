@@ -13,6 +13,17 @@ minor release can change what a project, a component, or a plugin relies on.
 
 ### Added
 
+- Official remote plugins and components from `github.com/opstruss/plugins`
+  resolve to verified Git snapshots in a shared per-user cache. Transitive
+  pins live in `opstruss.lock`; `--locked` refuses pin changes.
+  Help and completion do not fetch sources.
+- Plugin `bin:` declarations download official release executables or
+  `tar.gz` payloads with SHA-256 verification and a private plugin PATH.
+  Cleanup restores the source and binary pins of each stored contract,
+  including pending and abandoned attempts after updates or cache removal.
+  Records now use version 2 and the daemon API uses protocol 2; older
+  local records remain readable.
+
 - `opstruss up -d` runs up in the daemon of the stack, which it starts in
   the background when none runs; a task takes `-d` as well. The daemon
   stays until `opstruss stop`, which sends it SIGTERM once its pid and

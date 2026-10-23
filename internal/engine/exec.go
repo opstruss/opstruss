@@ -41,6 +41,7 @@ func Exec(ctx context.Context, opts Options, argv []string, tty Stdio) (*Result,
 	if err != nil {
 		return nil, err
 	}
+	defer e.releaseSources()
 	ctx = e.ctx
 	code, err := e.execUnit(ctx, unit, argv, tty)
 	if err != nil {

@@ -18,6 +18,7 @@ import (
 	"github.com/opstruss/opstruss/internal/expr"
 	"github.com/opstruss/opstruss/internal/proc"
 	"github.com/opstruss/opstruss/internal/secret"
+	"github.com/opstruss/opstruss/internal/sources"
 	"github.com/robfig/cron/v3"
 )
 
@@ -47,8 +48,7 @@ var ansible = map[string]string{
 }
 
 var (
-	gitSource = regexp.MustCompile(`^github\.com/opstruss/[a-z0-9._-]+(/[A-Za-z0-9._/-]+)?@[A-Za-z0-9._/-]+$`)
-	address   = regexp.MustCompile(`^[a-z][a-z0-9_-]*(\[[a-z0-9._-]+\])?(/[a-z][a-z0-9_-]*(\[[a-z0-9._-]+\])?)*$`)
+	address = regexp.MustCompile(`^[a-z][a-z0-9_-]*(\[[a-z0-9._-]+\])?(/[a-z][a-z0-9_-]*(\[[a-z0-9._-]+\])?)*$`)
 )
 
 // keywords are the keys of steps, tasks, watch sources, and secret
@@ -109,6 +109,10 @@ func (p *Project) check() Problems {
 func (c *checker) file() {
 	c.p.Packages = map[string]*Package{}
 	c.root()
+	if c.p.Source != nil {
+		c.pluginInputs([]string{"inputs"}, c.p.Inputs)
+
+	}
 	c.uses()
 	c.stacks()
 	c.units()
@@ -124,12 +128,19 @@ func (c *checker) file() {
 // component reads the component in dir once and checks its files as a
 // file of their own: the names in its uses: are its own, and what it
 // reads comes in through its inputs.
-func (c *checker) component(dir string) (*Project, error) {
+func (c *checker) component(dir string, source *sources.Identity, sourceRoot string) (*Project, error) {
+	if real, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = real
+	}
 	cs := c.comps
+	key := dir
+	if source != nil {
+		key += "@" + source.Ref
+	}
 	if cs.reading[dir] {
 		return nil, fmt.Errorf("%s uses itself, through the components it uses", c.rel(dir))
 	}
-	if p, ok := cs.read[dir]; ok {
+	if p, ok := cs.read[key]; ok {
 		if p == nil {
 			return nil, errBroken
 		}
@@ -137,7 +148,8 @@ func (c *checker) component(dir string) (*Project, error) {
 	}
 	cs.reading[dir] = true
 	defer delete(cs.reading, dir)
-	p, probs, err := readComponent(c.p.base, dir, c.p.StackName)
+
+	p, probs, err := readComponent(c.p.base, dir, c.p.StackName, c.p.Sources, source, sourceRoot)
 	var pp Problems
 	if errors.As(err, &pp) {
 		probs, err = pp, nil
@@ -147,13 +159,13 @@ func (c *checker) component(dir string) (*Project, error) {
 	}
 	if len(probs) > 0 {
 		c.probs = append(c.probs, probs...)
-		cs.read[dir] = nil
+		cs.read[key] = nil
 		return nil, errBroken
 	}
 	cc := &checker{p: p, pkgs: c.pkgs, comps: cs}
 	cc.file()
 	c.probs = append(c.probs, cc.probs...)
-	cs.read[dir] = p
+	cs.read[key] = p
 	return p, nil
 }
 
@@ -210,12 +222,12 @@ func (c *checker) uses() {
 			}
 			pkg = &Package{Name: name, Decl: decl, Builtin: strings.TrimPrefix(src, "opstruss.")}
 		case strings.HasPrefix(src, "github.com/"):
-			if !gitSource.MatchString(src) {
-				c.add(path, "a git source is github.com/opstruss/<repo>[/<path>]@<ref>")
-			} else {
-				c.add(path, "git sources are not supported yet")
+			var err error
+			if pkg, err = c.sourcePackage(name, decl, src); err != nil {
+				c.add(path, "%v", err)
+				continue
 			}
-			continue
+			c.packageNames(path, pkg)
 		default:
 			c.add(path, "a source is ./<path>, ../<path>, github.com/opstruss/<repo>@<ref>, or opstruss.<task>")
 			continue
@@ -318,6 +330,9 @@ func (c *checker) stop(path []string, s *Stop) {
 func (c *checker) units() {
 	for _, name := range slices.Sorted(maps.Keys(c.p.Units)) {
 		u, path := c.p.Units[name], []string{"units", name}
+		if c.p.Source != nil && u.Approval == "auto" {
+			c.add(at(path, "approval"), "remote components cannot grant approval")
+		}
 		if name == "tool" {
 			c.add(path, "tool is the directory where a plugin with state: tool keeps the tool's state; give the unit another name")
 		}
@@ -389,7 +404,12 @@ func (c *checker) units() {
 func (c *checker) unitUses(path []string, name string, u *Unit) {
 	var t *Target
 	var err error
-	if localPath(u.Uses) {
+	if strings.HasPrefix(u.Uses, "github.com/") {
+		var pkg *Package
+		if pkg, err = c.sourcePackage(u.Uses, nil, u.Uses); err == nil {
+			t, err = unitTarget(u.Uses, pkg)
+		}
+	} else if localPath(u.Uses) {
 		var pkg *Package
 		if pkg, err = c.pkg(u.Uses, nil, filepath.Join(c.p.DirOf("units."+name), u.Uses)); err == nil {
 			c.packageNames(at(path, "uses"), pkg)
@@ -405,7 +425,7 @@ func (c *checker) unitUses(path []string, name string, u *Unit) {
 		return
 	}
 	if t.Kind == TargetComponent {
-		comp, err := c.component(t.Dir)
+		comp, err := c.component(t.Dir, t.Package.Source, t.Package.SourceRoot)
 		if err != nil {
 			if !errors.Is(err, errBroken) {
 				c.add(at(path, "uses"), "%v", err)
@@ -575,6 +595,12 @@ func callNames(calls Calls) string {
 }
 
 func (c *checker) task(path []string, t *Task, project bool) {
+	if c.p != nil && c.p.Source != nil {
+		c.pluginInputs(at(path, "inputs"), t.Inputs)
+		if t.Approval == "auto" {
+			c.add(at(path, "approval"), "remote components cannot grant approval")
+		}
+	}
 	kinds := len(t.Calls)
 	if t.Run != nil {
 		kinds++
@@ -792,6 +818,9 @@ func distance(a, b string) int {
 func (c *checker) steps(path []string, steps []*Step, ids map[string]bool) {
 	for i, s := range steps {
 		sp := at(path, strconv.Itoa(i))
+		if c.p != nil && c.p.Source != nil && s.Yes {
+			c.add(at(sp, "yes"), "remote components cannot grant approval")
+		}
 		kinds := 0
 		for _, set := range []bool{s.Run != nil, s.Task != "", len(s.Block) > 0, len(s.Calls) > 0} {
 			if set {

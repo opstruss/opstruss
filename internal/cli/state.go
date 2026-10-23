@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/opstruss/opstruss/internal/model"
+	"github.com/opstruss/opstruss/internal/sources"
 	"github.com/opstruss/opstruss/internal/state"
 	"github.com/spf13/cobra"
 )
@@ -29,11 +31,14 @@ func (a *app) store() (*model.Project, *state.Store, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	p, err := model.Load(dir, a.stackName())
+	p, err := model.LoadWith(context.Background(), dir, a.stackName(), sources.Options{Locked: a.locked})
 	if err != nil {
 		return nil, nil, err
 	}
 	s, err := state.Open(state.NewLocal(filepath.Join(dir, ".opstruss", "state")), p.StackName, p.Name)
+	if err != nil {
+		p.Close()
+	}
 	return p, s, err
 }
 
@@ -88,6 +93,7 @@ func (a *app) stateList() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer p.Close()
 			addrs, err := s.Inventory()
 			if err != nil {
 				return err
@@ -146,10 +152,11 @@ func (a *app) statePull() *cobra.Command {
 		Short: "Print a key as stored, and its etag on stderr; key is an address without the stack, _meta, or _kv/<name>",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			_, s, err := a.store()
+			p, s, err := a.store()
 			if err != nil {
 				return err
 			}
+			defer p.Close()
 			key, _, _ := s.KeyOf(args[0])
 			data, etag, err := s.Backend.Get(key)
 			if errors.Is(err, state.ErrNotExist) {
@@ -178,10 +185,11 @@ func (a *app) statePush() *cobra.Command {
 			if ifMatch == "" && !force {
 				return errors.New("push needs --if-match <etag> from state pull, or --force, so a stale copy is refused")
 			}
-			_, s, err := a.store()
+			p, s, err := a.store()
 			if err != nil {
 				return err
 			}
+			defer p.Close()
 			data, err := io.ReadAll(cmd.InOrStdin())
 			if err != nil {
 				return err
@@ -251,10 +259,11 @@ func (a *app) stateRm() *cobra.Command {
 		Short: "Forget a record without taking anything down, leaving a tombstone; on a tombstone, remove it; or remove a key of kv",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) (err error) {
-			_, s, err := a.store()
+			p, s, err := a.store()
 			if err != nil {
 				return err
 			}
+			defer p.Close()
 			if name, ok := strings.CutPrefix(args[0], "_kv/"); ok {
 				return a.rmKV(s, name, ifMatch, force)
 			}

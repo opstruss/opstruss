@@ -103,7 +103,7 @@ func (e *engine) resolve(inst *instance, preview bool) (*resolved, error) {
 	for _, kv := range e.opts.Environ {
 		k, v, _ := strings.Cut(kv, "=")
 		for _, p := range u.Pass {
-			if ok, _ := path.Match(p, k); ok && !model.ReservedEnv(k) {
+			if ok, _ := path.Match(p, k); ok && !model.ReservedEnv(k) && inst.node.Grants(k) {
 				r.pass[k] = v
 			}
 		}
@@ -352,6 +352,15 @@ func (r *resolved) sensitive() bool {
 
 // source is where the programs of a unit that uses a plugin come from.
 func (r *resolved) source(inst *instance) *state.Source {
+	if r.plugin != nil && r.plugin.target.Package.Source != nil {
+		return sourceOf(r.plugin.target.Package.Source)
+	}
+	if r.task != nil && r.task.target.Package != nil && r.task.target.Package.Source != nil {
+		return sourceOf(r.task.target.Package.Source)
+	}
+	if inst.node.In.Source != nil {
+		return sourceOf(inst.node.In.Source)
+	}
 	switch {
 	case r.plugin != nil:
 		return &state.Source{Uses: inst.def.Uses, Hash: r.plugin.hash}
@@ -382,7 +391,9 @@ func (r *resolved) fingerprints() map[string]string {
 // downContract is what down runs for the unit, with the context it needs.
 func (e *engine) downContract(inst *instance, r *resolved) *state.Down {
 	if r.service != nil {
-		return r.service.down(r)
+		d := r.service.down(r)
+		e.sourceContract(inst, r, d)
+		return d
 	}
 	if r.down == nil {
 		return nil
@@ -409,6 +420,7 @@ func (e *engine) downContract(inst *instance, r *resolved) *state.Down {
 	if s := inst.def.Stop; s != nil {
 		d.Stop = &state.DownStop{Signal: s.Signal, Grace: s.Grace}
 	}
+	e.sourceContract(inst, r, d)
 	return d
 }
 
@@ -458,7 +470,24 @@ func (e *engine) digest(inst *instance, r *resolved) (string, []string, error) {
 	}
 	rel, _ := filepath.Rel(e.p.Dir, r.cwd)
 	add("shell", shell, r.cmd.Script == "")
-	add("dir", filepath.ToSlash(rel), rel == ".")
+	if id, _, err := e.locationOwner(inst, r, r.cwd); err != nil {
+		return "", nil, err
+	} else if id != nil {
+		add("dir", id, false)
+	} else {
+		add("dir", filepath.ToSlash(rel), rel == ".")
+	}
+	if inst.node.In.Source != nil {
+		def["owner"] = inst.node.In.Source
+	}
+	if r.plugin != nil && r.plugin.target.Package.Source != nil {
+		def["uses"] = r.plugin.target.Package.Source.Key()
+		def["source"] = r.plugin.target.Package.Source
+	}
+	if r.task != nil && r.task.target.Package != nil && r.task.target.Package.Source != nil {
+		def["uses"] = r.task.target.Package.Source.Key()
+		def["source"] = r.task.target.Package.Source
+	}
 	env := map[string]any{}
 	for k, v := range r.env {
 		var text any = v.Text
