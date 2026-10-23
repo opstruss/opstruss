@@ -29,14 +29,14 @@ type Request struct {
 	Environ []string          `json:"environ,omitempty"`
 	Units   []string          `json:"units,omitempty"`
 	Yes     bool              `json:"yes,omitempty"`
-	Force   bool              `json:"force,omitempty"`
+	Force   bool              `json:"force,omitempty"` // up: although unchanged; down: although pass values differ; cancel: kill at once
 	NoDeps  bool              `json:"no_deps,omitempty"`
 	Follow  bool              `json:"follow,omitempty"` // logs: go on with what is written
 	Task    string            `json:"task,omitempty"`   // run: the task
 	With    map[string]any    `json:"with,omitempty"`   // run: its inputs
 	Flags   map[string]any    `json:"flags,omitempty"`  // run: inputs as flags wrote them, read by each task reached, over With
 	Event   map[string]any    `json:"event,omitempty"`  // run: an event that the caller wrote for a trigger of the task, as --event
-	Run     string            `json:"run,omitempty"`    // events: the run to read
+	Run     string            `json:"run,omitempty"`    // events: the run to read; cancel and rerun: the run
 	Debug   bool              `json:"debug,omitempty"`
 	// ShowSensitive gives outputs their sensitive values.
 	ShowSensitive bool `json:"show_sensitive,omitempty"`
@@ -48,6 +48,9 @@ type Result struct {
 	Run      string         `json:"run"`
 	ExitCode int            `json:"exit_code"`
 	Record   *record.Record `json:"-"`
+	// Inputs, only in the process that ran it, are the --input of a rerun,
+	// which it took from the run it ran again.
+	Inputs map[string]string `json:"-"`
 }
 
 // Handlers are the callbacks of a call: the events of its run, and the
@@ -86,7 +89,7 @@ func result(res *engine.Result, err error) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Result{Run: res.Run, ExitCode: res.ExitCode, Record: res.Record}, nil
+	return &Result{Run: res.Run, ExitCode: res.ExitCode, Record: res.Record, Inputs: res.Inputs}, nil
 }
 
 // Call runs the method of Methods named method.
@@ -104,6 +107,8 @@ func (a *API) Call(ctx context.Context, method string, r Request) (*Result, erro
 		return a.Run(ctx, r)
 	case "unlock":
 		return a.Unlock(ctx, r)
+	case "rerun":
+		return a.Rerun(ctx, r)
 	}
 	return nil, fmt.Errorf("the engine API has no method %q", method)
 }
@@ -161,6 +166,12 @@ func (a *API) Run(ctx context.Context, r Request) (*Result, error) {
 	return result(res, err)
 }
 
+// Rerun runs the run of the request again, with the inputs and the event it
+// had, through the project as it is now; Yes and Force are the caller's.
+func (a *API) Rerun(ctx context.Context, r Request) (*Result, error) {
+	return result(engine.Rerun(ctx, a.options(r), r.Run))
+}
+
 // Outputs returns the outputs of the project.
 func (a *API) Outputs(_ context.Context, r Request) (map[string]any, error) {
 	return engine.Outputs(a.options(r))
@@ -179,6 +190,13 @@ func (a *API) Status(_ context.Context, r Request) (*engine.Status, error) {
 // Runs returns the records of the stack's runs, newest first.
 func (a *API) Runs(_ context.Context, r Request) ([]*record.Record, error) {
 	return engine.Runs(a.options(r))
+}
+
+// Cancel asks the run of the request to cancel, with Force to kill its
+// programs at once, and waits until it ends. It stays in this process,
+// as reads do: the run, wherever it runs, reads the request itself.
+func (a *API) Cancel(ctx context.Context, r Request) (*record.Record, error) {
+	return engine.Cancel(ctx, a.options(r), r.Run, r.Force)
 }
 
 // Events hands the stored events of the run of the request to the Event

@@ -79,7 +79,32 @@ type Record struct {
 	// EventsIncomplete says that events.jsonl lacks events that could not
 	// be written, as on a full disk.
 	EventsIncomplete bool `json:"events_incomplete,omitempty"`
+	NoDeps           bool `json:"no_deps,omitempty"`
+	// RerunOf is the run that opstruss runs rerun ran again.
+	RerunOf string `json:"rerun_of,omitempty"`
+	// Replay is what runs rerun needs beside the record, of a run of a
+	// task, up, or down; a record without it cannot run again.
+	Replay *Replay `json:"replay,omitempty"`
 }
+
+// Replay is how a run can run again: the trigger whose event made it, and
+// whether what came from outside the project, which may hold secrets, is
+// sealed in the run's replay file.
+type Replay struct {
+	Trigger string `json:"trigger,omitempty"` // the key of that trigger in the project file
+	Time    string `json:"time,omitempty"`    // event.time
+	Payload string `json:"payload,omitempty"` // sealed, or unavailable as Error says; empty when nothing is needed
+	Error   string `json:"error,omitempty"`
+}
+
+// Replay payloads.
+const (
+	Sealed      = "sealed"
+	Unavailable = "unavailable"
+)
+
+// replayFile holds the sealed payload of a run beside its record.
+const replayFile = "replay"
 
 // Task is how the calls of one task inside a run ended, as one outcome.
 type Task struct {
@@ -120,8 +145,9 @@ type Run struct {
 	gone   int64   // program output dropped from the middle
 	flush  *time.Timer
 	closed bool
-	err    error // the first event that could not be written
-	cut    bool  // a write failed, maybe in the middle of a line
+	done   chan struct{} // closed with the run, which ends WatchCancel
+	err    error         // the first event that could not be written
+	cut    bool          // a write failed, maybe in the middle of a line
 	// committed is set once record.json says finished; until then the run
 	// keeps its .lock file, so the next run marks it.
 	committed bool
@@ -155,7 +181,7 @@ func Create(root string, newID func() string, rec *Record, sink func(Event)) (*R
 			return nil, err
 		}
 		rec.Run, rec.Status, rec.Version = id, Running, Version
-		r := &Run{Dir: dir, rec: rec, sink: sink}
+		r := &Run{Dir: dir, rec: rec, sink: sink, done: make(chan struct{})}
 		live.Store(rec.Run, &Record{Run: rec.Run, Command: rec.Command, Task: rec.Task, Status: Running})
 		if err := r.open(); err != nil {
 			// A run that could not start leaves nothing behind.
@@ -355,6 +381,9 @@ func (r *Run) Close() {
 	if err := r.events.Close(); err != nil {
 		r.lose(err)
 	}
+	if !r.closed {
+		close(r.done)
+	}
 	r.closed = true
 	if r.committed && r.err != nil && !r.rec.EventsIncomplete {
 		// The last event was lost; the record says so if it can.
@@ -374,6 +403,24 @@ func (r *Run) Close() {
 		// What a crash or a failure leaves, retention drops later.
 		_ = os.RemoveAll(r.Dir)
 	}
+}
+
+// WriteReplay writes the sealed payload of the run.
+func (r *Run) WriteReplay(sealed []byte) error {
+	return os.WriteFile(filepath.Join(r.Dir, replayFile), sealed, 0o600)
+}
+
+// Update changes the record of a run that goes on running.
+func (r *Run) Update(update func(*Record)) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	update(r.rec)
+	return write(r.Dir, r.rec)
+}
+
+// ReadReplay reads the sealed payload of the run in dir.
+func ReadReplay(dir string) ([]byte, error) {
+	return os.ReadFile(filepath.Join(dir, replayFile))
 }
 
 // Record is the record of the run as it stands, as Finish left it once the

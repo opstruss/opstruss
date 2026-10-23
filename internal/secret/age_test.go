@@ -135,15 +135,18 @@ func TestAgeEnvelope(t *testing.T) {
 	if !strings.HasPrefix(data, "-----BEGIN AGE ENCRYPTED FILE-----") {
 		t.Fatalf("not armored: %s", data)
 	}
-	got, by, err := OpenAge(data, []Identity{{c, "c"}, {b, "b"}})
+	got, by, err := OpenAge(data, []Identity{{c, "c"}, {b, "b"}}, 1<<10)
 	if err != nil || !bytes.Equal(got, key) || by.From != "b" {
 		t.Fatalf("opened %x by %s: %v", got, by.From, err)
 	}
-	if _, _, err := OpenAge(data, []Identity{{c, "c"}}); !errors.Is(err, ErrNoIdentity) {
+	if _, _, err := OpenAge(data, []Identity{{c, "c"}}, 1<<10); !errors.Is(err, ErrNoIdentity) {
 		t.Fatalf("another key: %v", err)
 	}
-	if _, _, err := OpenAge(data, nil); !errors.Is(err, ErrNoIdentity) {
+	if _, _, err := OpenAge(data, nil, 1<<10); !errors.Is(err, ErrNoIdentity) {
 		t.Fatalf("no key: %v", err)
+	}
+	if _, _, err := OpenAge(data, []Identity{{b, "b"}}, 31); err == nil || !strings.Contains(err.Error(), "more than 31 bytes") {
+		t.Fatalf("over the limit: %v", err)
 	}
 }
 

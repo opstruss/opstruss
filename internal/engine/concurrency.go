@@ -14,13 +14,12 @@ import (
 
 	"github.com/opstruss/opstruss/internal/expr"
 	"github.com/opstruss/opstruss/internal/model"
-	"github.com/opstruss/opstruss/internal/proc"
+	"github.com/opstruss/opstruss/internal/record"
 )
 
 // taskHolder is who holds the concurrency lock of a task, in its lock file.
 type taskHolder struct {
 	Run  string `json:"run"`
-	PID  int    `json:"pid"`
 	Task string `json:"task"` // the root task of the holder's run
 }
 
@@ -116,7 +115,7 @@ func (e *engine) taskLock(ctx context.Context, name string, t *model.Task, s *ex
 // holdTask writes this run into the lock file and keeps the cancel of the
 // call, so a call with concurrency: cancel in this process can stop it.
 func (e *engine) holdTask(ctx context.Context, p string, f *os.File, mu *sync.Mutex) (context.Context, func(), bool, error) {
-	data, _ := json.Marshal(taskHolder{Run: e.runID, PID: os.Getpid(), Task: e.rootTask})
+	data, _ := json.Marshal(taskHolder{Run: e.runID, Task: e.rootTask})
 	if err := f.Truncate(0); err == nil {
 		_, _ = f.WriteAt(data, 0)
 	}
@@ -134,9 +133,9 @@ func (e *engine) holdTask(ctx context.Context, p string, f *os.File, mu *sync.Mu
 }
 
 // cancelHolder stops the call that holds the lock at p: in this process
-// its context; in another, the whole run with SIGINT, but only when the
-// root task of that run is this task, so a deploy that calls notify does
-// not stop with it.
+// its context; in another, the whole run, through a request in its
+// cancel.jsonl, but only when the root task of that run is this task, so a
+// deploy that calls notify does not stop with it.
 func (e *engine) cancelHolder(p string, f *os.File, name string) {
 	if v, ok := taskHolders.Load(p); ok {
 		// A run of this process, as in a daemon, is stopped by the same
@@ -152,17 +151,16 @@ func (e *engine) cancelHolder(p string, f *os.File, name string) {
 	var h taskHolder
 	buf := make([]byte, 4096)
 	n, _ := f.ReadAt(buf, 0)
-	if json.Unmarshal(buf[:n], &h) != nil || h.PID <= 0 {
+	if json.Unmarshal(buf[:n], &h) != nil || h.Run == "" {
 		return
 	}
 	if h.Task != name {
 		e.warn("", "concurrency: cancel waits for run %s, whose root task is %s, not %s", h.Run, h.Task, name)
 		return
 	}
-	// A pid is reused once its process is gone; the holder is an OpsTruss,
-	// and never this one, whose calls are in taskHolders.
-	if c, err := proc.Command(h.PID); err != nil || c != filepath.Base(os.Args[0]) || h.PID == os.Getpid() {
-		return
+	// A run that ended meanwhile takes no request; the lock is free then.
+	dir := filepath.Join(e.root, "runs", e.p.StackName, filepath.Base(h.Run))
+	if err := requestCancel(dir, "concurrency", false, e.runID); err != nil && !errors.Is(err, record.ErrEnded) {
+		e.warn("", "concurrency: cancel could not ask run %s to cancel: %v", h.Run, err)
 	}
-	_ = syscall.Kill(h.PID, syscall.SIGINT)
 }

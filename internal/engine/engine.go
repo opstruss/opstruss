@@ -64,6 +64,8 @@ type Options struct {
 	Event *TriggerEvent
 	// Started hears the id of a run made by Fire once its record is there.
 	Started func(run string)
+	// RerunOf is the run that this one runs again, as runs rerun does.
+	RerunOf string
 }
 
 // Question is a change that waits for approval.
@@ -82,8 +84,9 @@ type Result struct {
 	Run      string
 	ExitCode int // 0 success, 1 failure, 2 stopped at plan for approval
 	Outcome  string
-	Outputs  map[string]any // of a task, with sensitive values as secret.Mask
-	Record   *record.Record // as the run finished it, also when its directory went
+	Outputs  map[string]any    // of a task, with sensitive values as secret.Mask
+	Record   *record.Record    // as the run finished it, also when its directory went
+	Inputs   map[string]string // --input of the run, which a rerun takes from the run it runs again
 }
 
 // Outcomes of units, tasks, and steps.
@@ -170,17 +173,24 @@ type engine struct {
 	keyErr  error
 	writes  bool              // the run writes state, so it wraps the data key again for encryption_keys
 	newIDs  map[string]string // the ids of records that up makes, by address
+
+	release   func()         // ends the context that control made, once the run closed
+	cancelReq *record.Cancel // the first request to cancel the run; under mu
+	killReq   bool           // a request with force came; under mu
 }
 
 // open reads the project and the state of its stack, and starts the
 // record of a run of command, or of the task with that name.
+//
+// The run's context, e.ctx, also ends on a request in its cancel.jsonl, so
+// callers go on with it, not with ctx.
 func open(ctx context.Context, opts Options, command, task string) (*engine, error) {
 	e, err := load(opts)
 	if err != nil {
 		return nil, err
 	}
 	e.ctx = ctx
-	return e, e.start(command, task)
+	return e, e.start(command, task, nil, nil)
 }
 
 // load reads the project and opens the state of its stack, for a run or
@@ -259,11 +269,16 @@ func load(opts Options) (*engine, error) {
 }
 
 // start begins a run: the record of the run, the holder of its locks, and
-// its directory of temporary files.
-func (e *engine) start(command, task string) error {
+// its directory of temporary files. with are the inputs that its caller
+// gave the task, and tr the trigger whose event made it, which runs rerun
+// gives again.
+func (e *engine) start(command, task string, with map[string]any, tr *Trigger) error {
 	p, opts := e.p, e.opts
 	rec := &record.Record{Project: p.Name, Stack: p.StackName, Command: command, Task: task, Args: opts.Units,
-		Trigger: e.event["trigger"].(string), Host: e.host, PID: os.Getpid(), Started: e.started.Format(time.RFC3339Nano)}
+		Trigger: e.event["trigger"].(string), Host: e.host, PID: os.Getpid(), Started: e.started.Format(time.RFC3339Nano),
+		NoDeps: opts.NoDeps, RerunOf: opts.RerunOf}
+	var rp *replay
+	rec.Replay, rp = e.replayOf(command, with, tr)
 	if ev := opts.Event; ev != nil && ev.Simulated {
 		// The event is the caller's; the run comes from the command line.
 		rec.Trigger, rec.Simulated = "cli", ev.Trigger
@@ -277,10 +292,17 @@ func (e *engine) start(command, task string) error {
 		return err
 	}
 	e.runID = e.rec.ID()
+	e.control()
 	// The run is in its record now, which is what a webhook answers after;
 	// the rest of the start comes after that answer.
 	if opts.Started != nil {
 		opts.Started(e.runID)
+	}
+	if opts.RerunOf != "" {
+		e.say("diagnostic", "", "runs run %s again", opts.RerunOf)
+	}
+	if rp != nil {
+		e.keepReplay(rp)
 	}
 	for _, name := range e.tooShort {
 		e.warnShort(name)
@@ -336,12 +358,19 @@ func (e *engine) close(outcome string, outputs, marks map[string]any) {
 		}
 	}
 	outputs = e.shown(outputs, marks)
+	reason := e.cancelledBy()
+	if reason != "" && outcome != success {
+		outcome = cancelled
+	}
 	e.outcome, e.outputs = outcome, outputs
 	e.mu.Lock()
 	touched, ran, code := e.touched, e.ran, e.exit
 	e.mu.Unlock()
 	err := e.rec.Finish(func(r *record.Record) {
 		r.Outcome, r.ExitCode, r.Outputs = outcome, code, outputs
+		if outcome == cancelled && reason != "" {
+			r.Reason = reason
+		}
 		if len(touched) > 0 {
 			r.Units = touched
 		}
@@ -375,6 +404,9 @@ func (e *engine) close(outcome string, outputs, marks map[string]any) {
 	e.mu.Unlock()
 	e.emit(Event{Type: "run", Level: "info", Task: e.rec.Task(), Message: outcome, Outcome: outcome, ExitCode: &code, Outputs: outputs})
 	e.rec.Close()
+	if e.release != nil {
+		e.release()
+	}
 }
 
 // cleanTemp removes the temporary directories of runs that no longer run

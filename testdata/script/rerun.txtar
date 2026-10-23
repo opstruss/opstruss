@@ -1,0 +1,220 @@
+# opstruss runs rerun runs a task, up, or down again with what came from
+# outside the project as it ran, --input, flags, and its event, through
+# the project as it is now: with: of its trigger gives the inputs again,
+# if: is not asked, and approval is asked again. What came from outside is
+# sealed for the age key of the machine beside the record, never kept in
+# plain text; a run that cannot run again fails before anything runs.
+
+env HOME=$WORK/home
+env XDG_CONFIG_HOME=$WORK/m1
+exec chmod 755 lastrun.sh
+
+# a task runs again with its flags and --input
+exec opstruss greet --name ana --note n0te-in-flag --input region=eu-west
+stdout '^greet \| hello ana from eu-west, n0te-in-flag$'
+exec sh lastrun.sh greet
+cp stdout id
+exec sh -c 'cat .opstruss/runs/default/$(cat id)/record.json'
+stdout '"payload": "sealed"'
+exec sh -c 'test -s .opstruss/runs/default/$(cat id)/replay'
+! exec sh -c 'grep -l -e n0te-in-flag -e eu-west .opstruss/runs/default/$(cat id)/replay'
+exec sh -c 'opstruss runs rerun $(cat id)'
+stdout '^greet \| hello ana from eu-west, n0te-in-flag$'
+exec sh lastrun.sh greet
+cp stdout id2
+exec sh -c 'cat .opstruss/runs/default/$(cat id2)/record.json'
+stdout '"rerun_of": "[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}"'
+
+# a required input that the run had is not asked for again
+exec opstruss -C req ship --input region=eu-west
+stdout '^ship \| ship to eu-west$'
+exec sh -c 'cd req && sh ../lastrun.sh ship'
+cp stdout id
+exec sh -c 'opstruss -C req runs rerun $(cat id)'
+stdout '^ship \| ship to eu-west$'
+
+# --input belongs to a new run, not to a run again
+! exec sh -c 'opstruss runs rerun $(cat id) --input region=x'
+stderr 'runs rerun gives the run the inputs it had'
+
+# an event runs again through the project as it is now: if: is not asked,
+# with: gives the inputs again, and the headers are sealed too
+exec opstruss deploy --event @push.json
+stdout '^deploy \| deploy main note=\[from hook\] by webhook POST$'
+exec sh lastrun.sh deploy
+cp stdout id
+exec sh -c 'test -s .opstruss/runs/default/$(cat id)/replay'
+! exec sh -c 'grep -l -e T0k3n-in-header .opstruss/runs/default/$(cat id)/replay'
+cp later.yaml opstruss.yaml
+exec sh -c 'opstruss runs rerun $(cat id)'
+stdout '^deploy \| deploy main note=\[later\] by webhook POST$'
+exec sh lastrun.sh deploy
+cp stdout id2
+exec sh -c 'cat .opstruss/runs/default/$(cat id2)/record.json'
+stdout '"trigger": "cli",\n\s+"simulated": "webhook"'
+
+# a run whose trigger left the project does not run again
+cp gone.yaml opstruss.yaml
+! exec sh -c 'opstruss runs rerun $(cat id)'
+stderr 'task deploy has no longer the webhook trigger whose event made it'
+cp later.yaml opstruss.yaml
+
+# up runs again with its units and asks for approval again
+exec opstruss up --yes web
+stdout '^default/web \| up$'
+exec sh lastrun.sh up
+cp stdout id
+exec sh -c 'opstruss runs rerun $(cat id)'
+stdout 'default/web: unchanged'
+! stdout 'default/other'
+! exec sh -c 'opstruss runs rerun --force $(cat id)'
+stdout 'default/web: will run: forced; needs approval, stopped at plan'
+exec sh -c 'opstruss runs rerun --yes --force $(cat id)'
+stdout '^default/web \| up$'
+! stdout 'default/other'
+
+# a payload that does not open, a run kept by an older OpsTruss, and a run
+# of another command do not run again
+exec opstruss greet --name bo
+exec sh lastrun.sh greet
+cp stdout id
+exec sh -c 'echo "opstruss:v1:AAAA" > .opstruss/runs/default/$(cat id)/replay'
+! exec sh -c 'opstruss runs rerun $(cat id)'
+stderr 'cannot run again: its inputs and event do not open'
+mkdir .opstruss/runs/default/20200101T000000Z-0000000a
+cp old.json .opstruss/runs/default/20200101T000000Z-0000000a/record.json
+! exec opstruss runs rerun 20200101T000000Z-0000000a
+stderr 'it kept nothing for runs rerun, as an older OpsTruss made it'
+exec opstruss exec web -- true
+exec sh lastrun.sh web/exec
+cp stdout id
+! exec sh -c 'opstruss runs rerun $(cat id)'
+stderr 'runs rerun runs tasks, up, and down again; run .* is exec'
+
+# another machine has another age key, which does not open what a run kept
+exec opstruss greet --name ana --input region=eu-west
+exec sh lastrun.sh greet
+cp stdout sealed
+mkdir m2
+env XDG_CONFIG_HOME=$WORK/m2
+! exec sh -c 'opstruss runs rerun $(cat sealed)'
+stderr 'cannot run again: no age key of this machine opens its inputs and event'
+
+# without an age key, a run goes on without keeping its inputs, says so,
+# and cannot run again
+env OPSTRUSS_AGE_KEY_FILE=$WORK/m2
+exec opstruss greet --name cy
+stdout '^greet \| hello cy from home, none$'
+stderr 'runs rerun cannot run this run again, since its inputs and event were not kept: this machine has no age key'
+exec sh lastrun.sh greet
+cp stdout id
+! exec sh -c 'opstruss runs rerun $(cat id)'
+stderr 'cannot run again: its inputs and event were not kept, since this machine has no age key'
+
+-- lastrun.sh --
+#!/bin/sh
+# lastrun.sh <task>: the id of the newest run of task, as runs lists it.
+opstruss runs | awk -v t="$1" '$2 == t { printf "%s", $1; exit }'
+-- req/opstruss.yaml --
+name: req
+inputs:
+  region: {type: string, required: true}
+tasks:
+  ship:
+    run: [sh, -c, 'echo "ship to $REGION"']
+    env:
+      REGION: ${{ inputs.region }}
+-- push.json --
+{"trigger": "webhook", "path": "/hooks/deploy", "headers": {"Authorization": "Bearer T0k3n-in-header"}, "body": {"ref": "main"}}
+-- old.json --
+{"version": 1, "run": "20200101T000000Z-0000000a", "project": "shop", "stack": "default", "command": "task", "task": "greet",
+ "host": "h", "pid": 1, "started": "2020-01-01T00:00:00Z", "status": "finished", "outcome": "success", "exit_code": 0}
+-- opstruss.yaml --
+name: shop
+runtime:
+  listen: 127.0.0.1:0
+inputs:
+  region: {type: string, default: home}
+units:
+  web:
+    run: echo up
+  other:
+    run: echo other
+tasks:
+  greet:
+    inputs:
+      name: {type: string, required: true}
+      note: {type: string, default: none}
+    run: [sh, -c, 'echo "hello $INPUT_NAME from $REGION, $INPUT_NOTE"']
+    env:
+      REGION: ${{ inputs.region }}
+  deploy:
+    inputs:
+      ref: {type: string, required: true}
+      note: {type: string, default: none}
+    run: [sh, -c, 'echo "deploy $INPUT_REF note=[$INPUT_NOTE] by $TRIGGER $METHOD"']
+    env:
+      TRIGGER: ${{ event.trigger }}
+      METHOD: ${{ event.method }}
+    on:
+      webhook:
+        - path: /hooks/deploy
+          secret: s3cret-value
+          signature: bearer
+          with:
+            ref: ${{ event.body.ref }}
+            note: from hook
+-- later.yaml --
+name: shop
+runtime:
+  listen: 127.0.0.1:0
+inputs:
+  region: {type: string, default: home}
+units:
+  web:
+    run: echo up
+  other:
+    run: echo other
+tasks:
+  greet:
+    inputs:
+      name: {type: string, required: true}
+      note: {type: string, default: none}
+    run: [sh, -c, 'echo "hello $INPUT_NAME from $REGION, $INPUT_NOTE"']
+    env:
+      REGION: ${{ inputs.region }}
+  deploy:
+    inputs:
+      ref: {type: string, required: true}
+      note: {type: string, default: none}
+    run: [sh, -c, 'echo "deploy $INPUT_REF note=[$INPUT_NOTE] by $TRIGGER $METHOD"']
+    env:
+      TRIGGER: ${{ event.trigger }}
+      METHOD: ${{ event.method }}
+    on:
+      webhook:
+        - path: /hooks/deploy
+          secret: s3cret-value
+          signature: bearer
+          if: "false"
+          with:
+            ref: ${{ event.body.ref }}
+            note: later
+-- gone.yaml --
+name: shop
+runtime:
+  listen: 127.0.0.1:0
+inputs:
+  region: {type: string, default: home}
+units:
+  web:
+    run: echo up
+tasks:
+  greet:
+    inputs:
+      name: {type: string, required: true}
+    run: echo hello
+  deploy:
+    inputs:
+      ref: {type: string, required: true}
+    run: echo deploy

@@ -97,7 +97,7 @@ func Simulate(ctx context.Context, opts Options, name string, inputs, ev map[str
 	e.opts.Flags = nil // they are in over now
 	e.opts.Event = &TriggerEvent{Trigger: tr.Kind, Time: at, Fields: fields, Simulated: true}
 	e.event = eventOf(e.opts.Event, e.started)
-	res, err := e.fire(ctx, tr, over)
+	res, err := e.fire(ctx, tr, over, true)
 	if err == nil && res == nil {
 		return left("if: leaves the event out")
 	}

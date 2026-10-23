@@ -13,7 +13,7 @@
     "task": { "type": "string" },
     "args": { "type": "array", "items": { "type": "string" } },
     "trigger": { "type": "string", "description": "What made the run, as event.trigger says: cli, schedule, every, and later others." },
-    "simulated": { "type": "string", "description": "For a run of the command line with --event: the trigger whose event its caller wrote, which event.trigger says inside the run." },
+    "simulated": { "type": "string", "description": "For a run of the command line with --event, or of runs rerun: the trigger whose event its caller wrote or ran again, which event.trigger says inside the run." },
     "user": { "type": "string" },
     "host": { "type": "string" },
     "hostname": { "type": "string" },
@@ -22,7 +22,7 @@
     "ended": { "type": "string" },
     "status": { "enum": ["running", "finished"] },
     "outcome": { "enum": ["success", "failure", "skipped", "cancelled"] },
-    "reason": { "type": "string" },
+    "reason": { "type": "string", "description": "Why a run ended cancelled: requested (opstruss runs cancel), concurrency (a call with concurrency: cancel), or interrupted (its process died)." },
     "exit_code": { "type": "integer" },
     "units": {
       "type": "object",
@@ -49,7 +49,20 @@
       }
     },
     "outputs": { "type": "object" },
-    "events_incomplete": { "type": "boolean", "description": "events.jsonl lacks events that could not be written, as on a full disk." }
+    "events_incomplete": { "type": "boolean", "description": "events.jsonl lacks events that could not be written, as on a full disk." },
+    "no_deps": { "type": "boolean" },
+    "rerun_of": { "type": "string", "description": "The run that opstruss runs rerun ran again." },
+    "replay": {
+      "type": "object",
+      "description": "Of a run of a task, up, or down: what opstruss runs rerun needs beside the record. Without it, the run cannot run again.",
+      "properties": {
+        "trigger": { "type": "string", "description": "The key of the trigger whose event made the run, in the project file." },
+        "time": { "type": "string", "description": "event.time of that event." },
+        "payload": { "enum": ["sealed", "unavailable"], "description": "sealed: the inputs and the event are in the replay file beside the record, encrypted with the data key of the stack; unavailable: they were not kept, as error says. Absent when the run needs neither." },
+        "error": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
   },
   "required": ["version", "run", "project", "stack", "command", "host", "pid", "started", "status", "exit_code"]
 }

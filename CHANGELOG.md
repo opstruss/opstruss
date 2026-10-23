@@ -499,7 +499,9 @@ minor release can change what a project, a component, or a plugin relies on.
 - `concurrency` keeps one call of a task at a time in a stack and
   checkout, through a lock file in `.opstruss/tasks/<stack>/`: `queue`
   waits, `skip` leaves the call out, `cancel` stops the run that holds it
-  when that run started with the same task, `parallel` takes no lock, and
+  when that run started with the same task, in another process through a
+  request in its `cancel.jsonl` with reason `concurrency`, `parallel`
+  takes no lock, and
   `group` gives one lock per value. It holds the tasks of the project as
   the command line, MCP, a trigger, or a step `task:` calls them; a task
   of a plugin, which is one operation, and the task that a unit runs,
@@ -516,8 +518,27 @@ minor release can change what a project, a component, or a plugin relies on.
   project from the stored outputs of its units, read without a lock;
   `opstruss runs` lists the runs of the stack, newest first, and
   `opstruss runs <run>` shows the events of one again, and with `-f` goes
-  on with a run that still runs until it ends. With `--json`, each prints
-  one document, and `runs <run>` the events as they are stored. Records
+  on with a run that still runs until it ends; neither needs the inputs
+  of the project. With `--json`, each prints
+  one document, and `runs <run>` the events as they are stored.
+  `opstruss runs cancel <run>` cancels one run wherever it runs, at
+  another terminal, in the daemon, or waiting for a lock, and nothing else
+  there: it appends a request to `cancel.jsonl` in the run's directory,
+  which the run reads within 200 ms, so no signal goes to a pid. The run
+  stops as at a first Ctrl-C, or with `--force` as at a second one, also
+  as the first request; it ends `cancelled` with reason `requested`, its
+  events name who asked, and its process exits 1. `runs cancel` waits
+  until the run ends and exits 0 when it ended cancelled, 1 otherwise.
+  `opstruss runs rerun <run>` runs a task, `up`, or `down` again as a new
+  run with `rerun_of` in its record: the units it chose, `--input`, the
+  flags and `with` of its caller, and its event, through the project as
+  it is now. `if:` of its trigger is not asked again, `with:` of that
+  trigger is, approval, `--yes`, and `--force` are the new caller's, and
+  the environment is read again. What came from outside is sealed whole
+  for the age key of the machine in a `replay` file beside the record;
+  a run on a machine without one goes on and says it cannot run again, and
+  a run whose payload is missing, damaged, or sealed elsewhere, or that an
+  older build recorded, does not run again. Records
   and events of a newer OpsTruss stop them with what to do, and a record
   that cannot be read names the run to repair or remove.
 - `OPSTRUSS_LOG=debug` writes the diagnostics of the engine to stderr.

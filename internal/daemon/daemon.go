@@ -233,10 +233,15 @@ func (d *Daemon) Serve(ctx context.Context) error {
 				// A run forwarded here starts a chain of after triggers.
 				d.trig.ended(res.Record, 0)
 			}
-			if method == "up" && err == nil {
+			switch {
+			case err != nil:
+			case method == "up":
 				// up installs the triggers again from the files as they are
 				// now, with what its caller brings.
 				d.trig.install(runOptions(r.Dir, r.Stack, r.Inputs, r.Environ))
+			case method == "rerun" && res.Record != nil && res.Record.Command == "up":
+				// An up again brings the --input of the up it ran again.
+				d.trig.install(runOptions(r.Dir, r.Stack, res.Inputs, r.Environ))
 			}
 			return res, err
 		}}

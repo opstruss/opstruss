@@ -283,7 +283,7 @@ func (e *engine) openEnvelopes(dk *state.DataKey) ([]byte, string, error) {
 		if err != nil {
 			return nil, "", err
 		}
-		key, id, err := secret.OpenAge(dk.Age.Data, ids)
+		key, id, err := secret.OpenAge(dk.Age.Data, ids, 1<<10)
 		switch {
 		case err == nil:
 			return checkSize(key, meta, "with the age key in "+id.From)

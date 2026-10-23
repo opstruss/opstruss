@@ -54,7 +54,7 @@
       "additionalProperties": false
     },
     "result": {
-      "description": "result of plan, up, down, status, run, and unlock.",
+      "description": "result of plan, up, down, status, run, unlock, and rerun.",
       "type": "object",
       "properties": {
         "run": { "type": "string" },

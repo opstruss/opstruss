@@ -190,8 +190,9 @@ func CheckRecipient(s string) error {
 	return errors.New("this is not a whole age recipient: its length or checksum is wrong")
 }
 
-// SealAge encrypts the data key for the age recipients to, ASCII-armored.
-func SealAge(key []byte, to []string) (string, error) {
+// SealAge encrypts data, such as the data key of a stack, for the age
+// recipients to, ASCII-armored.
+func SealAge(data []byte, to []string) (string, error) {
 	rs := make([]age.Recipient, len(to))
 	for i, s := range to {
 		r, err := age.ParseX25519Recipient(s)
@@ -206,7 +207,7 @@ func SealAge(key []byte, to []string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if _, err := w.Write(key); err != nil {
+	if _, err := w.Write(data); err != nil {
 		return "", err
 	}
 	if err := w.Close(); err != nil {
@@ -222,8 +223,8 @@ func SealAge(key []byte, to []string) (string, error) {
 var ErrNoIdentity = errors.New("no age key of this machine opens it")
 
 // OpenAge decrypts what SealAge made with the first of ids that opens it,
-// and returns which one did.
-func OpenAge(data string, ids []Identity) ([]byte, Identity, error) {
+// and returns which one did; what holds more than limit bytes is an error.
+func OpenAge(data string, ids []Identity, limit int64) ([]byte, Identity, error) {
 	for _, id := range ids {
 		r, err := age.Decrypt(armor.NewReader(strings.NewReader(data)), id.X25519Identity)
 		var none *age.NoIdentityMatchError
@@ -233,11 +234,14 @@ func OpenAge(data string, ids []Identity) ([]byte, Identity, error) {
 		if err != nil {
 			return nil, Identity{}, err
 		}
-		key, err := io.ReadAll(io.LimitReader(r, 1<<10))
+		plain, err := io.ReadAll(io.LimitReader(r, limit+1))
 		if err != nil {
 			return nil, Identity{}, err
 		}
-		return key, id, nil
+		if int64(len(plain)) > limit {
+			return nil, Identity{}, fmt.Errorf("it holds more than %d bytes", limit)
+		}
+		return plain, id, nil
 	}
 	return nil, Identity{}, ErrNoIdentity
 }

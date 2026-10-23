@@ -180,11 +180,11 @@ func lastRun(runs []*record.Record, name string) (r *record.Record, via string) 
 
 // Runs reads the records of the runs of the stack, newest first.
 func Runs(opts Options) ([]*record.Record, error) {
-	e, err := load(opts)
+	p, err := project(opts)
 	if err != nil {
 		return nil, err
 	}
-	return runRecords(e.root, e.p.StackName)
+	return runRecords(filepath.Join(p.Dir, ".opstruss"), p.StackName)
 }
 
 func runRecords(root, stack string) ([]*record.Record, error) {
@@ -230,13 +230,13 @@ func runRecords(root, stack string) ([]*record.Record, error) {
 // opts.Follow, also what a run that still runs writes, until it ends or
 // ctx does.
 func Events(ctx context.Context, opts Options, id string, emit func(Event)) error {
-	e, err := load(opts)
+	p, err := project(opts)
 	if err != nil {
 		return err
 	}
-	err = record.ReadRun(ctx, filepath.Join(e.root, "runs", e.p.StackName, filepath.Base(id)), opts.Follow, emit)
+	err = record.ReadRun(ctx, filepath.Join(p.Dir, ".opstruss", "runs", p.StackName, filepath.Base(id)), opts.Follow, emit)
 	if errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("stack %s has no run %s", e.p.StackName, id)
+		return fmt.Errorf("stack %s has no run %s", p.StackName, id)
 	}
 	return err
 }

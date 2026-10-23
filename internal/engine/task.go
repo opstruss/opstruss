@@ -152,10 +152,10 @@ func Task(ctx context.Context, opts Options, name string, inputs map[string]any)
 	if err := e.checkCall(name, inputs); err != nil {
 		return nil, err
 	}
-	if err := e.start("task", name); err != nil {
+	if err := e.start("task", name, inputs, nil); err != nil {
 		return nil, err
 	}
-	return e.task(ctx, name, inputs), nil
+	return e.task(e.ctx, name, inputs), nil
 }
 
 // task runs the task name in the run that e started.

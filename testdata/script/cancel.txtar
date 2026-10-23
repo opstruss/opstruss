@@ -1,0 +1,124 @@
+# opstruss runs cancel asks one run to stop, wherever it runs: in another
+# process, or in the daemon of the stack, which keeps its services and its
+# other runs. The run reads the request itself, so no signal reaches a
+# process by its pid; --force kills the programs at once.
+
+env HOME=$WORK/home
+
+# a run in another process stops as at Ctrl-C, ends cancelled with 1, not
+# 130, and its events say who asked
+exec sh -c 'opstruss hold > hold.out 2>&1 & echo $! > pid; wait $!; echo $? > code' &hold&
+waitfile started-hold
+exec sh -c 'opstruss runs cancel $(cat id-hold)'
+stdout '^run [0-9]{8}T[0-9]{6}Z-[0-9a-f]{8} cancelled$'
+wait hold
+grep '^1$' code
+exec sh -c 'opstruss runs $(cat id-hold)'
+stderr 'cancel requested by .*@.* \(pid [0-9]+, opstruss runs cancel\)'
+exec sh -c 'cat .opstruss/runs/default/$(cat id-hold)/record.json'
+stdout '"outcome": "cancelled"'
+stdout '"reason": "requested"'
+
+# a run that ended takes no request, and a run that is not there is an error
+! exec sh -c 'opstruss runs cancel $(cat id-hold)'
+stderr 'run [0-9TZa-f-]+ already ended cancelled'
+! exec opstruss runs cancel 20200101T000000Z-00000000
+stderr 'stack default has no run 20200101T000000Z-00000000'
+
+# a run that waits for the concurrency lock of its task stops there, and
+# the run that holds it goes on
+rm started-hold id-hold
+exec sh -c 'opstruss hold > a.out 2>&1 & echo $! > pid; wait $!; echo $? > code' &first&
+waitfile started-hold
+exec sh -c 'opstruss hold > b.out 2>&1 &'
+exec sh -c 'until grep -q "waiting for the run of hold" b.out; do sleep 0.1; done'
+exec sh lastrun.sh hold
+cp stdout queued
+exec sh -c 'opstruss runs cancel $(cat queued)'
+stdout 'cancelled$'
+exists started-hold
+exec sh -c 'opstruss runs cancel $(cat id-hold)'
+wait first
+grep '^1$' code
+
+# a cancel asked again stays a cancel, and the programs that ignore it get
+# the rest of their stop.grace; --force then kills them at once
+exec sh -c 'opstruss stubborn > stubborn.out 2>&1 & echo $! > pid; wait $!; echo $? > code' &stubborn&
+waitfile started-stubborn
+exec sh -c 'opstruss runs cancel $(cat id-stubborn) > first.out' &first&
+exec sh -c 'opstruss runs cancel $(cat id-stubborn) > second.out' &second&
+exec sh -c 'until [ "$(wc -l < .opstruss/runs/default/$(cat id-stubborn)/cancel.jsonl)" -ge 2 ]; do sleep 0.1; done; sleep 0.5'
+exec sh -c 'opstruss runs $(cat id-stubborn)'
+stderr -count=1 'cancel requested by'
+! stderr 'with force'
+exec sh -c 'opstruss runs cancel --force $(cat id-stubborn)'
+stdout 'cancelled$'
+wait first
+wait second
+wait stubborn
+grep 'cancelled$' first.out
+grep 'cancelled$' second.out
+grep '^1$' code
+
+# --force kills at once also as the first request
+rm started-stubborn id-stubborn
+exec sh -c 'opstruss stubborn > stubborn.out 2>&1 &'
+waitfile started-stubborn
+exec sh -c 'opstruss runs cancel --force $(cat id-stubborn)'
+stdout 'cancelled$'
+exec sh -c 'opstruss runs $(cat id-stubborn)'
+stderr 'cancel with force requested by'
+
+# a run in the daemon stops alone: the process that became the daemon
+# keeps its service and goes on with the next run
+exec sh -c 'opstruss up --yes web > daemon.out 2>&1 &'
+waitfile ready-web
+rm started-hold id-hold
+exec sh -c 'opstruss hold > hold.out 2>&1 & echo $! > pid; wait $!; echo $? > code' &held&
+waitfile started-hold
+daemonrun default
+exec sh -c 'opstruss runs cancel $(cat id-hold)'
+stdout 'cancelled$'
+wait held
+grep '^1$' code
+exec opstruss status web
+stdout '^default/web: running, pid [0-9]+'
+exec opstruss quick
+stdout 'quick \| done'
+daemonrun default
+exec sh lastrun.sh quick
+cp stdout quick
+exec sh -c 'opstruss runs rerun $(cat quick)'
+stdout 'quick \| done'
+daemonrun default
+exec opstruss stop
+stdout 'stopped the daemon of stack default'
+
+-- lastrun.sh --
+#!/bin/sh
+# lastrun.sh <task>: the id of the newest run of task, as runs lists it.
+opstruss runs | awk -v t="$1" '$2 == t { printf "%s", $1; exit }'
+-- opstruss.yaml --
+name: shop
+units:
+  web:
+    service: |
+      touch ready-web
+      exec sleep 300
+    ready:
+      run: [test, -f, ready-web]
+      interval: 100ms
+    stop:
+      grace: 2s
+tasks:
+  hold:
+    run: echo "$OPSTRUSS_RUN" > id-hold; touch started-hold; sleep 30
+    stop: {signal: SIGTERM, grace: 2s}
+  stubborn:
+    run: |
+      trap '' INT TERM
+      echo "$OPSTRUSS_RUN" > id-stubborn
+      touch started-stubborn
+      while :; do sleep 1; done
+  quick:
+    run: echo done

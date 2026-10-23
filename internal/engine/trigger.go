@@ -208,12 +208,13 @@ func Fire(ctx context.Context, opts Options, t *Trigger) (*Result, error) {
 		return nil, err
 	}
 	e.trigger = true
-	return e.fire(ctx, t, nil)
+	return e.fire(ctx, t, nil, true)
 }
 
 // fire makes a run of the task of t for e.event, as Fire does, with over
-// in place of what with: gives for the same inputs.
-func (e *engine) fire(ctx context.Context, t *Trigger, over map[string]any) (*Result, error) {
+// in place of what with: gives for the same inputs; if: of t decides only
+// when ask says so.
+func (e *engine) fire(ctx context.Context, t *Trigger, over map[string]any, ask bool) (*Result, error) {
 	task := e.p.Tasks[t.Task]
 	if task == nil || task.On == nil {
 		return nil, fmt.Errorf("the project has no task %s with triggers", t.Task)
@@ -232,6 +233,9 @@ func (e *engine) fire(ctx context.Context, t *Trigger, over map[string]any) (*Re
 		cond, with = task.On.After[t.Index].If, task.On.After[t.Index].With
 	}
 	e.ctx = ctx
+	if !ask {
+		cond = nil
+	}
 	given := map[string]any{}
 	if cond != nil || with != nil {
 		e.pass = pass{}
@@ -269,10 +273,10 @@ func (e *engine) fire(ctx context.Context, t *Trigger, over map[string]any) (*Re
 			return nil, &WithError{e.redact.Err(fmt.Errorf("with: %w", err))}
 		}
 	}
-	if err := e.start("task", t.Task); err != nil {
+	if err := e.start("task", t.Task, over, t); err != nil {
 		return nil, err
 	}
-	return e.task(ctx, t.Task, given), nil
+	return e.task(e.ctx, t.Task, given), nil
 }
 
 // triggerScope is what if: and with: of a trigger read: the sources of
