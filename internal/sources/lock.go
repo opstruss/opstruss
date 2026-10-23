@@ -98,13 +98,19 @@ type Session struct {
 	resolved map[string]Identity
 	groups   map[string]Pin
 	reached  map[string]bool
+	binaries []binaryPin
+}
+
+type binaryPin struct {
+	Name   string
+	Binary Binary
 }
 
 // Acquire verifies and leases the immutable dependencies of a saved model.
 // A trigger can retain metadata after its previous execution leases ended.
 func (s *Session) Acquire(ctx context.Context) (*Session, error) {
 	s.mu.Lock()
-	copy := &Session{refs: 1, Cache: s.Cache, Options: s.Options, ctx: ctx, dir: s.dir, resolved: maps.Clone(s.resolved)}
+	copy := &Session{refs: 1, Cache: s.Cache, Options: s.Options, ctx: ctx, dir: s.dir, resolved: maps.Clone(s.resolved), binaries: slices.Clone(s.binaries)}
 	s.mu.Unlock()
 	for _, key := range slices.Sorted(maps.Keys(copy.resolved)) {
 		id := copy.resolved[key]
@@ -115,7 +121,14 @@ func (s *Session) Acquire(ctx context.Context) (*Session, error) {
 		}
 		copy.leases = append(copy.leases, lease)
 	}
-
+	for _, pin := range copy.binaries {
+		_, lease, err := copy.Cache.Binary(ctx, pin.Name, pin.Binary, false, false)
+		if err != nil {
+			copy.Close()
+			return nil, err
+		}
+		copy.leases = append(copy.leases, lease)
+	}
 	return copy, nil
 }
 
@@ -311,6 +324,16 @@ func (s *Session) Close() {
 		l.Close()
 	}
 	s.leases = nil
+}
+
+func (s *Session) AddBinary(name string, b Binary, l *Lease) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.leases = append(s.leases, l)
+	pin := binaryPin{name, b}
+	if !slices.Contains(s.binaries, pin) {
+		s.binaries = append(s.binaries, pin)
+	}
 }
 
 // Keys returns a deterministic inventory, without fetching or touching usage times.
