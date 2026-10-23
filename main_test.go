@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"filippo.io/age"
 	"github.com/opstruss/opstruss/internal/cli"
 	"github.com/opstruss/opstruss/internal/daemon"
 	"github.com/opstruss/opstruss/internal/failpoint"
@@ -34,6 +35,7 @@ func TestMain(m *testing.M) {
 		"opstruss":  func() { os.Exit(cli.Main()) },
 		"fakecloud": func() { os.Exit(fakecloud(os.Args[1:])) },
 		"fakeapi":   func() { os.Exit(fakeapi(os.Args[1:])) },
+		"fakesops":  func() { os.Exit(fakesops(os.Args[1:])) },
 		"lines":     func() { os.Exit(lines(os.Args[1:])) },
 	})
 }
@@ -82,6 +84,23 @@ func params(dir string) testscript.Params {
 		}
 		return false, fmt.Errorf("unknown condition %s", cond)
 	}, Cmds: map[string]func(*testscript.TestScript, bool, []string){
+		// agekey makes an age key file, as age-keygen -o does, for a
+		// machine whose public key a script needs before OpsTruss makes
+		// one, and with a variable name, sets it to the public key:
+		// agekey <file> [<var>].
+		"agekey": func(ts *testscript.TestScript, _ bool, args []string) {
+			if len(args) < 1 || len(args) > 2 {
+				ts.Fatalf("usage: agekey <file> [<var>]")
+			}
+			id, err := age.GenerateX25519Identity()
+			ts.Check(err)
+			p := ts.MkAbs(args[0])
+			ts.Check(os.MkdirAll(filepath.Dir(p), 0o700))
+			ts.Check(os.WriteFile(p, fmt.Appendf(nil, "# created: %s\n# public key: %s\n%s\n", time.Now().Format(time.RFC3339), id.Recipient(), id), 0o600))
+			if len(args) == 2 {
+				ts.Setenv(args[1], id.Recipient().String())
+			}
+		},
 		// waitfile waits up to waitLimit for a file that a command in the
 		// background makes, so a script acts after it, not after a guess.
 		"waitfile": func(ts *testscript.TestScript, _ bool, args []string) {

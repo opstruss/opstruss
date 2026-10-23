@@ -3,6 +3,7 @@ package state
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 )
@@ -109,13 +110,32 @@ type Tombstone struct {
 }
 
 // Meta is <stack>/_meta: the layout version of the stack, the project it
-// belongs to, and, once a value needs it, the data key of the stack, which
-// sops wraps, with what sops keeps about it.
+// belongs to, and, once a value needs it, the data key of the stack.
 type Meta struct {
-	Version int             `json:"version"`
-	Project string          `json:"project"`
-	Key     string          `json:"key,omitempty"`
-	Sops    json.RawMessage `json:"sops,omitempty"`
+	Version int      `json:"version"`
+	Project string   `json:"project"`
+	Key     *DataKey `json:"key,omitempty"`
+}
+
+// DataKey is the data key in its envelopes: one that age opens, and one
+// that the sops program does, each for the keys it was wrapped for.
+type DataKey struct {
+	Age  *AgeEnvelope  `json:"age,omitempty"`
+	Sops *SopsEnvelope `json:"sops,omitempty"`
+}
+
+// AgeEnvelope is the data key encrypted with age, ASCII-armored, for the
+// age recipients in To.
+type AgeEnvelope struct {
+	To   []string `json:"to"`
+	Data string   `json:"data"`
+}
+
+// SopsEnvelope is the data key as the sops program encrypted it, for the
+// keys in To, each a one-key map of encryption_keys, such as {kms: <arn>}.
+type SopsEnvelope struct {
+	To   []map[string]string `json:"to"`
+	Data json.RawMessage     `json:"data"`
 }
 
 // NewerError is a version written by a newer OpsTruss.
@@ -183,8 +203,21 @@ func EncodeRecord(r *Record) ([]byte, error) {
 	return encodeJSON(r)
 }
 
+// errEarlierMeta is a _meta whose data key an earlier build of OpsTruss
+// wrapped with sops.
+var errEarlierMeta = errors.New("_meta keeps the data key as earlier builds of OpsTruss did, wrapped by sops in key, and this one keeps it in key.age and key.sops; wrap it again as the upgrade notes of the changelog say")
+
+// EncodeMeta writes _meta, indented so it reads well from state pull.
+func EncodeMeta(m *Meta) ([]byte, error) { return encodeJSON(m) }
+
 // DecodeMeta reads _meta.
 func DecodeMeta(data []byte) (*Meta, error) {
+	var head struct {
+		Key json.RawMessage `json:"key"`
+	}
+	if err := json.Unmarshal(data, &head); err == nil && len(head.Key) > 0 && head.Key[0] == '"' {
+		return nil, errEarlierMeta
+	}
 	var m Meta
 	if err := json.Unmarshal(data, &m); err != nil {
 		return nil, fmt.Errorf("_meta: %w", err)

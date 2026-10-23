@@ -9,7 +9,7 @@
 # Stripe CLI is a fake; the kills need a build with -tags failpoints.
 
 env HOME=$WORK/home
-env SOPS_AGE_KEY_FILE=$WORK/age/keys.txt
+env OPSTRUSS_AGE_KEY_FILE=$WORK/age/keys.txt
 env STRIPE_API_KEY=sk_test_billing
 env PATH=$WORK/fakes:$PATH
 env OPSTRUSS_FAILPOINT_LOG=$WORK/visited

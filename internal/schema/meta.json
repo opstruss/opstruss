@@ -1,13 +1,35 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "OpsTruss _meta",
-  "description": "The first object of every stack: the version of its layout, the project it belongs to, and the data key of the stack, which sops wraps. Readers ignore fields they do not know.",
+  "description": "The first object of every stack: the version of its layout, the project it belongs to, and the data key of the stack, in an age envelope, a sops envelope, or both. Readers ignore fields they do not know.",
   "type": "object",
   "properties": {
     "version": { "type": "integer", "minimum": 1 },
     "project": { "$ref": "project.json#/$defs/name" },
-    "key": { "type": "string", "description": "The data key, as sops encrypted it." },
-    "sops": { "type": "object", "description": "What sops keeps about the keys that wrap the data key." }
+    "key": {
+      "type": "object",
+      "description": "The data key, wrapped for the encryption_keys of the stack when it was wrapped.",
+      "properties": {
+        "age": {
+          "type": "object",
+          "description": "The data key encrypted with age, ASCII-armored, for the age recipients in to.",
+          "properties": {
+            "to": { "type": "array", "items": { "type": "string" } },
+            "data": { "type": "string" }
+          },
+          "required": ["to", "data"]
+        },
+        "sops": {
+          "type": "object",
+          "description": "The data key as the sops program encrypted it, for the keys in to.",
+          "properties": {
+            "to": { "type": "array", "items": { "type": "object", "additionalProperties": { "type": "string" } } },
+            "data": { "type": "object" }
+          },
+          "required": ["to", "data"]
+        }
+      }
+    }
   },
   "required": ["version", "project"]
 }

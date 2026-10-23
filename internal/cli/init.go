@@ -9,29 +9,26 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/opstruss/opstruss/internal/model"
 	"github.com/opstruss/opstruss/internal/schema"
-	"github.com/opstruss/opstruss/internal/secret"
 	"github.com/opstruss/opstruss/internal/state"
 	"github.com/spf13/cobra"
 )
 
 // initResult is what init changed, as --json prints it.
 type initResult struct {
-	Wrote  []string       `json:"wrote"`
-	AgeKey *secret.AgeKey `json:"age_key,omitempty"`
+	Wrote []string `json:"wrote"`
 }
 
 func (a *app) initCommand() *cobra.Command {
 	var name string
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Set up the project in this directory: opstruss.yaml, .gitignore, and the age key and .sops.yaml rule that wrap the data key of each stack",
-		Long: "Set up the project in this directory, adding only what is missing: opstruss.yaml, .opstruss/ in .gitignore, " +
-			"and a rule in .sops.yaml for the _meta of every stack, with an age key in the file sops reads when there is none. " +
-			"With --stack, also make that stack's _meta.",
+		Short: "Set up the project in this directory: opstruss.yaml and .gitignore",
+		Long: "Set up the project in this directory, adding only what is missing: opstruss.yaml, and .opstruss/ in .gitignore. " +
+			"With --stack, also make that stack's _meta. The age key of this machine and the data key of a stack " +
+			"are made by the first command that needs them.",
 		Args: cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error {
 			dir, err := filepath.Abs(cmp.Or(a.dir, "."))
@@ -45,9 +42,6 @@ func (a *app) initCommand() *cobra.Command {
 			if err := initIgnore(dir, &res); err != nil {
 				return err
 			}
-			if err := a.initSops(dir, &res); err != nil {
-				return err
-			}
 			// Only an explicit --stack makes _meta, not $OPSTRUSS_STACK.
 			if a.stack != "" {
 				if err := initMeta(dir, a.stack, &res); err != nil {
@@ -59,13 +53,6 @@ func (a *app) initCommand() *cobra.Command {
 			}
 			for _, w := range res.Wrote {
 				fmt.Fprintf(a.stdout, "wrote %s\n", w)
-			}
-			switch k := res.AgeKey; {
-			case k == nil:
-			case k.Created:
-				fmt.Fprintf(a.stdout, "made the age key %s in %s; back it up: with each stack's _meta, it is the only way to open the stack's sensitive values\n", k.Recipient, k.File)
-			default:
-				fmt.Fprintf(a.stdout, "the rule for _meta uses the age key %s\n", k.Recipient)
 			}
 			if len(res.Wrote) == 0 {
 				fmt.Fprintln(a.stdout, "nothing to do: the project is set up")
@@ -178,36 +165,6 @@ func initIgnore(dir string, res *initResult) error {
 		return err
 	}
 	res.Wrote = append(res.Wrote, ".gitignore")
-	return nil
-}
-
-// initSops adds the rule for _meta to .sops.yaml when the _meta of a stack
-// matches no rule, with the operator's age key, made when there is none.
-func (a *app) initSops(dir string, res *initResult) error {
-	stacks, err := model.Stacks(dir)
-	if err != nil {
-		return err
-	}
-	missing := false
-	for _, s := range stacks {
-		ok, err := secret.HasRule(dir, secret.MetaName(s))
-		if err != nil {
-			return err
-		}
-		missing = missing || !ok
-	}
-	if !missing {
-		return nil
-	}
-	key, err := secret.EnsureAgeKey(a.lookupEnv, time.Now())
-	if err != nil {
-		return err
-	}
-	if err := secret.AddMetaRule(dir, key.Recipient); err != nil {
-		return err
-	}
-	res.Wrote = append(res.Wrote, secret.SopsConfig)
-	res.AgeKey = &key
 	return nil
 }
 

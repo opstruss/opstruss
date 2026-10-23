@@ -1,24 +1,22 @@
 # Sensitive values of units, components, plugins, and kv are kept
-# encrypted with the data key of the stack, which sops wraps in _meta: 0
-# plaintext in .opstruss/, digests that hash them with a key of their own,
-# and outputs that show them only with --show-sensitive.
+# encrypted with the data key of the stack, which _meta keeps wrapped by
+# age: 0 plaintext in .opstruss/, digests that hash them with a key of
+# their own, and outputs that show them only with --show-sensitive.
 
 env HOME=$WORK/home
-env SOPS_AGE_KEY_FILE=$WORK/age/keys.txt
+env XDG_CONFIG_HOME=$WORK/config
 env TOKEN=s3cr3t-token-value
-exec opstruss init
-stdout 'wrote .sops.yaml'
 
 # the first value that needs the data key makes it
 exec opstruss up --yes
-stdout 'made the data key of stack default, wrapped by sops in default/_meta'
+stdout 'made the data key of stack default in default/_meta, with age for age1'
 stdout '^default/api \| deploying with \*\*\*$'
 stderr 'output auth holds a sensitive value, so it is sensitive'
 ! stdout s3cr3t
 ! stderr s3cr3t
 ! exec sh -c 'grep -r -e s3cr3t -e czNjcjN0 .opstruss'
 exec opstruss state pull _meta
-stdout '"key": "ENC\[AES256_GCM'
+stdout '"data": "-----BEGIN AGE ENCRYPTED FILE-----'
 stdout '"project": "app"'
 exec opstruss state pull api
 stdout '"down.env": \{'
@@ -58,19 +56,6 @@ stdout 'recalled \*\*\*'
 ! stdout s3cr3t
 ! exec sh -c 'grep -r s3cr3t .opstruss'
 
-# a new member of the team gets the data key: pull _meta, sops updatekeys
-# with the new key in the rule, and push it back
-mkdir other
-exec sh -c 'SOPS_AGE_KEY_FILE=$WORK/age2/keys.txt opstruss -C other init --name other'
-exec sh -c 'sed -i.bak "s/age: \(age1[a-z0-9]*\)/age: \1,$(sed -n "s/^# public key: //p" age2/keys.txt)/" .sops.yaml'
-exec sh -c 'opstruss state pull _meta > _meta 2>etag'
-exec sops updatekeys --yes --input-type json _meta
-exec sh -c 'opstruss state push _meta --if-match "$(cut -d" " -f2 etag)" < _meta'
-env SOPS_AGE_KEY_FILE=$WORK/age2/keys.txt
-exec opstruss outputs --show-sensitive
-stdout '^auth: Bearer s3cr3t-token-value$'
-env SOPS_AGE_KEY_FILE=$WORK/age/keys.txt
-
 # a unit whose output does not parse keeps it encrypted in pending
 ! exec opstruss up broken --yes --input break=true
 exec opstruss state pull broken
@@ -81,25 +66,14 @@ stdout '"raw_output": "enc:v1:'
 exec opstruss down api --yes
 stdout '^default/api \| down with \*\*\*$'
 
-# a .sops.yaml from another machine names only the keys of others, so a
-# data key made here could not be opened here again: it is not kept, and
-# the error names the key of this machine to add
-mkdir third
-exec sh -c 'SOPS_AGE_KEY_FILE=$WORK/age3/keys.txt opstruss -C third init --name third'
-env SOPS_AGE_KEY_FILE=$WORK/age3/keys.txt
-! exec opstruss -C norule up secret --yes
-stderr 'sops wrapped the data key of stack default for keys that cannot open it here, so default/_meta is not written; add the age key of this machine, age1[a-z0-9]+, to the rule in .sops.yaml that matches it'
-! exists norule/ran
-env SOPS_AGE_KEY_FILE=$WORK/age/keys.txt
-
-# without a rule for _meta, a unit with a sensitive value fails before it
-# runs, and an output a program marks sensitive is not kept; sops looks for
-# .sops.yaml in the directories above too
-mv .sops.yaml sops.yaml.away
+# a machine whose age key cannot be read or made: a unit with a sensitive
+# value fails before it runs, and an output a program marks sensitive is
+# not kept
+env OPSTRUSS_AGE_KEY_FILE=/dev/null/keys.txt
 cd norule
 exec opstruss up plain --yes
 ! exec opstruss up secret --yes
-stderr 'no rule in .sops.yaml matches default/_meta'
+stderr '/dev/null/keys.txt: not a directory'
 ! exists ran
 ! exec opstruss up marks --yes
 stderr 'the program gave sensitive outputs \(pin\), which were not kept'

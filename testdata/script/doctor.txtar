@@ -1,28 +1,31 @@
 # doctor checks what a run of the stack needs on this machine: the
-# programs of requires: with their paths, sops and the data key, the
-# variables plugins ask for, and where .opstruss is. It exits 1 only for
-# what fails a run, and never resolves a secret.
+# programs of requires: with their paths, the age key of this machine and
+# the data key, sops when a secret comes from a sops file, the variables
+# plugins ask for, and where .opstruss is. It exits 1 only for what fails a
+# run, and changes nothing: it never resolves a secret or makes a key.
 
 env HOME=$WORK/home
-env SOPS_AGE_KEY_FILE=$WORK/age/keys.txt
+env XDG_CONFIG_HOME=$WORK/config
 env TOKEN=s3cr3t-token-value
 
-# without a rule in .sops.yaml, the stack cannot make its data key
+# a stack without a data key makes it for the age key of this machine,
+# which the first run that needs one makes too; no secret comes from a
+# sops file, so sops is not checked
 ! exec opstruss doctor
 stdout '^ok     sh at .*/sh, for unit default/deploy, unit default/web$'
 stdout '^error  not-a-program-xyz is not in PATH, for unit default/web$'
 stdout '^skip   the programs that task build requires depend on its inputs, so each call checks them$'
-stdout '^ok     sops 3\.[0-9]+\.[0-9]+ at .*sops$'
-stdout '^error  no rule in \.sops\.yaml matches default/_meta'
+stdout '^ok     this machine has no age key yet; the first run that needs one makes it in .*/config/opstruss/age/keys.txt$'
+stdout '^ok     stack default has no data key yet; the first value that needs one makes it for the age key of this machine$'
+! stdout sops
 stdout '^warn   plugin tool asks for TOOL_TOKEN, and no pass: of what uses it lets it through'
 ! stdout TOOL_REGION
 stdout '^ok     the project is on a local filesystem'
 ! exists ran-secret
+! exists config
 
 # what a unit requires follows its inputs, per instance
-exec opstruss init
 exec opstruss doctor --input extra=sh
-stdout '^ok     stack default has no data key yet; the first value that needs one makes it'
 ! stdout '^error'
 
 # --json is one document, and keeps the exit code
@@ -32,16 +35,26 @@ stdout '"check": "program"'
 stdout '"name": "not-a-program-xyz"'
 stdout '"status": "error"'
 
-# once a value made the data key, doctor opens it
+# once a value made the data key, doctor opens it, and says with which key
 exec opstruss up secret --yes --input extra=sh
 exec opstruss doctor --input extra=sh
-stdout '^ok     the data key of stack default opens with sops$'
+stdout '^ok     the age key of this machine is age1[0-9a-z]+, from .*/config/opstruss/age/keys.txt$'
+stdout '^ok     the data key of stack default opens with the age key in .*/config/opstruss/age/keys.txt$'
 ! exists ran-secret
 
-# sops older than 3.10.0 cannot take _meta on stdin
+# encryption_keys without a key of this machine leaves a run here unable
+# to make the data key
+agekey other.key OTHER
+exec sh -c 'printf "encryption_keys: [%s]\n" "$OTHER" >> other/opstruss.yaml'
+! exec opstruss -C other doctor
+stdout '^error  encryption_keys has no key of this machine, so a run here cannot make the data key of stack default; add the age key of this machine, age1[0-9a-z]+, to encryption_keys$'
+
+# a secret from a sops file needs sops 3.10.0 or newer
+exec opstruss -C files doctor
+stdout '^ok     sops 3\.[0-9]+\.[0-9]+ at .*sops$'
 chmod 755 oldsops/sops
 env PATH=$WORK/oldsops:$PATH
-! exec opstruss doctor --input extra=sh
+! exec opstruss -C files doctor
 stdout '^error  sops 3\.9\.4 at .*oldsops/sops is older than 3\.10\.0, which OpsTruss needs$'
 
 -- opstruss.yaml --
@@ -81,6 +94,22 @@ env: [TOOL_TOKEN, TOOL_REGION]
 tasks:
   up:
     run: [sh, -c, 'echo up']
+-- other/opstruss.yaml --
+name: other
+secrets:
+  token: {env: TOKEN}
+units:
+  app:
+    run: echo "$T"
+    env: {T: '${{ secrets.token }}'}
+-- files/opstruss.yaml --
+name: files
+secrets:
+  db: {sops: db.sops.yaml}
+units:
+  app:
+    run: echo "$D"
+    env: {D: '${{ secrets.db }}'}
 -- oldsops/sops --
 #!/bin/sh
 echo "sops 3.9.4"

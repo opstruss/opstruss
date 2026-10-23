@@ -17,6 +17,7 @@ import (
 
 	"github.com/opstruss/opstruss/internal/expr"
 	"github.com/opstruss/opstruss/internal/proc"
+	"github.com/opstruss/opstruss/internal/secret"
 	"github.com/robfig/cron/v3"
 )
 
@@ -109,6 +110,7 @@ func (c *checker) file() {
 	c.units()
 	c.tasks()
 	c.secrets()
+	c.encryptionKeys()
 	c.moves()
 	c.references()
 	c.unsupported()
@@ -685,6 +687,80 @@ func ansibleHint(key string) (string, bool) {
 	return key + " is an Ansible keyword; OpsTruss writes " + instead, true
 }
 
+// secretKeys are the keys of a secret that are not a call of a task.
+var secretKeys = []string{"sops", "field", "env", "run", "pass", "dir", "shell"}
+
+// schemaHint says what the schema means where its words do not: a key of
+// a secret that reads as a call of a task, of a plugin that is not there,
+// is most often a typo of a source; and encryption_keys says what it
+// holds.
+func schemaHint(path []string, msg string, doc map[string]any) (string, bool) {
+	n := len(path)
+	var keys []string // the path within encryption_keys
+	isKeys := true
+	switch {
+	case n >= 1 && path[0] == "encryption_keys":
+		keys = path[1:]
+	case n >= 3 && path[0] == "stacks" && path[2] == "encryption_keys":
+		keys = path[3:]
+	default:
+		isKeys = false
+	}
+	switch {
+	case (n == 3 && path[0] == "secrets" || n == 5 && path[0] == "stacks" && path[2] == "secrets") &&
+		!slices.Contains(secretKeys, path[n-1]) && !strings.HasPrefix(path[n-1], "x-"):
+		if _, ok := valueAt(doc, path).(map[string]any); ok {
+			return "", false
+		}
+		hint := path[n-1] + " is not a source of a secret: sops, env, run, or a call of a task of a plugin, which takes a map"
+		if near := nearest(path[n-1], secretKeys); near != "" {
+			hint += "; did you mean " + near + "?"
+		}
+		return hint, true
+	case !isKeys:
+	case len(keys) == 0 && strings.HasPrefix(msg, "minItems"):
+		return "encryption_keys lists at least one key; without it, the data key is wrapped for the age key of the machine that makes it", true
+	case len(keys) == 1 && (strings.HasPrefix(msg, "maxProperties") || strings.HasPrefix(msg, "minProperties")):
+		return "an entry of encryption_keys that sops wraps for has one key: kms, gcp_kms, azure_keyvault, hc_vault_transit_uri, or pgp", true
+	case len(keys) == 2 && msg == "unknown key":
+		return keys[1] + " is not a key that sops wraps for: kms, gcp_kms, azure_keyvault, hc_vault_transit_uri, or pgp", true
+	}
+	return "", false
+}
+
+// nearest returns the word of words that s is a typo of, at most two edits
+// away, or "".
+func nearest(s string, words []string) string {
+	best, bestD := "", 3
+	for _, w := range words {
+		if d := distance(s, w); d < bestD && d < len(w) {
+			best, bestD = w, d
+		}
+	}
+	return best
+}
+
+// distance is the Levenshtein distance between a and b.
+func distance(a, b string) int {
+	prev := make([]int, len(b)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i := 1; i <= len(a); i++ {
+		cur := make([]int, len(b)+1)
+		cur[0] = i
+		for j := 1; j <= len(b); j++ {
+			cost := 1
+			if a[i-1] == b[j-1] {
+				cost = 0
+			}
+			cur[j] = min(prev[j]+1, cur[j-1]+1, prev[j-1]+cost)
+		}
+		prev = cur
+	}
+	return prev[len(b)]
+}
+
 func (c *checker) steps(path []string, steps []*Step, ids map[string]bool) {
 	for i, s := range steps {
 		sp := at(path, strconv.Itoa(i))
@@ -790,6 +866,35 @@ func (c *checker) secrets() {
 				c.add(at(path, callee), "a secret comes from a task of a plugin with the output value, and %s is not one", callee)
 			}
 		}
+	}
+}
+
+// encryptionKeys checks encryption_keys without any key: an age
+// recipient that age reads, never printed, since a secret key can be
+// pasted where its public key belongs, no expression, and no key twice.
+// The schema checks the keys for sops.
+func (c *checker) encryptionKeys() {
+	seen := map[string]bool{}
+	for i, k := range c.p.EncryptionKeys {
+		path := []string{"encryption_keys", strconv.Itoa(i)}
+		id := k.Age
+		for kind, v := range k.Sops {
+			id = kind + " " + v
+		}
+		switch {
+		case expr.HasExpr(id):
+			c.add(path, "encryption_keys are read before any expression, so they hold no ${{ }}")
+			continue
+		case k.Age != "":
+			if err := secret.CheckRecipient(k.Age); err != nil {
+				c.add(path, "%v", err)
+				continue
+			}
+		}
+		if seen[id] {
+			c.add(path, "this key is in encryption_keys already")
+		}
+		seen[id] = true
 	}
 }
 

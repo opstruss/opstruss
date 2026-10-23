@@ -210,6 +210,20 @@ func (o *ProjectOutput) UnmarshalJSON(b []byte) error {
 	return decodeJSON(b, (*plain)(o))
 }
 
+func (k *EncryptionKey) UnmarshalJSON(b []byte) error {
+	if isString(b) {
+		return json.Unmarshal(b, &k.Age)
+	}
+	return json.Unmarshal(b, &k.Sops)
+}
+
+func (k *EncryptionKey) MarshalJSON() ([]byte, error) {
+	if k.Age != "" {
+		return json.Marshal(k.Age)
+	}
+	return json.Marshal(k.Sops)
+}
+
 func (bk *Backend) UnmarshalJSON(b []byte) error {
 	if isString(b) {
 		bk.Local = true

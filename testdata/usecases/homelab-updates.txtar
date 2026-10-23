@@ -12,7 +12,8 @@ waitfile api-pve/port
 waitfile api/port
 cp api-pve/ca.pem pve-root-ca.pem
 exec opstruss init
-exec sh -c 'printf "  - path_regex: secrets.sops.yaml\n    age: %s\n" "$(sed -n "s/^# public key: //p" age/keys.txt)" >> .sops.yaml'
+agekey age/keys.txt AGE_RECIPIENT
+exec sh -c 'printf "creation_rules:\n  - path_regex: secrets.sops.yaml\n    age: %s\n" "$AGE_RECIPIENT" > .sops.yaml'
 exec sops encrypt --filename-override secrets.sops.yaml --output secrets.sops.yaml plain.yaml
 
 # the stacks come up with the digests their tags have now

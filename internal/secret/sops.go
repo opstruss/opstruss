@@ -3,10 +3,11 @@ package secret
 import (
 	"bytes"
 	"cmp"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,177 +15,94 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-
-	"go.yaml.in/yaml/v3"
 )
 
-// SopsConfig is the file in the project root where sops finds its rules.
-const SopsConfig = ".sops.yaml"
-
-// MetaName is the name OpsTruss gives sops for the _meta of a stack, so
-// the rules of .sops.yaml pick the keys that wrap its data key.
+// MetaName is the name OpsTruss gives sops for the _meta of a stack, which
+// sops needs for what comes on stdin.
 func MetaName(stack string) string { return stack + "/_meta" }
 
-// metaRegex is the path_regex of the rule that init adds: the _meta of
-// every stack.
-const metaRegex = `(^|/)_meta$`
-
-// HasRule reports whether a creation rule of the .sops.yaml in dir
-// matches name, as sops picks one: a rule without path_regex, or one whose
-// path_regex matches.
-func HasRule(dir, name string) (bool, error) {
-	data, err := os.ReadFile(filepath.Join(dir, SopsConfig))
-	if errors.Is(err, fs.ErrNotExist) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	var conf struct {
-		CreationRules []struct {
-			PathRegex string `yaml:"path_regex"`
-		} `yaml:"creation_rules"`
-	}
-	if err := yaml.Unmarshal(data, &conf); err != nil {
-		return false, fmt.Errorf("%s: %w", SopsConfig, err)
-	}
-	for _, r := range conf.CreationRules {
-		if r.PathRegex == "" {
-			return true, nil
-		}
-		re, err := regexp.Compile(r.PathRegex)
-		if err != nil {
-			return false, fmt.Errorf("%s: path_regex %q: %w", SopsConfig, r.PathRegex, err)
-		}
-		if re.MatchString(name) {
-			return true, nil
-		}
-	}
-	return false, nil
+// sopsFlags are the flags of sops for the keys of encryption_keys, by
+// their names in the creation rules of .sops.yaml.
+var sopsFlags = map[string]string{
+	"kms":                  "--kms",
+	"gcp_kms":              "--gcp-kms",
+	"azure_keyvault":       "--azure-kv",
+	"hc_vault_transit_uri": "--hc-vault-transit",
+	"pgp":                  "--pgp",
 }
 
-// AddMetaRule adds the rule for the _meta of every stack, wrapped for
-// recipient, at the end of the creation rules in the .sops.yaml in dir,
-// and makes the file when there is none. Sops takes the first rule that
-// matches, so a rule of the user's that already matches some _meta keeps
-// it, and the comments and other rules stay.
-func AddMetaRule(dir, recipient string) error {
-	p := filepath.Join(dir, SopsConfig)
-	data, err := os.ReadFile(p)
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
-	}
-	var doc yaml.Node
-	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return fmt.Errorf("%s: %w", SopsConfig, err)
-	}
-	if len(doc.Content) == 0 {
-		doc = yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{{Kind: yaml.MappingNode, Tag: "!!map"}}}
-	}
-	root := doc.Content[0]
-	if root.Kind == yaml.ScalarNode && root.Tag == "!!null" {
-		// A file of comments only.
-		*root = yaml.Node{Kind: yaml.MappingNode, Tag: "!!map", HeadComment: root.HeadComment, FootComment: root.FootComment}
-	}
-	if root.Kind != yaml.MappingNode {
-		return fmt.Errorf("%s is not a map", SopsConfig)
-	}
-	var rules *yaml.Node
-	for i := 0; i+1 < len(root.Content); i += 2 {
-		if root.Content[i].Value == "creation_rules" {
-			rules = root.Content[i+1]
-		}
-	}
-	switch {
-	case rules == nil:
-		rules = &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
-		root.Content = append(root.Content, str("creation_rules"), rules)
-	case rules.Kind == yaml.ScalarNode && rules.Tag == "!!null":
-		*rules = yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
-	case rules.Kind != yaml.SequenceNode:
-		return fmt.Errorf("creation_rules in %s is not a list", SopsConfig)
-	}
-	rules.Content = append(rules.Content, &yaml.Node{
-		Kind: yaml.MappingNode, Tag: "!!map",
-		HeadComment: "The data key of each OpsTruss stack, in <stack>/_meta.",
-		Content:     []*yaml.Node{str("path_regex"), str(metaRegex), str("age"), str(recipient)},
-	})
-	var out bytes.Buffer
-	enc := yaml.NewEncoder(&out)
-	enc.SetIndent(2)
-	if err := enc.Encode(&doc); err != nil {
-		return err
-	}
-	if err := enc.Close(); err != nil {
-		return err
-	}
-	mode := fs.FileMode(0o644)
-	if info, err := os.Stat(p); err == nil {
-		mode = info.Mode().Perm()
-	}
-	return os.WriteFile(p, out.Bytes(), mode)
-}
-
-func str(s string) *yaml.Node { return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: s} }
-
-// Sops runs the sops program on the _meta of a stack, which holds its
-// data key, and on the files of secrets: from the project root, where sops
-// finds .sops.yaml, with the operator's whole environment, as for git,
-// since sops needs the keys and credentials that open them. OpsTruss names
-// what is encrypted in _meta itself, so a rule needs only the keys.
+// Sops runs the sops program: for the files of secrets from the project
+// root, where sops finds .sops.yaml, and for the sops envelope of the data
+// key of a stack, with the keys of encryption_keys as flags and no
+// .sops.yaml. It gets the operator's whole environment, as git does, since
+// sops needs the keys and credentials that open them.
 type Sops struct {
 	Dir     string   // the project root
 	Environ []string // the operator's environment
 	Stack   string
 }
 
-// Wrap encrypts the key field of plain, _meta as JSON, with the keys of the
-// rule in .sops.yaml that matches the _meta of the stack.
-func (s *Sops) Wrap(plain []byte) ([]byte, error) {
-	return s.run(plain, "encrypt", "--encrypted-regex", "^key$")
-}
-
-// Unwrap decrypts _meta as sops wrapped it.
-func (s *Sops) Unwrap(wrapped []byte) ([]byte, error) {
-	return s.run(wrapped, "decrypt")
-}
-
-// Check opens what Wrap returned, so a data key that this machine could
-// not open again is never kept, as when .sops.yaml came from another
-// machine and its rule names only that machine's key.
-func (s *Sops) Check(wrapped []byte) error {
-	if _, err := s.Unwrap(wrapped); err != nil {
-		mine := "a key of this machine"
-		if key, _ := FindAgeKey(s.lookup); key.Recipient != "" {
-			mine = "the age key of this machine, " + key.Recipient + ","
-		}
-		return fmt.Errorf("sops wrapped the data key of stack %s for keys that cannot open it here, so %s is not written; add %s to the rule in %s that matches it: %w", s.Stack, MetaName(s.Stack), mine, SopsConfig, err)
+// SealSops has sops encrypt the data key for the keys of to, each a
+// one-key map of encryption_keys, as a JSON document whose key holds it in
+// base64. The flags name the keys, and --config /dev/null keeps the rules
+// of .sops.yaml, and their encrypted_regex, away from it.
+func (s *Sops) SealSops(key []byte, to []map[string]string) (json.RawMessage, error) {
+	plain, err := json.Marshal(map[string]string{"key": base64.StdEncoding.EncodeToString(key)})
+	if err != nil {
+		return nil, err
 	}
-	return nil
-}
-
-// lookup reads a variable of the operator's environment, the last one when
-// it is there twice, as exec does.
-func (s *Sops) lookup(name string) (string, bool) {
-	for _, kv := range slices.Backward(s.Environ) {
-		if k, v, _ := strings.Cut(kv, "="); k == name {
-			return v, true
+	args := []string{"--config", os.DevNull, "encrypt"}
+	var kinds []string
+	values := map[string][]string{}
+	for _, entry := range to {
+		for kind, v := range entry {
+			if sopsFlags[kind] == "" {
+				return nil, fmt.Errorf("sops has no flag for %s", kind)
+			}
+			if values[kind] == nil {
+				kinds = append(kinds, kind)
+			}
+			values[kind] = append(values[kind], v)
 		}
 	}
-	return "", false
+	for _, kind := range kinds {
+		args = append(args, sopsFlags[kind], strings.Join(values[kind], ","))
+	}
+	out, err := s.envelope(plain, "encrypt", args...)
+	if err != nil {
+		return nil, err
+	}
+	if !json.Valid(out) {
+		return nil, fmt.Errorf("sops encrypt %s gave no JSON", MetaName(s.Stack))
+	}
+	return out, nil
 }
 
-func (s *Sops) run(stdin []byte, args ...string) ([]byte, error) {
+// OpenSops has sops decrypt what SealSops made, and returns the data key.
+func (s *Sops) OpenSops(data json.RawMessage) ([]byte, error) {
+	out, err := s.envelope(data, "decrypt", "--config", os.DevNull, "decrypt")
+	if err != nil {
+		return nil, err
+	}
+	var opened struct {
+		Key string `json:"key"`
+	}
+	if err := json.Unmarshal(out, &opened); err != nil {
+		return nil, fmt.Errorf("the data key from sops: %w", err)
+	}
+	return base64.StdEncoding.DecodeString(opened.Key)
+}
+
+// envelope runs sops on the sops envelope of _meta, which goes on stdin.
+func (s *Sops) envelope(stdin []byte, verb string, args ...string) ([]byte, error) {
 	name := MetaName(s.Stack)
 	args = append(args, "--filename-override", name, "--input-type", "json", "--output-type", "json")
 	out, msg, err := s.exec(bytes.NewReader(stdin), args...)
 	switch {
 	case errors.Is(err, exec.ErrNotFound):
-		return nil, errors.New("sops is not in PATH, and the data key of the stack is kept by sops; install it, for example with mise use sops")
-	case err != nil && (strings.Contains(msg, "no matching creation rules found") || strings.Contains(msg, "has no creation rules")):
-		return nil, fmt.Errorf("no rule in %s matches %s, which holds the data key of the stack; opstruss init adds one", SopsConfig, name)
+		return nil, fmt.Errorf("sops is not in PATH, and it keeps the data key of stack %s for the keys of encryption_keys that are not age recipients; install %s or newer, for example with mise use sops", s.Stack, MinSops)
 	case err != nil:
-		return nil, fmt.Errorf("sops %s %s: %s", args[0], name, cmp.Or(msg, err.Error()))
+		return nil, fmt.Errorf("sops %s %s: %s", verb, name, cmp.Or(msg, err.Error()))
 	}
 	return out, nil
 }
@@ -224,8 +142,8 @@ func (s *Sops) exec(stdin io.Reader, args ...string) ([]byte, string, error) {
 }
 
 // MinSops is the oldest sops that OpsTruss works with: sops 3.10.0
-// encrypts and decrypts what comes on stdin, which is how _meta goes to
-// it, and 3.9.0 brought --filename-override.
+// encrypts and decrypts what comes on stdin, which is how the sops
+// envelope of _meta goes to it, and 3.9.0 brought --filename-override.
 const MinSops = "3.10.0"
 
 var sopsVersion = regexp.MustCompile(`(?m)^sops (\d+)\.(\d+)\.(\d+)`)

@@ -14,7 +14,8 @@ exec chmod 755 fakes/java fakes/mcrcon fakes/restic plugins/restic/restic.sh
 ! exec fakeapi -listen 127.0.0.1:19101 api &api&
 waitfile api/port
 exec opstruss init
-exec sh -c 'printf "  - path_regex: secrets.sops.yaml\n    age: %s\n" "$(sed -n "s/^# public key: //p" age/keys.txt)" >> .sops.yaml'
+agekey age/keys.txt AGE_RECIPIENT
+exec sh -c 'printf "creation_rules:\n  - path_regex: secrets.sops.yaml\n    age: %s\n" "$AGE_RECIPIENT" > .sops.yaml'
 exec sops encrypt --filename-override secrets.sops.yaml --output secrets.sops.yaml plain.yaml
 exec opstruss validate
 stdout '^valid$'

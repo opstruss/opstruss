@@ -2,6 +2,7 @@ package engine
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"maps"
 	"os"
@@ -42,7 +43,7 @@ func (r *Report) Failed() bool {
 }
 
 // Doctor checks what a run of the stack needs on this machine: the
-// programs of requires:, sops and the data key, the variables that
+// programs of requires:, the data key and sops, the variables that
 // plugins ask for, and where .opstruss is.
 func Doctor(opts Options) (*Report, error) {
 	e, err := e0(opts)
@@ -220,56 +221,90 @@ func (d *doctor) programs() {
 	d.r.Checks = append(d.r.Checks, d.skip...)
 }
 
-// key checks sops and the data key of the stack, when the stack needs
-// one: it has one already, or the project has secrets or sensitive
-// values. Secrets from sops files need sops too.
+// key checks the data key of the stack, when the stack needs one: it has
+// one already, or the project has secrets or sensitive values. It reports
+// the age key of this machine, which key opens the data key, or whether a
+// run here can make it, and how encryption_keys differs from what wraps
+// it. Sops is checked only for the secrets of sops files and the keys of
+// encryption_keys that sops wraps for.
 func (d *doctor) key() {
 	e := d.e
-	data, _, err := e.store.MetaData()
+	meta := state.MetaKey(e.p.StackName)
+	m, _, err := e.readMeta()
 	if err != nil {
-		d.add(&Check{Check: "key", Status: "error", Message: fmt.Sprintf("reading %s: %v", state.MetaKey(e.p.StackName), err)})
+		d.add(&Check{Check: "key", Status: "error", Name: meta, Message: fmt.Sprintf("reading %s: %v", meta, err)})
 		return
 	}
-	var hasKey bool
-	if data != nil {
-		m, err := state.DecodeMeta(data)
-		if err != nil {
-			d.add(&Check{Check: "key", Status: "error", Message: fmt.Sprintf("reading %s: %v", state.MetaKey(e.p.StackName), err)})
-			return
-		}
-		hasKey = m.Key != ""
-	}
+	hasKey := m != nil && m.Key != nil
 	needKey := hasKey || e.p.HasSensitive()
 	fromFiles := slices.ContainsFunc(slices.Collect(maps.Values(e.p.Secrets)), func(s *model.Secret) bool { return s.Sops != "" })
-	if !needKey && !fromFiles {
+	forSops := slices.ContainsFunc(e.p.EncryptionKeys, func(k *model.EncryptionKey) bool { return k.Sops != nil })
+	if fromFiles || needKey && forSops {
+		d.sops()
+	}
+	if !needKey {
 		return
 	}
-	sopsOK := d.sops()
-	meta := state.MetaKey(e.p.StackName)
-	switch {
-	case !needKey:
-	case hasKey && !sopsOK:
-		// The check of sops says why the key cannot open.
-	case hasKey:
-		sops := &secret.Sops{Dir: e.p.Dir, Environ: e.opts.Environ, Stack: e.p.StackName}
-		if _, _, err := unwrapKey(sops, data); err != nil {
-			d.add(&Check{Check: "key", Status: "error", Name: meta, Message: fmt.Sprintf("the data key of stack %s does not open: %v", e.p.StackName, err)})
-		} else {
-			d.add(&Check{Check: "key", Status: "ok", Name: meta, Message: fmt.Sprintf("the data key of stack %s opens with sops", e.p.StackName)})
-		}
-	default:
-		ok, err := secret.HasRule(e.p.Dir, secret.MetaName(e.p.StackName))
-		switch {
-		case err != nil:
-			d.add(&Check{Check: "key", Status: "error", Name: meta, Message: err.Error()})
-		case !ok:
-			d.add(&Check{Check: "key", Status: "error", Name: meta, Message: fmt.Sprintf(
-				"no rule in %s matches %s, so the stack cannot make the data key its sensitive values need; opstruss init adds one", secret.SopsConfig, meta)})
-		default:
-			d.add(&Check{Check: "key", Status: "ok", Name: meta, Message: fmt.Sprintf(
-				"stack %s has no data key yet; the first value that needs one makes it with the rule in %s for %s", e.p.StackName, secret.SopsConfig, meta)})
-		}
+	ids, err := secret.Identities(e.opts.LookupEnv)
+	if err != nil {
+		d.add(&Check{Check: "key", Status: "error", Message: fmt.Sprintf("the age keys of this machine: %v", err)})
+		return
 	}
+	mine := "the age key of this machine"
+	if len(ids) > 0 {
+		mine = fmt.Sprintf("the age key of this machine, %s,", ids[0].Recipient())
+		d.add(keyCheck(ids[0], fmt.Sprintf("the age key of this machine is %s, from %s", ids[0].Recipient(), ids[0].From)))
+	} else if file, err := secret.KeyFile(e.opts.LookupEnv); err == nil {
+		d.add(&Check{Check: "key", Status: "ok", Path: file, Message: fmt.Sprintf(
+			"this machine has no age key yet; the first run that needs one makes it in %s", file)})
+	} else {
+		d.add(&Check{Check: "key", Status: "error", Message: fmt.Sprintf("this machine has no age key, and no file to make one in: %v", err)})
+	}
+	switch {
+	case hasKey:
+		_, route, err := e.openEnvelopes(m.Key)
+		var closed *closedError
+		switch {
+		case errors.As(err, &closed):
+			d.add(&Check{Check: "key", Status: "error", Name: meta, Message: fmt.Sprintf(
+				"the data key of stack %s does not open on this machine: %v; add %s to encryption_keys, and run plan, up, or down on a machine that opens it",
+				e.p.StackName, closed, mine)})
+		case err != nil:
+			d.add(&Check{Check: "key", Status: "error", Name: meta, Message: fmt.Sprintf("the data key of stack %s does not open: %v", e.p.StackName, err)})
+		default:
+			d.add(&Check{Check: "key", Status: "ok", Name: meta, Message: fmt.Sprintf("the data key of stack %s opens %s", e.p.StackName, route)})
+		}
+		if diff := e.keysDiff(m.Key); diff != "" {
+			d.add(&Check{Check: "key", Status: "warn", Name: meta, Message: fmt.Sprintf(
+				"encryption_keys differs from what wraps the data key in %s (%s); the next plan, up, down, or task run here wraps it again", meta, diff)})
+		}
+	case e.p.EncryptionKeys == nil:
+		d.add(&Check{Check: "key", Status: "ok", Name: meta, Message: fmt.Sprintf(
+			"stack %s has no data key yet; the first value that needs one makes it for %s", e.p.StackName, strings.TrimSuffix(mine, ","))})
+	case slices.ContainsFunc(e.p.EncryptionKeys, func(k *model.EncryptionKey) bool {
+		return slices.ContainsFunc(ids, func(id secret.Identity) bool { return id.Recipient() == k.Age })
+	}):
+		d.add(&Check{Check: "key", Status: "ok", Name: meta, Message: fmt.Sprintf(
+			"stack %s has no data key yet; the first value that needs one makes it for encryption_keys", e.p.StackName)})
+	case forSops:
+		d.add(&Check{Check: "key", Status: "skip", Name: meta, Message: fmt.Sprintf(
+			"stack %s has no data key yet, and none of the age recipients of encryption_keys is a key of this machine; only a run can tell whether sops opens what it makes", e.p.StackName)})
+	default:
+		d.add(&Check{Check: "key", Status: "error", Name: meta, Message: fmt.Sprintf(
+			"encryption_keys has no key of this machine, so a run here cannot make the data key of stack %s; add %s to encryption_keys", e.p.StackName, mine)})
+	}
+}
+
+// keyCheck reports where the age key of this machine came from: a
+// variable or a file.
+func keyCheck(id secret.Identity, msg string) *Check {
+	c := &Check{Check: "key", Status: "ok", Message: msg}
+	if strings.HasPrefix(id.From, "$") {
+		c.Name = strings.TrimPrefix(id.From, "$")
+	} else {
+		c.Path = id.From
+	}
+	return c
 }
 
 // sops checks that sops is in PATH and new enough.
@@ -277,7 +312,7 @@ func (d *doctor) sops() bool {
 	p, err := plugin.LookPath("sops", d.e.path())
 	if err != nil {
 		d.add(&Check{Check: "sops", Status: "error", Name: "sops", Message: fmt.Sprintf(
-			"sops is not in PATH, and the stack needs it for its data key or its secrets; install %s or newer, for example with mise use sops", secret.MinSops)})
+			"sops is not in PATH, and the stack needs it for the secrets of sops files or the keys of encryption_keys that are not age recipients; install %s or newer, for example with mise use sops", secret.MinSops)})
 		return false
 	}
 	v, old, err := secret.SopsVersion(p, d.e.opts.Environ)

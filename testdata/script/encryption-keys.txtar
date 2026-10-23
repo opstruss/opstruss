@@ -1,0 +1,130 @@
+# The data key of a stack in its envelopes: made for the age key of this
+# machine without encryption_keys, which names that key to a second
+# machine; wrapped again for the list by the next run that writes state,
+# then opened on each machine in it; refused when the writer's own key is
+# not in the list; opened by sops for a key that is not an age recipient,
+# only where age cannot; and refused when an earlier build wrote it.
+
+env HOME=$WORK/home
+env TOKEN=s3cr3t-token-value
+env FAKESOPS_LOG=$WORK/sops.log
+env PATH=$WORK/bin:$PATH
+exec chmod 755 bin/sops
+
+# without encryption_keys, the first value that needs the data key makes
+# it for the age key of this machine, which it makes too
+env XDG_CONFIG_HOME=$WORK/m1
+exec opstruss up --yes
+stdout 'made the age key age1[0-9a-z]+ of this machine in .*/m1/opstruss/age/keys.txt; back it up'
+stdout 'made the data key of stack default in default/_meta, with age for age1[0-9a-z]+$'
+stdout '^default/api \| deploying with \*\*\*$'
+exec sh pub.sh m1
+cp stdout m1.pub
+exec opstruss state pull _meta
+stdout '"data": "-----BEGIN AGE ENCRYPTED FILE-----'
+! stdout '"sops"'
+exec sh -c 'grep -F "$(cat m1.pub)" .opstruss/state/default/_meta'
+! exec sh -c 'grep -r -e s3cr3t -e AGE-SECRET-KEY .opstruss'
+
+# another machine cannot open it, and learns its own key to add
+env XDG_CONFIG_HOME=$WORK/m2
+! exec opstruss up --yes
+stderr 'the data key of stack default does not open on this machine: default/_meta has it with age for age1[0-9a-z]+; the age key of this machine is age1[0-9a-z]+ \(in .*/m2/opstruss/age/keys.txt, made just now\): add it to encryption_keys, and run plan, up, or down on a machine that opens the data key, which wraps it again'
+exec sh pub.sh m2
+cp stdout m2.pub
+
+# with both keys in encryption_keys, the second machine still waits for a
+# run on the first
+exec sh -c 'printf "encryption_keys:\n  - %s\n  - %s\n" "$(cat m1.pub)" "$(cat m2.pub)" >> opstruss.yaml'
+exec opstruss validate
+! exec opstruss up --yes
+stderr 'encryption_keys differs from what wraps the data key in default/_meta, which this run cannot wrap again'
+stderr 'encryption_keys has the age key of this machine, age1[0-9a-z]+ \(in .*/m2/opstruss/age/keys.txt\): a plan, up, or down on a machine that opens the data key wraps it again for it'
+
+# doctor on the first machine says where its key is, what opens the data
+# key, and how the list differs
+env XDG_CONFIG_HOME=$WORK/m1
+exec opstruss doctor
+stdout '^ok     the age key of this machine is age1[0-9a-z]+, from .*/m1/opstruss/age/keys.txt$'
+stdout '^ok     the data key of stack default opens with the age key in .*/m1/opstruss/age/keys.txt$'
+stdout '^warn   encryption_keys differs from what wraps the data key in default/_meta \(\+age1[0-9a-z]+\); the next plan, up, down, or task run here wraps it again$'
+! stdout sops
+
+# a plan there wraps it again, and the second machine opens it
+exec opstruss plan
+stdout 'wrapped the data key of stack default again in default/_meta \(\+age1[0-9a-z]+\), with age for age1[0-9a-z]+, age1[0-9a-z]+$'
+exec sh -c 'grep -F "$(cat m2.pub)" .opstruss/state/default/_meta'
+env XDG_CONFIG_HOME=$WORK/m2
+exec opstruss up --yes
+stdout '^default/api: unchanged$'
+exec opstruss doctor
+stdout '^ok     the data key of stack default opens with the age key in .*/m2/opstruss/age/keys.txt$'
+! stdout warn
+
+# a list without a key of the machine that writes it is refused, so a
+# typo cannot lock it out: the second key here is a third machine's
+agekey m3/opstruss/age/keys.txt
+exec sh pub.sh m3
+cp stdout m3.pub
+cp opstruss.yaml two.yaml
+exec sh -c 'sed "/^encryption_keys:/,\$d" two.yaml > opstruss.yaml && printf "encryption_keys:\n  - %s\n  - %s\n" "$(cat m1.pub)" "$(cat m3.pub)" >> opstruss.yaml'
+! exec opstruss up --yes
+stderr 'encryption_keys would leave the data key of stack default closed to this machine, so default/_meta is not written: no key of this machine opens it with age for age1[0-9a-z]+, age1[0-9a-z]+; add the age key of this machine, age1[0-9a-z]+ \(in .*/m2/opstruss/age/keys.txt\), to encryption_keys'
+! stdout 'default/api'
+exec sh -c 'grep -F "$(cat m2.pub)" .opstruss/state/default/_meta'
+
+# a key for sops: the first machine wraps a sops envelope beside the age
+# one, and sops runs only on a machine that age cannot serve
+env XDG_CONFIG_HOME=$WORK/m1
+env FAKESOPS_KEYS=arn:fake:ci
+exec sh -c 'sed "/^encryption_keys:/,\$d" two.yaml > opstruss.yaml && printf "encryption_keys:\n  - %s\n  - kms: arn:fake:ci\n" "$(cat m1.pub)" >> opstruss.yaml'
+exec opstruss plan
+stdout 'wrapped the data key of stack default again in default/_meta \(\+kms arn:fake:ci, -age1[0-9a-z]+\), with age for age1[0-9a-z]+, and with sops for kms arn:fake:ci$'
+grep -count=1 '^encrypt kms=arn:fake:ci$' sops.log
+exec opstruss up --yes
+! grep decrypt sops.log
+env XDG_CONFIG_HOME=$WORK/ci
+exec opstruss up --yes
+stdout '^default/api: unchanged$'
+grep -count=1 '^decrypt kms=arn:fake:ci$' sops.log
+exec opstruss doctor
+stdout '^ok     the data key of stack default opens with sops$'
+stdout '^ok     sops 3\.13\.3 at .*/bin/sops$'
+env FAKESOPS_KEYS=
+! exec opstruss up --yes
+stderr 'the data key of stack default does not open on this machine: default/_meta has it with age for age1[0-9a-z]+, and with sops for kms arn:fake:ci \(sops decrypt default/_meta: fakesops: Failed to get the data key required to decrypt the SOPS file.\)'
+
+# without encryption_keys again, _meta stays as it is
+env XDG_CONFIG_HOME=$WORK/m1
+exec sh -c 'sed "/^encryption_keys:/,\$d" two.yaml > opstruss.yaml'
+exec opstruss plan
+! stdout wrapped
+exec opstruss state pull _meta
+stdout '"sops": \{'
+
+# a _meta that an earlier build wrote, with the key wrapped by sops, is
+# refused
+! exec opstruss -C old up --yes
+stderr 'stack default: _meta keeps the data key as earlier builds of OpsTruss did, wrapped by sops in key, and this one keeps it in key.age and key.sops; wrap it again as the upgrade notes of the changelog say'
+
+-- opstruss.yaml --
+name: app
+secrets:
+  token: {env: TOKEN}
+units:
+  api:
+    run: echo "deploying with $T"
+    env: {T: '${{ secrets.token }}'}
+    approval: auto
+-- pub.sh --
+sed -n 's/^# public key: //p' "$1/opstruss/age/keys.txt"
+-- bin/sops --
+#!/bin/sh
+exec fakesops "$@"
+-- old/opstruss.yaml --
+name: old
+units:
+  plain:
+    run: echo plain
+-- old/.opstruss/state/default/_meta --
+{"version": 1, "project": "old", "key": "ENC[AES256_GCM,data:x,iv:y,tag:z,type:str]", "sops": {"age": [], "version": "3.13.3"}}

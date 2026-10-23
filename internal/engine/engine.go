@@ -160,6 +160,7 @@ type engine struct {
 	keyOnce sync.Once
 	key     []byte // the data key of the stack, once a value needed it
 	keyErr  error
+	writes  bool              // the run writes state, so it wraps the data key again for encryption_keys
 	newIDs  map[string]string // the ids of records that up makes, by address
 }
 

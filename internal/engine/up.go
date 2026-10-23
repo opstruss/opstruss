@@ -42,7 +42,9 @@ func runCommand(ctx context.Context, opts Options, op string) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, _, err := e.unitPass(ctx, op, pass{units: opts.Units, yes: opts.Yes, force: opts.Force, noDeps: opts.NoDeps, source: "--yes"}); err != nil {
+	if err := e.syncKey(); err != nil {
+		e.fail("", err)
+	} else if _, _, err := e.unitPass(ctx, op, pass{units: opts.Units, yes: opts.Yes, force: opts.Force, noDeps: opts.NoDeps, source: "--yes"}); err != nil {
 		e.fail("", err)
 	}
 	outcome := map[int]string{0: success, 1: failure, 2: skipped}[e.exit]

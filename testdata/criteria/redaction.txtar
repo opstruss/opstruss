@@ -7,7 +7,7 @@
 
 [!failpoints] skip 'needs a build with -tags failpoints'
 env HOME=$WORK/home
-env SOPS_AGE_KEY_FILE=$WORK/age/keys.txt
+env OPSTRUSS_AGE_KEY_FILE=$WORK/age/keys.txt
 env 'CANARY=CANARYa1b2c3<"&>CANARYd4e5f6'
 exec opstruss init
 

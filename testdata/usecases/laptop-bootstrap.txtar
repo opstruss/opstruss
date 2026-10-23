@@ -5,18 +5,17 @@
 
 env HOME=$WORK/home
 env USER=rina
-env SOPS_AGE_KEY_FILE=$WORK/age/keys.txt
 env PATH=$WORK/fakes:$PATH
 exec chmod 755 fakes/brew fakes/sudo fakes/apt-get fakes/stow.later fakes/defaults fakes/killall fakes/mise fakes/gh
 exec chmod 755 dotfiles/scripts/apt.sh dotfiles/scripts/macos-defaults.sh dotfiles/scripts/git-config.sh dotfiles/scripts/ssh-key.sh dotfiles/scripts/github-key.sh
 mkdir $HOME
 cd dotfiles
-exec opstruss init
-stdout 'wrote .sops.yaml'
 
 # a new machine: links needs stow, which brew or apt installs in the same
 # run, so plan only warns and links checks again at its turn; needs to the
-# unit of the other OS holds, and macos still asks
+# unit of the other OS holds, and macos still asks. The token in the down
+# of github-key makes the data key of the stack at its turn, for the age
+# key of this machine, which OpsTruss makes too.
 exec opstruss plan --stack work
 stderr '^work/links: requires: stow is not in PATH; planned at its turn, after work/(brew|apt)$'
 [darwin] stdout '^work/brew: will run: new$'
@@ -27,6 +26,8 @@ stderr '^work/links: requires: stow is not in PATH; planned at its turn, after w
 [darwin] ! exec opstruss up --stack work
 [darwin] stdout '^work/macos: will run: new; needs approval, stopped at plan$'
 [!darwin] exec opstruss up --stack work
+stdout 'made the age key age1[0-9a-z]+ of this machine in .*/home/.*/opstruss/age/keys.txt; back it up'
+stdout 'made the data key of stack work in work/_meta, with age for age1'
 stdout '^work/links: up: done$'
 stdout '^work/ssh-key: up: done$'
 stdout '^work/github-key: up: done$'

@@ -154,7 +154,10 @@ func (e *engine) task(ctx context.Context, name string, inputs map[string]any) *
 	e.rootTask = name
 	c := call{yes: e.opts.Yes, source: "--yes"}
 	var res *taskResult
-	if t := e.p.Tasks[name]; t != nil {
+	if err := e.syncKey(); err != nil {
+		e.emit(Event{Type: "task", Level: "error", Task: name, Message: err.Error()})
+		res = failed(err)
+	} else if t := e.p.Tasks[name]; t != nil {
 		res = e.callTask(ctx, name, t, e.p.DirOf("tasks."+name), inputs, c)
 	} else {
 		var err error

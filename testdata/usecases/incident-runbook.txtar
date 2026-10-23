@@ -11,7 +11,8 @@ env SOPS_AGE_KEY_FILE=$WORK/age/keys.txt
 env PATH=$WORK/fakes:$PATH
 exec chmod 755 fakes/df fakes/free fakes/uptime fakes/docker
 exec opstruss init
-exec sh -c 'printf "  - path_regex: secrets.sops.yaml\n    age: %s\n" "$(sed -n "s/^# public key: //p" age/keys.txt)" >> .sops.yaml'
+agekey age/keys.txt AGE_RECIPIENT
+exec sh -c 'printf "creation_rules:\n  - path_regex: secrets.sops.yaml\n    age: %s\n" "$AGE_RECIPIENT" > .sops.yaml'
 exec sops encrypt --filename-override secrets.sops.yaml --output secrets.sops.yaml plain.yaml
 exec git init -q
 exec git config user.email ops@example.com

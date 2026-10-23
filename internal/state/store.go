@@ -69,6 +69,9 @@ func Open(b Backend, stack, project string) (*Store, error) {
 		return nil, err
 	}
 	m, err := DecodeMeta(data)
+	if errors.Is(err, errEarlierMeta) {
+		return nil, fmt.Errorf("stack %s: %w", stack, err)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -193,9 +196,9 @@ func (s *Store) LockMeta(h Holder) (string, error) { return s.Backend.Lock(metaL
 // UnlockMeta releases the lock of _meta.
 func (s *Store) UnlockMeta(token string) error { return s.Backend.Unlock(metaLockKey(s.Stack), token) }
 
-// ReplaceMeta writes _meta, as sops wrapped it, when it still has etag, or
-// makes it when etag is empty and there is none; the caller holds its
-// lock. It keeps the version and the project it guards.
+// ReplaceMeta writes _meta, with the data key in its envelopes, when it
+// still has etag, or makes it when etag is empty and there is none; the
+// caller holds its lock. It keeps the version and the project it guards.
 func (s *Store) ReplaceMeta(data []byte, etag string) (string, error) {
 	m, err := DecodeMeta(data)
 	if err != nil {

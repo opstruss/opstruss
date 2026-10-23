@@ -23,7 +23,7 @@ linters:
           - errcheck
         text: '`fmt\.Fprint'
       # The fake programs of the tests write what they report.
-      - path: ^fake(cloud|api)_test\.go$
+      - path: ^fake(cloud|api|sops)_test\.go$
         linters:
           - forbidigo
 

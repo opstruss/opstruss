@@ -11,6 +11,24 @@ minor release can change what a project, a component, or a plugin relies on.
 
 ## [Unreleased]
 
+### Upgrade notes
+
+- A `_meta` that an earlier build wrote keeps the data key of its stack
+  wrapped by sops in `key`, which this version refuses. To keep such a
+  stack of the `local` backend, wrap its data key again with age for the
+  age key of the machine, from the project's directory, with sops, age,
+  and jq:
+
+  ```sh
+  m=.opstruss/state/<stack>/_meta
+  r=$(age-keygen -y <the age key file>)
+  sops decrypt --input-type json --output-type json "$m" | jq -r .key |
+    base64 -d | age -a -r "$r" > key.age
+  jq --rawfile d key.age --arg r "$r" \
+    'del(.sops) | .key = {age: {to: [$r], data: $d}}' "$m" > "$m.new"
+  mv "$m.new" "$m"
+  ```
+
 ### Added
 
 - `opstruss up -d` runs up in the daemon of the stack, which it starts in
@@ -232,11 +250,9 @@ minor release can change what a project, a component, or a plugin relies on.
   sensitive content in a file with mode 0600. A value shorter than 4
   characters is not hidden, and the run warns about it.
 - The data key of a stack, made the first time a value needs it, plan
-  included, is kept in `<stack>/_meta`, wrapped by the `sops` program with
-  the keys of the rule in `.sops.yaml` that matches `<stack>/_meta`, and a
-  run opens it once. A new data key that this machine cannot open, as when
-  `.sops.yaml` came from another machine, is not kept: the run stops and
-  names the age key of this machine to add to the rule. Sensitive values
+  included, is kept in `<stack>/_meta`, wrapped with age inside OpsTruss
+  for the age key of this machine, or for `encryption_keys`, and a run
+  opens it once. Sensitive values
   of units, components, plugins, and `kv` are kept encrypted with it
   (AES-256-GCM, `enc:v1:`) and bound to their record or name: inputs,
   outputs, the env of `down`, and, for a unit with sensitive values, what
@@ -247,16 +263,45 @@ minor release can change what a project, a component, or a plugin relies on.
   and the digest tells nothing of it. A unit with a sensitive value fails
   before it runs when the stack has no way to its data key, and an output
   that a program marks sensitive there is not kept. `opstruss state pull`
-  shows the values encrypted; a new member of a team is added with
-  `sops updatekeys` on the pulled `_meta`, pushed back with `state push`.
+  shows the values encrypted.
+- The age key of this machine is the first X25519 identity in
+  `$OPSTRUSS_AGE_KEY`, in `$OPSTRUSS_AGE_KEY_FILE` or else
+  `opstruss/age/keys.txt` in the user's configuration directory, then, as
+  sops finds its keys, in `$SOPS_AGE_KEY`, in `$SOPS_AGE_KEY_FILE` or else
+  `sops/age/keys.txt`. The first stack that needs one makes it in the file
+  of OpsTruss, as age-keygen writes it, and the run says where. `pass:`
+  never passes `OPSTRUSS_*`, so no program gets it.
+- `encryption_keys:` lists what opens the data key of each stack, for when
+  a second machine, such as a teammate's or CI, opens the same state; a
+  stack replaces the list of the project as a whole, and a component
+  ignores it. A string is an age X25519 recipient, which OpsTruss opens
+  itself. A map is one key that the `sops` program wraps for, named as in
+  the creation rules of `.sops.yaml` (`kms`, `gcp_kms`, `azure_keyvault`,
+  `hc_vault_transit_uri`, or `pgp`) and passed to its flag as written,
+  with `--config /dev/null`, so `.sops.yaml` plays no part. `_meta` keeps
+  an `age` and a `sops` envelope, each with the keys it was wrapped for: a
+  run tries every age key of this machine, and runs sops only when age
+  cannot open it. When the list and an envelope differ, `plan`, `up`,
+  `down`, and runs of tasks wrap that envelope again at their start, under
+  the lock of `_meta`, and leave the data key as it is; a machine that
+  cannot open it yet only warns, and a list that would leave the data key
+  closed to the machine that writes it stops the run before any unit.
+  Without the list, `_meta` stays as it is. A data key that does not open
+  names the keys that wrap it and the age key of this machine to add.
+  `validate` checks the list without any key: not empty, no key twice, no
+  `${{ }}`, an age secret key refused without being printed, and ssh and
+  plugin recipients not supported yet.
 - `opstruss outputs` prints sensitive outputs as `***`, and as they are
   with `--show-sensitive`; `status` and `list` hide them too.
 - `opstruss doctor` checks that this machine has what a run of the stack
   needs, without running anything or resolving a secret: each program
   that `requires:` names for an instance of a unit or a task, with its
-  path; sops 3.10.0 or newer and the data key of the stack, which opens,
-  or which a rule in `.sops.yaml` can make, when the stack needs one; the
-  variables that a plugin asks for and no `pass:` lets through; and
+  path; when the stack needs a data key, the age key of this machine and
+  where it comes from, the key that opens the data key, or whether a run
+  here can make it, and how `encryption_keys` differs from what wraps it;
+  sops 3.10.0 or newer when a secret comes from a sops file or
+  `encryption_keys` has a key for sops; the variables that a plugin asks
+  for and no `pass:` lets through; and
   whether `.opstruss/` is on a network filesystem. Each finding is `ok`,
   `skip`, `warn`, or `error`, and only an `error`, which fails a run,
   makes it exit 1; `--json` prints one document.
@@ -276,19 +321,16 @@ minor release can change what a project, a component, or a plugin relies on.
   that each has one source, whose expressions read the stack, the
   project's inputs, locals that read no secret, and the facts known at
   plan, and that `if`, `for_each`, and the outputs of the project read no
-  local that reads a secret.
+  local that reads a secret; a key of a secret that is no source and not
+  the map of a call, such as `sopz:`, is named as a typo of the source
+  nearest to it.
 - A task input with `env:` takes its value from that variable when the
   call gives none, before the default.
 - `opstruss init` sets up the project in its directory, adding only what
   is missing: `opstruss.yaml` with `opstruss:` and a `name` made from the
-  directory's name (or `--name`), `.opstruss/` in `.gitignore`, and a rule
-  in `.sops.yaml` for the `_meta` of every stack. The rule goes after the
-  rules already there, which sops tries first, and names the operator's
-  age key, from `$SOPS_AGE_KEY` or the file sops reads
-  (`$SOPS_AGE_KEY_FILE`, or `sops/age/keys.txt` in the user's
-  configuration directory), where init makes one when there is none. With
+  directory's name (or `--name`), and `.opstruss/` in `.gitignore`. With
   `--stack`, it also makes that stack's `_meta`; `--json` prints what it
-  wrote.
+  wrote. It makes no key: the first command that needs one does.
 - `plan` exits 1 when a unit cannot be planned; a unit that another run
   holds still leaves it at 0.
 - `plan` fails a unit whose `requires:` names a program that is not in

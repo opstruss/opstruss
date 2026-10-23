@@ -6,23 +6,24 @@ package model
 // File is opstruss.yaml: a project, or a component when used through uses:.
 // Include files hold a subset of its keys.
 type File struct {
-	Name        string                    `json:"name,omitempty"`
-	Description string                    `json:"description,omitempty"`
-	Level       string                    `json:"opstruss,omitempty"`
-	Include     []string                  `json:"include,omitempty"`
-	Uses        map[string]*Uses          `json:"uses,omitempty"`
-	Inputs      map[string]*Input         `json:"inputs,omitempty"`
-	Locals      map[string]any            `json:"locals,omitempty"`
-	Outputs     map[string]*ProjectOutput `json:"outputs,omitempty"`
-	Stacks      map[string]*Stack         `json:"stacks,omitempty"`
-	Backend     *Backend                  `json:"backend,omitempty"`
-	Secrets     map[string]*Secret        `json:"secrets,omitempty"`
-	Runtime     *Runtime                  `json:"runtime,omitempty"`
-	MCP         *MCP                      `json:"mcp,omitempty"`
-	Units       map[string]*Unit          `json:"units,omitempty"`
-	Tasks       map[string]*Task          `json:"tasks,omitempty"`
-	Moved       []*Move                   `json:"moved,omitempty"`
-	Removed     []*Removed                `json:"removed,omitempty"`
+	Name           string                    `json:"name,omitempty"`
+	Description    string                    `json:"description,omitempty"`
+	Level          string                    `json:"opstruss,omitempty"`
+	Include        []string                  `json:"include,omitempty"`
+	Uses           map[string]*Uses          `json:"uses,omitempty"`
+	Inputs         map[string]*Input         `json:"inputs,omitempty"`
+	Locals         map[string]any            `json:"locals,omitempty"`
+	Outputs        map[string]*ProjectOutput `json:"outputs,omitempty"`
+	Stacks         map[string]*Stack         `json:"stacks,omitempty"`
+	Backend        *Backend                  `json:"backend,omitempty"`
+	Secrets        map[string]*Secret        `json:"secrets,omitempty"`
+	EncryptionKeys []*EncryptionKey          `json:"encryption_keys,omitempty"`
+	Runtime        *Runtime                  `json:"runtime,omitempty"`
+	MCP            *MCP                      `json:"mcp,omitempty"`
+	Units          map[string]*Unit          `json:"units,omitempty"`
+	Tasks          map[string]*Task          `json:"tasks,omitempty"`
+	Moved          []*Move                   `json:"moved,omitempty"`
+	Removed        []*Removed                `json:"removed,omitempty"`
 }
 
 // Uses declares a plugin, component, or built-in task under a name.
@@ -72,14 +73,15 @@ type ProjectOutput struct {
 
 // Stack is one instance of a project, with what it overrides.
 type Stack struct {
-	Description string             `json:"description,omitempty"`
-	With        map[string]any     `json:"with,omitempty"`
-	Secrets     map[string]*Secret `json:"secrets,omitempty"`
-	Runtime     *Runtime           `json:"runtime,omitempty"`
-	MCP         *MCP               `json:"mcp,omitempty"`
-	Backend     *Backend           `json:"backend,omitempty"`
-	Approval    string             `json:"approval,omitempty"`
-	Include     []string           `json:"include,omitempty"`
+	Description    string             `json:"description,omitempty"`
+	With           map[string]any     `json:"with,omitempty"`
+	Secrets        map[string]*Secret `json:"secrets,omitempty"`
+	EncryptionKeys []*EncryptionKey   `json:"encryption_keys,omitempty"`
+	Runtime        *Runtime           `json:"runtime,omitempty"`
+	MCP            *MCP               `json:"mcp,omitempty"`
+	Backend        *Backend           `json:"backend,omitempty"`
+	Approval       string             `json:"approval,omitempty"`
+	Include        []string           `json:"include,omitempty"`
 }
 
 // Backend is local, or a plugin backend.
@@ -88,6 +90,15 @@ type Backend struct {
 	Uses  string         `json:"uses,omitempty"`
 	With  map[string]any `json:"with,omitempty"`
 	Pass  []string       `json:"pass,omitempty"`
+}
+
+// EncryptionKey is an entry of encryption_keys, which opens the data key
+// of the stack: an age recipient, which OpsTruss opens itself, or one key
+// that the sops program wraps it for, under its name in the creation rules
+// of .sops.yaml, such as {kms: <arn>}.
+type EncryptionKey struct {
+	Age  string
+	Sops map[string]string
 }
 
 // Secret is one secret source: sops, env, run, or a call of a plugin task.

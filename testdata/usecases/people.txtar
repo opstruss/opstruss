@@ -6,7 +6,6 @@
 # APIs are fakeapi, op is a fake, and the waits are short.
 
 env HOME=$WORK/home
-env SOPS_AGE_KEY_FILE=$WORK/age/keys.txt
 env PATH=$WORK/fakes:$PATH
 exec chmod 755 fakes/op scripts/google-token.sh
 ! exec fakeapi -listen 127.0.0.1:18801 api &api&
@@ -62,6 +61,9 @@ cp api/routes.review api/routes
 exec opstruss access-review
 grep '^POST /it {"text":"Akses tertinggal: google ; github andi@acme.com; slack "}$' api/requests
 ! exec grep -r -e ya29.google-test-token -e gh-test-token -e slack-test-token .opstruss
+# no sensitive value reaches the state, so the stack has no data key
+exec opstruss state pull _meta
+! stdout '"key"'
 
 -- api/routes.onboard --
 GET /admin/directory/v1/users/* 404 {"error": {"code": 404}}

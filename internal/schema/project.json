@@ -19,6 +19,7 @@
     },
     "backend": { "$ref": "#/$defs/backend" },
     "secrets": { "$ref": "#/$defs/secrets" },
+    "encryption_keys": { "$ref": "#/$defs/encryptionKeys" },
     "runtime": { "$ref": "#/$defs/runtime" },
     "mcp": { "$ref": "#/$defs/mcp" },
     "units": { "$ref": "#/$defs/units" },
@@ -252,6 +253,7 @@
         "description": { "type": "string" },
         "with": { "type": "object" },
         "secrets": { "$ref": "#/$defs/secrets" },
+        "encryption_keys": { "$ref": "#/$defs/encryptionKeys" },
         "runtime": { "$ref": "#/$defs/runtime" },
         "mcp": { "$ref": "#/$defs/mcp" },
         "backend": { "$ref": "#/$defs/backend" },
@@ -301,6 +303,29 @@
       },
       "patternProperties": { "^x-": true },
       "additionalProperties": { "$ref": "#/$defs/call" }
+    },
+    "encryptionKeys": {
+      "description": "What opens the data key of each stack: age recipients (age1...), opened by OpsTruss, and keys that the sops program wraps it for.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "oneOf": [
+          { "type": "string", "minLength": 1 },
+          {
+            "type": "object",
+            "properties": {
+              "kms": { "type": "string", "minLength": 1 },
+              "gcp_kms": { "type": "string", "minLength": 1 },
+              "azure_keyvault": { "type": "string", "minLength": 1 },
+              "hc_vault_transit_uri": { "type": "string", "minLength": 1 },
+              "pgp": { "type": "string", "minLength": 1 }
+            },
+            "minProperties": 1,
+            "maxProperties": 1,
+            "additionalProperties": false
+          }
+        ]
+      }
     },
     "runtime": {
       "type": "object",
