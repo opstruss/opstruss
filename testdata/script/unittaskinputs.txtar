@@ -1,0 +1,54 @@
+# A task that several units have is one command with the inputs of all of
+# them; each unit reads a flag by the type of its own input, and a call
+# that one of the units it reaches refuses runs none of them.
+
+env HOME=$WORK/home
+
+# a flag of the second unit's task
+exec opstruss flush queue --topic jobs
+stdout '^default/queue \| flush queue topic=jobs wait= dry=$'
+
+# an input that one unit reached does not have
+! exec opstruss flush --topic jobs
+stderr 'task flush of cache has no input topic; name the units whose task has it, as in opstruss flush <unit> --topic'
+! stdout .
+
+# an input that differs between the units reached
+! exec opstruss flush --wait 3
+stderr 'input wait of task flush differs in cache and queue; name one of them, as in opstruss flush queue --wait'
+! stdout .
+
+# one unit reads the flag by its own type
+exec opstruss flush cache --wait 3
+stdout '^default/cache \| flush cache wait=3 dry=$'
+exec opstruss flush queue --wait soon
+stdout '^default/queue \| flush queue topic= wait=soon dry=$'
+! exec opstruss flush cache --wait soon
+stderr '--wait: "soon" is not an integer'
+! stdout .
+
+# an input alike in both reaches both
+exec opstruss flush --dry-run
+stdout '^default/cache \| flush cache wait= dry=true$'
+stdout '^default/queue \| flush queue topic= wait= dry=true$'
+
+-- opstruss.yaml --
+name: shop
+units:
+  cache:
+    run: echo cache
+    tasks:
+      flush:
+        inputs:
+          wait: {type: integer}
+          dry_run: {type: boolean}
+        run: [sh, -c, 'echo "flush cache wait=$INPUT_WAIT dry=$INPUT_DRY_RUN"']
+  queue:
+    run: echo queue
+    tasks:
+      flush:
+        inputs:
+          topic: {type: string}
+          wait: {type: string}
+          dry_run: {type: boolean}
+        run: [sh, -c, 'echo "flush queue topic=$INPUT_TOPIC wait=$INPUT_WAIT dry=$INPUT_DRY_RUN"']

@@ -12,9 +12,22 @@ stdout '^greet \| hello world x1 null false$'
 ! exec opstruss greet --times three
 stderr '--times: "three" is not an integer'
 
-# what comes after -- fills the input with args: true
+# a boolean takes the value written, and its two flags do not go together
+exec opstruss greet --loud=false
+stdout '^greet \| hello world x1 null false$'
+exec opstruss greet --no-loud=false
+stdout '^greet \| hello world x1 null true$'
+! exec opstruss greet --loud --no-loud
+stderr 'loud no-loud'
+
+# what comes after -- fills the input with args: true, and so does its
+# flag, but not both
 exec opstruss test -- -run TestFoo
 stdout '^test \| go test -run TestFoo$'
+exec opstruss test --args -v --args ./...
+stdout '^test \| go test -v ./...$'
+! exec opstruss test --args -v -- -run TestFoo
+stderr 'input args comes from --args or from what follows --, not both'
 
 # steps: failed_when, changed_when, retry until, block with rescue and
 # always, which read the outcome of their block, for_each in order, a

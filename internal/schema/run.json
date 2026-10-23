@@ -13,6 +13,7 @@
     "task": { "type": "string" },
     "args": { "type": "array", "items": { "type": "string" } },
     "trigger": { "type": "string", "description": "What made the run, as event.trigger says: cli, schedule, every, and later others." },
+    "simulated": { "type": "string", "description": "For a run of the command line with --event: the trigger whose event its caller wrote, which event.trigger says inside the run." },
     "user": { "type": "string" },
     "host": { "type": "string" },
     "hostname": { "type": "string" },

@@ -1,7 +1,6 @@
 package daemon
 
 import (
-	"bufio"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -48,10 +47,6 @@ var (
 // what runc create made. A daemon that dies first closes the pipe, and the
 // program never runs.
 const gate = `read go <&4 || exit 1; exec 4<&-; exec "$@"`
-
-// maxLine is the longest line of a service's output that one log event
-// holds; a longer one is split.
-const maxLine = 64 << 10
 
 // Supervisor keeps the services of one stack: it starts each program
 // through the gate, records it before it runs, restarts it by its
@@ -664,46 +659,22 @@ func (s *service) copy(c *child, r *os.File, stream string) {
 
 // copyLines turns what r gives into log events, a line each, with the
 // sensitive values of the run that started the service hidden, also in a
-// private key that spans lines; a line longer than maxLine goes in pieces,
-// cut where no value that the run hides is cut in two. A watch source,
-// whose lines are events and no log, has none hidden.
+// private key that spans lines; a line longer than secret.MaxLine goes in
+// pieces, cut where no value that the run hides is cut in two. A watch
+// source, whose lines are events and no log, has none hidden.
 func (s *service) copyLines(r io.Reader, task, stream string) {
 	var mask *secret.Stream
 	if s.spec.Redact != nil {
 		mask = s.spec.Redact.Stream()
 	}
-	br := bufio.NewReaderSize(r, maxLine)
-	carry := ""
-	for {
-		chunk, err := br.ReadSlice('\n')
-		text := carry + string(chunk)
-		carry = ""
-		if errors.Is(err, bufio.ErrBufferFull) {
-			if mask != nil {
-				text, carry = mask.Cut(text)
-			}
-			if text != "" {
-				s.line(task, stream, text)
-			}
-			continue
-		}
-		if text != "" {
-			text = strings.TrimSuffix(text, "\n")
-			if mask != nil {
-				text = mask.Line(text)
-			}
-			s.line(task, stream, text)
-		}
-		if err != nil {
-			return
-		}
-	}
+	lines := secret.NewLines(mask, func(text string) { s.line(task, stream, text) })
+	_, _ = io.Copy(lines, r)
+	lines.Flush()
 }
 
 // line writes one line of output, hidden already, to the log of the
 // service; task names stop.run and ready.run as stop and ready.
 func (s *service) line(task, stream, text string) {
-	text = strings.ToValidUTF8(text, "\uFFFD")
 	if s.spec.Lines != nil {
 		if task == "" {
 			s.spec.Lines(stream, text)

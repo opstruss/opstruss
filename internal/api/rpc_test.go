@@ -172,6 +172,10 @@ func TestSocketRefuses(t *testing.T) {
 	if err := call("up", map[string]any{"dir": "/p", "unknown": 1}); err == nil || !strings.Contains(err.Error(), "unknown") {
 		t.Fatalf("params: %v", err)
 	}
+	// A message larger than MaxMessage ends the connection without a call.
+	if err := call("up", Request{Dir: "/p", Environ: []string{strings.Repeat("x", MaxMessage)}}); err == nil || errors.As(err, new(model.Problems)) {
+		t.Fatalf("a message larger than MaxMessage was read: %v", err)
+	}
 	mu.Lock()
 	stopping = true
 	mu.Unlock()

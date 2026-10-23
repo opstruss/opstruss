@@ -21,6 +21,7 @@ import (
 
 	"github.com/opstruss/opstruss/internal/api"
 	"github.com/opstruss/opstruss/internal/engine"
+	"github.com/opstruss/opstruss/internal/model"
 	"github.com/opstruss/opstruss/internal/proc"
 	"github.com/opstruss/opstruss/internal/record"
 )
@@ -220,6 +221,9 @@ func (d *Daemon) Serve(ctx context.Context) error {
 	}()
 	srv := &api.Server{Version: d.opts.Version, Stopping: d.isStopping,
 		Call: func(ctx context.Context, method string, r api.Request, h api.Handlers) (*api.Result, error) {
+			if err := d.serves(r); err != nil {
+				return nil, err
+			}
 			d.active.Add(1)
 			defer d.active.Add(-1)
 			x := api.New(h)
@@ -251,6 +255,29 @@ func (d *Daemon) Serve(ctx context.Context) error {
 	d.sup.stopAll()
 	d.say("info", "daemon stopped")
 	d.close()
+	return nil
+}
+
+// serves checks, before any of it runs, that r is about the project and
+// stack of d: a daemon runs one stack of one project, also when r names
+// its directory by another path, such as a symbolic link.
+func (d *Daemon) serves(r api.Request) error {
+	same := false
+	if a, err := os.Stat(r.Dir); err == nil {
+		if b, err := os.Stat(d.opts.Dir); err == nil {
+			same = os.SameFile(a, b)
+		}
+	}
+	if !same {
+		return fmt.Errorf("this daemon runs the project in %s, not %s", d.opts.Dir, r.Dir)
+	}
+	stack, err := model.StackOf(d.opts.Dir, r.Stack)
+	if err != nil {
+		return err
+	}
+	if stack != d.opts.Stack {
+		return fmt.Errorf("this daemon runs stack %s, not %s", d.opts.Stack, stack)
+	}
 	return nil
 }
 

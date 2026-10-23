@@ -44,6 +44,13 @@ cp badkeys.yaml opstruss.yaml
 stderr '^opstruss.yaml:5:5: units.app.dir: there is no unit nope \(in \$\{\{ units.nope.outputs.dir \}\}\)$'
 stderr '^opstruss.yaml:8:7: units.app.retry.until: retry.until of a unit cannot read tasks '
 
+# no input makes a flag of OpsTruss, or a flag that another input makes
+cp flags.yaml opstruss.yaml
+! exec opstruss validate
+stderr '^opstruss.yaml:6:7: tasks.build.inputs.event: input event makes the flag --event, which is a flag of OpsTruss; rename the input$'
+stderr '^opstruss.yaml:7:7: tasks.build.inputs.no_cache: input no_cache makes the flag --no-cache, which is the flag of input cache; rename the input$'
+stderr '^opstruss.yaml:8:7: tasks.build.inputs.yes: input yes makes the flag --yes, which is a flag of OpsTruss; rename the input$'
+
 -- opstruss.yaml --
 name: app
 include: [tasks/*.yaml]
@@ -97,6 +104,16 @@ units:
     retry:
       attempts: 2
       until: ${{ tasks.x.outcome == 'success' }}
+-- flags.yaml --
+name: app
+tasks:
+  build:
+    inputs:
+      cache: {type: boolean}
+      event: {type: string}
+      no_cache: {type: boolean}
+      yes: {type: string}
+    run: [make]
 -- tasks/release.yaml --
 tasks:
   release:

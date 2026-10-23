@@ -17,14 +17,8 @@ import (
 	"github.com/opstruss/opstruss/internal/record"
 )
 
-// A run that a watch makes carries at most MaxItems lines or paths, and
-// MaxBytes of them; the rest are only counted.
-const (
-	MaxItems = 10000
-	MaxBytes = 1 << 20
-	// MaxDepth is how long a chain of after triggers grows.
-	MaxDepth = 3
-)
+// MaxDepth is how long a chain of after triggers grows.
+const MaxDepth = 3
 
 // watchSpec is what an install prepared for a watch before it changes
 // anything: the filter of its if:, and its source, the lines of a service,
@@ -46,16 +40,13 @@ func (t *triggers) prepareWatch(id string, b *bound) (*watchSpec, error) {
 	if err != nil {
 		return nil, err
 	}
-	spec := &watchSpec{filter: f}
+	spec := &watchSpec{filter: f, kind: engine.WatchKind(opts.Model, tr)}
 	stack := opts.Model.StackName
-	switch u := opts.Model.Units[tr.Unit]; {
-	case tr.Unit != "" && u != nil && u.Service != nil:
-		spec.kind, spec.addr = "lines", stack+"/"+tr.Unit
-	case len(tr.Paths) > 0:
-		spec.kind = "paths"
-	default:
+	switch spec.kind {
+	case "lines":
+		spec.addr = stack + "/" + tr.Unit
+	case "program":
 		name := id[strings.LastIndex(id, "/")+1:]
-		spec.kind = "program"
 		spec.addr = stack + "/_watch/" + tr.Task + "/" + name
 		spec.dir = filepath.Join(t.d.root, "daemon", stack, "_watch", tr.Task, name)
 		if spec.prog, err = engine.WatchSource(opts, tr, spec.dir); err != nil {
@@ -210,17 +201,17 @@ func (t *triggers) watch(ctx context.Context, s *source, spec *watchSpec, ready 
 // first; one that does not keeps it, and its time.
 func (w *watcher) loop(ctx context.Context, f *engine.Filter) {
 	cur := w.s.cur.Load()
-	var batch []map[string]any
+	var batch *engine.Batch
 	var timer <-chan time.Time
 	flush := func() {
-		if len(batch) > 0 {
-			w.t.fireEvent(cur, gathered(cur.tr, batch), 0)
+		if batch != nil && !batch.Empty() {
+			w.t.fireEvent(cur, batch.Event(), 0)
 		}
 		batch, timer = nil, nil
 	}
 	take := func(ev map[string]any) {
 		tr := cur.tr
-		ok, err := f.Match(ev)
+		ok, err := f.Match(ev, time.Now().UTC())
 		if err != nil {
 			w.t.d.event("trigger", "warn", tr.Task, "%s: if: %v", tr, err)
 			return
@@ -233,7 +224,10 @@ func (w *watcher) loop(ctx context.Context, f *engine.Filter) {
 			w.t.fireEvent(cur, ev, 0)
 			return
 		}
-		batch = append(batch, ev)
+		if batch == nil {
+			batch = engine.NewBatch(tr)
+		}
+		batch.Add(ev)
 		if timer == nil || tr.Debounce > 0 {
 			timer = time.After(gather)
 		}
@@ -264,42 +258,6 @@ func (w *watcher) loop(ctx context.Context, f *engine.Filter) {
 			}
 		}
 	}
-}
-
-// gathered is the event of a run that a batch or debounce makes of evs. A
-// file that changed more than once in them is there once, with what
-// happened to it first.
-func gathered(tr *engine.Trigger, evs []map[string]any) map[string]any {
-	key, items := "lines", []any{}
-	if len(tr.Paths) > 0 {
-		key = "paths"
-		seen := map[any]bool{}
-		evs = slices.DeleteFunc(slices.Clone(evs), func(ev map[string]any) bool {
-			p := ev["paths"].([]any)[0].(map[string]any)["path"]
-			dup := seen[p]
-			seen[p] = true
-			return dup
-		})
-	}
-	out := map[string]any{"count": int64(len(evs))}
-	size := 0
-	for _, ev := range evs {
-		item := ev["line"]
-		if key == "paths" {
-			item = ev["paths"].([]any)[0]
-		}
-		if len(items) >= MaxItems || size > MaxBytes {
-			break
-		}
-		data, _ := json.Marshal(item)
-		size += len(data)
-		items = append(items, item)
-	}
-	out[key] = items
-	if tr.Unit != "" {
-		out["unit"], out["stream"] = tr.Unit, tr.Stream
-	}
-	return out
 }
 
 // source runs the program of the watch w as the daemon runs a service: in

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -41,6 +42,10 @@ const (
 	codeProtocol = -32001 // the caller speaks another protocol
 	codeStopping = -32002 // the daemon stops and takes no new call
 )
+
+// MaxMessage is the largest message that either end of a connection
+// reads; a larger one ends the connection.
+const MaxMessage = 16 << 20
 
 // waitTimeout bounds the wait for the opening messages of a connection, so
 // a caller that never speaks does not hold a stopping daemon, and for a
@@ -108,7 +113,7 @@ var errGone = errors.New("the caller is gone")
 
 type conn struct {
 	nc     net.Conn
-	dec    *json.Decoder
+	r      *bufio.Reader
 	mu     sync.Mutex // writes
 	enc    *json.Encoder
 	broken bool
@@ -117,7 +122,7 @@ type conn struct {
 func newConn(nc net.Conn) *conn {
 	enc := json.NewEncoder(nc)
 	enc.SetEscapeHTML(false)
-	return &conn{nc: nc, dec: json.NewDecoder(nc), enc: enc}
+	return &conn{nc: nc, r: bufio.NewReaderSize(nc, 64<<10), enc: enc}
 }
 
 // send writes m; after one write fails, the others are dropped.
@@ -134,14 +139,29 @@ func (c *conn) send(m message) error {
 	return err
 }
 
-// read reads one message, within timeout unless it is 0.
+// read reads one message, a line of at most MaxMessage bytes, within
+// timeout unless it is 0.
 func (c *conn) read(timeout time.Duration) (message, error) {
 	if timeout > 0 {
 		_ = c.nc.SetReadDeadline(time.Now().Add(timeout))
 		defer func() { _ = c.nc.SetReadDeadline(time.Time{}) }()
 	}
 	var m message
-	return m, c.dec.Decode(&m)
+	var line []byte
+	for {
+		chunk, err := c.r.ReadSlice('\n')
+		if len(line)+len(chunk) > MaxMessage {
+			return m, fmt.Errorf("a message is larger than %d bytes", MaxMessage)
+		}
+		line = append(line, chunk...)
+		if errors.Is(err, bufio.ErrBufferFull) {
+			continue
+		}
+		if err != nil {
+			return m, err
+		}
+		return m, json.Unmarshal(line, &m)
+	}
 }
 
 func raw(v any) json.RawMessage {

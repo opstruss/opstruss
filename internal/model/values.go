@@ -197,6 +197,10 @@ func ReservedEnv(name string) bool {
 	return strings.HasPrefix(name, "OPSTRUSS_") || strings.HasPrefix(name, "INPUT_")
 }
 
+// FlagName is the flag of an input on the command of its task: --<name>,
+// with _ as -; a boolean also has --no-<name>.
+func FlagName(name string) string { return strings.ReplaceAll(name, "_", "-") }
+
 // InputEnv names the variable that holds an input for a program:
 // upper case, with - as _, so a shell can read it.
 func InputEnv(name string) string {

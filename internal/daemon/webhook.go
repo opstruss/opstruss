@@ -15,6 +15,7 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -26,6 +27,15 @@ import (
 
 // MaxBody is the largest body of a webhook request.
 const MaxBody = 1 << 20
+
+// readTimeout bounds the reading of the header of a request, and then of
+// its body, so a sender that stalls holds no connection, nor the memory of
+// its body, for long; the run of respond: wait has no such bound. A kept
+// alive connection that waits for its next request closes after
+// idleTimeout.
+var readTimeout = 10 * time.Second
+
+const idleTimeout = 60 * time.Second
 
 // skew is how far the timestamp of a signed request may be from now, so a
 // request seen once cannot be played again later.
@@ -59,7 +69,7 @@ func (w *webhooks) set(addr string, routes map[string]*bound) error {
 	if err != nil {
 		return fmt.Errorf("webhooks: %w", err)
 	}
-	w.addr, w.srv = addr, &http.Server{Handler: w, ReadHeaderTimeout: 10 * time.Second}
+	w.addr, w.srv = addr, &http.Server{Handler: w, ReadHeaderTimeout: readTimeout, IdleTimeout: idleTimeout}
 	go func(srv *http.Server) { _ = srv.Serve(ln) }(w.srv)
 	actual := ln.Addr().String()
 	_ = w.t.d.reg.update(func(f *File) { f.Listen = actual })
@@ -110,11 +120,24 @@ func (w *webhooks) handle(rw http.ResponseWriter, r *http.Request, b *bound) {
 		w.t.d.event("trigger", "warn", tr.Task, "%s: refused a request from %s with %d: %s", tr, r.RemoteAddr, code, fmt.Sprintf(format, args...))
 		http.Error(rw, http.StatusText(code), code)
 	}
+	rc := http.NewResponseController(rw)
+	_ = rc.SetReadDeadline(time.Now().Add(readTimeout))
 	body, err := io.ReadAll(http.MaxBytesReader(rw, r.Body, MaxBody))
-	if err != nil {
+	// A refusal keeps the deadline, which also bounds the server reading
+	// what is left of the body before it answers.
+	var tooLarge *http.MaxBytesError
+	switch {
+	case errors.As(err, &tooLarge):
 		refuse(http.StatusRequestEntityTooLarge, "the body is larger than %d bytes", MaxBody)
 		return
+	case errors.Is(err, os.ErrDeadlineExceeded):
+		refuse(http.StatusRequestTimeout, "the body did not come within %s", readTimeout)
+		return
+	case err != nil:
+		refuse(http.StatusBadRequest, "the body could not be read: %v", err)
+		return
 	}
+	_ = rc.SetReadDeadline(time.Time{})
 	if err := verify(tr.Signature, tr.Secret, r.Header, body, time.Now()); err != nil {
 		refuse(http.StatusUnauthorized, "%v", err)
 		return

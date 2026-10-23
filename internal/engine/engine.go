@@ -29,10 +29,15 @@ import (
 
 // Options says what a run does.
 type Options struct {
-	Dir       string            // the project directory
-	Cwd       string            // where OpsTruss started, before -C: opstruss.cwd
-	Stack     string            // empty chooses the only stack
-	Inputs    map[string]string // --input
+	Dir    string            // the project directory
+	Cwd    string            // where OpsTruss started, before -C: opstruss.cwd
+	Stack  string            // empty chooses the only stack
+	Inputs map[string]string // --input
+	// Flags are inputs of a task as a command line writes them: a text,
+	// the texts of a flag given more than once, or a boolean. Each task
+	// that the call reaches reads them by the types of its own inputs,
+	// over the inputs of the call.
+	Flags     map[string]any
 	LookupEnv func(string) (string, bool)
 	Environ   []string // the operator's environment
 	Units     []string // names or patterns; none means every unit
@@ -259,6 +264,10 @@ func (e *engine) start(command, task string) error {
 	p, opts := e.p, e.opts
 	rec := &record.Record{Project: p.Name, Stack: p.StackName, Command: command, Task: task, Args: opts.Units,
 		Trigger: e.event["trigger"].(string), Host: e.host, PID: os.Getpid(), Started: e.started.Format(time.RFC3339Nano)}
+	if ev := opts.Event; ev != nil && ev.Simulated {
+		// The event is the caller's; the run comes from the command line.
+		rec.Trigger, rec.Simulated = "cli", ev.Trigger
+	}
 	if len(e.parents) > 0 {
 		rec.Parent = e.parents[len(e.parents)-1]
 	}
@@ -632,42 +641,30 @@ func (e *engine) evalLocals(kv func(string) (any, error)) (map[string]any, error
 	return locals, nil
 }
 
-// lineWriter turns the output of a program into log events, one per line.
+// lineWriter turns the output of a program into log events, one per line,
+// with what the run hides hidden; a line longer than secret.MaxLine goes in
+// pieces.
 type lineWriter struct {
 	e      *engine
 	addr   string
 	task   string
 	step   string
 	stream string
-	buf    []byte
-	mask   *secret.Stream
+	lines  *secret.Lines
 }
 
 func (w *lineWriter) Write(p []byte) (int, error) {
-	w.buf = append(w.buf, p...)
-	for {
-		i := strings.IndexByte(string(w.buf), '\n')
-		if i < 0 {
-			break
-		}
-		w.line(string(w.buf[:i]))
-		w.buf = w.buf[i+1:]
+	if w.lines == nil {
+		w.lines = secret.NewLines(w.e.redact.Stream(), func(text string) {
+			w.e.send(Event{Type: "log", Level: "info", Address: w.addr, Task: w.task, Step: w.step, Stream: w.stream, Message: text})
+		})
 	}
-	return len(p), nil
-}
-
-func (w *lineWriter) line(s string) {
-	if w.mask == nil {
-		w.mask = w.e.redact.Stream()
-	}
-	w.e.send(Event{Type: "log", Level: "info", Address: w.addr, Task: w.task, Step: w.step, Stream: w.stream,
-		Message: w.mask.Line(strings.ToValidUTF8(s, "\uFFFD"))})
+	return w.lines.Write(p)
 }
 
 func (w *lineWriter) flush() {
-	if len(w.buf) > 0 {
-		w.line(string(w.buf))
-		w.buf = nil
+	if w.lines != nil {
+		w.lines.Flush()
 	}
 }
 

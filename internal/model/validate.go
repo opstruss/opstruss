@@ -27,6 +27,10 @@ var BuiltinTasks = []string{"command", "http", "read", "write", "set", "assert",
 // StandardTasks are the lifecycle tasks of units.
 var StandardTasks = []string{"plan", "up", "down", "status", "logs"}
 
+// BuiltinFlags are the flags of OpsTruss on the command of a task, which no
+// input of the task may make.
+var BuiltinFlags = []string{"stack", "input", "json", "yes", "locked", "no-deps", "completion", "help", "event"}
+
 // Hooks are plugin tasks that only the engine calls.
 var Hooks = []string{"watch", "exec", "migrate"}
 
@@ -594,6 +598,7 @@ func (c *checker) task(path []string, t *Task, project bool) {
 	}
 	c.environment(path, t.Env, t.Pass)
 	c.stop(path, t.Stop)
+	c.flags(path, t.Inputs)
 	vars := map[string]string{}
 	for _, name := range slices.Sorted(maps.Keys(t.Inputs)) {
 		if c.plugin == nil && c.p.Inputs[name] != nil {
@@ -635,6 +640,29 @@ func (c *checker) task(path []string, t *Task, project bool) {
 		c.add(at(path, "on"), "on: is only in project tasks")
 	}
 	c.steps(at(path, "steps"), t.Steps, map[string]bool{})
+}
+
+// flags checks the flags that the inputs of a task make on its command,
+// as argparse refuses a conflicting option string: none is a flag of
+// OpsTruss, and no two inputs make the same one.
+func (c *checker) flags(path []string, inputs map[string]*Input) {
+	from := map[string]string{}
+	for _, f := range BuiltinFlags {
+		from[f] = "a flag of OpsTruss"
+	}
+	for _, name := range slices.Sorted(maps.Keys(inputs)) {
+		flags := []string{FlagName(name)}
+		if inputs[name].Type == "boolean" {
+			flags = append(flags, "no-"+flags[0])
+		}
+		for _, f := range flags {
+			if other, dup := from[f]; dup {
+				c.add(at(path, "inputs", name), "input %s makes the flag --%s, which is %s; rename the input", name, f, other)
+				continue
+			}
+			from[f] = "the flag of input " + name
+		}
+	}
 }
 
 func (c *checker) hints(path []string, calls Calls) {

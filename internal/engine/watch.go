@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -13,11 +14,98 @@ import (
 	"github.com/opstruss/opstruss/internal/plugin"
 )
 
+// A run that a watch with batch or debounce makes carries at most MaxItems
+// lines or paths, and MaxBytes of them as JSON; the events that do not fit
+// are only counted.
+const (
+	MaxItems = 10000
+	MaxBytes = 1 << 20
+)
+
+// Batch gathers the events of a watch with batch or debounce into the
+// event of one run as they come, in bounded memory: event.lines or
+// event.paths keep the first that fit, a file that changes again stays
+// with what happened to it first, and event.truncated counts the events
+// that did not fit, as truncatedAlerts does in Alertmanager. A file that
+// changes again after the list is full is counted again, since only the
+// files in the list are remembered.
+type Batch struct {
+	tr        *Trigger
+	items     []any
+	seen      map[string]bool // the paths in items
+	size      int
+	truncated int64
+	full      bool
+}
+
+// NewBatch returns an empty Batch for the watch tr.
+func NewBatch(tr *Trigger) *Batch { return &Batch{tr: tr, seen: map[string]bool{}} }
+
+// Add gathers ev, one event of the source of the watch.
+func (b *Batch) Add(ev map[string]any) {
+	item, path := ev["line"], ""
+	if len(b.tr.Paths) > 0 {
+		item = ev["paths"].([]any)[0]
+		path, _ = item.(map[string]any)["path"].(string)
+		if b.seen[path] {
+			return
+		}
+	}
+	if !b.full {
+		data, _ := json.Marshal(item)
+		if len(b.items) < MaxItems && b.size+len(data) <= MaxBytes {
+			b.items = append(b.items, item)
+			b.size += len(data)
+			if len(b.tr.Paths) > 0 {
+				b.seen[path] = true
+			}
+			return
+		}
+		b.full = true
+	}
+	b.truncated++
+}
+
+// Empty reports whether b has gathered nothing.
+func (b *Batch) Empty() bool { return len(b.items) == 0 && b.truncated == 0 }
+
+// Event is the event of the run that b makes: lines or paths, count, which
+// is both, and truncated, and for the lines of a unit its unit and stream.
+func (b *Batch) Event() map[string]any {
+	key := "lines"
+	if len(b.tr.Paths) > 0 {
+		key = "paths"
+	}
+	items := slices.Clone(b.items)
+	if items == nil {
+		items = []any{}
+	}
+	out := map[string]any{key: items, "count": int64(len(b.items)) + b.truncated, "truncated": b.truncated}
+	if b.tr.Unit != "" {
+		out["unit"], out["stream"] = b.tr.Unit, b.tr.Stream
+	}
+	return out
+}
+
 // Filter decides for each event of a watch whether it goes on, by the if:
 // of the trigger, with the project read once.
 type Filter struct {
 	e    *engine
 	cond any
+}
+
+// WatchKind says where the events of the watch t of p come from: lines,
+// the lines of a service; paths, changes of files; or program, the lines
+// of a program that it runs, a call or the watch hook of the plugin of a
+// unit.
+func WatchKind(p *model.Project, t *Trigger) string {
+	switch u := p.Units[t.Unit]; {
+	case t.Unit != "" && u != nil && u.Service != nil:
+		return "lines"
+	case len(t.Paths) > 0:
+		return "paths"
+	}
+	return "program"
 }
 
 // NewFilter reads the project of opts for the if: of the watch t.
@@ -39,12 +127,12 @@ func NewFilter(opts Options, t *Trigger) (*Filter, error) {
 	return &Filter{e: e, cond: w.If}, nil
 }
 
-// Match reports whether the event with fields goes on.
-func (f *Filter) Match(fields map[string]any) (bool, error) {
+// Match reports whether the event with fields, which came at at, goes on.
+func (f *Filter) Match(fields map[string]any, at time.Time) (bool, error) {
 	if f.cond == nil {
 		return true, nil
 	}
-	f.e.event = eventOf(&TriggerEvent{Trigger: "watch", Time: time.Now().UTC(), Fields: fields}, time.Time{})
+	f.e.event = eventOf(&TriggerEvent{Trigger: "watch", Time: at, Fields: fields}, time.Time{})
 	ok, err := expr.EvalCondition(f.cond, f.e.triggerScope())
 	return ok, f.e.redact.Err(err)
 }

@@ -1,0 +1,125 @@
+# --event runs a task of the project as its trigger runs it for an event
+# that the caller writes: the trigger it fits, if: or the filter of a
+# watch, a batch of that one event, with:, and the flags over it. The run
+# is of the command line, and its record says what it simulated.
+
+env HOME=$WORK/home
+
+# a webhook event from a file, through if: and with:
+exec opstruss deploy --event @push.json
+stdout '^deploy \| deploy main dry=true note=\[from hook\] by webhook POST$'
+exec sh -c 'cat .opstruss/runs/default/*/record.json'
+stdout '"trigger": "cli",\n\s+"simulated": "webhook"'
+
+# flags go over with:, also false and the empty string, and make the
+# inputs valid that with: alone does not
+exec opstruss deploy --event @push.json --no-dry --note ''
+stdout '^deploy \| deploy main dry=false note=\[\] by webhook POST$'
+! exec opstruss deploy --event '{"trigger": "webhook", "path": "/hooks/deploy", "body": {"ref": 5}}'
+stderr 'with: input ref: '
+exec opstruss run deploy --event '{"trigger": "webhook", "path": "/hooks/deploy", "body": {"ref": 5}}' --ref v2
+stdout '^deploy \| deploy v2 dry=true '
+
+# the event of stdin
+stdin push.json
+exec opstruss deploy --event @-
+stdout '^deploy \| deploy main dry=true '
+
+# if: that leaves the event out makes no run
+exec opstruss deploy --event '{"trigger": "webhook", "path": "/hooks/deploy", "body": {"action": "skip"}}'
+stdout '^deploy: webhook POST /hooks/deploy: if: leaves the event out, so there is no run$'
+
+# the event chooses among the triggers of its kind
+exec opstruss deploy --event '{"trigger": "webhook", "method": "put"}'
+stdout '^deploy \| deploy other dry=false note=\[none\] by webhook PUT$'
+! exec opstruss deploy --event '{"trigger": "webhook"}'
+stderr 'the event fits 2 triggers of task deploy: webhook POST /hooks/deploy; webhook PUT /hooks/other; write its method and path'
+! exec opstruss deploy --event '{"trigger": "schedule"}'
+stderr '--event: task deploy has no schedule trigger'
+
+# what is not one event of a trigger is refused, without quoting it
+! exec opstruss deploy --event '{"body": {}}'
+stderr '--event: trigger is schedule, every, webhook, watch, or after'
+! exec opstruss deploy --event '[1]'
+stderr '--event: the event is not a JSON object'
+! exec opstruss deploy --event '{"trigger": "webhook"} {}'
+stderr '--event: the event holds more than one JSON value'
+! exec opstruss deploy --event '{"trigger": "webhook", "path": "/hooks/deploy", "bodyy": 1}'
+stderr '--event: an event of webhook has no field bodyy; it has trigger, time, method, path, headers, query, body$'
+exec sh -c 'printf "{\"trigger\": \"webhook\", \"body\": \"" > big.json; head -c 5000000 /dev/zero | tr "\0" x >> big.json; printf "\"}" >> big.json'
+! exec opstruss deploy --event @big.json
+stderr '--event: the event is larger than 4 MiB'
+! stderr xxxx
+
+# a watch with batch takes one change as its source gives it, through
+# its filter, and gathers it without waiting
+exec opstruss notes --event '{"trigger": "watch", "paths": [{"path": "notes/a.md", "op": "write"}]}'
+stdout '^notes \| notes notes/a.md count=1 truncated=0$'
+exec opstruss notes --event '{"trigger": "watch", "paths": [{"path": "notes/skip.md", "op": "write"}]}'
+stdout '^notes: watch paths: if: leaves the event out, so there is no run$'
+! exec opstruss notes --event '{"trigger": "watch", "lines": ["x"]}'
+stderr '--event: lines is what the daemon makes of the events of a watch'
+! exec opstruss notes --event '{"trigger": "watch", "paths": [{"path": "a", "op": "write"}, {"path": "b", "op": "write"}]}'
+stderr '--event: paths holds one change of a file'
+
+# an after trigger takes the runs that end as it says
+exec opstruss on-fail --event '{"trigger": "after", "outcome": "success"}'
+stdout '^on-fail: after deploy: it takes runs that end failure, not success, so there is no run$'
+exec opstruss on-fail --event '{"trigger": "after", "outcome": "failure"}'
+stdout '^on-fail \| after deploy failure$'
+
+# -d runs it in the daemon, the same
+exec opstruss -d deploy --event @push.json
+stdout '^deploy \| deploy main dry=true note=\[from hook\] by webhook POST$'
+exec opstruss stop
+
+-- push.json --
+{"trigger": "webhook", "path": "/hooks/deploy", "headers": {"X-GitHub-Event": "push"}, "body": {"ref": "main"}}
+-- opstruss.yaml --
+name: shop
+runtime:
+  listen: 127.0.0.1:0
+tasks:
+  deploy:
+    inputs:
+      ref: {type: string, required: true}
+      dry: {type: boolean, default: false}
+      note: {type: string, default: none}
+    run: [sh, -c, 'echo "deploy $INPUT_REF dry=$INPUT_DRY note=[$INPUT_NOTE] by $TRIGGER $METHOD"']
+    env:
+      TRIGGER: ${{ event.trigger }}
+      METHOD: ${{ event.method }}
+    on:
+      webhook:
+        - path: /hooks/deploy
+          secret: s3cret-value
+          signature: bearer
+          if: "!has(event.body.action) || event.body.action != 'skip'"
+          with:
+            ref: ${{ event.body.ref }}
+            dry: true
+            note: from hook
+        - path: /hooks/other
+          method: PUT
+          secret: s3cret-value
+          signature: bearer
+          with:
+            ref: other
+  notes:
+    run: [sh, -c, 'echo "notes $FIRST count=$COUNT truncated=$TRUNC"']
+    env:
+      FIRST: ${{ event.paths[0].path }}
+      COUNT: ${{ event.count }}
+      TRUNC: ${{ event.truncated }}
+    on:
+      watch:
+        paths: ['notes/**']
+        batch: 1h
+        if: "event.paths[0].path != 'notes/skip.md'"
+  on-fail:
+    run: [sh, -c, 'echo "after $TASK $OUTCOME"']
+    env:
+      TASK: ${{ event.task }}
+      OUTCOME: ${{ event.outcome }}
+    on:
+      after: {task: deploy, outcome: failure}

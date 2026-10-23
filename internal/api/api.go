@@ -34,6 +34,8 @@ type Request struct {
 	Follow  bool              `json:"follow,omitempty"` // logs: go on with what is written
 	Task    string            `json:"task,omitempty"`   // run: the task
 	With    map[string]any    `json:"with,omitempty"`   // run: its inputs
+	Flags   map[string]any    `json:"flags,omitempty"`  // run: inputs as flags wrote them, read by each task reached, over With
+	Event   map[string]any    `json:"event,omitempty"`  // run: an event that the caller wrote for a trigger of the task, as --event
 	Run     string            `json:"run,omitempty"`    // events: the run to read
 	Debug   bool              `json:"debug,omitempty"`
 	// ShowSensitive gives outputs their sensitive values.
@@ -74,7 +76,7 @@ func (a *API) options(r Request) engine.Options {
 			env[k] = v
 		}
 	}
-	return engine.Options{Dir: r.Dir, Cwd: r.Cwd, Stack: r.Stack, Inputs: r.Inputs, Environ: r.Environ,
+	return engine.Options{Dir: r.Dir, Cwd: r.Cwd, Stack: r.Stack, Inputs: r.Inputs, Flags: r.Flags, Environ: r.Environ,
 		LookupEnv: func(k string) (string, bool) { v, ok := env[k]; return v, ok },
 		Units:     r.Units, Yes: r.Yes, Force: r.Force, NoDeps: r.NoDeps, Follow: r.Follow, Debug: r.Debug, ShowSensitive: r.ShowSensitive,
 		Emit: a.h.Event, Approve: a.h.Approve, Ask: a.h.Ask, Supervisor: a.Supervisor}
@@ -145,9 +147,18 @@ func (a *API) Unlock(ctx context.Context, r Request) (*Result, error) {
 	return result(engine.Unlock(ctx, a.options(r)))
 }
 
-// Run runs the task of the request with its inputs.
+// Run runs the task of the request with its inputs, or, with an event,
+// as its trigger runs it for that event; a trigger that leaves the event
+// out makes no run, and the result names none.
 func (a *API) Run(ctx context.Context, r Request) (*Result, error) {
-	return result(engine.Task(ctx, a.options(r), r.Task, r.With))
+	if r.Event == nil {
+		return result(engine.Task(ctx, a.options(r), r.Task, r.With))
+	}
+	res, err := engine.Simulate(ctx, a.options(r), r.Task, r.With, r.Event)
+	if err == nil && res == nil {
+		return &Result{}, nil
+	}
+	return result(res, err)
 }
 
 // Outputs returns the outputs of the project.

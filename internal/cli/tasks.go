@@ -1,14 +1,19 @@
 package cli
 
 import (
+	"bytes"
 	"cmp"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"os"
 	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/opstruss/opstruss/internal/engine"
 	"github.com/opstruss/opstruss/internal/expr"
 	"github.com/opstruss/opstruss/internal/model"
 	"github.com/spf13/cobra"
@@ -31,16 +36,18 @@ func (a *app) taskCommands(root *cobra.Command) {
 	if p == nil {
 		return
 	}
-	defs := map[string]*model.Task{}
+	// A task of the project is one command; a task of units is one
+	// command for every unit that has it, whatever its inputs there.
+	defs := map[string][]*model.Task{}
 	for name, t := range p.Tasks {
 		if !t.Internal {
-			defs[name] = t
+			defs[name] = []*model.Task{t}
 		}
 	}
 	for _, path := range p.Order {
 		for tn, t := range p.Nodes[path].Unit.Tasks {
-			if defs[tn] == nil {
-				defs[tn] = t
+			if p.Tasks[tn] == nil {
+				defs[tn] = append(defs[tn], t)
 			}
 		}
 	}
@@ -48,19 +55,19 @@ func (a *app) taskCommands(root *cobra.Command) {
 	for _, path := range slices.Sorted(maps.Keys(p.Nodes)) {
 		if comp := p.Nodes[path].Component(); comp != nil {
 			for tn, t := range comp.Tasks {
-				if defs[tn] == nil && !t.Internal {
-					defs[tn] = t
+				if p.Tasks[tn] == nil && !t.Internal {
+					defs[tn] = append(defs[tn], t)
 				}
 			}
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(defs)) {
-		_, unitTask := p.Tasks[name]
-		run.AddCommand(a.taskCommand(name, defs[name], !unitTask))
+		_, projectTask := p.Tasks[name]
+		run.AddCommand(a.taskCommand(name, defs[name], !projectTask))
 		if c, _, err := root.Find([]string{name}); err == nil && c != root {
 			continue
 		}
-		root.AddCommand(a.taskCommand(name, defs[name], !unitTask))
+		root.AddCommand(a.taskCommand(name, defs[name], !projectTask))
 	}
 }
 
@@ -72,7 +79,7 @@ func (a *app) command() string {
 		switch {
 		case arg == "--":
 			return ""
-		case arg == "--stack" || arg == "--input":
+		case arg == "--stack" || arg == "--input" || arg == "--event":
 			i++
 		case strings.HasPrefix(arg, "-"):
 		default:
@@ -113,95 +120,99 @@ func (a *app) commandProject() *model.Project {
 	return p
 }
 
-// taskCommand runs one task: each input is a flag, arrays repeat it, an
-// object takes JSON or @file, a boolean also has --no-<name>, and an input
-// with args: true takes what comes after --.
-func (a *app) taskCommand(name string, t *model.Task, ofUnits bool) *cobra.Command {
+// taskCommand runs one task, of the project or of the units that have it:
+// each input of those tasks is a flag, arrays repeat it, an object takes
+// JSON or @file, a boolean also has --no-<name>, and an input with args:
+// true also takes what comes after --. The engine reads the text of each
+// flag by the type of the input in the task it reaches.
+func (a *app) taskCommand(name string, tasks []*model.Task, ofUnits bool) *cobra.Command {
 	var yes bool
-	values := map[string]*string{}
-	lists := map[string]*[]string{}
-	bools := map[string]*bool{}
-	nots := map[string]*bool{}
 	use := name
 	if ofUnits {
 		use += " [unit]..."
 	}
-	cmd := &cobra.Command{Use: use, Short: summary(t), Annotations: map[string]string{detachable: "true"}}
+	cmd := &cobra.Command{Use: use, Short: summary(tasks[0]), Annotations: map[string]string{detachable: "true"}}
+	decls := map[string][]*model.Input{}
+	for _, t := range tasks {
+		for in, def := range t.Inputs {
+			decls[in] = append(decls[in], def)
+		}
+	}
+	all := func(in string, f func(*model.Input) bool) bool {
+		return !slices.ContainsFunc(decls[in], func(d *model.Input) bool { return !f(d) })
+	}
+	typed := func(typ string) func(*model.Input) bool { return func(d *model.Input) bool { return d.Type == typ } }
 	argsInput := ""
-	secrets := map[string]*string{}
-	for _, in := range slices.Sorted(maps.Keys(t.Inputs)) {
-		def := t.Inputs[in]
-		flag := strings.ReplaceAll(in, "_", "-")
-		switch {
-		case def.Sensitive:
-			// Only to say why it is not taken.
-			secrets[in] = new(string)
-			cmd.Flags().StringVar(secrets[in], flag, "", "")
-			_ = cmd.Flags().MarkHidden(flag)
-		case def.Args:
+	sensitive := map[string]bool{}
+	texts := map[string]*string{}
+	lists := map[string]*[]string{}
+	bools := map[string]*bool{}
+	nots := map[string]*bool{}
+	for _, in := range slices.Sorted(maps.Keys(decls)) {
+		flag, help := model.FlagName(in), ""
+		for _, d := range decls[in] {
+			help = cmp.Or(help, d.Description)
+		}
+		if slices.ContainsFunc(decls[in], func(d *model.Input) bool { return d.Args }) {
 			argsInput = in
-		case def.Type == "boolean":
+		}
+		switch {
+		case slices.ContainsFunc(decls[in], func(d *model.Input) bool { return d.Sensitive }):
+			// Only to say why it is not taken.
+			sensitive[in] = true
+			cmd.Flags().String(flag, "", "")
+			_ = cmd.Flags().MarkHidden(flag)
+		case all(in, typed("boolean")):
 			bools[in], nots[in] = new(bool), new(bool)
-			cmd.Flags().BoolVar(bools[in], flag, false, def.Description)
+			cmd.Flags().BoolVar(bools[in], flag, false, help)
 			cmd.Flags().BoolVar(nots[in], "no-"+flag, false, "")
-		case def.Type == "array":
+			cmd.MarkFlagsMutuallyExclusive(flag, "no-"+flag)
+		case all(in, typed("array")):
 			lists[in] = new([]string)
-			cmd.Flags().StringArrayVar(lists[in], flag, nil, def.Description)
+			cmd.Flags().StringArrayVar(lists[in], flag, nil, help)
 		default:
-			values[in] = new(string)
-			cmd.Flags().StringVar(values[in], flag, "", def.Description)
+			texts[in] = new(string)
+			cmd.Flags().StringVar(texts[in], flag, "", help)
 		}
 	}
 	cmd.Flags().BoolVar(&yes, "yes", false, "approve the changes of this run, as in CI")
+	var event string
+	if !ofUnits {
+		cmd.Flags().StringVar(&event, "event", "", "run as a trigger of the task runs for this event: @<file>, @- for stdin, or JSON")
+	}
 	cmd.RunE = func(c *cobra.Command, args []string) error {
-		given := map[string]any{}
-		set := func(in, flag string, parse func() (any, error)) error {
-			if !c.Flags().Changed(flag) {
-				return nil
-			}
-			v, err := parse()
-			if err != nil {
-				return fmt.Errorf("--%s: %w", flag, err)
-			}
-			given[in] = v
-			return nil
-		}
-		for in, def := range t.Inputs {
-			flag := strings.ReplaceAll(in, "_", "-")
-			var err error
+		flags := map[string]any{}
+		for _, in := range slices.Sorted(maps.Keys(decls)) {
+			flag := model.FlagName(in)
 			switch {
-			case secrets[in] != nil && c.Flags().Changed(flag):
-				how := "answer at the terminal"
-				if def.Env != "" {
-					how = "set $" + def.Env + ", or " + how
+			case sensitive[in]:
+				if c.Flags().Changed(flag) {
+					return fmt.Errorf("--%s: input %s is sensitive, so it is not taken from a flag, which shell history and the list of processes keep; %s",
+						flag, in, a.sensitiveHow(decls[in]))
 				}
-				err = fmt.Errorf("--%s: input %s is sensitive, so it is not taken from a flag, which shell history and the list of processes keep; %s", flag, in, how)
 			case bools[in] != nil:
-				err = set(in, flag, func() (any, error) { return true, nil })
-				if err == nil {
-					err = set(in, "no-"+flag, func() (any, error) { return false, nil })
+				// The value written counts: --name=false is false, and
+				// --no-name=false is true.
+				if c.Flags().Changed(flag) {
+					flags[in] = *bools[in]
+				} else if c.Flags().Changed("no-" + flag) {
+					flags[in] = !*nots[in]
 				}
-			case lists[in] != nil:
-				err = set(in, flag, func() (any, error) {
-					var items []any
-					for _, s := range *lists[in] {
-						typ := ""
-						if def.Items != nil {
-							typ = def.Items.Type
-						}
-						v, err := model.ParseText(s, typ)
-						if err != nil {
-							return nil, err
-						}
-						items = append(items, v)
+			case lists[in] != nil && c.Flags().Changed(flag):
+				list := []any{}
+				for _, s := range *lists[in] {
+					list = append(list, s)
+				}
+				flags[in] = list
+			case texts[in] != nil && c.Flags().Changed(flag):
+				text := *texts[in]
+				if all(in, typed("object")) && strings.HasPrefix(text, "@") {
+					var err error
+					if text, err = a.objectFile(strings.TrimPrefix(text, "@")); err != nil {
+						return fmt.Errorf("--%s: %w", flag, err)
 					}
-					return items, nil
-				})
-			case values[in] != nil:
-				err = set(in, flag, func() (any, error) { return a.parseFlag(*values[in], def.Type) })
-			}
-			if err != nil {
-				return err
+				}
+				flags[in] = text
 			}
 		}
 		units := args
@@ -210,15 +221,18 @@ func (a *app) taskCommand(name string, t *model.Task, ofUnits bool) *cobra.Comma
 			if argsInput == "" {
 				return fmt.Errorf("task %s has no input with args: true for what comes after --", name)
 			}
+			if f := model.FlagName(argsInput); c.Flags().Changed(f) {
+				return fmt.Errorf("input %s comes from --%s or from what follows --, not both", argsInput, f)
+			}
 			rest := args[dash:]
-			if t.Inputs[argsInput].Type == "array" {
+			if all(argsInput, typed("array")) {
 				list := []any{}
 				for _, s := range rest {
 					list = append(list, s)
 				}
-				given[argsInput] = list
+				flags[argsInput] = list
 			} else {
-				given[argsInput] = strings.Join(rest, " ")
+				flags[argsInput] = strings.Join(rest, " ")
 			}
 		}
 		if len(units) > 0 && !ofUnits {
@@ -228,7 +242,12 @@ func (a *app) taskCommand(name string, t *model.Task, ofUnits bool) *cobra.Comma
 		if err != nil {
 			return err
 		}
-		req.Yes, req.Task, req.With = yes, name, given
+		req.Yes, req.Task, req.Flags = yes, name, flags
+		if c.Flags().Changed("event") {
+			if req.Event, err = a.readEvent(event); err != nil {
+				return fmt.Errorf("--event: %w", err)
+			}
+		}
 		in := a.interrupts()
 		defer in.stop()
 		res, err := a.call(in.ctx, "run", req)
@@ -240,21 +259,70 @@ func (a *app) taskCommand(name string, t *model.Task, ofUnits bool) *cobra.Comma
 	return cmd
 }
 
-// parseFlag reads the text of a flag by the type of its input; an object
-// is JSON, or @<file> with JSON or YAML.
-func (a *app) parseFlag(s, typ string) (any, error) {
-	if typ == "object" && strings.HasPrefix(s, "@") {
-		data, err := os.ReadFile(joinDir(a.dir, strings.TrimPrefix(s, "@")))
+// readEvent reads the event of --event: @<file>, relative to the directory
+// OpsTruss works in, @- for stdin, which then answers no question of the
+// run, or the JSON itself; one JSON object of at most engine.MaxEvent
+// bytes, which it does not quote back, as it may hold secrets.
+func (a *app) readEvent(s string) (map[string]any, error) {
+	var r io.Reader = strings.NewReader(s)
+	switch {
+	case s == "@-":
+		if a.stdin == nil {
+			return nil, errors.New("@- reads stdin, which this process has not")
+		}
+		r, a.stdin = a.stdin, nil
+	case strings.HasPrefix(s, "@"):
+		f, err := os.Open(joinDir(a.dir, s[1:]))
 		if err != nil {
 			return nil, err
 		}
-		v, err := expr.FromYAML(data)
-		if _, ok := v.(map[string]any); err == nil && !ok {
-			return nil, fmt.Errorf("%s holds no object", s)
-		}
-		return v, err
+		defer func() { _ = f.Close() }()
+		r = f
 	}
-	return model.ParseText(s, typ)
+	data, err := io.ReadAll(io.LimitReader(r, engine.MaxEvent+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > engine.MaxEvent {
+		return nil, fmt.Errorf("the event is larger than %d MiB", engine.MaxEvent>>20)
+	}
+	dec := json.NewDecoder(bytes.NewReader(data))
+	var ev map[string]any
+	if err := dec.Decode(&ev); err != nil || ev == nil {
+		return nil, errors.New("the event is not a JSON object")
+	}
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return nil, errors.New("the event holds more than one JSON value")
+	}
+	return ev, nil
+}
+
+// sensitiveHow says where a sensitive input comes from instead of a flag.
+func (a *app) sensitiveHow(decls []*model.Input) string {
+	how := "answer at the terminal"
+	for _, d := range decls {
+		if d.Env != "" {
+			return "set $" + d.Env + ", or " + how
+		}
+	}
+	return how
+}
+
+// objectFile reads the JSON or YAML object in the file at path, relative
+// to the directory OpsTruss works in, as JSON for the engine to read.
+func (a *app) objectFile(path string) (string, error) {
+	data, err := os.ReadFile(joinDir(a.dir, path))
+	if err != nil {
+		return "", err
+	}
+	v, err := expr.FromYAML(data)
+	if err != nil {
+		return "", err
+	}
+	if _, ok := v.(map[string]any); !ok {
+		return "", fmt.Errorf("@%s holds no object", path)
+	}
+	return expr.JSON(v), nil
 }
 
 // summary is the line of a task in help: its description, or without one

@@ -56,10 +56,13 @@ type Trigger struct {
 
 // TriggerEvent is what makes a run: where it comes from, as event.trigger
 // says, its logical time, event.time, and the other fields of event.
+// Simulated says that the caller wrote it, as --event, for a run of the
+// command line that its record keeps as such.
 type TriggerEvent struct {
-	Trigger string
-	Time    time.Time
-	Fields  map[string]any
+	Trigger   string
+	Time      time.Time
+	Fields    map[string]any
+	Simulated bool
 }
 
 // Triggers returns the schedule, every, and webhook triggers of the tasks
@@ -84,81 +87,100 @@ func Triggers(opts Options) ([]*Trigger, string, error) {
 		}
 		return scope, nil
 	}
-	var out []*Trigger
+	var out, later []*Trigger
 	for _, name := range slices.Sorted(maps.Keys(e.p.Tasks)) {
-		on := e.p.Tasks[name].On
-		if on == nil {
-			continue
+		ts, err := triggersOf(e.p, name)
+		if err != nil {
+			return nil, "", err
 		}
-		for i, s := range on.Schedule {
-			out = append(out, &Trigger{Task: name, Kind: "schedule", Index: i, Key: keyOf(s.Cron, s.Timezone),
-				Cron: s.Cron, Timezone: s.Timezone, Persistent: s.Persistent})
-		}
-		for i, every := range on.Every {
-			d, err := time.ParseDuration(every)
-			if err != nil {
-				return nil, "", fmt.Errorf("task %s: every: %w", name, err)
-			}
-			out = append(out, &Trigger{Task: name, Kind: "every", Index: i, Key: keyOf(every), Every: d})
-		}
-		for i, w := range on.Webhook {
-			s, err := installScope()
-			if err != nil {
-				return nil, "", err
-			}
-			secret, err := expr.EvalText(w.Secret, s)
-			if err != nil {
-				return nil, "", e.redact.Err(fmt.Errorf("task %s: webhook secret: %w", name, err))
-			}
-			method := cmp.Or(w.Method, "POST")
-			out = append(out, &Trigger{Task: name, Kind: "webhook", Index: i, Key: keyOf(method, w.Path), Path: w.Path,
-				Method: method, Secret: secret, Signature: *w.Signature, Respond: cmp.Or(w.Respond, "accepted")})
-		}
-	}
-	for _, name := range slices.Sorted(maps.Keys(e.p.Tasks)) {
-		on := e.p.Tasks[name].On
-		if on == nil {
-			continue
-		}
-		for i, w := range on.Watch {
-			paths := slices.Clone(w.Paths)
-			for j, it := range paths {
-				if !expr.HasExpr(it.Pattern) {
-					continue
-				}
+		for _, t := range ts {
+			switch t.Kind {
+			case "webhook":
 				s, err := installScope()
 				if err != nil {
 					return nil, "", err
 				}
-				if paths[j].Pattern, err = expr.EvalText(it.Pattern, s); err != nil {
-					return nil, "", e.redact.Err(fmt.Errorf("task %s: watch: paths: %w", name, err))
+				if t.Secret, err = expr.EvalText(e.p.Tasks[name].On.Webhook[t.Index].Secret, s); err != nil {
+					return nil, "", e.redact.Err(fmt.Errorf("task %s: webhook secret: %w", name, err))
 				}
-			}
-			t := &Trigger{Task: name, Kind: "watch", Index: i, Unit: w.Unit, Stream: cmp.Or(w.Stream, "both"), Paths: paths,
-				Dir: e.p.DirOf("tasks." + name), Call: len(w.Calls) > 0}
-			t.Key = keyOf(name, t.Unit, t.Stream, t.Dir, expr.JSON(paths), expr.JSON(w.Calls))
-			for _, d := range []struct {
-				text string
-				to   *time.Duration
-			}{{w.Batch, &t.Batch}, {w.Debounce, &t.Debounce}} {
-				if d.text != "" {
-					if *d.to, err = time.ParseDuration(d.text); err != nil {
-						return nil, "", fmt.Errorf("task %s: watch: %w", name, err)
+			case "watch":
+				w := e.p.Tasks[name].On.Watch[t.Index]
+				for j, it := range t.Paths {
+					if !expr.HasExpr(it.Pattern) {
+						continue
+					}
+					s, err := installScope()
+					if err != nil {
+						return nil, "", err
+					}
+					if t.Paths[j].Pattern, err = expr.EvalText(it.Pattern, s); err != nil {
+						return nil, "", e.redact.Err(fmt.Errorf("task %s: watch: paths: %w", name, err))
 					}
 				}
+				t.Key = keyOf(name, t.Unit, t.Stream, t.Dir, expr.JSON(t.Paths), expr.JSON(w.Calls))
 			}
-			out = append(out, t)
-		}
-		for i, a := range on.After {
-			out = append(out, &Trigger{Task: name, Kind: "after", Index: i, Key: keyOf(a.Task, a.Unit), After: a.Task,
-				Unit: a.Unit, Outcome: cmp.Or(a.Outcome, "success")})
+			if t.Kind == "watch" || t.Kind == "after" {
+				later = append(later, t)
+			} else {
+				out = append(out, t)
+			}
 		}
 	}
+	out = append(out, later...)
 	listen := ""
 	if e.p.Runtime != nil {
 		listen = e.p.Runtime.Listen
 	}
 	return out, listen, nil
+}
+
+// triggersOf gives the triggers of the task name of p as its file writes
+// them, before what an install evaluates: the secret of a webhook, and the
+// expressions in the paths of a watch, by which its Key changes.
+func triggersOf(p *model.Project, name string) ([]*Trigger, error) {
+	on := p.Tasks[name].On
+	if on == nil {
+		return nil, nil
+	}
+	var out []*Trigger
+	for i, s := range on.Schedule {
+		out = append(out, &Trigger{Task: name, Kind: "schedule", Index: i, Key: keyOf(s.Cron, s.Timezone),
+			Cron: s.Cron, Timezone: s.Timezone, Persistent: s.Persistent})
+	}
+	for i, every := range on.Every {
+		d, err := time.ParseDuration(every)
+		if err != nil {
+			return nil, fmt.Errorf("task %s: every: %w", name, err)
+		}
+		out = append(out, &Trigger{Task: name, Kind: "every", Index: i, Key: keyOf(every), Every: d})
+	}
+	for i, w := range on.Webhook {
+		method := cmp.Or(w.Method, "POST")
+		out = append(out, &Trigger{Task: name, Kind: "webhook", Index: i, Key: keyOf(method, w.Path), Path: w.Path,
+			Method: method, Signature: *w.Signature, Respond: cmp.Or(w.Respond, "accepted")})
+	}
+	for i, w := range on.Watch {
+		t := &Trigger{Task: name, Kind: "watch", Index: i, Unit: w.Unit, Stream: cmp.Or(w.Stream, "both"), Paths: slices.Clone(w.Paths),
+			Dir: p.DirOf("tasks." + name), Call: len(w.Calls) > 0}
+		t.Key = keyOf(name, t.Unit, t.Stream, t.Dir, expr.JSON(t.Paths), expr.JSON(w.Calls))
+		for _, d := range []struct {
+			text string
+			to   *time.Duration
+		}{{w.Batch, &t.Batch}, {w.Debounce, &t.Debounce}} {
+			if d.text != "" {
+				var err error
+				if *d.to, err = time.ParseDuration(d.text); err != nil {
+					return nil, fmt.Errorf("task %s: watch: %w", name, err)
+				}
+			}
+		}
+		out = append(out, t)
+	}
+	for i, a := range on.After {
+		out = append(out, &Trigger{Task: name, Kind: "after", Index: i, Key: keyOf(a.Task, a.Unit), After: a.Task,
+			Unit: a.Unit, Outcome: cmp.Or(a.Outcome, "success")})
+	}
+	return out, nil
 }
 
 // WithError is a with: of a trigger whose values the inputs of its task do
@@ -186,6 +208,12 @@ func Fire(ctx context.Context, opts Options, t *Trigger) (*Result, error) {
 		return nil, err
 	}
 	e.trigger = true
+	return e.fire(ctx, t, nil)
+}
+
+// fire makes a run of the task of t for e.event, as Fire does, with over
+// in place of what with: gives for the same inputs.
+func (e *engine) fire(ctx context.Context, t *Trigger, over map[string]any) (*Result, error) {
 	task := e.p.Tasks[t.Task]
 	if task == nil || task.On == nil {
 		return nil, fmt.Errorf("the project has no task %s with triggers", t.Task)
@@ -228,11 +256,18 @@ func Fire(ctx context.Context, opts Options, t *Trigger) (*Result, error) {
 			}
 			e.hide(v, marks)
 			given, _ = v.(map[string]any)
-			if _, err := conform(task.Inputs, given); err != nil {
-				return nil, &WithError{e.redact.Err(fmt.Errorf("with: %w", err))}
-			}
 		}
 		e.resetUnits()
+	}
+	if with != nil || over != nil {
+		given = maps.Clone(given)
+		if given == nil {
+			given = map[string]any{}
+		}
+		maps.Copy(given, over)
+		if _, err := conform(task.Inputs, given); err != nil {
+			return nil, &WithError{e.redact.Err(fmt.Errorf("with: %w", err))}
+		}
 	}
 	if err := e.start("task", t.Task); err != nil {
 		return nil, err

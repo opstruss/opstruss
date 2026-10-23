@@ -144,8 +144,15 @@ func (c call) envPass(t *model.Task) (model.Env, []string) {
 // Task runs the project task name, or the task name of each unit that has
 // it, as one run whose exit code follows the outcome of that call.
 func Task(ctx context.Context, opts Options, name string, inputs map[string]any) (*Result, error) {
-	e, err := open(ctx, opts, "task", name)
+	e, err := load(opts)
 	if err != nil {
+		return nil, err
+	}
+	e.ctx = ctx
+	if err := e.checkCall(name, inputs); err != nil {
+		return nil, err
+	}
+	if err := e.start("task", name); err != nil {
 		return nil, err
 	}
 	return e.task(ctx, name, inputs), nil
@@ -160,10 +167,15 @@ func (e *engine) task(ctx context.Context, name string, inputs map[string]any) *
 		e.emit(Event{Type: "task", Level: "error", Task: name, Message: err.Error()})
 		res = failed(err)
 	} else if t := e.p.Tasks[name]; t != nil {
-		res = e.callTask(ctx, name, t, e.p.DirOf("tasks."+name), inputs, c)
+		if given, err := withFlags(t.Inputs, inputs, e.opts.Flags); err != nil {
+			e.emit(Event{Type: "task", Level: "error", Task: name, Message: err.Error()})
+			res = failed(err)
+		} else {
+			res = e.callTask(ctx, name, t, e.p.DirOf("tasks."+name), given, c)
+		}
 	} else {
 		var err error
-		if res, err = e.unitTasks(ctx, name, e.opts.Units, inputs, c); err != nil {
+		if res, err = e.unitTasks(ctx, name, e.opts.Units, inputs, e.opts.Flags, c); err != nil {
 			e.emit(Event{Type: "task", Level: "error", Task: name, Message: err.Error()})
 			res = failed(err)
 		}
@@ -180,39 +192,25 @@ func (e *engine) task(ctx context.Context, name string, inputs map[string]any) *
 }
 
 // unitTasks runs the task name of each unit that has it, in graph order,
-// without the units' locks; patterns pick the units.
-func (e *engine) unitTasks(ctx context.Context, name string, patterns []string, inputs map[string]any, c call) (*taskResult, error) {
-	e.passMu.Lock()
-	e.pass = pass{units: patterns, noDeps: true}
-	e.resetUnits()
-	err := e.selectUnits(false)
-	var frames []*frame
-	if err == nil {
-		e.previewQuiet()
-		frames = e.allFrames()
-	}
-	insts := slices.Clone(e.insts)
-	e.passMu.Unlock()
+// without the units' locks; patterns pick the units, and flags, read by the
+// inputs of each task, go over inputs.
+func (e *engine) unitTasks(ctx context.Context, name string, patterns []string, inputs, flags map[string]any, c call) (*taskResult, error) {
+	targets, err := e.unitTargets(name, patterns)
 	if err != nil {
 		return nil, err
 	}
 	results := map[string]*taskResult{}
-	for _, inst := range insts {
-		t := inst.def.Tasks[name]
-		if t == nil || !e.sel.has(inst) {
-			continue
+	for _, tg := range targets {
+		if tg.frame != nil {
+			c.unit, c.frame = nil, tg.frame
+		} else {
+			c.unit = tg.inst
 		}
-		c.unit = inst
-		results[e.short(inst.address)] = e.callTask(ctx, name, t, inst.dir, inputs, c)
-	}
-	// An instance of a component has the tasks of the component.
-	for _, f := range frames {
-		t := f.in.Tasks[name]
-		if t == nil || t.Internal || !e.sel.hasFrame(f) {
-			continue
+		given, err := withFlags(tg.task.Inputs, inputs, flags)
+		if err != nil {
+			return nil, err
 		}
-		c.unit, c.frame = nil, f
-		results[e.short(f.address)] = e.callTask(ctx, name, t, f.in.DirOf("tasks."+name), inputs, c)
+		results[tg.key] = e.callTask(ctx, name, tg.task, tg.dir, given, c)
 	}
 	if len(results) == 0 {
 		if len(e.p.Units) == 0 {
@@ -228,6 +226,157 @@ func (e *engine) unitTasks(ctx context.Context, name string, patterns []string, 
 	}
 	res.keys, res.outputs = nil, map[string]any{}
 	return res, nil
+}
+
+// unitTarget is a task of a unit, or of an instance of a component, that a
+// call of a task of units reaches; key names its outputs.
+type unitTarget struct {
+	key   string
+	task  *model.Task
+	dir   string
+	inst  *instance
+	frame *frame
+}
+
+// unitTargets selects the units of patterns and gives the task name of
+// each that has it, in graph order, then those of instances of components.
+func (e *engine) unitTargets(name string, patterns []string) ([]unitTarget, error) {
+	e.passMu.Lock()
+	defer e.passMu.Unlock()
+	e.pass = pass{units: patterns, noDeps: true}
+	e.resetUnits()
+	if err := e.selectUnits(false); err != nil {
+		return nil, err
+	}
+	e.previewQuiet()
+	var out []unitTarget
+	for _, inst := range e.insts {
+		if t := inst.def.Tasks[name]; t != nil && e.sel.has(inst) {
+			out = append(out, unitTarget{key: e.short(inst.address), task: t, dir: inst.dir, inst: inst})
+		}
+	}
+	// An instance of a component has the tasks of the component.
+	for _, f := range e.allFrames() {
+		if t := f.in.Tasks[name]; t != nil && !t.Internal && e.sel.hasFrame(f) {
+			out = append(out, unitTarget{key: e.short(f.address), task: t, dir: f.in.DirOf("tasks." + name), frame: f})
+		}
+	}
+	return out, nil
+}
+
+// checkCall checks a call of the task name before its run starts: its
+// flags, read by the inputs of each task they reach, and for a task of
+// units that every unit it reaches has each input given, alike when it
+// reaches more than one, so a call that one of them refuses runs none.
+func (e *engine) checkCall(name string, inputs map[string]any) error {
+	flags := e.opts.Flags
+	if t := e.p.Tasks[name]; t != nil {
+		_, err := readFlags(t.Inputs, flags)
+		return err
+	}
+	if len(inputs)+len(flags) == 0 {
+		return nil
+	}
+	targets, err := e.unitTargets(name, e.opts.Units)
+	e.resetUnits()
+	if err != nil {
+		return nil // the run reports it
+	}
+	given := slices.Sorted(maps.Keys(inputs))
+	for k := range flags {
+		if _, ok := inputs[k]; !ok {
+			given = append(given, k)
+		}
+	}
+	slices.Sort(given)
+	for _, k := range given {
+		for _, tg := range targets {
+			switch in := tg.task.Inputs[k]; {
+			case in == nil:
+				return fmt.Errorf("task %s of %s has no input %s; name the units whose task has it, as in opstruss %s <unit> --%s",
+					name, tg.key, k, name, model.FlagName(k))
+			case !sameSchema(targets[0].task.Inputs[k], in):
+				return fmt.Errorf("input %s of task %s differs in %s and %s; name one of them, as in opstruss %s %s --%s",
+					k, name, targets[0].key, tg.key, name, tg.key, model.FlagName(k))
+			}
+		}
+	}
+	for _, tg := range targets {
+		if _, err := readFlags(tg.task.Inputs, flags); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// sameSchema reports whether two declarations of an input take the same
+// values: their type, items, properties, enum, and sensitive.
+func sameSchema(a, b *model.Input) bool {
+	view := func(in *model.Input) string {
+		return expr.JSON([]any{in.Type, in.Items, in.Properties, in.Enum, in.Sensitive})
+	}
+	return view(a) == view(b)
+}
+
+// withFlags gives the inputs of a call with flags, read by decl, over them.
+func withFlags(decl map[string]*model.Input, inputs, flags map[string]any) (map[string]any, error) {
+	if len(flags) == 0 {
+		return inputs, nil
+	}
+	read, err := readFlags(decl, flags)
+	if err != nil {
+		return nil, err
+	}
+	out := maps.Clone(inputs)
+	if out == nil {
+		out = map[string]any{}
+	}
+	maps.Copy(out, read)
+	return out, nil
+}
+
+// readFlags reads flags by decl, the inputs of the task they reach: a text
+// by the type of its input, each text of a list by the type of its items,
+// and a boolean as it is.
+func readFlags(decl map[string]*model.Input, flags map[string]any) (map[string]any, error) {
+	out := map[string]any{}
+	for _, k := range slices.Sorted(maps.Keys(flags)) {
+		flag := "--" + model.FlagName(k)
+		in := decl[k]
+		if in == nil {
+			return nil, fmt.Errorf("%s: the task has no input %s", flag, k)
+		}
+		var err error
+		switch v := flags[k].(type) {
+		case bool:
+			out[k] = v
+		case string:
+			out[k], err = model.ParseText(v, in.Type)
+		case []any:
+			typ := ""
+			if in.Items != nil {
+				typ = in.Items.Type
+			}
+			list := make([]any, len(v))
+			for i, item := range v {
+				text, ok := item.(string)
+				if !ok {
+					err = fmt.Errorf("the flag holds %s, not text", expr.JSON(item))
+					break
+				}
+				if list[i], err = model.ParseText(text, typ); err != nil {
+					break
+				}
+			}
+			out[k] = list
+		default:
+			err = fmt.Errorf("the flag holds %s, not text or a boolean", expr.JSON(v))
+		}
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", flag, err)
+		}
+	}
+	return out, nil
 }
 
 // previewQuiet expands the units and reads their records, for the tasks of
@@ -852,7 +1001,7 @@ func (tc *taskCtx) callStep(ctx context.Context, s *model.Step, label string, sc
 		}
 		return r
 	}
-	r, err := e.unitTasks(ctx, s.Task, units, given, c)
+	r, err := e.unitTasks(ctx, s.Task, units, given, nil, c)
 	if err != nil {
 		return tc.fail(label, err)
 	}

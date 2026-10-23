@@ -37,9 +37,9 @@ func TestServiceLogHides(t *testing.T) {
 	shape := "gh" + "p_" + strings.Repeat("aB3dE5", 7)
 	for _, v := range []string{"KNOWN-SECRET-CANARY", shape} {
 		for _, at := range []int{1, 5, len(v) - 1} {
-			long := strings.Repeat("x", maxLine-at-1) + " " + v + " tail\n"
+			long := strings.Repeat("x", secret.MaxLine-at-1) + " " + v + " tail\n"
 			got := strings.Join(serviceLines(red, long, "")["stdout"], "")
-			if strings.Contains(got, v) || !strings.Contains(got, secret.Mask+" tail") || strings.Count(got, "x") != maxLine-at-1 {
+			if strings.Contains(got, v) || !strings.Contains(got, secret.Mask+" tail") || strings.Count(got, "x") != secret.MaxLine-at-1 {
 				t.Fatalf("%s cut %d into the buffer: ...%q", v, at, got[max(0, len(got)-60):])
 			}
 		}

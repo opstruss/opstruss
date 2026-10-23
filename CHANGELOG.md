@@ -22,7 +22,8 @@ minor release can change what a project, a component, or a plugin relies on.
   terminal, so they share its locks and concurrency; Ctrl-C cancels such a
   run, a second Ctrl-C kills its programs at once, and one whose caller
   goes away runs on without answers. The daemon
-  listens on a socket for its own user only, refuses a caller of another
+  listens on a socket for its own user only, serves only its project and
+  stack, reads messages of at most 16 MiB, refuses a caller of another
   protocol with what to do, writes its events to
   `.opstruss/logs/<stack>/_daemon.jsonl`, which turns over at 10 MiB into
   `.1` and `.2`, and stops when its lock file is deleted. An event that
@@ -190,7 +191,10 @@ minor release can change what a project, a component, or a plugin relies on.
   change made after that makes an event; a watch that an `up` keeps keeps
   its baseline and program. `if` chooses each event, and `batch` or
   `debounce` gathers them into one run with `event.lines` or
-  `event.paths`, at most 10,000 items or 1 MiB, and `event.count`. A task
+  `event.paths`: the first that fit in 10,000 items or 1 MiB, with
+  `event.truncated` counting the events left out, and `event.count` both;
+  a file that changes again stays with its first change while it is in
+  the list. A task
   with `on: after` runs when a run of another task, or of a command such
   as `up` or `plan`, ends in the daemon with the `outcome` it names, for
   the unit it names, with `event.task`, `unit`, `outcome`, and `outputs`;
@@ -206,12 +210,26 @@ minor release can change what a project, a component, or a plugin relies on.
   the outcome and outputs of the run, sensitive ones hidden. `if` that
   leaves a request out answers 202 without a run, `with` that the task's
   inputs do not take answers 422, a task with 100 runs unfinished answers
-  503 with `Retry-After`, and a body above 1 MiB gets 413. `event` holds
+  503 with `Retry-After`, a body above 1 MiB gets 413, and one that does
+  not come within 10 seconds 408; a kept-alive connection closes after 60
+  idle seconds. `event` holds
   `method`, `path`, `headers` by lower-case name, `query`, and `body`,
   parsed when it is JSON.
 - `event.trigger` and `event.time` say what made a run and its logical
   time: the time of the schedule, or when a run from the command line
   started; the record of a run keeps `trigger`.
+- `opstruss <task> --event <event>` runs a task of the project as one of
+  its triggers runs it for an event that you write, without the daemon or
+  a real request: `@<file>`, `@-` for stdin, or the JSON itself, one
+  object of at most 4 MiB with `trigger` and the fields of one event as
+  its source gives it, such as a webhook request or one changed file.
+  The event picks the trigger of its kind by what tells them apart, such
+  as `method` and `path`, and goes through the same `if`, filter of a
+  watch, `batch` or `debounce` of that one event without waiting, and
+  `with`; the flags of inputs go over `with`, also `false` and `""`, and
+  an event that `if` leaves out exits 0 without a run. The run is one of
+  the command line: its record keeps `trigger: cli` and `simulated` with
+  the kind of trigger, and `-d` runs it in the daemon.
 - `opstruss logs [unit|task]...` shows the output of the units: the log of
   a service, from the files it turned over into first; the `logs` task of
   a unit's plugin, with the input `follow` when the task declares it; and
@@ -269,8 +287,8 @@ minor release can change what a project, a component, or a plugin relies on.
   sensitive: an output that holds one stays as it is in the next step,
   the record, and the state. The list may grow, and it does not catch
   every credential, so a value to keep comes from a secret or is
-  `sensitive`. A line of a service longer than 64 KiB is cut where no
-  hidden value is cut in two.
+  `sensitive`. A line of a program or a service longer than 64 KiB is cut
+  as it comes, where no hidden value is cut in two.
 - The data key of a stack, made the first time a value needs it, plan
   included, is kept in `<stack>/_meta`, wrapped with age inside OpsTruss
   for the age key of this machine, or for `encryption_keys`, and a run
@@ -447,9 +465,15 @@ minor release can change what a project, a component, or a plugin relies on.
   `removed:` takes them down or forgets them, which leaves a tombstone.
 - Every task of the project that is not `internal`, and every task of its
   units, is a command: `opstruss <task>`, also `opstruss run <task>`. Its
-  inputs are flags with types (`--name value`, `--name` and `--no-name` for
-  a boolean, a repeated flag for an array, JSON or `@file` for an object),
-  and what comes after `--` fills the input with `args: true`. The program
+  inputs are flags with types (`--name value`, `--name`, `--name=false`,
+  or `--no-name` for a boolean but not two of them, a repeated flag for an
+  array, JSON or `@file` for an object), and what comes after `--`, or its
+  own flag but not both, fills the input with `args: true`. A task that
+  several units have is one command with the inputs of all of them: each
+  unit reads a flag by the type of its own input, and a call that one of
+  the units it reaches does not take runs in none of them. `validate`
+  refuses an input whose flag is one of OpsTruss, such as `--yes` or
+  `--event`, or that of another input. The program
   of a task gets its inputs as `INPUT_<NAME>` and in `$OPSTRUSS_INPUTS`, and
   its outputs are printed at the end. In `--help`, a task without a
   `description` shows the first line of its `run`, the ids of its steps,

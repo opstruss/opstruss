@@ -30,6 +30,22 @@
         "follow": { "type": "boolean" },
         "task": { "type": "string" },
         "with": { "type": "object" },
+        "flags": {
+          "description": "run: inputs of the task as its command line wrote them, which each task the call reaches reads by the types of its inputs, over with.",
+          "type": "object",
+          "additionalProperties": {
+            "oneOf": [
+              { "type": "string" },
+              { "type": "boolean" },
+              { "type": "array", "items": { "type": "string" } }
+            ]
+          }
+        },
+        "event": {
+          "description": "run: an event that the caller wrote for a trigger of the task, as --event; the engine checks its fields.",
+          "type": "object",
+          "required": ["trigger"]
+        },
         "run": { "type": "string" },
         "debug": { "type": "boolean" },
         "show_sensitive": { "type": "boolean" }

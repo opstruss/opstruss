@@ -53,28 +53,29 @@ type Event struct {
 
 // Record is record.json: who ran what and when, and how it ended.
 type Record struct {
-	Version  int              `json:"version"`
-	Run      string           `json:"run"`
-	Parent   string           `json:"parent,omitempty"`
-	Project  string           `json:"project"`
-	Stack    string           `json:"stack"`
-	Command  string           `json:"command"`
-	Task     string           `json:"task,omitempty"`
-	Args     []string         `json:"args,omitempty"`
-	Trigger  string           `json:"trigger,omitempty"` // what made the run, as event.trigger says
-	User     string           `json:"user"`
-	Host     string           `json:"host"`
-	Hostname string           `json:"hostname"`
-	PID      int              `json:"pid"`
-	Started  string           `json:"started"`
-	Ended    string           `json:"ended,omitempty"`
-	Status   string           `json:"status"`
-	Outcome  string           `json:"outcome,omitempty"`
-	Reason   string           `json:"reason,omitempty"`
-	ExitCode int              `json:"exit_code"`
-	Units    map[string]*Unit `json:"units,omitempty"`
-	Tasks    map[string]*Task `json:"tasks,omitempty"` // the tasks of the project that ran inside the run, by name
-	Outputs  map[string]any   `json:"outputs,omitempty"`
+	Version   int              `json:"version"`
+	Run       string           `json:"run"`
+	Parent    string           `json:"parent,omitempty"`
+	Project   string           `json:"project"`
+	Stack     string           `json:"stack"`
+	Command   string           `json:"command"`
+	Task      string           `json:"task,omitempty"`
+	Args      []string         `json:"args,omitempty"`
+	Trigger   string           `json:"trigger,omitempty"`   // what made the run, as event.trigger says
+	Simulated string           `json:"simulated,omitempty"` // with --event: the trigger whose event the caller wrote
+	User      string           `json:"user"`
+	Host      string           `json:"host"`
+	Hostname  string           `json:"hostname"`
+	PID       int              `json:"pid"`
+	Started   string           `json:"started"`
+	Ended     string           `json:"ended,omitempty"`
+	Status    string           `json:"status"`
+	Outcome   string           `json:"outcome,omitempty"`
+	Reason    string           `json:"reason,omitempty"`
+	ExitCode  int              `json:"exit_code"`
+	Units     map[string]*Unit `json:"units,omitempty"`
+	Tasks     map[string]*Task `json:"tasks,omitempty"` // the tasks of the project that ran inside the run, by name
+	Outputs   map[string]any   `json:"outputs,omitempty"`
 	// EventsIncomplete says that events.jsonl lacks events that could not
 	// be written, as on a full disk.
 	EventsIncomplete bool `json:"events_incomplete,omitempty"`

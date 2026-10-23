@@ -97,6 +97,59 @@ func TestDaemon(t *testing.T) {
 	}
 }
 
+func TestDaemonServesItsStack(t *testing.T) {
+	dir := project(t, t.TempDir())
+	other := t.TempDir()
+	if err := os.WriteFile(filepath.Join(other, "opstruss.yaml"), []byte("name: other\nunits:\n  x:\n    run: echo x\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(t.TempDir(), "alias")
+	if err := os.Symlink(dir, alias); err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(dir, ".opstruss")
+	d, err := Start(Options{Dir: dir, Stack: "default", Version: "v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, stop := context.WithCancel(context.Background())
+	served := make(chan error)
+	go func() { served <- d.Serve(ctx) }()
+	defer func() {
+		stop()
+		if err := <-served; err != nil {
+			t.Error(err)
+		}
+	}()
+	call := func(r api.Request) error {
+		c, err := Dial(root, "default", "v1", false)
+		if err != nil || c == nil {
+			t.Fatalf("dial: %v", err)
+		}
+		defer func() { _ = c.Close() }()
+		r.Environ = os.Environ()
+		_, err = c.Call(context.Background(), "up", r, api.Handlers{})
+		return err
+	}
+	for _, c := range []struct {
+		r    api.Request
+		want string
+	}{
+		{api.Request{Dir: other, Yes: true}, "this daemon runs the project in " + dir},
+		{api.Request{Dir: dir, Stack: "prod", Yes: true}, "the project has no stack prod"},
+	} {
+		if err := call(c.r); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Fatalf("%+v: %v", c.r, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(other, ".opstruss")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the other project was touched: %v", err)
+	}
+	if err := call(api.Request{Dir: alias, Yes: true}); err != nil {
+		t.Fatalf("the project by another path: %v", err)
+	}
+}
+
 func TestDaemonLosesLock(t *testing.T) {
 	dir, err := os.MkdirTemp("/tmp", "d-")
 	if err != nil {
