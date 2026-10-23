@@ -62,7 +62,9 @@ func (n *Node) Def() *Unit {
 		if u.Stop == nil {
 			u.Stop = au.Stop
 		}
-		u.Pass = append(slices.Clone(u.Pass), au.Pass...)
+		if n.In.Source == nil {
+			u.Pass = append(slices.Clone(u.Pass), au.Pass...)
+		}
 	}
 	return &u
 }

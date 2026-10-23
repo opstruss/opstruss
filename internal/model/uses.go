@@ -11,12 +11,16 @@ import (
 	"strings"
 
 	"github.com/opstruss/opstruss/internal/expr"
+	"github.com/opstruss/opstruss/internal/sources"
 )
 
 // Package is what a name in uses: stands for, or a path that a unit uses
 // directly: a plugin, a component, a directory of components, or a
 // built-in task under another name.
 type Package struct {
+	Source     *sources.Identity
+	SourceRoot string
+
 	Name       string  // the name in uses:, or the path that a unit wrote
 	Decl       *Uses   // the declaration; nil for a path in a unit
 	Dir        string  // the directory of a plugin, component, or components

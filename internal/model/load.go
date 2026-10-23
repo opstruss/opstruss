@@ -12,6 +12,7 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/opstruss/opstruss/internal/schema"
+	"github.com/opstruss/opstruss/internal/sources"
 )
 
 // FileName is the file that marks a project.
@@ -28,6 +29,9 @@ const DefaultStack = "default"
 // overrides applied. A component that units use is read into one too,
 // without what only a project has.
 type Project struct {
+	Source     *sources.Identity
+	SourceRoot string
+
 	File
 	Dir       string
 	StackName string

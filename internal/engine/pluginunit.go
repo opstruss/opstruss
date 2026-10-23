@@ -3,10 +3,8 @@ package engine
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io/fs"
 	"maps"
 	"os"
 	"path"
@@ -17,6 +15,7 @@ import (
 	"github.com/opstruss/opstruss/internal/expr"
 	"github.com/opstruss/opstruss/internal/model"
 	"github.com/opstruss/opstruss/internal/plugin"
+	"github.com/opstruss/opstruss/internal/sources"
 	"github.com/opstruss/opstruss/internal/state"
 )
 
@@ -80,7 +79,7 @@ func (e *engine) resolvePlugin(inst *instance, r *resolved, s *expr.Scope) error
 	if err != nil {
 		return fmt.Errorf("with: %w", err)
 	}
-	hash, err := e.pluginHash(t.Package.Dir)
+	hash, err := e.pluginHash(t.Package)
 	if err != nil {
 		return err
 	}
@@ -179,40 +178,22 @@ func (e *engine) resolvePlugin(inst *instance, r *resolved, s *expr.Scope) error
 // pluginHash is the hash of every file in dir, by path and content, read
 // once a run, as the h1: hash of Go modules is: a script that changes
 // changes the definition of the units that use it.
-func (e *engine) pluginHash(dir string) (string, error) {
+func (e *engine) pluginHash(pkg *model.Package) (string, error) {
+	if pkg.Source != nil {
+		return pkg.Source.Hash, nil
+	}
+	dir := pkg.Dir
 	e.mu.Lock()
 	h, ok := e.hashes[dir]
 	e.mu.Unlock()
 	if ok {
 		return h, nil
 	}
-	var lines []string
-	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
-		switch {
-		case err != nil:
-			return err
-		case d.IsDir() && d.Name() == ".git":
-			return filepath.SkipDir
-		case !d.Type().IsRegular():
-			return nil
-		}
-		sum, err := hashFile(p)
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(dir, p)
-		if err != nil {
-			return err
-		}
-		lines = append(lines, fmt.Sprintf("%s  %s\n", strings.TrimPrefix(sum, "sha256:"), filepath.ToSlash(rel)))
-		return nil
-	})
+	var err error
+	h, err = sources.LocalHash(dir)
 	if err != nil {
-		return "", fmt.Errorf("plugin %s: %w", dir, err)
+		return "", err
 	}
-	slices.Sort(lines)
-	sum := sha256.Sum256([]byte(strings.Join(lines, "")))
-	h = "h1:" + base64.StdEncoding.EncodeToString(sum[:])
 	e.mu.Lock()
 	e.hashes[dir] = h
 	e.mu.Unlock()

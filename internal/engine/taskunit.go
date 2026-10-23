@@ -75,7 +75,7 @@ func (e *engine) resolveTask(inst *instance, r *resolved, s *expr.Scope) error {
 	}
 	switch {
 	case t.Kind == model.TargetTask:
-		if tu.hash, err = e.pluginHash(t.Package.Dir); err != nil {
+		if tu.hash, err = e.pluginHash(t.Package); err != nil {
 			return err
 		}
 		r.requires = append(slices.Clone(t.Package.Plugin.Requires), r.requires...)
