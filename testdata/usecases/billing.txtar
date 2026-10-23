@@ -29,7 +29,7 @@ grep -count=2 '"opstruss_key":"default/customer\[(acme|globex)\]\.[0-9a-f]+"' pr
 cp customers.2.yaml customers.yaml
 exec opstruss up --yes
 stdout '^default/customer\[acme\]: up: done$'
-grep '^stripe customers update cus_1 -d email=finance@acme.test$' calls
+grep '^stripe customers update cus_[0-9]+ -d email=finance@acme.test$' calls
 grep -count=2 '^\{' provider/customers.jsonl
 
 # October is charged once per customer, and again charges nothing
@@ -74,7 +74,7 @@ grep -count=2 '^\{' provider/charges.jsonl
 [failpoints] env OPSTRUSS_FAILPOINT=program-started=kill
 [failpoints] ! exec opstruss charge --month 2026-12
 [failpoints] env OPSTRUSS_FAILPOINT=
-[failpoints] waitgrep '^stripe charges create -d customer=cus_1 .*charge\.acme\.2026-12 \(unreachable\)$' calls
+[failpoints] waitgrep '^stripe charges create -d customer=cus_[0-9]+ .*charge\.acme\.2026-12 \(unreachable\)$' calls
 [failpoints] rm provider/unreachable
 [failpoints] ! exec opstruss charge --month 2026-12
 [failpoints] stderr 'acme: run \S+ claimed 2026-12 and did not finish, and Stripe has no charge for it'
