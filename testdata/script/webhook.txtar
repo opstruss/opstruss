@@ -29,6 +29,17 @@ stdout '^404 '
 
 webhook POST /hooks/hello '{"who":"ana"}' -github gh-secret
 stdout '^200 \{"exit_code":0,"outcome":"success","outputs":\{"greeting":"hi ana"\},"run":"[0-9]'
+
+# an up with another secret keeps the server on its port, and checks the
+# new secret
+env HOOK=n3w-token-for-hooks
+exec opstruss up --yes
+webhook POST /hooks/deploy '{"ref":"main"}' -bearer t0ken-for-hooks
+stdout '^401 '
+webhook POST /hooks/deploy '{"ref":"next"}' -bearer n3w-token-for-hooks
+stdout '^202 '
+waitgrep '^next webhook POST$' deployed
+grep -count=1 '"message":"webhooks listen on' .opstruss/logs/default/_daemon.jsonl
 exec opstruss stop
 
 -- opstruss.yaml --

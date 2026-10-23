@@ -175,7 +175,7 @@ func Start(opts Options) (_ *Daemon, err error) {
 	d.sup.watch, d.sup.kill = opts.Watch, proc.Kill(runs)
 	go d.sup.recover()
 	d.runs, d.cancelRuns = context.WithCancel(runs)
-	d.trig = &triggers{d: d, flight: map[string]bool{}, pending: map[string]int{}}
+	d.trig = &triggers{d: d, sources: map[string]*source{}, pending: map[string]int{}}
 	d.trig.hooks = &webhooks{t: d.trig}
 	d.trig.install(runOptions(opts.Dir, opts.Stack, opts.Inputs, opts.Environ))
 	return d, nil

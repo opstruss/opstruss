@@ -1,8 +1,9 @@
 # A task with on: runs by itself in the daemon of its stack: every makes a
 # run one interval after the daemon installs it and each interval after;
 # event says what made the run and its logical time; list shows when the
-# task comes next; up through the daemon installs the triggers again from
-# the files; a run from the command line says that it came from cli.
+# task comes next; up through the daemon reads the triggers again from the
+# files and keeps those whose source stays, with their ticks; a run from
+# the command line says that it came from cli.
 
 env HOME=$WORK/home
 
@@ -13,16 +14,32 @@ exec opstruss list
 stdout '^  tick .*on every 1s; next 20[0-9-]+T'
 exec opstruss list --json
 stdout '"triggers": \[\n\s+"every 1s"'
-grep '"type":"trigger","level":"info","message":"installed 1 triggers"' .opstruss/logs/default/_daemon.jsonl
+grep '"type":"trigger","level":"info","message":"installed 1 triggers: 1 sources started, 0 kept, 0 stopped, 0 failed"' .opstruss/logs/default/_daemon.jsonl
 
 # a run from the command line
 exec opstruss tick
 grep '^cli 20' fired
 
-# up installs the triggers again from the files as they are now
+# up reads the triggers again from the files as they are now: the every
+# stays, and its runs run the task as it is now
 cp next.yaml opstruss.yaml
 exec opstruss up --yes
 waitgrep '^again every' fired
+grep 'installed 1 triggers: 0 sources started, 1 kept, 0 stopped, 0 failed' .opstruss/logs/default/_daemon.jsonl
+
+# an up more often than the interval keeps its ticks
+cp slow.yaml opstruss.yaml
+exec opstruss up --yes
+exec opstruss up --yes
+exec sleep 0.7
+exec opstruss up --yes
+exec sleep 0.7
+exec opstruss up --yes
+exec sleep 0.7
+exec opstruss up --yes
+exec sleep 0.7
+exec opstruss up --yes
+grep '^slow every' fired
 exec opstruss stop
 exec opstruss list
 ! stdout 'next'
@@ -46,3 +63,12 @@ tasks:
       TRIGGER: ${{ event.trigger }}
     on:
       every: 1s
+-- slow.yaml --
+name: shop
+tasks:
+  tick:
+    run: echo "slow $TRIGGER" >> fired
+    env:
+      TRIGGER: ${{ event.trigger }}
+    on:
+      every: 2s

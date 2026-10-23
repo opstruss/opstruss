@@ -2,8 +2,10 @@
 # the lines of a program it runs as a source; if: chooses each event and
 # debounce gathers them. up -d returns once each watch is ready, so a file
 # written at once makes an event. A task of a plugin as a source reads a
-# secret and works in the directory of the task that watches. after makes
-# a run when another run ends, and a chain of after stops past three.
+# secret and works in the directory of the task that watches. up keeps the
+# sources whose definition stays, with what they gathered, and their runs
+# take the task as it is now. after makes a run when another run ends, and
+# a chain of after stops past three.
 
 env HOME=$WORK/home
 env FEED_TOKEN=feed-secret
@@ -28,6 +30,23 @@ exists where
 mkdir src
 exec sh -c 'echo a > src/a.txt; echo b > src/b.txt'
 waitgrep '^paths 2 ' fired
+
+# up keeps the sources that stay: the programs do not start again, and a
+# file written just before an up is in the debounce that goes on
+exec sh -c 'echo c > src/c.txt'
+exec opstruss up --yes
+exec opstruss up --yes
+waitgrep '^paths 1 src/c.txt$' fired
+grep -count=1 '^source one -$' fired
+grep -count=1 '^feed token of 11 characters$' fired
+grep 'installed 9 triggers: 0 sources started, 5 kept, 0 stopped, 0 failed' .opstruss/logs/default/_daemon.jsonl
+
+# a changed task takes effect without starting its source again
+exec sed -i.bak 's/echo "paths /echo "again /' opstruss.yaml
+exec opstruss up --yes
+exec sh -c 'echo d > src/d.txt'
+waitgrep '^again 1 src/d.txt$' fired
+grep -count=1 '^source one -$' fired
 
 # a run that ends makes the runs of after, three deep at most
 exec opstruss t1

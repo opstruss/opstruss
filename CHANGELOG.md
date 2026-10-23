@@ -153,16 +153,26 @@ minor release can change what a project, a component, or a plugin relies on.
   machine's) holds the time zone, and around a change of daylight saving
   time a job at a fixed time that the clock skips runs right after the
   jump and one that the clock repeats runs once, as cronie runs them.
-  `every` (at least 1s) runs one interval after the daemon installs it.
+  `every` (at least 1s) runs one interval after the daemon installs it,
+  and keeps its ticks through an `up` that leaves its interval.
   A time that comes while the run that the trigger made last still runs
   or waits goes to that run; one that comes more than a minute late, after
   the machine slept, is missed, and `persistent: true` runs once for what
   a schedule missed then or while no daemon ran. `if` and `with` of a
   schedule read `event` and decide whether a run is made and with what
-  inputs. The daemon installs the triggers when it starts and again after
-  each `up` through it, with the files, inputs, and environment of that
-  time, and its runs keep that project; `opstruss list` shows the
-  triggers of each task and, while the daemon runs, when it comes next.
+  inputs. The daemon installs the triggers when it starts, with its own
+  environment, and reconciles them after each `up` through it, as
+  `docker compose up` does its containers: a trigger whose source stays
+  (its interval, cron and time zone, paths, or the program of its watch
+  with the environment that program gets) keeps it, and its next events
+  take the files, inputs, and environment of that `up`, while one that
+  changed starts again on its own; a moved trigger is still the same. An
+  event is handled with one version of the project from its `if` to its
+  run, a request to a webhook too while an `up` changes its secret, and
+  what a watch gathered with the version before runs with that version. A
+  project that does not load, or a watch that cannot be prepared, keeps the
+  triggers installed before. `opstruss list` shows the triggers of each
+  task and, while the daemon runs, when it comes next.
 - A task with `on: watch` runs for each event of its source: a line that a
   service writes, or the `watch` hook of the plugin of a unit; a change of
   the files that `paths` names, relative to the directory of the task or
@@ -173,15 +183,16 @@ minor release can change what a project, a component, or a plugin relies on.
   keeps a service and starts again with backoff, with its inputs read
   again each time. The program of a source works in the directory of the
   task or unit that watches, as a step does. `up` through the daemon, also
-  `up -d`, and the start of the daemon return once each watch is ready,
-  with its files watched and its program started, so a change made after
-  that makes an event. `if` chooses each event, and `batch` or `debounce`
-  gathers them into one run with `event.lines` or `event.paths`, at most
-  10,000 items or 1 MiB, and `event.count`. A task with `on: after` runs
-  when a run of another task, or of a command such as `up` or `plan`, ends
-  in the daemon with the `outcome` it names, for the unit it names, with
-  `event.task`, `unit`, `outcome`, and `outputs`; a chain of after stops
-  past three.
+  `up -d`, and the start of the daemon return once each watch that they
+  start is ready, with its files watched and its program started, so a
+  change made after that makes an event; a watch that an `up` keeps keeps
+  its baseline and program. `if` chooses each event, and `batch` or
+  `debounce` gathers them into one run with `event.lines` or
+  `event.paths`, at most 10,000 items or 1 MiB, and `event.count`. A task
+  with `on: after` runs when a run of another task, or of a command such
+  as `up` or `plan`, ends in the daemon with the `outcome` it names, for
+  the unit it names, with `event.task`, `unit`, `outcome`, and `outputs`;
+  a chain of after stops past three.
 - A task with `on: webhook` runs when a request comes to its `path` and
   `method` on `runtime.listen` of the daemon, which every project with a
   webhook writes. `signature` checks `secret` before any run is made:

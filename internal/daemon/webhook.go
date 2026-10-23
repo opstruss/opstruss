@@ -39,17 +39,13 @@ type webhooks struct {
 	mu     sync.Mutex
 	addr   string // as runtime.listen writes it
 	srv    *http.Server
-	routes map[string]*engine.Trigger // by method and path
+	routes map[string]*bound // by method and path
 }
 
-// set serves the webhooks of list on addr, in place of what it served.
-func (w *webhooks) set(addr string, list []*engine.Trigger) error {
-	routes := map[string]*engine.Trigger{}
-	for _, tr := range list {
-		if tr.Kind == "webhook" {
-			routes[tr.Method+" "+tr.Path] = tr
-		}
-	}
+// set serves routes on addr, in place of what it served; a server that
+// stays on the same address keeps listening, and a request that came
+// before goes on with the route it found.
+func (w *webhooks) set(addr string, routes map[string]*bound) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.routes = routes
@@ -81,18 +77,35 @@ func (w *webhooks) close() {
 }
 
 func (w *webhooks) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
-	w.mu.Lock()
-	tr := w.routes[r.Method+" "+r.URL.Path]
-	known := false
-	for _, other := range w.routes {
-		known = known || other.Path == r.URL.Path
-	}
-	w.mu.Unlock()
-	if tr == nil {
-		code := map[bool]int{true: http.StatusMethodNotAllowed, false: http.StatusNotFound}[known]
+	b, code := w.route(r)
+	if b == nil {
 		http.Error(rw, http.StatusText(code), code)
 		return
 	}
+	w.handle(rw, r, b)
+}
+
+// route is the webhook of r with the snapshot it belongs to, or the code
+// to answer when there is none.
+func (w *webhooks) route(r *http.Request) (*bound, int) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if b := w.routes[r.Method+" "+r.URL.Path]; b != nil {
+		return b, 0
+	}
+	for _, other := range w.routes {
+		if other.tr.Path == r.URL.Path {
+			return nil, http.StatusMethodNotAllowed
+		}
+	}
+	return nil, http.StatusNotFound
+}
+
+// handle answers r for the webhook b: its secret, if:, with:, task, and
+// answer are those of the snapshot of b, whatever an install changes
+// meanwhile.
+func (w *webhooks) handle(rw http.ResponseWriter, r *http.Request, b *bound) {
+	tr := b.tr
 	refuse := func(code int, format string, args ...any) {
 		w.t.d.event("trigger", "warn", tr.Task, "%s: refused a request from %s with %d: %s", tr, r.RemoteAddr, code, fmt.Sprintf(format, args...))
 		http.Error(rw, http.StatusText(code), code)
@@ -106,9 +119,13 @@ func (w *webhooks) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		refuse(http.StatusUnauthorized, "%v", err)
 		return
 	}
-	if !w.t.begin(tr.Task) {
+	switch err := w.t.begin(tr.Task); {
+	case errors.Is(err, errFull):
 		rw.Header().Set("Retry-After", "1")
 		refuse(http.StatusServiceUnavailable, "task %s has %d runs unfinished", tr.Task, MaxPending)
+		return
+	case err != nil:
+		refuse(http.StatusServiceUnavailable, "%v", err)
 		return
 	}
 	ev := &engine.TriggerEvent{Trigger: "webhook", Time: time.Now().UTC(), Fields: fields(r, body)}
@@ -118,11 +135,9 @@ func (w *webhooks) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		err error
 	}
 	finished := make(chan done, 1)
-	w.t.runs.Add(1)
 	go func() {
-		defer w.t.runs.Done()
 		defer w.t.end(tr.Task)
-		opts := w.t.options()
+		opts := b.snap.opts
 		opts.Event, opts.Supervisor = ev, w.t.d.sup
 		opts.Started = func(run string) { started <- run }
 		res, err := engine.Fire(w.t.d.runs, opts, tr)

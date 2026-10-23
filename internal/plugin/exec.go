@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -396,6 +397,14 @@ func (r *Run) Prepare(c *Call, dir string) (*Program, error) {
 		p.Env = append(p.Env, k+"="+env[k])
 	}
 	return p, nil
+}
+
+// Equal reports whether p and q run the same: the same program, arguments,
+// directory, environment, input, and files of env: values. A variable that
+// is not there differs from one that is empty.
+func (p *Program) Equal(q *Program) bool {
+	return p != nil && q != nil && p.Path == q.Path && slices.Equal(p.Args, q.Args) && p.Dir == q.Dir &&
+		slices.Equal(p.Env, q.Env) && bytes.Equal(p.Stdin, q.Stdin) && maps.EqualFunc(p.Files, q.Files, bytes.Equal)
 }
 
 // inDir writes the files of a call in dir, 0600; they go with it after

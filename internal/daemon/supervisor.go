@@ -246,6 +246,31 @@ func (sup *Supervisor) Stop(_ context.Context, addr string) error {
 	return nil
 }
 
+// stopSpec stops the service that spec started and waits until it ended,
+// unless another start took its address since.
+func (sup *Supervisor) stopSpec(spec *engine.Service) {
+	sup.mu.Lock()
+	s := sup.services[spec.Address]
+	sup.mu.Unlock()
+	if s != nil && s.spec == spec {
+		sup.drop(s)
+	}
+}
+
+// specLives reports whether the service that spec started still runs, or
+// starts again, and has not given up.
+func (sup *Supervisor) specLives(spec *engine.Service) bool {
+	sup.mu.Lock()
+	s := sup.services[spec.Address]
+	sup.mu.Unlock()
+	if s == nil || s.spec != spec {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.status.State != "stopped"
+}
+
 // Status says how the service at addr runs.
 func (sup *Supervisor) Status(addr string) (engine.ServiceStatus, bool) {
 	sup.mu.Lock()

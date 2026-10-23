@@ -44,6 +44,23 @@ func triggerDaemon(t *testing.T, yaml string, before func(root string)) (*Daemon
 	return d, dir
 }
 
+// installed is the one source of kind that the daemon installed for task.
+func installed(t *testing.T, d *Daemon, task, kind string) *source {
+	t.Helper()
+	var found []*source
+	d.trig.mu.Lock()
+	for _, s := range d.trig.sources {
+		if tr := s.cur.Load().tr; tr.Task == task && tr.Kind == kind {
+			found = append(found, s)
+		}
+	}
+	d.trig.mu.Unlock()
+	if len(found) != 1 {
+		t.Fatalf("%d sources of %s %s", len(found), kind, task)
+	}
+	return found[0]
+}
+
 func lines(t *testing.T, p string) []string {
 	t.Helper()
 	data, err := os.ReadFile(p)
@@ -72,17 +89,13 @@ tasks:
         with:
           day: ${{ string(event.time.getDayOfWeek()) }}
 `, nil)
-	list, _, err := engine.Triggers(runOptions(dir, "default", nil, []string{"PATH=" + os.Getenv("PATH")}))
-	if err != nil || len(list) != 1 {
-		t.Fatalf("triggers %v %v", list, err)
-	}
-	tr := list[0]
+	src := installed(t, d, "report", "schedule")
 	monday := time.Date(2026, 10, 26, 7, 0, 0, 0, time.UTC)
-	d.trig.fire(tr, monday)
-	d.trig.fire(tr, monday.Add(time.Second)) // the run of monday still sleeps
-	d.trig.fire(tr, time.Date(2026, 10, 25, 7, 0, 0, 0, time.UTC))
+	d.trig.fire(src, monday)
+	d.trig.fire(src, monday.Add(time.Second)) // the run of monday still sleeps
+	d.trig.fire(src, time.Date(2026, 10, 25, 7, 0, 0, 0, time.UTC))
 	d.trig.runs.Wait()
-	d.trig.fire(tr, time.Date(2026, 10, 25, 7, 0, 0, 0, time.UTC)) // Sunday: if: leaves it out
+	d.trig.fire(src, time.Date(2026, 10, 25, 7, 0, 0, 0, time.UTC)) // Sunday: if: leaves it out
 	d.trig.runs.Wait()
 	if got := strings.Join(lines(t, filepath.Join(dir, "fired")), " "); got != "1-schedule" {
 		t.Fatalf("fired %q", got)

@@ -18,10 +18,12 @@ import (
 type Trigger struct {
 	Task  string
 	Kind  string // schedule or every
-	Index int    // among the triggers of its kind in the task
+	Index int    // among the triggers of its kind in the task, in Model
 	// Key names it apart from the place it has in the list: the hash of
-	// its cron and time zone, or of its interval, by which a persistent
-	// schedule keeps when it last ran.
+	// its cron and time zone, by which a persistent schedule keeps when it
+	// last ran, of its interval, of its method and path, of the task and
+	// unit it comes after, or of the source of a watch. Triggers of a task
+	// that are alike have the same Key.
 	Key        string
 	Cron       string
 	Timezone   string // empty is the time zone of the machine
@@ -132,8 +134,9 @@ func Triggers(opts Options) ([]*Trigger, string, error) {
 					return nil, "", e.redact.Err(fmt.Errorf("task %s: watch: paths: %w", name, err))
 				}
 			}
-			t := &Trigger{Task: name, Kind: "watch", Index: i, Key: keyOf(name, fmt.Sprint(i)), Unit: w.Unit,
-				Stream: cmp.Or(w.Stream, "both"), Paths: paths, Dir: e.p.DirOf("tasks." + name), Call: len(w.Calls) > 0}
+			t := &Trigger{Task: name, Kind: "watch", Index: i, Unit: w.Unit, Stream: cmp.Or(w.Stream, "both"), Paths: paths,
+				Dir: e.p.DirOf("tasks." + name), Call: len(w.Calls) > 0}
+			t.Key = keyOf(name, t.Unit, t.Stream, t.Dir, expr.JSON(paths), expr.JSON(w.Calls))
 			for _, d := range []struct {
 				text string
 				to   *time.Duration
