@@ -1,10 +1,8 @@
 package engine
 
 import (
-	"bufio"
 	"cmp"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -200,8 +198,22 @@ func runRecords(root, stack string) ([]*record.Record, error) {
 	}
 	out := []*record.Record{}
 	for i := len(ents) - 1; i >= 0; i-- {
-		if rec, err := record.Read(filepath.Join(base, ents[i].Name())); err == nil {
+		if !ents[i].IsDir() {
+			continue
+		}
+		dir := filepath.Join(base, ents[i].Name())
+		rec, err := record.Read(dir)
+		var newer *state.NewerError
+		switch {
+		case err == nil:
 			out = append(out, rec)
+		case errors.Is(err, fs.ErrNotExist):
+			// A run that starts writes its record in a moment, and one
+			// that retention dropped meanwhile is gone.
+		case errors.As(err, &newer):
+			return nil, err
+		default:
+			return nil, fmt.Errorf("%w; repair it, or remove %s to drop that run", err, dir)
 		}
 	}
 	// Names order runs by the second they started in; within one, the
@@ -227,25 +239,4 @@ func Events(ctx context.Context, opts Options, id string, emit func(Event)) erro
 		return fmt.Errorf("stack %s has no run %s", e.p.StackName, id)
 	}
 	return err
-}
-
-// eachEvent hands each event of the events.jsonl at path to fn, in order.
-func eachEvent(path string, fn func(Event) error) error {
-	f, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = f.Close() }()
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 64<<10), 16<<20)
-	for sc.Scan() {
-		var ev Event
-		if err := json.Unmarshal(sc.Bytes(), &ev); err != nil {
-			return err
-		}
-		if err := fn(ev); err != nil {
-			return err
-		}
-	}
-	return sc.Err()
 }

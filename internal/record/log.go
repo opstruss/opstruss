@@ -14,6 +14,8 @@ import (
 	"slices"
 	"sync"
 	"time"
+
+	"github.com/opstruss/opstruss/internal/state"
 )
 
 // MaxLog is the size at which a log turns over, and LogFiles how many files
@@ -31,11 +33,14 @@ var logMax int64 = MaxLog
 // <path>.1, and that one to <path>.2, as logrotate names them, so a reader
 // that follows <name>.jsonl does not take the old files for new ones.
 type Log struct {
-	path string
-	mu   sync.Mutex
-	f    *os.File
-	size int64
-	seq  int64
+	path   string
+	mu     sync.Mutex
+	f      *os.File
+	size   int64
+	seq    int64
+	closed bool
+	lost   int64 // events that could not be written since err
+	err    error
 }
 
 // OpenLog opens the log at path to append to it after the events already
@@ -44,16 +49,25 @@ func OpenLog(path string) (*Log, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o600)
-	if err != nil {
-		return nil, err
-	}
-	l := &Log{path: path, f: f}
-	if l.size, l.seq, err = lastLine(f); err != nil {
-		_ = f.Close()
+	l := &Log{path: path}
+	if err := l.open(); err != nil {
 		return nil, err
 	}
 	return l, nil
+}
+
+// open opens the file at the path of the log to append to it.
+func (l *Log) open() error {
+	f, err := os.OpenFile(l.path, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o600)
+	if err != nil {
+		return err
+	}
+	if l.size, l.seq, err = lastLine(f); err != nil {
+		_ = f.Close()
+		return err
+	}
+	l.f = f
+	return nil
 }
 
 // lastLine reads the seq of the last whole line of f, and cuts what
@@ -86,38 +100,78 @@ func lastLine(f *os.File) (size, seq int64, err error) {
 }
 
 // Emit gives ev its envelope and appends it as one write, so a reader
-// never sees half of it, and returns it with that envelope. A log that
-// cannot be written loses the event, as the output of a program that fills
-// the disk does.
+// never sees half of it, and returns it with that envelope. An event that
+// cannot be written is lost, as the output of a program that fills the
+// disk is; the first one written after says how many were lost, and why.
 func (l *Log) Emit(ev Event) Event {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	ev.V, ev.Seq, ev.Time = EventVersion, l.seq+1, now()
-	if l.f == nil {
+	lost := func(err error) Event {
+		if l.lost == 0 {
+			l.err = err
+		}
+		l.lost++
+		ev.V, ev.Seq, ev.Time = EventVersion, l.seq+1, now()
 		return ev
 	}
+	if l.closed {
+		return lost(os.ErrClosed)
+	}
+	// A file that a turn could not open is opened again.
+	if l.f == nil {
+		if err := l.open(); err != nil {
+			return lost(err)
+		}
+	}
+	if l.lost > 0 {
+		msg := "an event of this log was not stored"
+		if l.lost > 1 {
+			msg = fmt.Sprintf("%d events of this log were not stored", l.lost)
+		}
+		note := Event{Type: "diagnostic", Level: "warn", Message: fmt.Sprintf("%s: %v", msg, l.err)}
+		if _, err := l.write(note); err != nil {
+			return lost(err)
+		}
+		l.lost, l.err = 0, nil
+	}
+	ev, err := l.write(ev)
+	if err != nil {
+		return lost(err)
+	}
+	return ev
+}
+
+// write gives ev its envelope and appends it, after the full file turned
+// over. A write that fails leaves no part of its line.
+func (l *Log) write(ev Event) (Event, error) {
+	ev.V, ev.Seq, ev.Time = EventVersion, l.seq+1, now()
 	data, err := json.Marshal(ev)
 	if err != nil {
-		return ev
+		return ev, err
 	}
 	if l.size > 0 && l.size+int64(len(data))+1 > logMax {
-		l.turn()
-		if l.f == nil {
-			return ev
+		if err := l.turn(); err != nil {
+			return ev, err
 		}
-		ev.Seq = 1
-		data, _ = json.Marshal(ev)
+		ev.Seq = l.seq + 1
+		if data, err = json.Marshal(ev); err != nil {
+			return ev, err
+		}
 	}
+	if _, err := l.f.Write(append(data, '\n')); err != nil {
+		_ = l.f.Truncate(l.size)
+		return ev, err
+	}
+	l.size += int64(len(data)) + 1
 	l.seq = ev.Seq
-	n, _ := l.f.Write(append(data, '\n'))
-	l.size += int64(n)
-	return ev
+	return ev, nil
 }
 
 // turn moves the full file aside, over the oldest one, and starts a new
 // one.
-func (l *Log) turn() {
+func (l *Log) turn() error {
 	_ = l.f.Close()
+	l.f = nil
 	for i := LogFiles - 1; i > 0; i-- {
 		from := l.path
 		if i > 1 {
@@ -125,14 +179,14 @@ func (l *Log) turn() {
 		}
 		_ = os.Rename(from, fmt.Sprintf("%s.%d", l.path, i))
 	}
-	l.f, _ = os.OpenFile(l.path, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o600)
-	l.size, l.seq = 0, 0
+	return l.open()
 }
 
 // Close closes the file of the log.
 func (l *Log) Close() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	l.closed = true
 	if l.f == nil {
 		return nil
 	}
@@ -276,8 +330,9 @@ scan:
 }
 
 // readEvents hands each whole line that f has from where it is to fn as an
-// event; a line that is not one is skipped, and an unfinished one waits in
-// rest for the rest of it.
+// event; a line that is not one, as one that a full disk cut, is skipped,
+// and an unfinished one waits in rest for the rest of it. An event of a
+// newer version stops it.
 func readEvents(f *os.File, rest *[]byte, fn func(Event)) error {
 	r := bufio.NewReaderSize(f, 64<<10)
 	for {
@@ -289,6 +344,9 @@ func readEvents(f *os.File, rest *[]byte, fn func(Event)) error {
 		if err == nil {
 			var ev Event
 			if json.Unmarshal(bytes.TrimSpace(*rest), &ev) == nil {
+				if ev.V > EventVersion {
+					return &state.NewerError{What: fmt.Sprintf("event %d of %s", ev.Seq, f.Name()), Version: ev.V, Known: EventVersion}
+				}
 				fn(ev)
 			}
 			*rest = (*rest)[:0]

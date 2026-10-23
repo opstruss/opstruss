@@ -1,5 +1,6 @@
 # OpsTruss killed at each point of an up leaves a record that the next up
-# finishes, and a program it left running is waited for. Run with
+# finishes, and a program it left running is waited for; events that a
+# full disk refuses only mark the record of the run. Run with
 # go test -tags failpoints.
 
 [!failpoints] skip 'needs a build with -tags failpoints'
@@ -64,6 +65,15 @@ stdout '^default/store: unchanged$'
 exec opstruss state pull store
 ! stdout '"pending"'
 stdout '"id": "made-'
+
+# events that cannot be written leave what the run does as it is; the run
+# says so, exits as it would, and its record says that events are missing
+env OPSTRUSS_FAILPOINT=record-events-write=fail
+exec opstruss up store --yes
+stdout '^default/store: unchanged$'
+stderr '^not every event of the run was stored: failpoint record-events-write$'
+env OPSTRUSS_FAILPOINT=
+exec sh -c 'grep -l "\"events_incomplete\": true" .opstruss/runs/default/*/record.json'
 
 # a run nested in one that holds the record of an instance of a component
 # for a moment waits for it to move that record, rather than failing

@@ -167,9 +167,8 @@ type engine struct {
 	newIDs  map[string]string // the ids of records that up makes, by address
 }
 
-// open reads the project and the state of its stack, marks the runs that
-// a crash left running, and starts the record of a run of command, or of
-// the task with that name.
+// open reads the project and the state of its stack, and starts the
+// record of a run of command, or of the task with that name.
 func open(ctx context.Context, opts Options, command, task string) (*engine, error) {
 	e, err := load(opts)
 	if err != nil {
@@ -254,9 +253,8 @@ func load(opts Options) (*engine, error) {
 	return e, nil
 }
 
-// start begins a run: the record of the run, with the runs that a crash
-// left running marked first, the holder of its locks, and its directory
-// of temporary files.
+// start begins a run: the record of the run, the holder of its locks, and
+// its directory of temporary files.
 func (e *engine) start(command, task string) error {
 	p, opts := e.p, e.opts
 	rec := &record.Record{Project: p.Name, Stack: p.StackName, Command: command, Task: task, Args: opts.Units,
@@ -275,22 +273,29 @@ func (e *engine) start(command, task string) error {
 	if opts.Started != nil {
 		opts.Started(e.runID)
 	}
-	interrupted, err := record.Interrupted(e.root, p.StackName)
-	if err != nil {
-		return err
-	}
-	for _, run := range interrupted {
-		e.warn("", "run %s ended without finishing its record; it is marked cancelled, as interrupted", run)
-	}
 	for _, name := range e.tooShort {
 		e.warnShort(name)
 	}
 	e.cleanTemp()
 	e.holder = state.NewHolder(e.runID, e.host)
-	e.run = &plugin.Run{Project: p.Name, Stack: p.StackName, ID: e.runID, Parents: e.parents,
+	run := &plugin.Run{Project: p.Name, Stack: p.StackName, ID: e.runID, Parents: e.parents,
 		Temp: e.tempOf(e.runID), Artifacts: filepath.Join(e.root, "runs", p.StackName, e.runID, "artifacts"), Environ: opts.Environ,
 		Passed: e.passed}
-	return e.run.Open()
+	if err := run.Open(); err != nil {
+		e.abort(err)
+		return err
+	}
+	e.run = run
+	return nil
+}
+
+// abort ends a run whose start failed after its record was made: failed,
+// with err among its events. The caller reports err itself, so the events
+// go to the record alone.
+func (e *engine) abort(err error) {
+	e.opts.Emit = nil
+	e.fail("", err)
+	e.close(failure, nil, nil)
 }
 
 // sink hands events to the caller; debug events only with OPSTRUSS_LOG=debug.
@@ -310,19 +315,21 @@ func (e *engine) debug(addr, format string, args ...any) {
 	}
 }
 
-// close ends the run: the last event, of type run, then the record, then
-// the retention of old runs, and the run's temporary files go. The outputs
-// that marks marks are written out as secret.Mask.
+// close ends the run: its record, then the runs that a crash left running
+// marked and old runs dropped, then the last event, of type run, whose
+// exit code says whether the record was written; the run's temporary
+// files go first. The outputs that marks
+// marks are written out as secret.Mask.
 func (e *engine) close(outcome string, outputs, marks map[string]any) {
-	if err := e.run.Close(); err != nil {
-		e.warn("", "removing the run's temporary files: %v", err)
+	if e.run != nil {
+		if err := e.run.Close(); err != nil {
+			e.warn("", "removing the run's temporary files: %v", err)
+		}
 	}
 	outputs = e.shown(outputs, marks)
 	e.outcome, e.outputs = outcome, outputs
-	code := e.exit
-	e.emit(Event{Type: "run", Level: "info", Task: e.rec.Task(), Message: outcome, Outcome: outcome, ExitCode: &code, Outputs: outputs})
 	e.mu.Lock()
-	touched, ran := e.touched, e.ran
+	touched, ran, code := e.touched, e.ran, e.exit
 	e.mu.Unlock()
 	err := e.rec.Finish(func(r *record.Record) {
 		r.Outcome, r.ExitCode, r.Outputs = outcome, code, outputs
@@ -333,12 +340,32 @@ func (e *engine) close(outcome string, outputs, marks map[string]any) {
 			r.Tasks = ran
 		}
 	})
-	if err == nil {
-		err = record.Prune(e.root, e.p.StackName)
+	if err != nil {
+		// What the run did stands, and is not done again; only its record
+		// is missing, until the next run marks it from its events.
+		e.emit(Event{Type: "diagnostic", Level: "error",
+			Message: fmt.Sprintf("the record of run %s was not written: %v; the next run of the stack marks it from its events", e.runID, err)})
+		if code == 0 || code == 2 {
+			code = 1
+		}
+	} else {
+		marked, err := record.Prune(e.root, e.p.StackName)
+		for _, r := range marked {
+			if r.Reason == "interrupted" {
+				e.warn("", "run %s ended without finishing its record; it is marked cancelled, as interrupted", r.Run)
+			} else {
+				e.warn("", "run %s ended without writing its record; it is marked %s, as its last event says", r.Run, r.Outcome)
+			}
+		}
+		if err != nil {
+			e.warn("", "%v", err)
+		}
 	}
-	if err != nil && e.opts.Emit != nil {
-		e.opts.Emit(Event{Type: "diagnostic", Level: "warn", Message: "keeping the record of the run: " + e.redact.String(err.Error())})
-	}
+	e.mu.Lock()
+	e.exit = code
+	e.mu.Unlock()
+	e.emit(Event{Type: "run", Level: "info", Task: e.rec.Task(), Message: outcome, Outcome: outcome, ExitCode: &code, Outputs: outputs})
+	e.rec.Close()
 }
 
 // cleanTemp removes the temporary directories of runs that no longer run

@@ -148,7 +148,7 @@ func (e *engine) showRun(ctx context.Context, name string, r *record.Record, via
 		head += " via " + via
 	}
 	e.sayTask(name, "", "%s", head)
-	err := record.ReadRun(ctx, filepath.Join(e.root, "runs", e.p.StackName, r.Run), follow && r.Status == record.Running, func(ev Event) {
+	err := record.ReadRun(ctx, filepath.Join(e.root, "runs", e.p.StackName, r.Run), follow, func(ev Event) {
 		if via == "" || ev.Task == name {
 			e.replay(ev)
 		}
@@ -251,11 +251,10 @@ func (e *engine) unitLogs(ctx context.Context, inst *instance, follow bool) (any
 		}
 		what := cmp.Or(r.Task, r.Command)
 		e.say("unit", inst.address, "output of %s in run %s at %s", what, r.Run, r.Started)
-		err := eachEvent(filepath.Join(e.root, "runs", e.p.StackName, r.Run, "events.jsonl"), func(ev Event) error {
+		err := record.ReadRun(ctx, filepath.Join(e.root, "runs", e.p.StackName, r.Run), false, func(ev Event) {
 			if ev.Type == "log" && ev.Address == inst.address {
 				e.replay(ev)
 			}
-			return nil
 		})
 		if err != nil {
 			return failed(err), nil

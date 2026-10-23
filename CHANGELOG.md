@@ -25,7 +25,9 @@ minor release can change what a project, a component, or a plugin relies on.
   listens on a socket for its own user only, refuses a caller of another
   protocol with what to do, writes its events to
   `.opstruss/logs/<stack>/_daemon.jsonl`, which turns over at 10 MiB into
-  `.1` and `.2`, and stops when its lock file is deleted.
+  `.1` and `.2`, and stops when its lock file is deleted. An event that
+  this log, or the log of a service, cannot take is lost, and the next
+  one written says first how many were lost and why.
 - A unit with `service:` is a program that keeps running, which the daemon
   of the stack keeps. `up` starts it, and again after its definition
   changed, with `--force`, or when it does not run, and waits until
@@ -491,7 +493,9 @@ minor release can change what a project, a component, or a plugin relies on.
   `opstruss runs` lists the runs of the stack, newest first, and
   `opstruss runs <run>` shows the events of one again, and with `-f` goes
   on with a run that still runs until it ends. With `--json`, each prints
-  one document, and `runs <run>` the events as they are stored.
+  one document, and `runs <run>` the events as they are stored. Records
+  and events of a newer OpsTruss stop them with what to do, and a record
+  that cannot be read names the run to repair or remove.
 - `OPSTRUSS_LOG=debug` writes the diagnostics of the engine to stderr.
 - Every run keeps `record.json` (who ran what and when, the units it
   touched with their outcome, plan, and approval, also the instances that
@@ -503,16 +507,32 @@ minor release can change what a project, a component, or a plugin relies on.
   finish, and a finished run keeps `record.json`, `events.jsonl`, and
   `artifacts/` when it holds something. Events reach `events.jsonl` within
   200 ms. A run stores at most 10 MiB of program output; the middle of
-  more is dropped, with one diagnostic event.
+  more is dropped, with one diagnostic event. Events that cannot be
+  written, as on a full disk, do not stop the run or change its exit
+  code: it says so once, its record says `events_incomplete: true`, and
+  the events after are written again. A record that cannot be written
+  makes the run exit 1 after an error event, while its last event keeps
+  the outcome of what it did, which is not done again. History survives a
+  crash of OpsTruss, not a power loss: records and events are not synced
+  to disk, unlike state.
 - `--json` prints every event of a run on a line of its own, with `v`,
   `seq`, `time`, `run`, `type`, `level`, and `message`, and the address,
   task, step, or stream it belongs to. The last event, of type `run`,
   carries the outcome, the exit code, and the outputs of a task.
 - A run that a crash left unfinished is marked cancelled, as interrupted,
-  by the next run of its stack, and its temporary files go once none of
-  its programs is left.
+  by the next run of its stack as that run ends, also when an older
+  OpsTruss removed its lock, and its temporary files go once none of its
+  programs is left. A run whose record could not be written is marked as
+  its last event says. A run that cannot be marked is a warning of the
+  run that tried. A run that fails to start after its record was made,
+  also in the daemon, ends failed rather than running.
 - Old runs go: a stack keeps 100 runs per task and at most 1 GiB of runs,
   and never drops a run still going or the last run that touched a unit.
+  This and marking runs that a crash left read
+  `.opstruss/runs/<stack>/.index`, a summary of the finished runs that is
+  built again from the runs when it is lost or broken, rather than every
+  record: with 10,000 runs in a stack, a run takes about 15 ms more than
+  in an empty one, where it took a second.
 - Programs of units and tasks start from a clean environment (`PATH`,
   `HOME`, `USER`, the locale, `TZ`, `TMPDIR`, `TERM`, proxies,
   `SSL_CERT_*`, `SSH_AUTH_SOCK`) plus the variables that `pass:` names and

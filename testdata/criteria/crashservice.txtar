@@ -71,6 +71,7 @@ exec sh -c 'sort -u visited'
 cmp stdout points
 
 -- points --
+record-events-write
 service-before-go
 up-after-program
 up-before-pending

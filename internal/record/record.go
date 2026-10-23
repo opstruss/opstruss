@@ -17,6 +17,9 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/opstruss/opstruss/internal/failpoint"
+	"github.com/opstruss/opstruss/internal/state"
 )
 
 // EventVersion is the version of the shape of events, in v; Version is the
@@ -72,6 +75,9 @@ type Record struct {
 	Units    map[string]*Unit `json:"units,omitempty"`
 	Tasks    map[string]*Task `json:"tasks,omitempty"` // the tasks of the project that ran inside the run, by name
 	Outputs  map[string]any   `json:"outputs,omitempty"`
+	// EventsIncomplete says that events.jsonl lacks events that could not
+	// be written, as on a full disk.
+	EventsIncomplete bool `json:"events_incomplete,omitempty"`
 }
 
 // Task is how the calls of one task inside a run ended, as one outcome.
@@ -113,6 +119,11 @@ type Run struct {
 	gone   int64   // program output dropped from the middle
 	flush  *time.Timer
 	closed bool
+	err    error // the first event that could not be written
+	cut    bool  // a write failed, maybe in the middle of a line
+	// committed is set once record.json says finished; until then the run
+	// keeps its .lock file, so the next run marks it.
+	committed bool
 }
 
 // flushEvery is how long buffered events wait before they are written, so
@@ -144,20 +155,47 @@ func Create(root string, newID func() string, rec *Record, sink func(Event)) (*R
 		}
 		rec.Run, rec.Status, rec.Version = id, Running, Version
 		r := &Run{Dir: dir, rec: rec, sink: sink}
-		if r.lock, err = os.OpenFile(filepath.Join(dir, ".lock"), os.O_RDWR|os.O_CREATE, 0o600); err != nil {
-			return nil, err
-		}
-		if err := syscall.Flock(int(r.lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-			return nil, err
-		}
-		if r.events, err = os.OpenFile(filepath.Join(dir, "events.jsonl"), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600); err != nil {
-			return nil, err
-		}
-		r.out = bufio.NewWriterSize(r.events, 64<<10)
 		live.Store(rec.Run, &Record{Run: rec.Run, Command: rec.Command, Task: rec.Task, Status: Running})
-		return r, write(dir, rec)
+		if err := r.open(); err != nil {
+			// A run that could not start leaves nothing behind.
+			if r.events != nil {
+				_ = r.events.Close()
+			}
+			if r.lock != nil {
+				_ = r.lock.Close()
+			}
+			live.Delete(rec.Run)
+			_ = os.RemoveAll(dir)
+			return nil, err
+		}
+		return r, nil
 	}
 }
+
+// open takes the lock of a new run, opens its events, and writes its
+// record as running.
+func (r *Run) open() (err error) {
+	if r.lock, err = os.OpenFile(filepath.Join(r.Dir, ".lock"), os.O_RDWR|os.O_CREATE, 0o600); err != nil {
+		return err
+	}
+	if err := syscall.Flock(int(r.lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		return err
+	}
+	if r.events, err = os.OpenFile(filepath.Join(r.Dir, "events.jsonl"), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600); err != nil {
+		return err
+	}
+	r.out = bufio.NewWriterSize(r.events, 64<<10)
+	if err := failpoint.Fail("record-events-write"); err != nil {
+		// The first events are not written, as on a full disk.
+		r.out = bufio.NewWriterSize(refused{err}, 64<<10)
+	}
+	return write(r.Dir, r.rec)
+}
+
+// refused is a file that refuses what is written to it.
+type refused struct{ err error }
+
+func (f refused) Write([]byte) (int, error) { return 0, f.err }
 
 // live are the runs of this process that have not finished, which are
 // alive without a look at their locks.
@@ -176,6 +214,11 @@ func (r *Run) Task() string { return r.rec.Task }
 func (r *Run) Emit(ev Event) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.emit(ev)
+}
+
+// emit is Emit for a caller that holds mu.
+func (r *Run) emit(ev Event) {
 	r.seq++
 	ev.V, ev.Seq, ev.Run = EventVersion, r.seq, r.rec.Run
 	ev.Time = now()
@@ -210,12 +253,25 @@ func (r *Run) Emit(ev Event) {
 // flushEvery, so a crash loses at most the program output and plan lines
 // of that time. The caller holds mu.
 func (r *Run) writeEvent(ev Event) {
+	if r.closed {
+		return
+	}
 	data, err := json.Marshal(ev)
-	if err == nil {
-		_, _ = r.out.Write(append(data, '\n'))
+	if err != nil {
+		r.lose(err)
+		return
+	}
+	if r.cut {
+		// The line before may have been cut where the write failed.
+		data = append([]byte{'\n'}, data...)
+		r.cut = false
+	}
+	if _, err := r.out.Write(append(data, '\n')); err != nil {
+		r.fail(err)
+		return
 	}
 	if ev.Level != "info" || (ev.Type != "log" && ev.Type != "plan") {
-		_ = r.out.Flush()
+		r.fail(r.out.Flush())
 		return
 	}
 	if r.flush == nil {
@@ -224,16 +280,37 @@ func (r *Run) writeEvent(ev Event) {
 			defer r.mu.Unlock()
 			r.flush = nil
 			if !r.closed {
-				_ = r.out.Flush()
+				r.fail(r.out.Flush())
 			}
 		})
 	}
 }
 
+// lose keeps the first event that could not be written, which marks the
+// record.
+func (r *Run) lose(err error) {
+	if r.err == nil {
+		r.err = err
+	}
+}
+
+// fail is lose for a write of events.jsonl that failed: the writer starts
+// over without what it held, so events are stored again once the disk
+// takes them.
+func (r *Run) fail(err error) {
+	if err == nil {
+		return
+	}
+	r.lose(err)
+	r.out.Reset(r.events)
+	r.cut = true
+}
+
 // Finish writes what waited in memory, after one diagnostic event when
-// program output was dropped, and the record as finished. What only the
-// living run needs goes then: its lock, and artifacts/ when empty; and the
-// directory of a run that only read goes whole.
+// program output was dropped, then the record as finished, while the run
+// still holds its lock: the last event of the run comes next, then Close.
+// Events that could not be written mark the record, after one diagnostic
+// event that says so; the error is that of the record alone.
 func (r *Run) Finish(update func(*Record)) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -247,31 +324,55 @@ func (r *Run) Finish(update func(*Record)) error {
 		r.writeEvent(ev)
 	}
 	r.tail = nil
-	_ = r.out.Flush()
+	r.fail(r.out.Flush())
+	if r.err != nil {
+		r.emit(Event{Type: "diagnostic", Level: "warn", Message: fmt.Sprintf("not every event of the run was stored: %v", r.err)})
+	}
 	update(r.rec)
-	r.rec.Status = Finished
+	r.rec.Status, r.rec.EventsIncomplete = Finished, r.err != nil
 	r.rec.Ended = time.Now().UTC().Format(time.RFC3339)
-	err := write(r.Dir, r.rec)
+	if err := write(r.Dir, r.rec); err != nil {
+		return err
+	}
+	r.committed = true
+	return nil
+}
+
+// Close ends the run after its last event: what waits is written, and the
+// lock goes, and with it what only the living run needed: artifacts/ when
+// empty, and the whole directory of a run that only read. A run whose
+// record Finish could not write keeps its .lock file, so the next run
+// marks it.
+func (r *Run) Close() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if r.flush != nil {
 		r.flush.Stop()
 		r.flush = nil
 	}
+	r.fail(r.out.Flush())
+	if err := r.events.Close(); err != nil {
+		r.lose(err)
+	}
 	r.closed = true
-	if cerr := r.events.Close(); err == nil {
-		err = cerr
+	if r.committed && r.err != nil && !r.rec.EventsIncomplete {
+		// The last event was lost; the record says so if it can.
+		r.rec.EventsIncomplete = true
+		_ = write(r.Dir, r.rec)
+	}
+	_ = r.lock.Close()
+	live.Delete(r.rec.Run)
+	if !r.committed {
+		return
 	}
 	// The record says finished before the lock goes, so a run that reads
 	// it under the lock never takes it for one a crash left.
-	_ = r.lock.Close()
 	_ = os.Remove(r.lock.Name())
 	_ = os.Remove(filepath.Join(r.Dir, "artifacts"))
-	live.Delete(r.rec.Run)
 	if slices.Contains(reads, r.rec.Command) {
-		if rerr := os.RemoveAll(r.Dir); err == nil {
-			err = rerr
-		}
+		// What a crash or a failure leaves, retention drops later.
+		_ = os.RemoveAll(r.Dir)
 	}
-	return err
 }
 
 // Record is the record of the run as it stands, as Finish left it once the
@@ -324,16 +425,12 @@ func ReadRun(ctx context.Context, dir string, follow bool, fn func(Event)) error
 	}
 }
 
-// runEnded reports whether the run in dir ended: its record is finished,
-// its directory went, or no process holds its lock, which it takes before
-// it writes its record.
+// runEnded reports whether the run in dir ended: its directory went, or no
+// process holds its lock, which it takes before it writes its record and
+// lets go only after its last event. Its record says finished before that
+// event, so it does not tell.
 func runEnded(dir string) bool {
-	rec, err := Read(dir)
-	switch {
-	case err != nil:
-		_, serr := os.Stat(dir)
-		return serr != nil
-	case rec.Status == Finished:
+	if _, err := os.Stat(dir); err != nil {
 		return true
 	}
 	if _, ok := live.Load(filepath.Base(dir)); ok {
@@ -353,7 +450,7 @@ func Read(dir string) (*Record, error) {
 		return nil, fmt.Errorf("%s: %w", filepath.Join(dir, "record.json"), err)
 	}
 	if rec.Version > Version {
-		return nil, fmt.Errorf("%s is version %d, written by a newer OpsTruss that this one does not read", filepath.Join(dir, "record.json"), rec.Version)
+		return nil, &state.NewerError{What: filepath.Join(dir, "record.json"), Version: rec.Version, Known: Version}
 	}
 	return &rec, nil
 }

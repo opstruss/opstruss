@@ -47,7 +47,8 @@
         "required": ["outcome"]
       }
     },
-    "outputs": { "type": "object" }
+    "outputs": { "type": "object" },
+    "events_incomplete": { "type": "boolean", "description": "events.jsonl lacks events that could not be written, as on a full disk." }
   },
   "required": ["version", "run", "project", "stack", "command", "host", "pid", "started", "status", "exit_code"]
 }
