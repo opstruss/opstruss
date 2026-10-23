@@ -210,7 +210,7 @@ func (a *app) root() *cobra.Command {
 	root.AddCommand(a.versionCommand(), a.initCommand(), a.validateCommand(), a.explainCommand(), a.stateCommand())
 	root.AddCommand(a.unitCommands()...)
 	root.AddCommand(a.listCommand(), a.outputsCommand(), a.runsCommand(), a.execCommand(), a.doctorCommand(),
-		a.stopCommand(), a.unlockCommand(), a.daemonCommand())
+		a.stopCommand(), a.unlockCommand(), a.daemonCommand(), a.pluginsCommand())
 	a.taskCommands(root)
 	return root
 }
