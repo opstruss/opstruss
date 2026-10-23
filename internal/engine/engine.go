@@ -151,6 +151,7 @@ type engine struct {
 	hashes   map[string]string // of plugin directories, read once a run
 
 	redact     *secret.Redactor // hides the sensitive values the run knows in what it writes out
+	shortPass  map[string]bool  // the variables passed whose value is too short to hide, warned of; under mu
 	inputMarks map[string]any   // the sensitive inputs of the project
 	localMarks map[string]any   // the locals that read them, or a secret
 	tooShort   []string         // sensitive values too short to hide, by name, for a warning once the run starts
@@ -287,7 +288,8 @@ func (e *engine) start(command, task string) error {
 	e.cleanTemp()
 	e.holder = state.NewHolder(e.runID, e.host)
 	e.run = &plugin.Run{Project: p.Name, Stack: p.StackName, ID: e.runID, Parents: e.parents,
-		Temp: e.tempOf(e.runID), Artifacts: filepath.Join(e.root, "runs", p.StackName, e.runID, "artifacts"), Environ: opts.Environ}
+		Temp: e.tempOf(e.runID), Artifacts: filepath.Join(e.root, "runs", p.StackName, e.runID, "artifacts"), Environ: opts.Environ,
+		Passed: e.passed}
 	return e.run.Open()
 }
 
@@ -393,14 +395,21 @@ func (e *engine) touch(addr string, u *record.Unit) {
 
 func (e *engine) tempOf(run string) string { return filepath.Join(e.root, "tmp", run) }
 
-// emit writes an event out, with every sensitive value the run knows
-// hidden: the one place where what the run says leaves it.
+// emit writes an event out as the run writes out what it says: every
+// sensitive value the run knows hidden, and the shapes of well-known
+// credentials (secret.Redactor.Log).
 func (e *engine) emit(ev Event) {
+	ev.Message = e.redact.Log(ev.Message)
+	if ev.Outputs != nil {
+		ev.Outputs = e.redact.LogValue(ev.Outputs).(map[string]any)
+	}
+	e.send(ev)
+}
+
+// send writes out an event whose values are hidden already: the one place
+// where what the run says leaves it.
+func (e *engine) send(ev Event) {
 	if e.rec != nil {
-		ev.Message = e.redact.String(ev.Message)
-		if ev.Outputs != nil {
-			ev.Outputs = e.redact.Value(ev.Outputs).(map[string]any)
-		}
 		e.rec.Emit(ev)
 	}
 }
@@ -415,6 +424,26 @@ func (e *engine) warnShort(name string) {
 func (e *engine) known(name string, v any) {
 	if e.redact.Add(v) {
 		e.warnShort(name)
+	}
+}
+
+// passed makes the value of a variable that pass: lets through to a
+// program hidden in what the run writes out, as a secret, when its name
+// says that it is one (secret.HiddenName); a value too short to hide is
+// warned of once.
+func (e *engine) passed(name, value string) {
+	if !secret.HiddenName(name) || !e.redact.Add(value) {
+		return
+	}
+	e.mu.Lock()
+	warned := e.shortPass[name]
+	if e.shortPass == nil {
+		e.shortPass = map[string]bool{}
+	}
+	e.shortPass[name] = true
+	e.mu.Unlock()
+	if !warned {
+		e.warnShort("variable " + name)
 	}
 }
 
@@ -584,6 +613,7 @@ type lineWriter struct {
 	step   string
 	stream string
 	buf    []byte
+	mask   *secret.Stream
 }
 
 func (w *lineWriter) Write(p []byte) (int, error) {
@@ -600,7 +630,11 @@ func (w *lineWriter) Write(p []byte) (int, error) {
 }
 
 func (w *lineWriter) line(s string) {
-	w.e.emit(Event{Type: "log", Level: "info", Address: w.addr, Task: w.task, Step: w.step, Stream: w.stream, Message: strings.ToValidUTF8(s, "\uFFFD")})
+	if w.mask == nil {
+		w.mask = w.e.redact.Stream()
+	}
+	w.e.send(Event{Type: "log", Level: "info", Address: w.addr, Task: w.task, Step: w.step, Stream: w.stream,
+		Message: w.mask.Line(strings.ToValidUTF8(s, "\uFFFD"))})
 }
 
 func (w *lineWriter) flush() {

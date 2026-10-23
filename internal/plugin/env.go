@@ -5,6 +5,7 @@ import (
 	"maps"
 	"os"
 	"path"
+	"slices"
 	"strings"
 
 	"github.com/opstruss/opstruss/internal/expr"
@@ -81,6 +82,13 @@ func (r *Run) environment(c *Call, write func(name string, data []byte) (string,
 			return nil, err
 		}
 		env[k] = p
+	}
+	if r.Passed != nil {
+		for _, k := range slices.Sorted(maps.Keys(r.operator)) {
+			if _, set := c.Env[k]; !set && passes(c.Pass, k) {
+				r.Passed(k, r.operator[k])
+			}
+		}
 	}
 
 	env["OPSTRUSS_CONTRACT"] = Contract

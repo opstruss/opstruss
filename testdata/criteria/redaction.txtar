@@ -1,5 +1,7 @@
 # Redaction: a canary secret, one line with characters that JSON escapes,
 # and one of three lines, goes through the log, a line printed in pieces,
+# with a value that pass: lets through by a secret's name and the shape
+# of a credential that no one told the run of,
 # --json, records and events, kv, error messages, outputs, down, and the
 # pending and errored copies a failpoint leaves: no plaintext of it shows
 # anywhere OpsTruss writes, only in what programs write themselves (tool/,
@@ -9,6 +11,7 @@
 env HOME=$WORK/home
 env OPSTRUSS_AGE_KEY_FILE=$WORK/age/keys.txt
 env 'CANARY=CANARYa1b2c3<"&>CANARYd4e5f6'
+env PASSED_TOKEN=PASSEDa1b2c3d4
 exec opstruss init
 
 # the log, stderr, a line in pieces, three lines, and the outputs
@@ -16,9 +19,10 @@ exec opstruss up app --yes --input rev=1
 stdout '^default/app \| single \*\*\*$'
 stdout '^default/app \| pieces \*\*\*$'
 stdout '^default/app \| \*\*\*$'
+stdout '^default/app \| passed \*\*\* shape \*\*\*$'
 stderr 'output token holds a sensitive value, so it is sensitive'
-! stdout 'CANARY|PEM[a-z]'
-! stderr 'CANARY|PEM[a-z]'
+! stdout 'CANARY|PEM[a-z]|PASSED|SHAPEa1'
+! stderr 'CANARY|PEM[a-z]|PASSED|SHAPEa1'
 
 # --json prints events, in which JSON escapes the canary
 exec opstruss up app --yes --input rev=2 --json
@@ -81,7 +85,7 @@ stdout '^default/app \| down \*\*\*$'
 ! stdout 'CANARY|PEM[a-z]'
 
 # nowhere that OpsTruss writes holds it
-! exec grep -r -l -e CANARYa1b2c3 -e CANARYd4e5f6 -e PEMa1b2c3d4 -e PEMe5f6g7h8 -e PEMi9j0k1l2 --exclude-dir=tool --exclude-dir=work --exclude-dir=artifacts .opstruss
+! exec grep -r -l -e CANARYa1b2c3 -e CANARYd4e5f6 -e PEMa1b2c3d4 -e PEMe5f6g7h8 -e PEMi9j0k1l2 -e PASSEDa1b2c3 -e SHAPEa1b2c3 --exclude-dir=tool --exclude-dir=work --exclude-dir=artifacts .opstruss
 
 -- yes --
 yes
@@ -102,12 +106,14 @@ units:
       echo "stderr $C" >&2
       printf 'pieces %s' "$(printf '%s' "$C" | cut -c1-9)"; sleep 0.2; printf '%s\n' "$(printf '%s' "$C" | cut -c10-)"
       printf '%s\n' "$PEM"
+      echo "passed $PASSED_TOKEN shape $(printf gh.p_ | tr -d .)SHAPEa1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6"
       printf 'token=%s\n' "$C" >> "$OPSTRUSS_OUTPUT"
       if [ -e break-output ]; then printf 'not a line %s\n' "$C" >> "$OPSTRUSS_OUTPUT"; fi
     env:
       C: ${{ secrets.canary }}
       PEM: ${{ secrets.pem }}
     down: echo "down $C"
+    pass: [PASSED_TOKEN]
     revision: ${{ inputs.rev }}
     outputs:
       token: {type: string}

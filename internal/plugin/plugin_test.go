@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -132,6 +133,21 @@ func TestEnvironment(t *testing.T) {
 		if !reflect.DeepEqual(res.Outputs[k], v) {
 			t.Errorf("%s = %v, want %v", k, res.Outputs[k], v)
 		}
+	}
+}
+
+// Passed hears the variables that pass: lets through to the program, empty
+// ones too, and not one that env: sets or one that no pattern names.
+func TestPassed(t *testing.T) {
+	r := Outside("app", "dev", []string{"PATH=" + os.Getenv("PATH"), "API_TOKEN=api", "DB_TOKEN=", "SET_TOKEN=operator", "OTHER=x", "OPSTRUSS_RUN=r"})
+	got := map[string]string{}
+	r.Passed = func(name, value string) { got[name] = value }
+	if _, err := r.Prepare(&Call{Command: model.Command{Argv: []string{"true"}}, Base: t.TempDir(), Pass: []string{"*_TOKEN", "OPSTRUSS_*"},
+		Env: map[string]model.EnvValue{"SET_TOKEN": {Text: "inline"}}}, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	if want := map[string]string{"API_TOKEN": "api", "DB_TOKEN": ""}; !maps.Equal(got, want) {
+		t.Fatalf("passed %v, want %v", got, want)
 	}
 }
 

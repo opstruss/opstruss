@@ -1,10 +1,12 @@
 # A service lives outside the run that starts it: it gets the facts of its
 # unit and OPSTRUSS_SERVICE_ID, not those of the run, and its log hides the
-# sensitive values of that run.
+# sensitive values of that run, what pass: lets through by a secret's name,
+# the shapes of well-known credentials, and a private key over lines.
 
 env HOME=$WORK/home
 env SOPS_AGE_KEY_FILE=$WORK/age/keys.txt
 env TOKEN=s3cr3t-token-value
+env API_TOKEN=api-from-the-ci-1
 exec opstruss init
 exec opstruss up -d --yes
 stdout 'default/talk: running'
@@ -16,7 +18,10 @@ grep '"message":"OPSTRUSS_PROJECT=shop"' .opstruss/logs/default/talk.jsonl
 ! grep 'OPSTRUSS_RUN=|OPSTRUSS_TEMP=|OPSTRUSS_TASK=|OPSTRUSS_OUTPUT=' .opstruss/logs/default/talk.jsonl
 grep '"message":"token \*\*\*"' .opstruss/logs/default/talk.jsonl
 grep '"message":"file \*\*\*"' .opstruss/logs/default/talk.jsonl
-! exec sh -c 'grep -r s3cr3t .opstruss/logs .opstruss/runs .opstruss/daemon/default.json'
+grep '"message":"api \*\*\* shape \*\*\*"' .opstruss/logs/default/talk.jsonl
+grep -count=3 '"message":"\*\*\*"' .opstruss/logs/default/talk.jsonl
+grep '"message":"after the key"' .opstruss/logs/default/talk.jsonl
+! exec sh -c 'grep -r -e s3cr3t -e api-from-the-ci -e aB3dE5gH7jK9 -e MIIEowIB .opstruss/logs .opstruss/runs .opstruss/daemon/default.json'
 exec opstruss stop
 ! exists .opstruss/daemon/default/talk
 
@@ -30,9 +35,12 @@ units:
       env | grep '^OPSTRUSS_' | sort
       echo "token $TOKEN"
       echo "file $(cat "$TOKEN_FILE")"
+      echo "api $API_TOKEN shape $(printf gh.p_ | tr -d .)aB3dE5gH7jK9mN1pQ2sT4vW6yZ8cF0aB3dE5"
+      printf '%s\n' "-----BEGIN RSA PRIVATE KEY-----" "MIIEowIBAAKCAQEA" "-----END RSA PRIVATE KEY-----" "after the key"
       echo end
       exec sleep 300
     env:
       TOKEN: ${{ inputs.token }}
       TOKEN_FILE: {file: '${{ inputs.token }}'}
+    pass: [API_TOKEN]
     approval: auto

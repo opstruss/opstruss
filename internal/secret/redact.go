@@ -171,13 +171,13 @@ func (r *Redactor) Contains(v any) bool {
 	return false
 }
 
-// Err returns err with its message redacted; errors.Is and errors.As
-// still see what it wraps.
+// Err returns err with its message as Log returns it; errors.Is and
+// errors.As still see what it wraps.
 func (r *Redactor) Err(err error) error {
 	if err == nil {
 		return nil
 	}
-	msg := r.String(err.Error())
+	msg := r.Log(err.Error())
 	if msg == err.Error() {
 		return err
 	}

@@ -94,6 +94,10 @@ type Run struct {
 	Temp      string   // .opstruss/tmp/<run>/: OPSTRUSS_TEMP, also the contract files of each call
 	Artifacts string   // OPSTRUSS_ARTIFACTS
 	Environ   []string // the operator's environment, read once when the run starts
+	// Passed hears each variable of the operator that a call lets through
+	// pass: to its program, and env: does not set, before the program
+	// starts.
+	Passed func(name, value string)
 
 	operator map[string]string
 	base     map[string]string

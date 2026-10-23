@@ -249,7 +249,26 @@ minor release can change what a project, a component, or a plugin relies on.
   the run checks before a program starts, and it is never a key of
   `for_each`, a `concurrency.group`, or a name in `units:`; `write` keeps
   sensitive content in a file with mode 0600. A value shorter than 4
-  characters is not hidden, and the run warns about it.
+  characters is not hidden, and the run warns about it. The value of a
+  variable that `pass:` lets through to a program, a step, a hook of a
+  unit, or a service, is hidden too when its name matches `*_TOKEN`,
+  `*_SECRET`, `*_PASSWORD`, `*_ACCESS_KEY`, or `*_SECRET_KEY`, as
+  Buildkite hides its redacted vars; one that `env:` sets in its place is
+  not.
+- What a run writes out (the terminal, `--json`, `events.jsonl`, `runs`,
+  the log of a service, error messages) also hides the shapes of
+  well-known credentials that the run was never given, as GitHub secret
+  scanning and gitleaks find them: GitHub (`ghp_`, `gho_`, `ghu_`,
+  `ghs_`, `ghr_`, `github_pat_`), GitLab (`glpat-`), Slack (`xoxa-`,
+  `xoxb-`, `xoxp-`, `xoxr-`), Stripe live keys (`sk_live_`, `rk_live_`),
+  and Anthropic (`sk-ant-`) tokens of their length, and a private key in
+  PEM from its `BEGIN` line to its `END` line, or to the end of the
+  output, also in one line of JSON. Such a shape does not make a value
+  sensitive: an output that holds one stays as it is in the next step,
+  the record, and the state. The list may grow, and it does not catch
+  every credential, so a value to keep comes from a secret or is
+  `sensitive`. A line of a service longer than 64 KiB is cut where no
+  hidden value is cut in two.
 - The data key of a stack, made the first time a value needs it, plan
   included, is kept in `<stack>/_meta`, wrapped with age inside OpsTruss
   for the age key of this machine, or for `encryption_keys`, and a run

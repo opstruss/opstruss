@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -23,6 +24,7 @@ import (
 	"github.com/opstruss/opstruss/internal/plugin"
 	"github.com/opstruss/opstruss/internal/proc"
 	"github.com/opstruss/opstruss/internal/record"
+	"github.com/opstruss/opstruss/internal/secret"
 )
 
 // ServiceID is the variable that marks every process of a program the
@@ -654,28 +656,53 @@ func (s *service) start() (_ *child, err error) {
 	return c, nil
 }
 
-// copy turns one output stream of a program into log events, a line each,
-// with the sensitive values of the run that started it hidden.
+// copy turns one output stream of a program into log events.
 func (s *service) copy(c *child, r *os.File, stream string) {
 	defer c.out.Done()
+	s.copyLines(r, "", stream)
+}
+
+// copyLines turns what r gives into log events, a line each, with the
+// sensitive values of the run that started the service hidden, also in a
+// private key that spans lines; a line longer than maxLine goes in pieces,
+// cut where no value that the run hides is cut in two. A watch source,
+// whose lines are events and no log, has none hidden.
+func (s *service) copyLines(r io.Reader, task, stream string) {
+	var mask *secret.Stream
+	if s.spec.Redact != nil {
+		mask = s.spec.Redact.Stream()
+	}
 	br := bufio.NewReaderSize(r, maxLine)
+	carry := ""
 	for {
-		line, err := br.ReadSlice('\n')
-		if len(line) > 0 {
-			s.line("", stream, strings.TrimSuffix(string(line), "\n"))
+		chunk, err := br.ReadSlice('\n')
+		text := carry + string(chunk)
+		carry = ""
+		if errors.Is(err, bufio.ErrBufferFull) {
+			if mask != nil {
+				text, carry = mask.Cut(text)
+			}
+			if text != "" {
+				s.line(task, stream, text)
+			}
+			continue
 		}
-		if err != nil && !errors.Is(err, bufio.ErrBufferFull) {
+		if text != "" {
+			text = strings.TrimSuffix(text, "\n")
+			if mask != nil {
+				text = mask.Line(text)
+			}
+			s.line(task, stream, text)
+		}
+		if err != nil {
 			return
 		}
 	}
 }
 
-// line writes one line of output to the log of the service; task names
-// stop.run and ready.run as stop and ready.
+// line writes one line of output, hidden already, to the log of the
+// service; task names stop.run and ready.run as stop and ready.
 func (s *service) line(task, stream, text string) {
-	if s.spec.Redact != nil {
-		text = s.spec.Redact.String(text)
-	}
 	text = strings.ToValidUTF8(text, "\uFFFD")
 	if s.spec.Lines != nil {
 		if task == "" {
@@ -800,16 +827,7 @@ func (s *service) run(prog *plugin.Program, c *child, task string, cancel <-chan
 	copied := make(chan struct{})
 	go func() {
 		defer close(copied)
-		br := bufio.NewReaderSize(outR, maxLine)
-		for {
-			line, err := br.ReadSlice('\n')
-			if len(line) > 0 {
-				s.line(task, "stdout", strings.TrimSuffix(string(line), "\n"))
-			}
-			if err != nil && !errors.Is(err, bufio.ErrBufferFull) {
-				return
-			}
-		}
+		s.copyLines(outR, task, "stdout")
 	}()
 	exited := make(chan struct{})
 	go func() {
