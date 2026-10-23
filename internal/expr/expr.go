@@ -8,10 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"math"
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -163,7 +165,7 @@ func program(src, dir string) (cel.Program, error) {
 	}
 	checked, iss := e.Compile(src)
 	if iss.Err() != nil {
-		return nil, fmt.Errorf("${{ %s }}: %w", src, iss.Err())
+		return nil, compileError(src, iss.Err())
 	}
 	p, err := e.Program(checked, cel.CustomDecoratorV2(sortLiterals))
 	if err != nil {
@@ -309,11 +311,85 @@ func Eval(src string, s *Scope) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	out, _, err := p.Eval(s.activation())
+	act := s.activation()
+	out, _, err := p.Eval(act)
 	if err != nil {
-		return nil, fmt.Errorf("${{ %s }}: %w", src, err)
+		return nil, fmt.Errorf("${{ %s }}: %w", src, missingKey(err, src, act))
 	}
 	return Native(out)
+}
+
+// envVar is a variable of the environment as a shell writes it.
+var envVar = regexp.MustCompile(`\$\{?([A-Za-z_][A-Za-z0-9_]*)`)
+
+// compileError is why src does not compile, with what to write instead
+// where the parser says it poorly: $NAME reads the environment in a
+// shell, which an expression never reads.
+func compileError(src string, err error) error {
+	if strings.Contains(err.Error(), "token recognition error at: '$'") {
+		name := "<VAR>"
+		if m := envVar.FindStringSubmatch(src); m != nil {
+			name = m[1]
+		}
+		return fmt.Errorf("${{ %s }}: an expression reads no environment variable; give it to an input or a secret with env: %s, and read inputs.<name> or secrets.<name>", src, name)
+	}
+	return fmt.Errorf("${{ %s }}: %w", src, err)
+}
+
+// IsFunction says whether name is a function or a macro of expressions,
+// such as toJSON or size, which a path cannot hold as a key.
+func IsFunction(name string) bool {
+	switch name {
+	case "has", "all", "exists", "exists_one", "map", "filter":
+		return true
+	}
+	e, err := envFor("")
+	return err == nil && e.HasFunction(name)
+}
+
+// missingKey adds to an error of a key that a map lacks the keys that the
+// map has, at most ten, read from the path of src that ends with the key,
+// or that the key names a function.
+func missingKey(err error, src string, act map[string]any) error {
+	key, ok := strings.CutPrefix(err.Error(), "no such key: ")
+	if !ok {
+		return err
+	}
+	if IsFunction(key) {
+		return fmt.Errorf("%w; %s is a function, called as %s(<value>)", err, key, key)
+	}
+	u, aerr := Analyze(src)
+	if aerr != nil {
+		return err
+	}
+	for _, r := range u.Refs {
+		i := slices.Index(r.Path, key)
+		if i < 1 {
+			continue
+		}
+		v := act[r.Path[0]]
+		for _, k := range r.Path[1:i] {
+			m, _ := v.(map[string]any)
+			v = m[k]
+		}
+		m, ok := v.(map[string]any)
+		if !ok {
+			continue
+		}
+		if _, has := m[key]; has {
+			continue
+		}
+		where := strings.Join(r.Path[:i], ".")
+		keys := slices.Sorted(maps.Keys(m))
+		switch {
+		case len(keys) == 0:
+			return fmt.Errorf("%w; %s is empty", err, where)
+		case len(keys) > 10:
+			return fmt.Errorf("%w; %s has %s, and %d more", err, where, strings.Join(keys[:10], ", "), len(keys)-10)
+		}
+		return fmt.Errorf("%w; %s has %s", err, where, strings.Join(keys, ", "))
+	}
+	return err
 }
 
 // EvalString evaluates the expressions in str. A string that is exactly

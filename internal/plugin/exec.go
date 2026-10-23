@@ -421,10 +421,20 @@ func program(c *Call, env map[string]string) (path string, args []string, cwd st
 		args[0] = resolve(c.PluginDir, args[0])
 	}
 	if path, err = LookPath(args[0], env["PATH"]); err != nil {
+		if c.Command.Script == "" && slices.Contains(shellBuiltins, args[0]) {
+			err = fmt.Errorf("%s is a shell builtin, not a program; write run: as a string to run it through the shell", args[0])
+		}
 		return "", nil, "", err
 	}
 	return path, args, cwd, nil
 }
+
+// shellBuiltins are the special built-ins of POSIX sh and the builtins of
+// shells that a program list names by mistake; one that is also a
+// program, as cd is on macOS, runs as that program.
+var shellBuiltins = []string{".", ":", "break", "continue", "eval", "exec", "exit", "export", "readonly", "return",
+	"set", "shift", "times", "trap", "unset", "alias", "unalias", "cd", "source", "read", "wait", "umask", "ulimit",
+	"local", "declare", "typeset", "pushd", "popd"}
 
 // drain waits up to d for the streams to end, then closes them; it reports
 // whether they ended by themselves.

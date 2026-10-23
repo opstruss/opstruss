@@ -1,10 +1,12 @@
 package cli
 
 import (
+	"cmp"
 	"fmt"
 	"maps"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/opstruss/opstruss/internal/expr"
@@ -124,7 +126,7 @@ func (a *app) taskCommand(name string, t *model.Task, ofUnits bool) *cobra.Comma
 	if ofUnits {
 		use += " [unit]..."
 	}
-	cmd := &cobra.Command{Use: use, Short: t.Description, Annotations: map[string]string{detachable: "true"}}
+	cmd := &cobra.Command{Use: use, Short: summary(t), Annotations: map[string]string{detachable: "true"}}
 	argsInput := ""
 	secrets := map[string]*string{}
 	for _, in := range slices.Sorted(maps.Keys(t.Inputs)) {
@@ -253,4 +255,31 @@ func (a *app) parseFlag(s, typ string) (any, error) {
 		return v, err
 	}
 	return model.ParseText(s, typ)
+}
+
+// summary is the line of a task in help: its description, or without one
+// what it runs, as npm run lists scripts with their commands: the first
+// line of run, the ids of its steps, or the task it calls.
+func summary(t *model.Task) string {
+	text := t.Description
+	switch {
+	case text != "":
+	case t.Run != nil && t.Run.Script != "":
+		line, _, _ := strings.Cut(strings.TrimSpace(t.Run.Script), "\n")
+		text = "run: " + line
+	case t.Run != nil:
+		text = "run: " + strings.Join(t.Run.Argv, " ")
+	case len(t.Steps) > 0:
+		var names []string
+		for i, s := range t.Steps {
+			names = append(names, cmp.Or(s.ID, s.Name, s.Task, strconv.Itoa(i+1)))
+		}
+		text = "steps: " + strings.Join(names, ", ")
+	default:
+		text = strings.Join(slices.Sorted(maps.Keys(t.Calls)), ", ")
+	}
+	if r := []rune(text); len(r) > 50 {
+		text = string(r[:49]) + "…"
+	}
+	return text
 }

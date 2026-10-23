@@ -1,0 +1,79 @@
+# Errors say what to write instead: a step field or output that does not
+# exist, a function read as a key, $NAME in an expression, a key that a
+# map lacks at run time, and a shell builtin as a program; help shows what
+# a task without a description runs.
+
+env HOME=$WORK/home
+
+# validate refuses what always fails at run time
+cp bad.yaml opstruss.yaml
+! exec opstruss validate
+stderr 'step b1 has no field raw; a step has outcome, changed, outputs, and units; what a run step prints is steps.b1.outputs.stdout \(in \$\{\{ steps.b1.raw \}\}\)'
+stderr 'step b1 has no field outcom; a step has outcome, changed, outputs, and units; did you mean outcome'
+stderr 'step b1 has no output toJSON; it gives exit_code, stderr, stdout; toJSON is a function: toJSON\(steps.b1.outputs\)'
+stderr 'step w has no output pth; it gives path; did you mean path'
+stderr 'an expression reads no environment variable; give it to an input or a secret with env: HOME, and read inputs.<name> or secrets.<name>'
+! stderr 'token recognition'
+
+# what is right passes, also outputs known only at run time
+cp good.yaml opstruss.yaml
+exec opstruss validate
+
+# a key that a map lacks at run time names the keys there are
+! exec opstruss deep
+stderr 'no such key: b; steps.s.outputs.m has a, c'
+
+# a shell builtin as a program says how to run it
+! exec opstruss builtin
+stderr 'export is a shell builtin, not a program; write run: as a string to run it through the shell'
+
+# help shows the run or the steps of a task without a description
+exec opstruss --help
+stdout '^  builtin +run: export X=1$'
+stdout '^  deep +steps: s, read$'
+stdout '^  long +run: echo a{39}…$'
+stdout '^  told +Say what it does$'
+
+-- bad.yaml --
+name: shop
+tasks:
+  b:
+    steps:
+      - id: b1
+        run: [echo, hi]
+      - run: [echo, "${{ steps.b1.raw }}"]
+      - run: [echo, "${{ steps.b1.outcom }}"]
+      - run: [echo, "${{ steps.b1.outputs.toJSON }}"]
+      - id: w
+        write: {path: out.txt, content: hi}
+      - run: [echo, "${{ steps.w.outputs.pth }}"]
+      - run: [echo, "${{ $HOME }}"]
+-- good.yaml --
+name: shop
+tasks:
+  told:
+    description: Say what it does
+    run: echo told
+  builtin:
+    run: [export, X=1]
+  long:
+    run: echo aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  deep:
+    steps:
+      - id: s
+        set: {m: {a: 1, c: 2}}
+      - id: read
+        run: [echo, "${{ steps.s.outputs.m.b }}"]
+  fine:
+    steps:
+      - id: b1
+        run: [echo, hi]
+        outputs:
+          raw: {from: stdout}
+      - id: each
+        for_each: [x, y]
+        run: [echo, "${{ each.key }}"]
+      - run: [echo, "${{ steps.b1.outputs.raw }} ${{ steps.b1.outputs.stdout }} ${{ steps.each['x'].outcome }} ${{ has(steps.b1.outputs.other) }}"]
+      - id: up
+        task: up
+      - run: [echo, "${{ steps.up.units }} ${{ steps.up.outcome }}"]

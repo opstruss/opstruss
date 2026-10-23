@@ -1,7 +1,6 @@
 package expr
 
 import (
-	"fmt"
 	"slices"
 
 	"cel.dev/cel-go/common/ast"
@@ -34,7 +33,7 @@ func Analyze(src string) (*Use, error) {
 	}
 	checked, iss := e.Compile(src)
 	if iss.Err() != nil {
-		return nil, fmt.Errorf("${{ %s }}: %w", src, iss.Err())
+		return nil, compileError(src, iss.Err())
 	}
 	u := &Use{}
 	u.walk(checked.NativeRep().Expr(), src)

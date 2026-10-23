@@ -26,8 +26,8 @@ type place struct {
 	kind    string // unit, until, cond, local, task, check, plugin, plugin-check, output, secret, trigger
 	each    bool
 	task    *Task
-	steps   map[string]bool
-	forUnit bool // a task that a unit uses, whose expressions read state_key and reason
+	steps   map[string]*Step // the steps before, by id
+	forUnit bool             // a task that a unit uses, whose expressions read state_key and reason
 }
 
 var readable = map[string][]string{
@@ -114,8 +114,16 @@ func (c *checker) refs(path []string, v any, pl place) []string {
 				c.add(path, "tasks.%s is read through needs: [%s] (in ${{ %s }})", name, name, r.Expr)
 			}
 		case "steps":
-			if name != "" && !pl.steps[name] {
+			if name == "" {
+				continue
+			}
+			s := pl.steps[name]
+			if s == nil {
 				c.add(path, "there is no step %s before this one (in ${{ %s }})", name, r.Expr)
+				continue
+			}
+			if msg := c.stepField(s, r.Path[2:]); msg != "" {
+				c.add(path, "%s (in ${{ %s }})", msg, r.Expr)
 			}
 		case "secrets":
 			if c.p != nil && c.p.component {
@@ -449,7 +457,7 @@ func walkSteps(steps []*Step, fn func(*Step)) {
 }
 
 func (c *checker) taskRefs(path []string, t *Task) {
-	pl := place{kind: "task", each: t.ForEach != nil, task: t, steps: map[string]bool{}, forUnit: c.usedByUnit(path)}
+	pl := place{kind: "task", each: t.ForEach != nil, task: t, steps: map[string]*Step{}, forUnit: c.usedByUnit(path)}
 	if c.plugin != nil {
 		pl.kind = "plugin"
 	}
@@ -501,7 +509,7 @@ func (c *checker) stepRefs(path []string, steps []*Step, pl place) {
 		c.stepRefs(at(sp, "block"), s.Block, sl)
 		// rescue: and always: read the outcome of their own block.
 		if s.ID != "" && len(s.Block) > 0 {
-			pl.steps[s.ID] = true
+			pl.steps[s.ID] = s
 		}
 		c.stepRefs(at(sp, "rescue"), s.Rescue, sl)
 		c.stepRefs(at(sp, "always"), s.Always, sl)
@@ -509,9 +517,107 @@ func (c *checker) stepRefs(path []string, steps []*Step, pl place) {
 			c.add(at(sp, "task"), "there is no task %s", s.Task)
 		}
 		if s.ID != "" {
-			pl.steps[s.ID] = true
+			pl.steps[s.ID] = s
 		}
 	}
+}
+
+// stepFields are what steps.<id> gives.
+var stepFields = []string{"outcome", "changed", "outputs", "units"}
+
+// stepField says what is wrong with reading rest after steps.<id> of s,
+// such as a field that a step does not give or an output it does not
+// have, or "". A step with for_each, or that calls a task with it, gives
+// one result per key, which is not checked.
+func (c *checker) stepField(s *Step, rest []string) string {
+	if len(rest) == 0 || c.perKey(s) {
+		return ""
+	}
+	field := rest[0]
+	if !slices.Contains(stepFields, field) {
+		msg := fmt.Sprintf("step %s has no field %s; a step has outcome, changed, outputs, and units", s.ID, field)
+		switch {
+		case expr.IsFunction(field):
+			msg += fmt.Sprintf("; %s is a function: %s(steps.%s)", field, field, s.ID)
+		case nearest(field, stepFields) != "":
+			msg += "; did you mean " + nearest(field, stepFields)
+		case s.Run != nil:
+			msg += fmt.Sprintf("; what a run step prints is steps.%s.outputs.stdout", s.ID)
+		}
+		return msg
+	}
+	if field != "outputs" || len(rest) < 2 {
+		return ""
+	}
+	outs, known := c.stepOutputs(s)
+	if !known || slices.Contains(outs, rest[1]) {
+		return ""
+	}
+	name := rest[1]
+	msg := fmt.Sprintf("step %s has no output %s", s.ID, name)
+	if len(outs) == 0 {
+		msg += "; it gives none"
+	} else {
+		msg += "; it gives " + strings.Join(outs, ", ")
+	}
+	switch {
+	case expr.IsFunction(name):
+		msg += fmt.Sprintf("; %s is a function: %s(steps.%s.outputs)", name, name, s.ID)
+	case nearest(name, outs) != "":
+		msg += "; did you mean " + nearest(name, outs)
+	}
+	return msg
+}
+
+// perKey says whether s gives one result per key: it has for_each, or it
+// calls a task of the project that has it.
+func (c *checker) perKey(s *Step) bool {
+	if s.ForEach != nil {
+		return true
+	}
+	if s.Task != "" && c.p != nil {
+		if t := c.p.Tasks[s.Task]; t != nil {
+			return t.ForEach != nil
+		}
+	}
+	return false
+}
+
+// stepOutputs are the names of the outputs that s gives, and false when
+// they are known only when it runs.
+func (c *checker) stepOutputs(s *Step) ([]string, bool) {
+	switch {
+	case s.Run != nil:
+		return append([]string{"exit_code", "stderr", "stdout"}, slices.Sorted(maps.Keys(s.Outputs))...), true
+	case s.Task != "" && slices.Contains(StandardTasks, s.Task):
+		// What a pass gives is per unit, in units.
+		return nil, true
+	case s.Task != "":
+		if c.p == nil || c.plugin != nil || c.p.Tasks[s.Task] == nil {
+			return nil, false
+		}
+		return slices.Sorted(maps.Keys(c.p.Tasks[s.Task].Outputs)), true
+	}
+	for name, args := range s.Calls {
+		switch {
+		case name == "set":
+			// set gives its inputs as its outputs.
+			return slices.Sorted(maps.Keys(args)), true
+		case slices.Contains(BuiltinTasks, name):
+			return slices.Sorted(maps.Keys(Builtin(name).Outputs)), true
+		case c.p != nil && c.plugin == nil:
+			t, err := c.p.Resolve(name)
+			if err != nil || t.Kind != TargetTask {
+				return nil, false
+			}
+			pt := t.Package.Plugin.Tasks[t.Task]
+			if pt == nil || pt.ForEach != nil {
+				return nil, false
+			}
+			return slices.Sorted(maps.Keys(pt.Outputs)), true
+		}
+	}
+	return nil, false
 }
 
 // usedByUnit says whether the task at path is one that a unit uses.

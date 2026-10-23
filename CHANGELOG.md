@@ -354,7 +354,12 @@ minor release can change what a project, a component, or a plugin relies on.
   two-variable comprehensions, bindings, encoders, and optional values, plus
   `toJSON()`, `fromJSON()`, `toYAML()`, `fromYAML()`, `sha256()`, `file()`,
   and `strftime()` on timestamps. A value that is one `${{ }}` keeps its
-  type, and maps are iterated in key order.
+  type, and maps are iterated in key order. `validate` refuses a field of
+  `steps.<id>` other than `outcome`, `changed`, `outputs`, and `units`, and
+  an output that a step is known not to give, with the name it likely
+  meant; errors say when a function is read as a key, that `$NAME` reads
+  no environment variable, and at run time which keys a map has when one
+  is missing.
 - `opstruss state list`, `pull`, `push`, and `rm` read and repair the
   records of a stack under their locks: `push` takes the etag of a `pull`,
   or `--force`, and refuses a stale copy, a record for another address,
@@ -414,7 +419,9 @@ minor release can change what a project, a component, or a plugin relies on.
   a boolean, a repeated flag for an array, JSON or `@file` for an object),
   and what comes after `--` fills the input with `args: true`. The program
   of a task gets its inputs as `INPUT_<NAME>` and in `$OPSTRUSS_INPUTS`, and
-  its outputs are printed at the end.
+  its outputs are printed at the end. In `--help`, a task without a
+  `description` shows the first line of its `run`, the ids of its steps,
+  or the task it calls.
 - `steps:` run in order: `run`, `task:` (`plan`, `up`, or `down` of
   `units:`, a project task with `with:`, or the task of each unit that has
   it), and `block:` with `rescue:` and `always:`, which read the outcome
@@ -494,7 +501,9 @@ minor release can change what a project, a component, or a plugin relies on.
   a unit or task take at most 1 MiB.
 - Scripts run through `sh -e`, `bash --noprofile --norc -eo pipefail`,
   `python3 -c`, `node -e`, or `pwsh -NoProfile -NonInteractive -Command`,
-  as `shell:` says.
+  as `shell:` says. A `run` list whose program is a shell builtin, such as
+  `export` or `cd`, that is not in `PATH` fails with a hint to write `run`
+  as a string.
 - Each program runs in its own process group. A cancel or a timeout sends
   `stop.signal` (default `SIGINT`) to the group, waits `stop.grace`
   (default one minute), and kills what is left; processes that a program
