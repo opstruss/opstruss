@@ -71,13 +71,15 @@ type Group int
 
 // Signal sends sig to every process in the group, then SIGCONT, so a
 // stopped process, such as one that read the terminal from the background,
-// gets it too, as a shell does for a stopped job.
+// gets it too, as a shell does for a stopped job. A group that Empty finds
+// empty takes no signal and is no error: on macOS, one whose processes
+// just exited and wait to be reaped answers EPERM.
 func (g Group) Signal(sig syscall.Signal) error {
 	err := syscall.Kill(-int(g), sig)
 	if err == nil && sig != syscall.SIGKILL && sig != syscall.SIGCONT {
 		err = syscall.Kill(-int(g), syscall.SIGCONT)
 	}
-	if errors.Is(err, syscall.ESRCH) {
+	if errors.Is(err, syscall.ESRCH) || errors.Is(err, syscall.EPERM) {
 		return nil
 	}
 	return err
