@@ -1,0 +1,60 @@
+# Runs that only read, plan, status, and logs, leave nothing in runs/; a
+# finished run keeps record.json and events.jsonl, and artifacts/ when a
+# program put something there; runs <run> -f follows a run that still
+# runs, whose events come out within moments; and after still sees a plan.
+
+env HOME=$WORK/home
+
+# plan, status, and logs are not kept
+exec opstruss plan
+exec opstruss status
+exec opstruss logs
+exec opstruss runs
+! stdout .
+exec sh -c 'ls -A .opstruss/runs/default'
+! stdout .
+
+# a finished run keeps two files, and artifacts/ only with something in it
+exec opstruss up --yes
+exec sh -c 'ls -A .opstruss/runs/default/*/'
+stdout '^events.jsonl$'
+stdout '^record.json$'
+! stdout 'lock|artifacts'
+exec opstruss keep
+exec sh -c 'ls .opstruss/runs/default/*/artifacts'
+stdout '^report.txt$'
+
+# runs <run> -f shows a line of a run that runs before its program ends,
+# and ends with the run
+exec opstruss slow &slow&
+waitgrep '"task": "slow"' '.opstruss/runs/default/*/record.json'
+exec sh -c 'r=$(grep -l "\"task\": \"slow\"" .opstruss/runs/default/*/record.json); r=${r%/record.json}; opstruss runs ${r##*/} -f > follow.out' &follow&
+waitgrep '^slow \| first$' follow.out
+! grep 'second' follow.out
+wait follow
+grep '^slow \| second$' follow.out
+wait slow
+! exec opstruss runs -f
+stderr '-f follows one run: write opstruss runs <run> -f'
+
+# a plan in the daemon still makes the runs of after plan
+exec opstruss up -d --yes
+exec opstruss plan
+waitfile planned
+exec opstruss stop
+
+-- opstruss.yaml --
+name: shop
+units:
+  web:
+    run: echo web
+tasks:
+  keep:
+    run: echo report > "$OPSTRUSS_ARTIFACTS/report.txt"
+  slow:
+    run: echo first; sleep 2; echo second
+  noted:
+    on:
+      after:
+        - task: plan
+    run: touch planned

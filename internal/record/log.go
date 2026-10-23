@@ -141,8 +141,9 @@ func (l *Log) Close() error {
 	return err
 }
 
-// followEvery is how often ReadLog looks for what was appended.
-var followEvery = 200 * time.Millisecond
+// FollowEvery is how often a reader that follows a log or a run looks for
+// what was appended.
+var FollowEvery = 200 * time.Millisecond
 
 // ReadLog hands the events of the log at path to fn, oldest first,
 // starting with the files it turned over into. With follow, it goes on
@@ -208,7 +209,7 @@ func ReadLog(ctx context.Context, path string, follow bool, fn func(Event)) erro
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-time.After(followEvery):
+		case <-time.After(FollowEvery):
 		}
 	}
 }

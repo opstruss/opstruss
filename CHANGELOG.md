@@ -178,9 +178,10 @@ minor release can change what a project, a component, or a plugin relies on.
   that makes an event. `if` chooses each event, and `batch` or `debounce`
   gathers them into one run with `event.lines` or `event.paths`, at most
   10,000 items or 1 MiB, and `event.count`. A task with `on: after` runs
-  when a run of another task ends in the daemon with the `outcome` it
-  names, for the unit it names, with `event.task`, `unit`, `outcome`, and
-  `outputs`; a chain of after stops past three.
+  when a run of another task, or of a command such as `up` or `plan`, ends
+  in the daemon with the `outcome` it names, for the unit it names, with
+  `event.task`, `unit`, `outcome`, and `outputs`; a chain of after stops
+  past three.
 - A task with `on: webhook` runs when a request comes to its `path` and
   `method` on `runtime.listen` of the daemon, which every project with a
   webhook writes. `signature` checks `secret` before any run is made:
@@ -198,15 +199,21 @@ minor release can change what a project, a component, or a plugin relies on.
 - `event.trigger` and `event.time` say what made a run and its logical
   time: the time of the schedule, or when a run from the command line
   started; the record of a run keeps `trigger`.
-- `opstruss logs [unit]...` shows the output of the units: the log of a
-  service, from the files it turned over into first; the `logs` task of a
-  unit's plugin, with the input `follow` when the task declares it; and
+- `opstruss logs [unit|task]...` shows the output of the units: the log of
+  a service, from the files it turned over into first; the `logs` task of
+  a unit's plugin, with the input `follow` when the task declares it; and
   for other units the output of the last run that touched them, as
-  `docker logs` shows that of a container that ended. `-f` (or
-  `--follow`) goes on with the logs of services, also after they turn
-  over, and with plugins that follow, until Ctrl-C. `logs` runs in the
-  caller's process also while a daemon runs, and the lines it shows keep
-  their own time and run; a `task: logs` step shows them too.
+  `docker logs` shows that of a container that ended. `-f` (or `--follow`)
+  goes on with the logs of services, also after they turn over, and with
+  plugins that follow, until Ctrl-C. `logs` runs in the caller's process
+  also while a daemon runs, and the lines it shows keep their own time and
+  run; a `task: logs` step shows them too. A task, named as it is, shows
+  its last run as `list` finds it: all of the run when the task started
+  it, otherwise only the task's own events, after a line that names the
+  run with `via`; `-f` follows that run until it ends, then each later run
+  of the task, of the daemon or of another terminal, until Ctrl-C, after
+  which `logs` exits with 0. A name of a unit and a task shows both, and
+  one of neither fails.
 - `opstruss status [unit]...` (also `ps`) runs the `status` task of each
   unit's plugin without the unit's lock, with its record to read, and for
   other units says what the record holds: up with its last run and
@@ -441,20 +448,25 @@ minor release can change what a project, a component, or a plugin relies on.
   the time an answer takes does not count toward `timeout`. A required
   input of a task that has no value is asked for there too.
 - `opstruss list` shows the tasks with their last run, also one that ran
-  them inside the run of another task, which it names after `via`, and
-  the units with their state; `opstruss outputs` prints the outputs of the project from
-  the stored outputs of its units, read without a lock; `opstruss runs`
-  lists the runs of the stack, newest first, and `opstruss runs <run>`
-  shows the events of one again. With `--json`, each prints one document,
-  and `runs <run>` the events as they are stored.
+  them inside the run of another task, which it names after `via`, and the
+  units with their state; `opstruss outputs` prints the outputs of the
+  project from the stored outputs of its units, read without a lock;
+  `opstruss runs` lists the runs of the stack, newest first, and
+  `opstruss runs <run>` shows the events of one again, and with `-f` goes
+  on with a run that still runs until it ends. With `--json`, each prints
+  one document, and `runs <run>` the events as they are stored.
 - `OPSTRUSS_LOG=debug` writes the diagnostics of the engine to stderr.
 - Every run keeps `record.json` (who ran what and when, the units it
   touched with their outcome, plan, and approval, also the instances that
   `up` took down or forgot, the tasks of the project that ran inside it
   through `task:`, `needs`, or a unit, with one outcome each, and the
-  outcome, exit code, and outputs of the run) and `events.jsonl` in `.opstruss/runs/<stack>/<run>/`, whose name
-  an exclusive mkdir makes unique. A run stores at most 10 MiB of program
-  output; the middle of more is dropped, with one diagnostic event.
+  outcome, exit code, and outputs of the run) and `events.jsonl` in
+  `.opstruss/runs/<stack>/<run>/`, whose name an exclusive mkdir makes
+  unique; `plan`, `status`, and `logs` only read, so theirs goes once they
+  finish, and a finished run keeps `record.json`, `events.jsonl`, and
+  `artifacts/` when it holds something. Events reach `events.jsonl` within
+  200 ms. A run stores at most 10 MiB of program output; the middle of
+  more is dropped, with one diagnostic event.
 - `--json` prints every event of a run on a line of its own, with `v`,
   `seq`, `time`, `run`, `type`, `level`, and `message`, and the address,
   task, step, or stream it belongs to. The last event, of type `run`,

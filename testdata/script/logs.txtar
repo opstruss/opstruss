@@ -42,7 +42,45 @@ exec opstruss stop
 
 # -f is for logs only
 ! exec opstruss status -f
-stderr '-f is for logs, which follows what services and plugins write, not for status'
+stderr '-f is for logs and runs <run>, which follow what is written, not for status'
+
+# a task shows the output of its last run: all of it as the task of the
+# run, only its own inside the run of another; a name of a unit and a task
+# shows both, and one of neither fails
+cd tasks
+exec opstruss build
+exec opstruss logs build
+stdout '^build: run [0-9]{8}T[0-9]{6}Z-[0-9a-f]{8} at \S+$'
+stdout '^build \| building$'
+exec opstruss release
+exec opstruss logs build
+stdout '^build: run \S+ at \S+ via release$'
+stdout '^build \| building$'
+! stdout 'before'
+exec opstruss logs release
+stdout '^release: before \| before$'
+stdout '^build \| building$'
+exec opstruss up --yes report
+exec opstruss report
+exec opstruss logs report
+stdout '^default/report: output of up in run '
+stdout '^default/report \| unit report$'
+stdout '^report: run '
+stdout '^report \| task report$'
+exec opstruss logs never
+stdout '^never: no run of it yet$'
+! exec opstruss logs nothing
+stderr 'no unit or task matches nothing'
+
+# -f follows the run of a task that runs, then each later one, here of
+# every in the daemon, until Ctrl-C, which ends logs with 0
+exec opstruss up -d --yes
+exec sh -c 'opstruss logs -f tick > tick.out 2>&1 & echo $! > pid; wait $!; echo $? > code' &follow&
+waitgrep '(?s)^tick: run .*^tick \| tick.*^tick: run .*^tick \| tick' tick.out
+exec sh -c 'kill -INT $(cat pid)'
+wait follow
+grep '^0$' code
+exec opstruss stop
 
 -- count --
 0
@@ -85,3 +123,24 @@ tasks:
     inputs:
       follow: {type: boolean, default: false}
     run: [sh, -c, 'echo "follow=$INPUT_FOLLOW"']
+-- tasks/opstruss.yaml --
+name: ops
+units:
+  report:
+    run: echo unit report
+tasks:
+  report:
+    run: echo task report
+  build:
+    run: echo building
+  never:
+    run: echo never
+  release:
+    steps:
+      - id: before
+        run: echo before
+      - task: build
+  tick:
+    on:
+      every: 1s
+    run: echo tick

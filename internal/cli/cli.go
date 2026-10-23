@@ -184,8 +184,8 @@ func (a *app) root() *cobra.Command {
 			if a.detach && cmd.Annotations[detachable] == "" {
 				return fmt.Errorf("-d is for up and tasks, which can start a daemon, not for %s", cmd.Name())
 			}
-			if a.follow && cmd.Name() != "logs" {
-				return fmt.Errorf("-f is for logs, which follows what services and plugins write, not for %s", cmd.Name())
+			if a.follow && cmd.Name() != "logs" && cmd.Name() != "runs" {
+				return fmt.Errorf("-f is for logs and runs <run>, which follow what is written, not for %s", cmd.Name())
 			}
 			return nil
 		},

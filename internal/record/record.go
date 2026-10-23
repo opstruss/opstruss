@@ -6,12 +6,14 @@ package record
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"syscall"
 	"time"
@@ -109,7 +111,18 @@ type Run struct {
 	tail   []Event // events kept in memory once the head of the output is full
 	inTail int64   // program output in tail
 	gone   int64   // program output dropped from the middle
+	flush  *time.Timer
+	closed bool
 }
+
+// flushEvery is how long buffered events wait before they are written, so
+// a reader that follows the run sees them soon.
+var flushEvery = 200 * time.Millisecond
+
+// reads are the commands whose runs only read, so their directory goes
+// once they finish: the terminal and --json had every event, and up keeps
+// its own plan.
+var reads = []string{"plan", "status", "logs"}
 
 // Create makes the directory of a new run in runs/<stack>/ under root, with
 // an exclusive mkdir so two runs never share a name, and writes rec as
@@ -193,8 +206,9 @@ func (r *Run) Emit(ev Event) {
 }
 
 // writeEvent buffers an event; one that reports a problem or a result is
-// written out at once with what came before it, so a crash loses at most
-// the program output and plan lines just before it.
+// written out at once with what came before it, and the others within
+// flushEvery, so a crash loses at most the program output and plan lines
+// of that time. The caller holds mu.
 func (r *Run) writeEvent(ev Event) {
 	data, err := json.Marshal(ev)
 	if err == nil {
@@ -202,11 +216,24 @@ func (r *Run) writeEvent(ev Event) {
 	}
 	if ev.Level != "info" || (ev.Type != "log" && ev.Type != "plan") {
 		_ = r.out.Flush()
+		return
+	}
+	if r.flush == nil {
+		r.flush = time.AfterFunc(flushEvery, func() {
+			r.mu.Lock()
+			defer r.mu.Unlock()
+			r.flush = nil
+			if !r.closed {
+				_ = r.out.Flush()
+			}
+		})
 	}
 }
 
 // Finish writes what waited in memory, after one diagnostic event when
-// program output was dropped, and the record as finished.
+// program output was dropped, and the record as finished. What only the
+// living run needs goes then: its lock, and artifacts/ when empty; and the
+// directory of a run that only read goes whole.
 func (r *Run) Finish(update func(*Record)) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -225,12 +252,35 @@ func (r *Run) Finish(update func(*Record)) error {
 	r.rec.Status = Finished
 	r.rec.Ended = time.Now().UTC().Format(time.RFC3339)
 	err := write(r.Dir, r.rec)
+	if r.flush != nil {
+		r.flush.Stop()
+		r.flush = nil
+	}
+	r.closed = true
 	if cerr := r.events.Close(); err == nil {
 		err = cerr
 	}
+	// The record says finished before the lock goes, so a run that reads
+	// it under the lock never takes it for one a crash left.
 	_ = r.lock.Close()
+	_ = os.Remove(r.lock.Name())
+	_ = os.Remove(filepath.Join(r.Dir, "artifacts"))
 	live.Delete(r.rec.Run)
+	if slices.Contains(reads, r.rec.Command) {
+		if rerr := os.RemoveAll(r.Dir); err == nil {
+			err = rerr
+		}
+	}
 	return err
+}
+
+// Record is the record of the run as it stands, as Finish left it once the
+// run finished, also when its directory went.
+func (r *Run) Record() *Record {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	rec := *r.rec
+	return &rec
 }
 
 // write replaces record.json in dir atomically.
@@ -244,6 +294,52 @@ func write(dir string, rec *Record) error {
 		return err
 	}
 	return os.Rename(tmp, filepath.Join(dir, "record.json"))
+}
+
+// ReadRun hands the events of the run in dir to fn, in order. With
+// follow, it goes on with what the run writes until the run ended, as
+// tail -f --pid does, or until ctx ends.
+func ReadRun(ctx context.Context, dir string, follow bool, fn func(Event)) error {
+	f, err := os.Open(filepath.Join(dir, "events.jsonl"))
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+	var rest []byte
+	for {
+		// Whether the run ended is known before its events are read, so
+		// all that it wrote before it ended is read below.
+		ended := !follow || runEnded(dir)
+		if err := readEvents(f, &rest, fn); err != nil {
+			return err
+		}
+		if ended {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(FollowEvery):
+		}
+	}
+}
+
+// runEnded reports whether the run in dir ended: its record is finished,
+// its directory went, or no process holds its lock, which it takes before
+// it writes its record.
+func runEnded(dir string) bool {
+	rec, err := Read(dir)
+	switch {
+	case err != nil:
+		_, serr := os.Stat(dir)
+		return serr != nil
+	case rec.Status == Finished:
+		return true
+	}
+	if _, ok := live.Load(filepath.Base(dir)); ok {
+		return false
+	}
+	return !held(filepath.Join(dir, ".lock"))
 }
 
 // Read reads the record.json of a run.

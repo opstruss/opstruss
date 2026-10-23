@@ -36,6 +36,17 @@
         "required": ["outcome", "changed"]
       }
     },
+    "tasks": {
+      "type": "object",
+      "description": "The tasks of the project that ran inside the run, through task:, needs, or a unit, by name, with one outcome for all their calls.",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "outcome": { "enum": ["success", "failure", "skipped", "cancelled"] }
+        },
+        "required": ["outcome"]
+      }
+    },
     "outputs": { "type": "object" }
   },
   "required": ["version", "run", "project", "stack", "command", "host", "pid", "started", "status", "exit_code"]

@@ -3,6 +3,7 @@ package engine
 import (
 	"bufio"
 	"cmp"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -138,15 +139,10 @@ func List(opts Options) (*Status, error) {
 	for _, name := range slices.Sorted(maps.Keys(e.p.Tasks)) {
 		t := &TaskStatus{Name: name, Description: e.p.Tasks[name].Description, Internal: e.p.Tasks[name].Internal,
 			Triggers: triggerNames(e.p.Tasks[name].On)}
-		// The last run that ran it, as its task or inside another.
-		for _, r := range runs {
-			if r.Command == "task" && r.Task == name {
-				t.Run, t.Outcome, t.Ended = r.Run, r.Outcome, r.Ended
-				break
-			}
-			if in := r.Tasks[name]; in != nil {
-				t.Run, t.Via, t.Outcome, t.Ended = r.Run, cmp.Or(r.Task, r.Command), in.Outcome, r.Ended
-				break
+		if r, via := lastRun(runs, name); r != nil {
+			t.Run, t.Via, t.Outcome, t.Ended = r.Run, via, r.Outcome, r.Ended
+			if via != "" {
+				t.Outcome = r.Tasks[name].Outcome
 			}
 		}
 		st.Tasks = append(st.Tasks, t)
@@ -168,6 +164,20 @@ func List(opts Options) (*Status, error) {
 		st.Units = append(st.Units, u)
 	}
 	return st, nil
+}
+
+// lastRun is the newest of runs, newest first, that ran the task name: as
+// its task, or inside the run of another, which via names.
+func lastRun(runs []*record.Record, name string) (r *record.Record, via string) {
+	for _, r := range runs {
+		if r.Command == "task" && r.Task == name {
+			return r, ""
+		}
+		if r.Tasks[name] != nil {
+			return r, cmp.Or(r.Task, r.Command)
+		}
+	}
+	return nil, ""
 }
 
 // Runs reads the records of the runs of the stack, newest first.
@@ -204,16 +214,15 @@ func runRecords(root, stack string) ([]*record.Record, error) {
 	return out, nil
 }
 
-// Events hands the stored events of the run id to emit, in order.
-func Events(opts Options, id string, emit func(Event)) error {
+// Events hands the stored events of the run id to emit, in order; with
+// opts.Follow, also what a run that still runs writes, until it ends or
+// ctx does.
+func Events(ctx context.Context, opts Options, id string, emit func(Event)) error {
 	e, err := load(opts)
 	if err != nil {
 		return err
 	}
-	err = eachEvent(filepath.Join(e.root, "runs", e.p.StackName, filepath.Base(id), "events.jsonl"), func(ev Event) error {
-		emit(ev)
-		return nil
-	})
+	err = record.ReadRun(ctx, filepath.Join(e.root, "runs", e.p.StackName, filepath.Base(id)), opts.Follow, emit)
 	if errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("stack %s has no run %s", e.p.StackName, id)
 	}

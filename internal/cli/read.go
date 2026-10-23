@@ -2,11 +2,15 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
+	"os"
+	"os/signal"
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/opstruss/opstruss/internal/api"
@@ -134,7 +138,8 @@ func (a *app) outputsCommand() *cobra.Command {
 }
 
 func (a *app) runsCommand() *cobra.Command {
-	return &cobra.Command{
+	var follow bool
+	cmd := &cobra.Command{
 		Use:   "runs [run]",
 		Short: "List the runs of the stack, or show the events of one as it ran",
 		Args:  cobra.MaximumNArgs(1),
@@ -143,11 +148,18 @@ func (a *app) runsCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			follow = follow || a.follow
+			if follow && len(args) == 0 {
+				return errors.New("-f follows one run: write opstruss runs <run> -f")
+			}
 			if len(args) == 1 {
 				// The events of the run, rendered as when it ran, or as
-				// they are stored with --json.
-				req.Run = args[0]
-				return api.New(api.Handlers{Event: a.render()}).Events(context.Background(), req)
+				// they are stored with --json; with -f until it ends, or
+				// Ctrl-C, which ends this reader with 0.
+				req.Run, req.Follow = args[0], follow
+				ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+				defer stop()
+				return api.New(api.Handlers{Event: a.render()}).Events(ctx, req)
 			}
 			runs, err := a.api().Runs(context.Background(), req)
 			if err != nil {
@@ -170,4 +182,6 @@ func (a *app) runsCommand() *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&follow, "follow", false, "go on with what a run that still runs writes, until it ends; -f is the same")
+	return cmd
 }

@@ -192,18 +192,19 @@ func (t *triggers) fireEvent(tr *engine.Trigger, fields map[string]any, depth in
 		res, err := engine.Fire(t.d.runs, opts, tr)
 		t.report(tr, at, res, err)
 		if res != nil {
-			t.ended(res.Run, depth)
+			t.ended(res.Record, depth)
 		}
 	}()
 }
 
 // ended makes the runs of the after triggers that the run that ended
-// matches; depth is how deep in a chain that run is.
-func (t *triggers) ended(run string, depth int) {
-	rec, err := record.Read(filepath.Join(t.d.root, "runs", t.d.opts.Stack, run))
-	if err != nil {
+// matches, by the record it finished with, which a run that only read
+// does not keep on disk; depth is how deep in a chain that run is.
+func (t *triggers) ended(rec *record.Record, depth int) {
+	if rec == nil {
 		return
 	}
+	run := rec.Run
 	name := rec.Task
 	if name == "" {
 		name = rec.Command

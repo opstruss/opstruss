@@ -225,9 +225,9 @@ func (d *Daemon) Serve(ctx context.Context) error {
 			x := api.New(h)
 			x.Supervisor = d.sup
 			res, err := x.Call(ctx, method, r)
-			if res != nil && res.Run != "" {
+			if res != nil && res.Record != nil {
 				// A run forwarded here starts a chain of after triggers.
-				d.trig.ended(res.Run, 0)
+				d.trig.ended(res.Record, 0)
 			}
 			if method == "up" && err == nil {
 				// up installs the triggers again from the files as they are

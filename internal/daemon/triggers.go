@@ -281,7 +281,7 @@ func (t *triggers) fire(tr *engine.Trigger, at time.Time) {
 		res, err := engine.Fire(t.d.runs, opts, tr)
 		t.report(tr, at, res, err)
 		if res != nil {
-			t.ended(res.Run, 0)
+			t.ended(res.Record, 0)
 		}
 	}()
 }

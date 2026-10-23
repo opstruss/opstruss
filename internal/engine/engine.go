@@ -78,6 +78,7 @@ type Result struct {
 	ExitCode int // 0 success, 1 failure, 2 stopped at plan for approval
 	Outcome  string
 	Outputs  map[string]any // of a task, with sensitive values as secret.Mask
+	Record   *record.Record // as the run finished it, also when its directory went
 }
 
 // Outcomes of units, tasks, and steps.
@@ -514,7 +515,7 @@ func (e *engine) stopAtPlan() {
 }
 
 func (e *engine) result() *Result {
-	return &Result{Run: e.runID, ExitCode: e.exit, Outcome: e.outcome, Outputs: e.outputs}
+	return &Result{Run: e.runID, ExitCode: e.exit, Outcome: e.outcome, Outputs: e.outputs, Record: e.rec.Record()}
 }
 
 // username is the name of the user, read once.

@@ -89,9 +89,9 @@ func TestLogTurns(t *testing.T) {
 // ReadLog reads the files a log turned over into first, and with follow
 // goes on across turns, each event once and in order.
 func TestReadLogFollow(t *testing.T) {
-	maxBefore, every := logMax, followEvery
-	logMax, followEvery = 400, 5*time.Millisecond
-	t.Cleanup(func() { logMax, followEvery = maxBefore, every })
+	maxBefore, every := logMax, FollowEvery
+	logMax, FollowEvery = 400, 5*time.Millisecond
+	t.Cleanup(func() { logMax, FollowEvery = maxBefore, every })
 	p := filepath.Join(t.TempDir(), "web.jsonl")
 	l, err := OpenLog(p)
 	if err != nil {
@@ -151,9 +151,9 @@ func TestReadLogFollow(t *testing.T) {
 // A log that turns over twice while ReadLog waits is still followed whole:
 // the file in between is read before the new one, as tail -F reads it.
 func TestReadLogFollowTwoTurns(t *testing.T) {
-	maxBefore, every := logMax, followEvery
-	logMax, followEvery = 400, 300*time.Millisecond
-	t.Cleanup(func() { logMax, followEvery = maxBefore, every })
+	maxBefore, every := logMax, FollowEvery
+	logMax, FollowEvery = 400, 300*time.Millisecond
+	t.Cleanup(func() { logMax, FollowEvery = maxBefore, every })
 	p := filepath.Join(t.TempDir(), "web.jsonl")
 	l, err := OpenLog(p)
 	if err != nil {

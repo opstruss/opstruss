@@ -172,6 +172,15 @@ func Prune(root, stack string) error {
 		done.Delete(r.dir)
 		return os.RemoveAll(r.dir)
 	}
+	// A run that only read is kept while it runs; one that a crash left
+	// finished is dropped, as it would have dropped itself.
+	for _, r := range runs {
+		if slices.Contains(reads, r.rec.Command) && r.rec.Status == Finished {
+			if err := drop(r); err != nil {
+				return err
+			}
+		}
+	}
 	perTask := map[string][]run{}
 	for _, r := range runs {
 		k := r.rec.Command + " " + r.rec.Task

@@ -81,8 +81,8 @@ and stays while they run; Ctrl-C stops them.`
 func (a *app) logsCommand() *cobra.Command {
 	var follow bool
 	cmd := &cobra.Command{
-		Use:   "logs [unit]...",
-		Short: "Show the output of the units: the log of a service, the logs task of their plugin, or the last run that touched them",
+		Use:   "logs [unit|task]...",
+		Short: "Show the output of the units: the log of a service, the logs task of their plugin, or the last run that touched them; and of tasks, from their last run",
 		RunE: func(_ *cobra.Command, units []string) error {
 			req, err := a.request(units)
 			if err != nil {
@@ -101,7 +101,7 @@ func (a *app) logsCommand() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&follow, "follow", false, "go on with what services and plugins write, until Ctrl-C; -f is the same")
+	cmd.Flags().BoolVar(&follow, "follow", false, "go on with what services, plugins, and runs of the tasks write, until Ctrl-C; -f is the same")
 	return cmd
 }
 

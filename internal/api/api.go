@@ -40,10 +40,12 @@ type Request struct {
 	ShowSensitive bool `json:"show_sensitive,omitempty"`
 }
 
-// Result is how a run ended.
+// Result is how a run ended; Record, only in the process that ran it, is
+// its record as it finished, also of a run whose directory went.
 type Result struct {
-	Run      string `json:"run"`
-	ExitCode int    `json:"exit_code"`
+	Run      string         `json:"run"`
+	ExitCode int            `json:"exit_code"`
+	Record   *record.Record `json:"-"`
 }
 
 // Handlers are the callbacks of a call: the events of its run, and the
@@ -82,7 +84,7 @@ func result(res *engine.Result, err error) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Result{Run: res.Run, ExitCode: res.ExitCode}, nil
+	return &Result{Run: res.Run, ExitCode: res.ExitCode, Record: res.Record}, nil
 }
 
 // Call runs the method of Methods named method.
@@ -169,7 +171,7 @@ func (a *API) Runs(_ context.Context, r Request) ([]*record.Record, error) {
 }
 
 // Events hands the stored events of the run of the request to the Event
-// callback, in order.
-func (a *API) Events(_ context.Context, r Request) error {
-	return engine.Events(a.options(r), r.Run, a.h.Event)
+// callback, in order, and with Follow what it writes until it ends.
+func (a *API) Events(ctx context.Context, r Request) error {
+	return engine.Events(ctx, a.options(r), r.Run, a.h.Event)
 }
