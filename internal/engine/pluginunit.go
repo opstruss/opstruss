@@ -209,6 +209,7 @@ func StatusUnits(ctx context.Context, opts Options) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer e.releaseSources()
 	ctx = e.ctx
 	got, _, err := e.statusPass(ctx, opts.Units)
 	if err != nil {

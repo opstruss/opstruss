@@ -19,6 +19,7 @@ minor release can change what a project, a component, or a plugin relies on.
   commands list, fetch, explicitly update, and prune dependencies, including
   all stacks for fetch and update. Explicit fetch repairs corrupt cache
   entries from the existing pin. Help and completion do not fetch sources.
+  Unit digests include the remote plugins called by project tasks.
 - Plugin `bin:` declarations download official release executables or
   `tar.gz` payloads with SHA-256 verification and a private plugin PATH.
   Cleanup restores the source and binary pins of each stored contract,

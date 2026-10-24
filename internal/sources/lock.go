@@ -30,16 +30,16 @@ type Lock struct {
 }
 
 func ReadLock(dir string) (*Lock, error) {
-	l := &Lock{Version: 1, Sources: map[string]Pin{}}
 	b, err := os.ReadFile(filepath.Join(dir, LockName))
 	if errors.Is(err, os.ErrNotExist) {
-		return l, nil
+		return &Lock{Version: 1, Sources: map[string]Pin{}}, nil
 	}
 	if err != nil {
 		return nil, err
 	}
 	d := yaml.NewDecoder(bytes.NewReader(b))
 	d.KnownFields(true)
+	l := &Lock{}
 	if err := d.Decode(l); err != nil {
 		return nil, fmt.Errorf("%s: %w", LockName, err)
 	}

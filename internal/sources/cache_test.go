@@ -79,6 +79,63 @@ esac
 	return dir, commit
 }
 
+func TestCacheRestrictiveUmask(t *testing.T) {
+	for _, mask := range []string{"027", "077"} {
+		t.Run(mask, func(t *testing.T) {
+			cmd := exec.Command("/bin/sh", "-c", `umask "$1"; shift; exec "$@"`, "umask", mask, os.Args[0],
+				"-test.run=^(TestGitCacheIntegrityOfflineAndRepair|TestBinaryCacheAndArchive)$")
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("cache with umask %s: %v\n%s", mask, err, out)
+			}
+		})
+	}
+}
+
+func TestGitRejectsOversizeBlobWithoutHanging(t *testing.T) {
+	_, commit := gitFixture(t)
+	fixtureGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	shim := t.TempDir()
+	// Keep stdout full after the size header, as a rejected Git blob does.
+	script := fmt.Sprintf(`#!/bin/sh
+if test "$1" = cat-file && test "$2" = --batch; then
+  read object
+  printf '%%s blob 536870913\n' "$object"
+  exec dd if=/dev/zero bs=65536 count=32 2>/dev/null
+fi
+exec '%s' "$@"
+`, fixtureGit)
+	if err := os.WriteFile(filepath.Join(shim, "git"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", shim+string(os.PathListSeparator)+os.Getenv("PATH"))
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	cache, err := UserCache()
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, _ := Parse(Repository + "/demo@v1")
+	id.Commit = commit
+	_, _, lease, err := cache.Git(ctx, id, false, false)
+	lease.Close()
+	if err == nil || !strings.Contains(err.Error(), "512 MiB") {
+		t.Fatalf("expected oversize rejection: %v", err)
+	}
+	if ctx.Err() != nil {
+		t.Fatal("rejecting an oversized blob waited for context cancellation")
+	}
+	if _, err := os.Lstat(cache.Snapshot(id)); !os.IsNotExist(err) {
+		t.Fatalf("failed fetch published a snapshot: %v", err)
+	}
+	temps, err := os.ReadDir(filepath.Join(cache.Root, "tmp"))
+	if err != nil || len(temps) != 0 {
+		t.Fatalf("failed fetch left temporary entries: %v %v", temps, err)
+	}
+}
+
 func TestGitCacheIntegrityOfflineAndRepair(t *testing.T) {
 	_, commit := gitFixture(t)
 	ctx := context.Background()

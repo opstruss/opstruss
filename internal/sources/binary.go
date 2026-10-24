@@ -270,7 +270,13 @@ retry:
 		if err := os.WriteFile(filepath.Join(tree, "payload"), payload, 0o444); err != nil {
 			return "", nil, err
 		}
+		if err := os.Chmod(filepath.Join(tree, "payload"), 0o444); err != nil {
+			return "", nil, err
+		}
 		if err := os.WriteFile(filepath.Join(tree, "exec", name), exe, 0o555); err != nil {
+			return "", nil, err
+		}
+		if err := os.Chmod(filepath.Join(tree, "exec", name), 0o555); err != nil {
 			return "", nil, err
 		}
 		if err := os.Chmod(filepath.Join(tree, "exec"), 0o555); err != nil {

@@ -29,6 +29,7 @@ func Logs(ctx context.Context, opts Options) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer e.releaseSources()
 	ctx = e.ctx
 	// A task is named as it is; a unit by a name or a pattern. A name of
 	// both shows both.

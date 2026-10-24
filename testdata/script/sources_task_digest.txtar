@@ -1,0 +1,70 @@
+# Remote pins used by project tasks affect units, including nested calls and components.
+env HOME=$WORK/home
+sourcerepo repo
+exec opstruss up --yes
+stdout 'default/direct \| task-v1'
+stdout 'default/nested: up: done'
+stdout 'default/prerequisite: up: done'
+stdout 'default/site/resource \| task-v1'
+exec opstruss up --yes
+! stdout 'task-v1'
+
+exec git -C repo config user.name Fixture
+exec git -C repo config user.email fixture@example.invalid
+cp v2.yaml repo/demo/opstruss.plugin.yaml
+exec git -C repo add .
+exec git -C repo commit -qm v2
+exec opstruss up --yes --locked
+! stdout 'task-v2'
+exec opstruss plugins update demo
+exec opstruss up --yes --locked
+stdout 'default/direct \| task-v2'
+stdout 'default/nested: will run'
+stdout 'default/prerequisite: will run'
+stdout 'default/site/resource \| task-v2'
+exec opstruss plan --locked
+! stdout 'will run'
+
+-- opstruss.yaml --
+name: digest
+uses:
+  demo: github.com/opstruss/plugins/demo@main
+  site: github.com/opstruss/plugins/component@v1
+units:
+  direct:
+    uses: provision
+  nested:
+    uses: wrapped
+  prerequisite:
+    uses: dependent
+  site:
+    uses: site
+tasks:
+  provision:
+    demo.provision: {}
+  wrapped:
+    steps:
+      - block:
+          - task: provision
+  dependent:
+    needs: [provision]
+    run: [echo, ready]
+-- repo/demo/opstruss.plugin.yaml --
+name: demo
+tasks:
+  provision:
+    run: [echo, task-v1]
+-- repo/component/opstruss.yaml --
+uses:
+  tool: github.com/opstruss/plugins/demo@main
+units:
+  resource:
+    uses: provision
+tasks:
+  provision:
+    tool.provision: {}
+-- v2.yaml --
+name: demo
+tasks:
+  provision:
+    run: [echo, task-v2]

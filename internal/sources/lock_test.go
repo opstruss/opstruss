@@ -53,7 +53,7 @@ func TestLockTransaction(t *testing.T) {
 	if !bytes.Equal(before, after) {
 		t.Fatal("warm run rewrote lock")
 	}
-	for _, b := range []string{"version: 2\nsources: {}\n", "version: 1\nversion: 1\nsources: {}\n", "version: 1\nsources: {}\nextra: true\n", "version: 1\nsources: {}\n---\nversion: 1\n"} {
+	for _, b := range []string{"{}\n", "sources: {}\n", "version: 1\n", "version: 1\nsources: null\n", "version: 2\nsources: {}\n", "version: 1\nversion: 1\nsources: {}\n", "version: 1\nsources: {}\nextra: true\n", "version: 1\nsources: {}\n---\nversion: 1\n"} {
 		if err := os.WriteFile(filepath.Join(dir, LockName), []byte(b), 0o600); err != nil {
 			t.Fatal(err)
 		}

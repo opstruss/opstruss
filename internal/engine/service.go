@@ -279,6 +279,7 @@ func Unlock(ctx context.Context, opts Options) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer e.releaseSources()
 	if err := e.unlock(); err != nil {
 		e.fail("", err)
 	}

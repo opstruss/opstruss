@@ -125,7 +125,12 @@ func materialize(ctx context.Context, id Identity, tmp string) ([]treeEntry, err
 		_ = in.Close()
 		return nil, err
 	}
-	defer func() { _ = in.Close(); _ = cmd.Wait() }()
+	defer func() {
+		_ = in.Close()
+		// A rejected blob may still fill stdout; stop the group before waiting.
+		_ = cmd.Cancel()
+		_ = cmd.Wait()
+	}()
 	reader := bufio.NewReader(out)
 	var entries []treeEntry
 	var total int64
@@ -194,6 +199,9 @@ func materialize(ctx context.Context, id Identity, tmp string) ([]treeEntry, err
 				perm = 0o555
 			}
 			err = os.WriteFile(p, payload, perm)
+			if err == nil {
+				err = os.Chmod(p, perm)
+			}
 		}
 		if err != nil {
 			return nil, err

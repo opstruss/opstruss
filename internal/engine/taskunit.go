@@ -106,7 +106,7 @@ func (e *engine) resolveTask(inst *instance, r *resolved, s *expr.Scope) error {
 
 // taskSource is what a unit that uses the task name of the project runs:
 // the task as written, with the tasks it calls through task: and needs,
-// and the programs that they name by a relative path.
+// their remote plugin sources, and programs named by a relative path.
 func (e *engine) taskSource(in *model.Project, name string, out map[string]any) error {
 	if _, seen := out[name]; seen || in.Tasks[name] == nil {
 		return nil
@@ -114,6 +114,15 @@ func (e *engine) taskSource(in *model.Project, name string, out map[string]any) 
 	tasks, _ := in.Doc()["tasks"].(map[string]any)
 	out[name] = tasks[name]
 	t, dir := in.Tasks[name], in.DirOf("tasks."+name)
+	for _, callee := range model.CallNames(t) {
+		target, err := in.Resolve(callee)
+		if err != nil {
+			return err
+		}
+		if pkg := target.Package; pkg != nil && pkg.Source != nil {
+			out["source "+callee] = pkg.Source
+		}
+	}
 	runs := []*model.Command{t.Run}
 	var called []string
 	var walk func([]*model.Step)
