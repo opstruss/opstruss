@@ -96,15 +96,16 @@ minor release can change what a project, a component, or a plugin relies on.
   it runs: a program that is not in `PATH` fails the task with its name.
 - A unit with `uses: <plugin>` runs the plugin's `plan`, `up`, and `down`
   with its `with:` as inputs. Its definition, and so its digest, holds the
-  plugin's source by the content of its directory, so a changed script
-  runs the unit again. The plugin's `plan` runs under the unit's lock,
-  also in the plan before `up`, and writes `$OPSTRUSS_PLAN`: a unit whose
-  definition did not change runs only when that plan has changes, `up`
-  gets the plan's own digest as `OPSTRUSS_DIGEST`, and `units.<n>.plan`
-  shows its changes and whether it is exact. The record keeps the inputs,
-  the outputs the plugin declares, and the program of `down` with the
-  plugin's directory, which `down` runs; a plugin without `plan` runs as a
-  `run` unit does, and one without `down` is forgotten.
+  plugin's source by the content of its directory, where a symlink to a
+  file counts as that file, so a changed script runs the unit again. The
+  plugin's `plan` runs under the unit's lock, also in the plan before
+  `up`, and writes `$OPSTRUSS_PLAN`: a unit whose definition did not
+  change runs only when that plan has changes, `up` gets the plan's own
+  digest as `OPSTRUSS_DIGEST`, and `units.<n>.plan` shows its changes and
+  whether it is exact. The record keeps the inputs, the outputs the plugin
+  declares, and the program of `down` with the plugin's directory, which
+  `down` runs; a plugin without `plan` runs as a `run` unit does, and one
+  without `down` is forgotten.
 - A plugin with `state: tool` keeps the tool's own state in `tool/` of
   each unit, which its programs get as `OPSTRUSS_STATE_DIR` and which goes
   with the record: `moved:` moves it, `down` removes it, and `removed:`

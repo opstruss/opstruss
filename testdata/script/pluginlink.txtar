@@ -1,0 +1,34 @@
+# A script of a local plugin that is a symlink counts with the content of
+# the file it links to: a change there runs the unit again.
+
+env HOME=$WORK/home
+chmod 755 shared/up.sh
+symlink plugins/link/up.sh -> ../../shared/up.sh
+
+exec opstruss up
+stdout 'default/app: up: done'
+exec opstruss plan
+stdout '^default/app: unchanged$'
+
+exec sh -c 'echo "# changed" >> shared/up.sh'
+exec opstruss plan
+stdout '^default/app: will run: definition changed$'
+exec opstruss up
+stdout 'default/app: up: done'
+exec opstruss plan
+stdout '^default/app: unchanged$'
+
+-- opstruss.yaml --
+name: app
+units:
+  app:
+    uses: ./plugins/link
+    approval: auto
+-- plugins/link/opstruss.plugin.yaml --
+name: link
+tasks:
+  up:
+    run: [./up.sh]
+-- shared/up.sh --
+#!/bin/sh
+echo linked
