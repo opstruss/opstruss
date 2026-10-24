@@ -366,6 +366,7 @@ tasks:
 		t.Fatalf("%d sources", n)
 	}
 	every := installed(t, d, "feed", "every")
+	eventually(t, "the source starts", func() bool { return len(lines(t, filepath.Join(dir, "starts"))) == 1 })
 	d.trig.close()
 	reinstall(t, d, dir, yaml, "CI_JOB=late")
 	if n := len(sourcesOf(d)); n != 0 {

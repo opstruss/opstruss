@@ -82,6 +82,8 @@ waitgrep '^send .*"text":"db-01: tidak diterapkan \(plan berubah, waktu habis, a
 waitgrep 'the plan changed since this run read it, stopped at plan' '.opstruss/runs/prod/*/events.jsonl'
 waitgrep '^db-01: \{node: pve2, vmid: 201, isolated: false\}$' vms.yaml
 grep -count=2 '^apply ' tofu.log
+# The restored bytes can be visible before Git releases its index lock.
+waitgone .git/index.lock
 exec git checkout -- infra
 
 # a run from the CLI, as from an AI agent over MCP, asks in the chat too
