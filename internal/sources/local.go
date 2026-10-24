@@ -25,6 +25,18 @@ func LocalHash(dir string) (string, error) {
 	return h, nil
 }
 
+// LocalPackageHash is the hash of a package of the local catalog at root:
+// the files under the package directory and the shared paths, as LocalHash
+// reads them, by path from root. The paths are relative to root, with
+// symlinks resolved.
+func LocalPackageHash(root, pkg string, shared []string) (string, error) {
+	h, err := hashFiles(root, append([]string{pkg}, shared...))
+	if err != nil {
+		return "", fmt.Errorf("package %s: %w", filepath.Join(root, filepath.FromSlash(pkg)), err)
+	}
+	return h, nil
+}
+
 // hashFiles hashes the regular files under paths in base, and each symlink
 // to one with the content of its target, as "<sha256>  <path>" lines by
 // path from base. Directories named .git, other symlinks, and special files

@@ -26,6 +26,16 @@ minor release can change what a project, a component, or a plugin relies on.
   including pending and abandoned attempts after updates or cache removal.
   Records now use version 2 and the daemon API uses protocol 2; older
   local records remain readable.
+- A catalog marks its root with `opstruss.catalog.yaml`, whose `shared:`
+  names the paths that every package in it may use. A unit's digest hashes
+  its plugin or component package with those paths and names a remote
+  source by repository and path without its ref or pin, so a commit
+  outside them runs no unit again, while the lock and records keep the
+  full pin. Relative programs, includes, and symlinks of a package stay
+  inside it and `shared:`, and the programs of any remote plugin inside
+  its repository. Remote sources read the marker at their root, local
+  paths the nearest one above, and `opstruss doctor` warns about a program
+  that a local plugin outside a catalog runs from outside its directory.
 
 - `opstruss up -d` runs up in the daemon of the stack, which it starts in
   the background when none runs; a task takes `-d` as well. The daemon

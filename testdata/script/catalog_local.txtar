@@ -1,0 +1,100 @@
+# A plugin of a local catalog hashes its package and the shared paths of
+# the catalog: a change in another plugin or outside them runs none of its
+# units again, and a change of a shared path runs all of them.
+
+env HOME=$WORK/home
+chmod 755 catalog/plugins/a/up.sh
+chmod 755 catalog/plugins/b/up.sh
+
+exec opstruss up
+stdout 'default/a \| hello from a'
+stdout 'default/b \| hello from b'
+exec opstruss plan
+stdout '^default/a: unchanged$'
+stdout '^default/b: unchanged$'
+
+# another plugin of the catalog
+exec sh -c 'echo "# changed" >> catalog/plugins/b/up.sh'
+exec opstruss plan
+stdout '^default/a: unchanged$'
+stdout '^default/b: will run: definition changed$'
+exec opstruss up
+! stdout 'hello from a'
+stdout 'default/b \| hello from b'
+
+# a shared path
+exec sh -c 'echo "# changed" >> catalog/lib/opstruss.sh'
+exec opstruss plan
+stdout '^default/a: will run: definition changed$'
+stdout '^default/b: will run: definition changed$'
+exec opstruss up
+stdout 'default/a \| hello from a'
+stdout 'default/b \| hello from b'
+
+# a file outside the packages and the shared paths
+exec sh -c 'echo changed >> catalog/README.md'
+exec opstruss plan
+stdout '^default/a: unchanged$'
+stdout '^default/b: unchanged$'
+
+# A program of another package is not what the hash of a plugin covers.
+cp other.yaml catalog/plugins/a/opstruss.plugin.yaml
+! exec opstruss validate
+stderr 'tasks.up.run\[0\]: \.\./b/up.sh leads outside its package and the shared paths of its catalog'
+
+# Outside a catalog, doctor warns about a program outside the plugin.
+cp loose.yaml opstruss.yaml
+exec opstruss doctor
+stdout '^warn   plugin \./plugins/loose runs \.\./tool.sh, outside its directory, so a change there runs none of its units again; mark the root that holds both with opstruss.catalog.yaml'
+! stdout 'runs \./up.sh'
+
+-- opstruss.yaml --
+name: app
+units:
+  a:
+    uses: ./catalog/plugins/a
+    approval: auto
+  b:
+    uses: ./catalog/plugins/b
+    approval: auto
+-- catalog/opstruss.catalog.yaml --
+shared: [lib]
+-- catalog/README.md --
+# Catalog
+-- catalog/lib/opstruss.sh --
+greet() { echo "hello from $1"; }
+-- catalog/plugins/a/opstruss.plugin.yaml --
+name: a
+tasks:
+  up:
+    run: [./up.sh]
+-- catalog/plugins/a/up.sh --
+#!/bin/sh
+. "$OPSTRUSS_PLUGIN_DIR/../../lib/opstruss.sh"
+greet a
+-- catalog/plugins/b/opstruss.plugin.yaml --
+name: b
+tasks:
+  up:
+    run: [./up.sh]
+-- catalog/plugins/b/up.sh --
+#!/bin/sh
+. "$OPSTRUSS_PLUGIN_DIR/../../lib/opstruss.sh"
+greet b
+-- other.yaml --
+name: a
+tasks:
+  up:
+    run: [../b/up.sh]
+-- loose.yaml --
+name: app
+units:
+  loose:
+    uses: ./plugins/loose
+-- plugins/loose/opstruss.plugin.yaml --
+name: loose
+tasks:
+  up:
+    run: [../tool.sh]
+  status:
+    run: [./up.sh]

@@ -19,6 +19,7 @@ import (
 	"github.com/opstruss/opstruss/internal/expr"
 	"github.com/opstruss/opstruss/internal/model"
 	"github.com/opstruss/opstruss/internal/plugin"
+	"github.com/opstruss/opstruss/internal/sources"
 	"github.com/opstruss/opstruss/internal/state"
 )
 
@@ -473,20 +474,24 @@ func (e *engine) digest(inst *instance, r *resolved) (string, []string, error) {
 	if id, _, err := e.locationOwner(inst, r, r.cwd); err != nil {
 		return "", nil, err
 	} else if id != nil {
-		add("dir", id, false)
+		add("dir", digestSource(id, ""), false)
 	} else {
 		add("dir", filepath.ToSlash(rel), rel == ".")
 	}
-	if inst.node.In.Source != nil {
-		def["owner"] = inst.node.In.Source
+	if in := inst.node.In; in.Source != nil {
+		h, err := e.packageHash(in.Source, in.Catalog, in.Dir)
+		if err != nil {
+			return "", nil, err
+		}
+		def["owner"] = digestSource(in.Source, h)
 	}
 	if r.plugin != nil && r.plugin.target.Package.Source != nil {
-		def["uses"] = r.plugin.target.Package.Source.Key()
-		def["source"] = r.plugin.target.Package.Source
+		id := r.plugin.target.Package.Source
+		def["uses"], def["source"] = id.Address(), digestSource(id, r.plugin.hash)
 	}
 	if r.task != nil && r.task.target.Package != nil && r.task.target.Package.Source != nil {
-		def["uses"] = r.task.target.Package.Source.Key()
-		def["source"] = r.task.target.Package.Source
+		id := r.task.target.Package.Source
+		def["uses"], def["source"] = id.Address(), digestSource(id, r.task.hash)
 	}
 	env := map[string]any{}
 	for k, v := range r.env {
@@ -544,6 +549,18 @@ func (e *engine) digest(inst *instance, r *resolved) (string, []string, error) {
 	}
 	sum := sha256.Sum256(data)
 	return "sha256:v1:" + hex.EncodeToString(sum[:]), missing, nil
+}
+
+// digestSource is a remote source as a digest holds it: by repository and
+// path, without the ref, commit, and h1: that the lock and the record keep,
+// and with the hash of its package, so that a commit that leaves the
+// package alone, or another ref to the same content, changes no unit.
+func digestSource(id *sources.Identity, hash string) map[string]any {
+	s := map[string]any{"repository": id.Repository, "path": id.Path}
+	if hash != "" {
+		s["hash"] = hash
+	}
+	return s
 }
 
 // hashed is a sensitive value as a digest holds it: the HMAC of its

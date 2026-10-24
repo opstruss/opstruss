@@ -21,6 +21,7 @@ type Package struct {
 	Source     *sources.Identity
 	SourceRoot string
 	BinDirs    []string
+	Catalog    *Catalog // the catalog that holds the directory; nil outside one
 
 	Name       string  // the name in uses:, or the path that a unit wrote
 	Decl       *Uses   // the declaration; nil for a path in a unit
@@ -234,6 +235,12 @@ func (c *checker) readPackage(dir string) (*Package, error) {
 		return nil, err
 	}
 	pkg := &Package{Dir: dir, Source: owner, SourceRoot: root}
+	switch pkg.Catalog, err = c.catalog(dir, root); {
+	case errors.Is(err, errBroken):
+		pkg.broken = true
+	case err != nil:
+		return nil, err
+	}
 	has := func(name string) (bool, error) {
 		_, err := os.Stat(filepath.Join(dir, name))
 		if errors.Is(err, fs.ErrNotExist) {
@@ -274,12 +281,23 @@ func (c *checker) readPackage(dir string) (*Package, error) {
 				return nil, err
 			}
 		}
-		pl, probs, err := readPlugin(c.p.base, dir)
+		if cat := pkg.Catalog; cat != nil {
+			if err := sources.PackageLinks(cat.Root, cat.Path, cat.Shared); err != nil {
+				return nil, err
+			}
+		}
+		b := catalogBound(pkg.Catalog)
+		if b == nil && pkg.Source != nil {
+			if b, err = repositoryBound(pkg.SourceRoot, dir); err != nil {
+				return nil, err
+			}
+		}
+		pl, probs, err := readPlugin(c.p.base, dir, b)
 		if err != nil {
 			return nil, err
 		}
 		c.probs = append(c.probs, probs...)
-		pkg.Plugin, pkg.broken = pl, pl == nil || len(probs) > 0
+		pkg.Plugin, pkg.broken = pl, pkg.broken || pl == nil || len(probs) > 0
 		if !pkg.broken && !c.p.Sources.Options.Discovery {
 			for _, name := range slices.Sorted(maps.Keys(pl.Bin)) {
 				binary := pl.Bin[name][sources.Platform()]

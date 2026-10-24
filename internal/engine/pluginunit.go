@@ -175,14 +175,23 @@ func (e *engine) resolvePlugin(inst *instance, r *resolved, s *expr.Scope) error
 	return nil
 }
 
-// pluginHash is the hash of every file in dir, by path and content, read
-// once a run, as the h1: hash of Go modules is: a script that changes
-// changes the definition of the units that use it.
+// pluginHash is the hash of the package of a plugin, as the h1: hash of
+// Go modules is: a script that changes changes the definition of the units
+// that use it.
 func (e *engine) pluginHash(pkg *model.Package) (string, error) {
-	if pkg.Source != nil {
-		return pkg.Source.Hash, nil
+	return e.packageHash(pkg.Source, pkg.Catalog, pkg.Dir)
+}
+
+// packageHash is the hash of a package by its content, read once a run: in
+// a catalog its directory and the shared paths, for another remote source
+// the whole tree of its commit, and for a local plugin its directory.
+func (e *engine) packageHash(id *sources.Identity, cat *model.Catalog, dir string) (string, error) {
+	if id != nil && cat == nil {
+		return id.Hash, nil
 	}
-	dir := pkg.Dir
+	if cat != nil {
+		dir = filepath.Join(cat.Root, filepath.FromSlash(cat.Path))
+	}
 	e.mu.Lock()
 	h, ok := e.hashes[dir]
 	e.mu.Unlock()
@@ -190,7 +199,14 @@ func (e *engine) pluginHash(pkg *model.Package) (string, error) {
 		return h, nil
 	}
 	var err error
-	h, err = sources.LocalHash(dir)
+	switch {
+	case id != nil:
+		h, err = e.p.Sources.Cache.PackageHash(*id, cat.Path, cat.Shared)
+	case cat != nil:
+		h, err = sources.LocalPackageHash(cat.Root, cat.Path, cat.Shared)
+	default:
+		h, err = sources.LocalHash(dir)
+	}
 	if err != nil {
 		return "", err
 	}

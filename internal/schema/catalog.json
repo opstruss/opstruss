@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "opstruss.catalog.yaml",
+  "description": "The root of an OpsTruss catalog: a repository of plugins and components.",
+  "type": "object",
+  "properties": {
+    "shared": {
+      "description": "Paths that every package of the catalog may use, relative to its root.",
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    }
+  },
+  "patternProperties": { "^x-": true },
+  "additionalProperties": false
+}

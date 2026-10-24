@@ -31,6 +31,9 @@ func TestValidate(t *testing.T) {
 		{name: "plugin needs a name", kind: Plugin, doc: map[string]any{}, msg: `missing key "name"`},
 		{name: "plugin cannot grant itself env", kind: Plugin, doc: map[string]any{"name": "p", "pass": []any{"HOME"}}, path: "pass", msg: "unknown key"},
 		{name: "outputs tool", kind: Plugin, doc: map[string]any{"name": "p", "outputs": "tool"}},
+		{name: "catalog shares paths", kind: Catalog, doc: map[string]any{"shared": []any{"lib"}, "x-site": map[string]any{}}},
+		{name: "catalog keeps to its keys", kind: Catalog, doc: map[string]any{"plugins": []any{"a"}}, path: "plugins", msg: "unknown key"},
+		{name: "catalog shares each path once", kind: Catalog, doc: map[string]any{"shared": []any{"lib", "lib"}}, path: "shared", msg: "equal"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

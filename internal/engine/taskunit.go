@@ -120,7 +120,11 @@ func (e *engine) taskSource(in *model.Project, name string, out map[string]any) 
 			return err
 		}
 		if pkg := target.Package; pkg != nil && pkg.Source != nil {
-			out["source "+callee] = pkg.Source
+			h, err := e.pluginHash(pkg)
+			if err != nil {
+				return err
+			}
+			out["source "+callee] = digestSource(pkg.Source, h)
 		}
 	}
 	runs := []*model.Command{t.Run}

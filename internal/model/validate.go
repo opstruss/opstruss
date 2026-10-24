@@ -70,6 +70,7 @@ type checker struct {
 	doc    *document
 	pkgs   map[string]*Package // read packages, by directory
 	comps  *components
+	cats   map[string]*Catalog // read catalogs, by root; nil for one with problems
 	probs  Problems
 
 	readsSecret  map[string]any // the locals that read a secret, once asked
@@ -96,7 +97,8 @@ func (c *checker) add(path []string, format string, args ...any) {
 func at(path []string, more ...string) []string { return append(slices.Clone(path), more...) }
 
 func (p *Project) check() Problems {
-	c := &checker{p: p, pkgs: map[string]*Package{}, comps: &components{read: map[string]*Project{}, reading: map[string]bool{}}}
+	c := &checker{p: p, pkgs: map[string]*Package{}, comps: &components{read: map[string]*Project{}, reading: map[string]bool{}},
+		cats: map[string]*Catalog{}}
 	c.file()
 	c.graph()
 	slices.SortStableFunc(c.probs, func(a, b Problem) int {
@@ -149,7 +151,16 @@ func (c *checker) component(dir string, source *sources.Identity, sourceRoot str
 	cs.reading[dir] = true
 	defer delete(cs.reading, dir)
 
-	p, probs, err := readComponent(c.p.base, dir, c.p.StackName, c.p.Sources, source, sourceRoot)
+	cat, err := c.catalog(dir, sourceRoot)
+	if err != nil {
+		return nil, err
+	}
+	if cat != nil {
+		if err := sources.PackageLinks(cat.Root, cat.Path, cat.Shared); err != nil {
+			return nil, err
+		}
+	}
+	p, probs, err := readComponent(c.p.base, dir, c.p.StackName, c.p.Sources, source, sourceRoot, cat)
 	var pp Problems
 	if errors.As(err, &pp) {
 		probs, err = pp, nil
@@ -162,7 +173,7 @@ func (c *checker) component(dir string, source *sources.Identity, sourceRoot str
 		cs.read[key] = nil
 		return nil, errBroken
 	}
-	cc := &checker{p: p, pkgs: c.pkgs, comps: cs}
+	cc := &checker{p: p, pkgs: c.pkgs, comps: cs, cats: c.cats}
 	cc.file()
 	c.probs = append(c.probs, cc.probs...)
 	cs.read[key] = p

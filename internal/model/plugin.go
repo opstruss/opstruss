@@ -2,6 +2,7 @@ package model
 
 import (
 	"cmp"
+	"errors"
 	"maps"
 	"path/filepath"
 	"slices"
@@ -14,9 +15,10 @@ import (
 // PluginFile is the file that marks a plugin.
 const PluginFile = "opstruss.plugin.yaml"
 
-// readPlugin reads opstruss.plugin.yaml in dir and checks it; messages name
-// the file relative to the project in projectDir.
-func readPlugin(projectDir, dir string) (*Plugin, Problems, error) {
+// readPlugin reads opstruss.plugin.yaml in dir and checks it, with the
+// programs that it names by a relative path in b; messages name the file
+// relative to the project in projectDir.
+func readPlugin(projectDir, dir string, b *bound) (*Plugin, Problems, error) {
 	rel, err := filepath.Rel(projectDir, filepath.Join(dir, PluginFile))
 	if err != nil {
 		return nil, nil, err
@@ -31,6 +33,19 @@ func readPlugin(projectDir, dir string) (*Plugin, Problems, error) {
 	}
 	c := &checker{plugin: pl, doc: doc}
 	c.pluginRules()
+	var errs []error
+	pl.programs(func(path []string, prog string) {
+		ok, err := b.allows(prog)
+		switch {
+		case err != nil:
+			errs = append(errs, err)
+		case !ok:
+			c.add(path, "%s leads outside %s", prog, b.what)
+		}
+	})
+	if err := errors.Join(errs...); err != nil {
+		return nil, nil, err
+	}
 	slices.SortStableFunc(c.probs, func(a, b Problem) int {
 		return cmp.Or(cmp.Compare(a.Line, b.Line), cmp.Compare(a.Column, b.Column))
 	})

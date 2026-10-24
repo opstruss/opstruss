@@ -34,6 +34,7 @@ type Project struct {
 	Source     *sources.Identity
 	SourceRoot string
 	Sources    *sources.Session
+	Catalog    *Catalog // the catalog that holds a component; nil outside one
 
 	File
 	Dir       string
@@ -222,7 +223,7 @@ var projectOnly = []string{"stacks", "secrets", "encryption_keys", "backend", "r
 // readComponent reads the component in dir for a project in base: its
 // opstruss.yaml merged with its include files, without what only a
 // project has.
-func readComponent(base, dir, stack string, session *sources.Session, owner *sources.Identity, sourceRoot string) (*Project, Problems, error) {
+func readComponent(base, dir, stack string, session *sources.Session, owner *sources.Identity, sourceRoot string, cat *Catalog) (*Project, Problems, error) {
 	rel, err := filepath.Rel(base, filepath.Join(dir, FileName))
 	if err != nil {
 		return nil, nil, err
@@ -242,7 +243,7 @@ func readComponent(base, dir, stack string, session *sources.Session, owner *sou
 	if err != nil {
 		return nil, nil, err
 	}
-	p := &Project{Source: owner, SourceRoot: sourceRoot, Sources: session, Dir: dir, StackName: stack, doc: map[string]any{}, root: root, origins: map[string]origin{}, base: base,
+	p := &Project{Source: owner, SourceRoot: sourceRoot, Sources: session, Catalog: cat, Dir: dir, StackName: stack, doc: map[string]any{}, root: root, origins: map[string]origin{}, base: base,
 		component: true}
 	for k, v := range root.value {
 		if k == "include" || strings.HasPrefix(k, "x-") || slices.Contains(projectOnly, k) {
@@ -401,6 +402,15 @@ func (p *Project) include(d *document, path []string) Problems {
 			if p.Source != nil {
 				if _, err := sources.Within(p.SourceRoot, filepath.Join(p.Dir, filepath.FromSlash(m))); err != nil {
 					probs = append(probs, d.problem(at, "%v", err))
+					continue
+				}
+			}
+			if b := catalogBound(p.Catalog); b != nil {
+				if ok, err := b.allows(m); err != nil {
+					probs = append(probs, d.problem(at, "%v", err))
+					continue
+				} else if !ok {
+					probs = append(probs, d.problem(at, "%s leads outside %s", m, b.what))
 					continue
 				}
 			}

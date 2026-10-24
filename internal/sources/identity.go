@@ -54,13 +54,15 @@ func safePath(p string) bool {
 	return utf8.ValidString(p) && p != "" && !strings.ContainsAny(p, "\\\x00") && !strings.HasPrefix(p, "/") && path.Clean(p) == p && p != ".." && !strings.HasPrefix(p, "../") && !strings.Contains(p, "/.git/") && !strings.HasSuffix(p, "/.git") && p != ".git" && !strings.HasPrefix(p, ".git/")
 }
 
-func (id Identity) Key() string {
-	s := id.Repository
-	if id.Path != "." {
-		s += "/" + id.Path
+// Address is the source without its ref: the repository and the path in it.
+func (id Identity) Address() string {
+	if id.Path == "." {
+		return id.Repository
 	}
-	return s + "@" + id.Ref
+	return id.Repository + "/" + id.Path
 }
+
+func (id Identity) Key() string { return id.Address() + "@" + id.Ref }
 
 func (id Identity) Group() string { return id.Repository + "@" + id.Ref }
 

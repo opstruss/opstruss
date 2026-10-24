@@ -17,6 +17,7 @@ import (
 func TestSchemaMatchesStructs(t *testing.T) {
 	project := readSchema(t, "project.json")
 	plugin := readSchema(t, "plugin.json")
+	catalog := readSchema(t, "catalog.json")
 	defs := project["$defs"].(map[string]any)
 	tests := []struct {
 		name   string
@@ -53,6 +54,7 @@ func TestSchemaMatchesStructs(t *testing.T) {
 		{"plugin", plugin, reflect.TypeFor[Plugin](), nil},
 		{"binary", pick(plugin, "properties", "bin", "additionalProperties", "additionalProperties"), reflect.TypeFor[Binary](), nil},
 		{"plugin backend", pick(plugin, "properties", "backend"), reflect.TypeFor[PluginBackend](), nil},
+		{"catalog", catalog, reflect.TypeFor[catalogFile](), nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

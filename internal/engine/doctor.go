@@ -15,6 +15,7 @@ import (
 	"github.com/opstruss/opstruss/internal/model"
 	"github.com/opstruss/opstruss/internal/plugin"
 	"github.com/opstruss/opstruss/internal/secret"
+	"github.com/opstruss/opstruss/internal/sources"
 	"github.com/opstruss/opstruss/internal/state"
 )
 
@@ -58,6 +59,7 @@ func Doctor(opts Options) (*Report, error) {
 	d.programs()
 	d.key()
 	d.environment()
+	d.pluginPaths()
 	d.state()
 	return d.r, nil
 }
@@ -364,6 +366,32 @@ func (d *doctor) environment() {
 			}
 			d.add(&Check{Check: "env", Status: "warn", Name: v, For: []string{"plugin " + pkg.Name}, Message: fmt.Sprintf(
 				"plugin %s asks for %s, and no pass: of what uses it lets it through, so its programs never get it", pkg.Name, v)})
+		}
+	}
+}
+
+// pluginPaths warns about a program that a local plugin outside a catalog
+// names by a path outside its directory: the hash of the plugin leaves
+// that file out, so a change there runs none of its units again.
+func (d *doctor) pluginPaths() {
+	pkgs := slices.SortedFunc(maps.Keys(d.passes), func(a, b *model.Package) int {
+		return cmp.Or(strings.Compare(a.Dir, b.Dir), strings.Compare(a.Name, b.Name))
+	})
+	seen := map[string]bool{}
+	for _, pkg := range pkgs {
+		if pkg.Source != nil || pkg.Catalog != nil || seen[pkg.Dir] {
+			continue
+		}
+		seen[pkg.Dir] = true
+		for _, prog := range pkg.Plugin.RelativePrograms() {
+			// A symlink in the directory counts with its target; a
+			// directory that leads elsewhere does not.
+			if ok, err := sources.Inside(pkg.Dir, []string{"."}, filepath.Dir(filepath.Join(pkg.Dir, prog))); ok || err != nil {
+				continue
+			}
+			d.add(&Check{Check: "program", Status: "warn", Name: prog, For: []string{"plugin " + pkg.Name}, Message: fmt.Sprintf(
+				"plugin %s runs %s, outside its directory, so a change there runs none of its units again; mark the root that holds both with %s and name the path in its shared:",
+				pkg.Name, prog, model.CatalogFile)})
 		}
 	}
 }

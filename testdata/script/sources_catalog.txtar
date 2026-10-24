@@ -1,0 +1,158 @@
+# A remote catalog hashes each package with the shared paths: a commit
+# outside them runs nothing again, while records and cleanup keep pins.
+env HOME=$WORK/home
+chmod 755 repo/plugins/a/up.sh
+chmod 755 repo/plugins/a/down.sh
+sourcerepo repo
+exec git -C repo config user.name Fixture
+exec git -C repo config user.email fixture@example.invalid
+
+exec opstruss up --yes
+stdout 'default/a \| up-v1'
+stdout 'default/site/page \| page-v1'
+stdout 'default/site/shared \| shared-unit'
+exec opstruss plan --locked
+! stdout 'will run'
+cp opstruss.lock before.lock
+
+# A commit outside the packages and the shared paths runs nothing again,
+# and the record follows the new pin.
+exec sh -c 'echo v2 > repo/README.md'
+exec git -C repo commit -qam readme
+exec git -C repo tag -f v1
+exec opstruss plugins update
+! cmp opstruss.lock before.lock
+exec opstruss plan --locked
+stdout '^default/a: unchanged$'
+stdout '^default/site/page: unchanged$'
+exec opstruss up --yes --locked
+! stdout 'up-v'
+! stdout 'page-v'
+exec sh -c 'opstruss state pull a | grep -qF "$(git -C repo rev-parse HEAD)"'
+exec sh -c 'opstruss state pull a | grep -qF "$(grep -o "h1:[A-Za-z0-9+/=]*" opstruss.lock | head -n 1)"'
+
+# A change of a shared path changes every package of the catalog.
+exec sh -c 'echo version=v2 > repo/lib/opstruss.sh'
+exec git -C repo commit -qam lib
+exec git -C repo tag -f v1
+exec opstruss plugins update
+exec opstruss plan --locked
+stdout '^default/a: will run: definition changed$'
+stdout '^default/site/page: will run: definition changed$'
+
+# Cleanup runs the down of the pin in the record, fetched again.
+cp removed.yaml opstruss.yaml
+exec sh -c 'chmod -R u+w "$HOME/.opstruss/cache/git"; rm -rf "$HOME/.opstruss/cache/git"'
+exec opstruss up --yes
+stdout 'default/a \| down-v1'
+! stdout 'down-v2'
+
+# The relative paths of a package stay in it and the shared paths.
+cp full.yaml opstruss.yaml
+cp opstruss.lock before.lock
+cp other.yaml repo/plugins/a/opstruss.plugin.yaml
+exec git -C repo commit -qam other
+exec git -C repo tag -f v1
+! exec opstruss plugins update
+stderr 'tasks.up.run\[0\]: \.\./b/up.sh leads outside its package and the shared paths of its catalog'
+cmp opstruss.lock before.lock
+cp upward.yaml repo/components/site/opstruss.yaml
+exec git -C repo commit -qam upward
+exec git -C repo tag -f v1
+! exec opstruss plugins update
+stderr 'include\[0\]: \.\./\.\./plugins/b/units.yaml leads outside its package'
+cmp opstruss.lock before.lock
+
+# Without opstruss.catalog.yaml they stay in the repository.
+exec git -C repo rm -q opstruss.catalog.yaml
+cp outside.yaml repo/plugins/a/opstruss.plugin.yaml
+cp full-site.yaml repo/components/site/opstruss.yaml
+exec git -C repo commit -qam outside
+exec git -C repo tag -f v1
+! exec opstruss plugins update
+stderr 'tasks.up.run\[0\]: \.\./\.\./\.\./outside.sh leads outside its repository'
+cmp opstruss.lock before.lock
+
+-- opstruss.yaml --
+name: catalog
+uses:
+  a: github.com/opstruss/catalog/plugins/a@v1
+  cat: github.com/opstruss/catalog@v1
+units:
+  a:
+    uses: a
+  site:
+    uses: cat.site
+-- full.yaml --
+name: catalog
+uses:
+  a: github.com/opstruss/catalog/plugins/a@v1
+  cat: github.com/opstruss/catalog@v1
+units:
+  a:
+    uses: a
+  site:
+    uses: cat.site
+-- removed.yaml --
+name: catalog
+removed:
+  - {from: a, destroy: true}
+  - {from: site, destroy: true}
+-- repo/opstruss.catalog.yaml --
+shared: [lib]
+-- repo/README.md --
+v1
+-- repo/lib/opstruss.sh --
+version=v1
+-- repo/lib/units.yaml --
+units:
+  shared:
+    run: [echo, shared-unit]
+-- repo/plugins/a/opstruss.plugin.yaml --
+name: a
+tasks:
+  up:
+    run: [./up.sh]
+  down:
+    run: [./down.sh]
+-- repo/plugins/a/up.sh --
+#!/bin/sh
+. "$OPSTRUSS_PLUGIN_DIR/../../lib/opstruss.sh"
+echo "up-$version"
+-- repo/plugins/a/down.sh --
+#!/bin/sh
+. "$OPSTRUSS_PLUGIN_DIR/../../lib/opstruss.sh"
+echo "down-$version"
+-- repo/plugins/b/units.yaml --
+units:
+  other:
+    run: [echo, other]
+-- repo/components/site/opstruss.yaml --
+include: [../../lib/units.yaml]
+units:
+  page:
+    run: [echo, page-v1]
+-- full-site.yaml --
+include: [../../lib/units.yaml]
+units:
+  page:
+    run: [echo, page-v1]
+-- upward.yaml --
+include: [../../plugins/b/units.yaml]
+units:
+  page:
+    run: [echo, page-v1]
+-- other.yaml --
+name: a
+tasks:
+  up:
+    run: [../b/up.sh]
+  down:
+    run: [./down.sh]
+-- outside.yaml --
+name: a
+tasks:
+  up:
+    run: [../../../outside.sh]
+  down:
+    run: [./down.sh]
