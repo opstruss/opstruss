@@ -49,7 +49,7 @@ stdout 'down-v2'
 -- opstruss.yaml --
 name: attempts
 uses:
-  demo: github.com/opstruss/plugins/demo@v1
+  demo: github.com/opstruss/catalog/demo@v1
 units:
   resource:
     uses: demo

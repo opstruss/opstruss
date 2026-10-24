@@ -35,21 +35,21 @@ stdout 'source-criteria'
 -- opstruss.yaml --
 name: sources
 uses:
-  demo: github.com/opstruss/plugins/demo@v1
+  demo: github.com/opstruss/catalog/demo@v1
 units:
   demo:
     uses: demo
 -- one/opstruss.yaml --
 name: one
 uses:
-  demo: github.com/opstruss/plugins/demo@v1
+  demo: github.com/opstruss/catalog/demo@v1
 units:
   demo:
     uses: demo
 -- two/opstruss.yaml --
 name: two
 uses:
-  demo: github.com/opstruss/plugins/demo@v1
+  demo: github.com/opstruss/catalog/demo@v1
 units:
   demo:
     uses: demo

@@ -119,7 +119,7 @@ tasks:
 }
 
 func TestLocked(t *testing.T) {
-	req := project(t, "name: locked\nuses:\n  remote: github.com/opstruss/plugins/demo@v1\ntasks:\n  root:\n    run: touch must-not-run\n")
+	req := project(t, "name: locked\nuses:\n  remote: github.com/opstruss/catalog/demo@v1\ntasks:\n  root:\n    run: touch must-not-run\n")
 	req.Locked, req.Task = true, "root"
 	_, err := New(Handlers{}).Run(context.Background(), req)
 	if err == nil || !strings.Contains(err.Error(), "requires a pin change") {

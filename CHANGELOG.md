@@ -13,7 +13,7 @@ minor release can change what a project, a component, or a plugin relies on.
 
 ### Added
 
-- Official remote plugins and components from `github.com/opstruss/plugins`
+- Official remote plugins and components from `github.com/opstruss/catalog`
   resolve to verified Git snapshots in a shared per-user cache. Transitive
   pins live in `opstruss.lock`; `--locked` refuses pin changes. The `plugins`
   commands list, fetch, explicitly update, and prune dependencies, including

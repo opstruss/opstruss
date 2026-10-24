@@ -61,12 +61,12 @@ func gitFixture(t *testing.T) (string, string) {
 set -eu
 case "$1" in
 ls-remote)
-  test "$3" = https://github.com/opstruss/plugins.git
+  test "$3" = https://github.com/opstruss/catalog.git
   shift 3
   exec '%s' -c protocol.file.allow=always ls-remote --exit-code '%s' "$@"
   ;;
 fetch)
-  test "$4" = https://github.com/opstruss/plugins.git
+  test "$4" = https://github.com/opstruss/catalog.git
   exec '%s' -c protocol.file.allow=always fetch --no-tags --depth=1 '%s' "$5"
   ;;
 *) exec '%s' "$@" ;;

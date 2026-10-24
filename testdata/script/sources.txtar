@@ -18,7 +18,7 @@ stderr 'whole project and all stacks'
 
 exec opstruss plugins fetch
 exists opstruss.lock
-grep 'plugins/extra@main' opstruss.lock
+grep 'catalog/extra@main' opstruss.lock
 cp opstruss.lock before.lock
 exec opstruss plugins fetch --locked
 cmp opstruss.lock before.lock
@@ -71,9 +71,9 @@ cmp opstruss.lock pinned.lock
 -- opstruss.yaml --
 name: sources
 uses:
-  demo: github.com/opstruss/plugins/demo@v1
-  alias: github.com/opstruss/plugins/demo@v1
-  site: github.com/opstruss/plugins/demo/components/site@v1
+  demo: github.com/opstruss/catalog/demo@v1
+  alias: github.com/opstruss/catalog/demo@v1
+  site: github.com/opstruss/catalog/demo/components/site@v1
 stacks:
   alpha: {}
   beta:
@@ -92,7 +92,7 @@ tasks:
 -- full.yaml --
 name: sources
 uses:
-  demo: github.com/opstruss/plugins/demo@v1
+  demo: github.com/opstruss/catalog/demo@v1
 tasks:
   root-task:
     inputs:
@@ -101,7 +101,7 @@ tasks:
 -- beta.yaml --
 units:
   extra:
-    uses: github.com/opstruss/plugins/extra@main
+    uses: github.com/opstruss/catalog/extra@main
 -- removed.yaml --
 name: sources
 stacks:

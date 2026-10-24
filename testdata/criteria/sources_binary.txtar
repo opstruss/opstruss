@@ -16,7 +16,7 @@ stdout 'binary-down-v1 resource'
 -- opstruss.yaml --
 name: binary
 uses:
-  compiled: github.com/opstruss/plugins/compiled@v1
+  compiled: github.com/opstruss/catalog/compiled@v1
 units:
   db:
     uses: compiled
@@ -27,7 +27,7 @@ tasks:
 -- full.yaml --
 name: binary
 uses:
-  compiled: github.com/opstruss/plugins/compiled@v1
+  compiled: github.com/opstruss/catalog/compiled@v1
 units:
   db:
     uses: compiled
@@ -44,10 +44,10 @@ inputs:
   name: {type: string, required: true}
 bin:
   demo-tool:
-    linux/amd64: {url: https://github.com/opstruss/plugins/releases/download/v1/tool-v1, sha256: 24c67af32a3ab69d6577f826c1c3000d233c9a384b2fc1a963fa287c14ca1a54}
-    linux/arm64: {url: https://github.com/opstruss/plugins/releases/download/v1/tool-v1, sha256: 24c67af32a3ab69d6577f826c1c3000d233c9a384b2fc1a963fa287c14ca1a54}
-    darwin/amd64: {url: https://github.com/opstruss/plugins/releases/download/v1/tool-v1, sha256: 24c67af32a3ab69d6577f826c1c3000d233c9a384b2fc1a963fa287c14ca1a54}
-    darwin/arm64: {url: https://github.com/opstruss/plugins/releases/download/v1/tool-v1, sha256: 24c67af32a3ab69d6577f826c1c3000d233c9a384b2fc1a963fa287c14ca1a54}
+    linux/amd64: {url: https://github.com/opstruss/catalog/releases/download/v1/tool-v1, sha256: 24c67af32a3ab69d6577f826c1c3000d233c9a384b2fc1a963fa287c14ca1a54}
+    linux/arm64: {url: https://github.com/opstruss/catalog/releases/download/v1/tool-v1, sha256: 24c67af32a3ab69d6577f826c1c3000d233c9a384b2fc1a963fa287c14ca1a54}
+    darwin/amd64: {url: https://github.com/opstruss/catalog/releases/download/v1/tool-v1, sha256: 24c67af32a3ab69d6577f826c1c3000d233c9a384b2fc1a963fa287c14ca1a54}
+    darwin/arm64: {url: https://github.com/opstruss/catalog/releases/download/v1/tool-v1, sha256: 24c67af32a3ab69d6577f826c1c3000d233c9a384b2fc1a963fa287c14ca1a54}
 tasks:
   up:
     run: [demo-tool, up]
@@ -63,10 +63,10 @@ inputs:
   name: {type: string, required: true}
 bin:
   demo-tool:
-    linux/amd64: {url: https://github.com/opstruss/plugins/releases/download/v2/tool-v2, sha256: e6ae8d3e94115795d4eaa3ba667979fe07968b83e1096658e90d0111f5370184}
-    linux/arm64: {url: https://github.com/opstruss/plugins/releases/download/v2/tool-v2, sha256: e6ae8d3e94115795d4eaa3ba667979fe07968b83e1096658e90d0111f5370184}
-    darwin/amd64: {url: https://github.com/opstruss/plugins/releases/download/v2/tool-v2, sha256: e6ae8d3e94115795d4eaa3ba667979fe07968b83e1096658e90d0111f5370184}
-    darwin/arm64: {url: https://github.com/opstruss/plugins/releases/download/v2/tool-v2, sha256: e6ae8d3e94115795d4eaa3ba667979fe07968b83e1096658e90d0111f5370184}
+    linux/amd64: {url: https://github.com/opstruss/catalog/releases/download/v2/tool-v2, sha256: e6ae8d3e94115795d4eaa3ba667979fe07968b83e1096658e90d0111f5370184}
+    linux/arm64: {url: https://github.com/opstruss/catalog/releases/download/v2/tool-v2, sha256: e6ae8d3e94115795d4eaa3ba667979fe07968b83e1096658e90d0111f5370184}
+    darwin/amd64: {url: https://github.com/opstruss/catalog/releases/download/v2/tool-v2, sha256: e6ae8d3e94115795d4eaa3ba667979fe07968b83e1096658e90d0111f5370184}
+    darwin/arm64: {url: https://github.com/opstruss/catalog/releases/download/v2/tool-v2, sha256: e6ae8d3e94115795d4eaa3ba667979fe07968b83e1096658e90d0111f5370184}
 tasks:
   up:
     run: [demo-tool, up]

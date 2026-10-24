@@ -38,13 +38,13 @@ func sourceRepo(ts *testscript.TestScript, _ bool, args []string) {
 set -eu
 case "$1" in
 ls-remote)
-  test "$3" = https://github.com/opstruss/plugins.git
+  test "$3" = https://github.com/opstruss/catalog.git
   test ! -f '%s/offline'
   shift 3
   exec '%s' -c protocol.file.allow=always ls-remote --exit-code '%s' "$@"
   ;;
 fetch)
-  test "$4" = https://github.com/opstruss/plugins.git
+  test "$4" = https://github.com/opstruss/catalog.git
   test ! -f '%s/offline'
   exec '%s' -c protocol.file.allow=always fetch --no-tags --depth=1 '%s' "$5"
   ;;
@@ -61,7 +61,7 @@ type assetTransport struct {
 }
 
 func (f assetTransport) RoundTrip(r *http.Request) (*http.Response, error) {
-	if r.URL.Scheme == "https" && r.URL.Host == "github.com" && strings.HasPrefix(r.URL.Path, "/opstruss/plugins/releases/download/") {
+	if r.URL.Scheme == "https" && r.URL.Host == "github.com" && strings.HasPrefix(r.URL.Path, "/opstruss/catalog/releases/download/") {
 		if _, err := os.Stat(filepath.Join(f.dir, "offline")); err == nil {
 			return nil, fmt.Errorf("fixture offline")
 		}

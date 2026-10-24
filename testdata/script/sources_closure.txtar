@@ -2,9 +2,9 @@
 env HOME=$WORK/home
 sourcerepo repo
 exec opstruss plugins fetch
-grep 'plugins/a@v1' opstruss.lock
-grep 'plugins/b@main' opstruss.lock
-grep 'plugins/c@main' opstruss.lock
+grep 'catalog/a@v1' opstruss.lock
+grep 'catalog/b@main' opstruss.lock
+grep 'catalog/c@main' opstruss.lock
 cp opstruss.lock before.lock
 exec opstruss up --yes
 stdout 'closure-v1'
@@ -36,25 +36,25 @@ exec opstruss up --yes --locked
 -- opstruss.yaml --
 name: closure
 uses:
-  outer: github.com/opstruss/plugins/a@v1
+  outer: github.com/opstruss/catalog/a@v1
 units:
   closure:
     uses: outer
 -- repo/a/opstruss.yaml --
 uses:
-  middle: github.com/opstruss/plugins/b@main
+  middle: github.com/opstruss/catalog/b@main
 units:
   nested:
     uses: middle
 -- repo/b/opstruss.yaml --
 uses:
-  inner: github.com/opstruss/plugins/c@main
+  inner: github.com/opstruss/catalog/c@main
 units:
   nested:
     uses: inner
 -- valid.yaml --
 uses:
-  inner: github.com/opstruss/plugins/c@main
+  inner: github.com/opstruss/catalog/c@main
 units:
   nested:
     uses: inner

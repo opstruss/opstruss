@@ -43,7 +43,7 @@ stdout '^valid$'
 -- opstruss.yaml --
 name: trust
 uses:
-  site: github.com/opstruss/plugins/component@v1
+  site: github.com/opstruss/catalog/component@v1
 units:
   site:
     uses: site

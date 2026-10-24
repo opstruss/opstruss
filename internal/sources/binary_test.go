@@ -53,7 +53,7 @@ func TestBinaryCacheAndArchive(t *testing.T) {
 	ctx := context.Background()
 	cache, _ := UserCache()
 	payload := archive(t, []*tar.Header{{Name: "demo", Mode: 0o755, Size: 4}, {Name: "LICENSE", Mode: 0o644, Size: 2}}, [][]byte{[]byte("tool"), []byte("ok")})
-	b := Binary{URL: "https://github.com/opstruss/plugins/releases/download/v1/demo.tar.gz", SHA256: payloadHash(payload)}
+	b := Binary{URL: "https://github.com/opstruss/catalog/releases/download/v1/demo.tar.gz", SHA256: payloadHash(payload)}
 	original := http.DefaultTransport
 	t.Cleanup(func() { http.DefaultTransport = original })
 	calls := 0
@@ -115,7 +115,7 @@ func TestConcurrentBinaryPublicationSharesActiveEntry(t *testing.T) {
 	})
 	cache, _ := UserCache()
 	payload := []byte("executable")
-	b := Binary{URL: "https://github.com/opstruss/plugins/releases/download/v1/demo", SHA256: payloadHash(payload)}
+	b := Binary{URL: "https://github.com/opstruss/catalog/releases/download/v1/demo", SHA256: payloadHash(payload)}
 	original := http.DefaultTransport
 	t.Cleanup(func() { http.DefaultTransport = original })
 	downloading, finish := make(chan struct{}), make(chan struct{})
@@ -169,7 +169,7 @@ func TestReleaseTokenDoesNotFollowRedirect(t *testing.T) {
 		}
 		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("payload")), Request: r}, nil
 	})
-	b := Binary{URL: "https://github.com/opstruss/plugins/releases/download/v1/demo", SHA256: payloadHash([]byte("payload"))}
+	b := Binary{URL: "https://github.com/opstruss/catalog/releases/download/v1/demo", SHA256: payloadHash([]byte("payload"))}
 	if _, err := download(context.Background(), b); err != nil {
 		t.Fatal(err)
 	}

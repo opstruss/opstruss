@@ -42,7 +42,7 @@ func TestCommandsReleaseSources(t *testing.T) {
 			})
 			payload := []byte("#!/bin/sh\nexit 0\n")
 			sum := sha256.Sum256(payload)
-			binary := sources.Binary{URL: "https://github.com/opstruss/plugins/releases/download/v1/tool", SHA256: hex.EncodeToString(sum[:])}
+			binary := sources.Binary{URL: "https://github.com/opstruss/catalog/releases/download/v1/tool", SHA256: hex.EncodeToString(sum[:])}
 			manifest := fmt.Sprintf("name: demo\nbin:\n  demo-tool:\n    %s: {url: %s, sha256: %s}\ntasks:\n  up:\n    run: [echo, ok]\n", sources.Platform(), binary.URL, binary.SHA256)
 			if err := os.Mkdir(filepath.Join(project, "demo"), 0o700); err != nil {
 				t.Fatal(err)

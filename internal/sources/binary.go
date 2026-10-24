@@ -34,10 +34,10 @@ var binName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]*$`)
 
 func (b Binary) Validate() error {
 	u, err := url.Parse(b.URL)
-	if err != nil || u.Scheme != "https" || u.Host != "github.com" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.RawPath != "" || !strings.HasPrefix(u.Path, "/opstruss/plugins/releases/download/") {
+	if err != nil || u.Scheme != "https" || u.Host != "github.com" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.RawPath != "" || !strings.HasPrefix(u.Path, "/opstruss/catalog/releases/download/") {
 		return fmt.Errorf("binary URL must be an HTTPS release asset of %s", Repository)
 	}
-	rel := strings.TrimPrefix(u.Path, "/opstruss/plugins/releases/download/")
+	rel := strings.TrimPrefix(u.Path, "/opstruss/catalog/releases/download/")
 	if len(strings.Split(rel, "/")) != 2 || !safePath(rel) {
 		return fmt.Errorf("invalid binary release asset path")
 	}

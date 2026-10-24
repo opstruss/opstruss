@@ -17,7 +17,7 @@ exists opstruss.lock
 -- opstruss.yaml --
 name: services
 uses:
-  site: github.com/opstruss/plugins/component@v1
+  site: github.com/opstruss/catalog/component@v1
 units:
   site:
     uses: site

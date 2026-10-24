@@ -16,7 +16,7 @@ import (
 	"unicode/utf8"
 )
 
-const Repository = "github.com/opstruss/plugins"
+const Repository = "github.com/opstruss/catalog"
 
 // Identity is immutable source provenance, independent of its cache location.
 type Identity struct {
