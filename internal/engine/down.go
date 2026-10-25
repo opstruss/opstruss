@@ -17,6 +17,7 @@ import (
 	"github.com/opstruss/opstruss/internal/failpoint"
 	"github.com/opstruss/opstruss/internal/model"
 	"github.com/opstruss/opstruss/internal/plugin"
+	"github.com/opstruss/opstruss/internal/record"
 	"github.com/opstruss/opstruss/internal/state"
 )
 
@@ -64,7 +65,8 @@ func (l *leftover) view() map[string]any {
 // sayPlan writes the plan line of l, with its plan as units.<n>.plan has
 // it.
 func (l *leftover) sayPlan(e *engine) {
-	e.emit(Event{Type: "plan", Level: "info", Address: l.address, Message: l.summary(), Plan: l.view()})
+	e.emit(Event{Type: "plan", Level: "info", Address: l.address, Task: "plan", Message: l.summary(),
+		Status: record.Finished, Outcome: success, Plan: l.view()})
 }
 
 // downDigest is the digest of taking the record at addr with etag down,
@@ -267,12 +269,12 @@ func (e *engine) settle(ctx context.Context, items []*leftover) {
 			continue
 		}
 		if err := e.forget(ctx, l.address); err != nil {
-			e.fail(l.address, err)
+			e.failOp(l.address, "down", err)
 			l.forget, l.outcome = false, failure
 			continue
 		}
 		l.outcome = success
-		e.say("unit", l.address, "forgotten; a tombstone stays at the address")
+		e.ended(l.address, "down", success, "forgotten; a tombstone stays at the address")
 	}
 	e.downAll(ctx, downs)
 	e.dropFrames(ctx, append(framesOfDown(e, items), e.stale...))
@@ -314,7 +316,7 @@ func (e *engine) downAll(ctx context.Context, items []*leftover) {
 				<-n.done
 				if n.outcome != success {
 					l.outcome = skipped
-					e.say("unit", l.address, "skipped: %s, which needs it, is %s", n.address, n.outcome)
+					e.ended(l.address, "down", skipped, "skipped: %s, which needs it, is %s", n.address, n.outcome)
 					return
 				}
 			}
@@ -332,7 +334,7 @@ func (e *engine) downAll(ctx context.Context, items []*leftover) {
 func (e *engine) downOne(ctx context.Context, l *leftover) string {
 	addr := l.address
 	fail := func(err error) string {
-		e.fail(addr, err)
+		e.failOp(addr, "down", err)
 		return failure
 	}
 	timeout := DefaultTimeout
@@ -354,7 +356,7 @@ func (e *engine) downOne(ctx context.Context, l *leftover) string {
 		return fail(err)
 	}
 	if rec == nil || rec.Tombstone != nil {
-		e.say("unit", addr, "already down")
+		e.ended(addr, "down", success, "already down")
 		return success
 	}
 	if err := e.checkDownSources(ctx, rec); err != nil {
@@ -394,12 +396,13 @@ func (e *engine) downOne(ctx context.Context, l *leftover) string {
 	if approval != "auto" {
 		source, why, _ := e.approves(ctx, Question{Op: "down", Address: addr, Summary: l.summary()}, downDigest("delete", addr, etag), -1)
 		if why != "" {
-			e.say("approval", addr, "%s; %s, stopped at plan", l.summary(), why)
+			e.stoppedAt(addr, "down", "%s; %s, stopped at plan", l.summary(), why)
 			e.stopAtPlan()
 			return skipped
 		}
 		approval = source
 	}
+	e.begin("unit", addr, "down", "", "down: started")
 	rec.Pending = &state.Attempt{Op: "down", Run: e.runID, Holder: e.holder, Approval: approval, Source: rec.Source, Down: rec.Down, Inputs: rec.Inputs, Hidden: rec.Hidden}
 	if etag, err = e.store.Put(addr, rec, etag); err != nil {
 		return fail(err)
@@ -435,11 +438,11 @@ func (e *engine) downOne(ctx context.Context, l *leftover) string {
 	_ = os.RemoveAll(e.workdir(addr))
 	switch {
 	case service:
-		e.say("unit", addr, "down: stopped")
+		e.ended(addr, "down", success, "down: stopped")
 	case rec.Down == nil:
-		e.say("unit", addr, "forgotten without a down program")
+		e.ended(addr, "down", success, "forgotten without a down program")
 	default:
-		e.say("unit", addr, "down: done")
+		e.ended(addr, "down", success, "down: done")
 	}
 	return success
 }

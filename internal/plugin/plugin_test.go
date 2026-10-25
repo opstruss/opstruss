@@ -136,6 +136,32 @@ func TestEnvironment(t *testing.T) {
 	}
 }
 
+// A program gets NO_COLOR unless the run shows its output in color, and
+// whenever an output reads one of its streams; env: sets it as it says.
+func TestNoColor(t *testing.T) {
+	for _, c := range []struct {
+		color, reads bool
+		env          map[string]model.EnvValue
+		want         string
+	}{
+		{false, false, nil, "1"},
+		{true, false, nil, "unset"},
+		{true, true, nil, "1"},
+		{false, false, map[string]model.EnvValue{"NO_COLOR": {Text: ""}}, ""},
+	} {
+		r := newRun(t)
+		r.Color = c.color
+		outputs := map[string]*model.Output{"no_color": {}}
+		if c.reads {
+			outputs["out"] = &model.Output{From: "stdout"}
+		}
+		res := run(t, r, &Call{Command: script(`echo "no_color=${NO_COLOR-unset}" >> "$OPSTRUSS_OUTPUT"`), Env: c.env, Outputs: outputs})
+		if got := res.Outputs["no_color"]; got != c.want {
+			t.Errorf("color %v, reads %v, env %v: NO_COLOR %v, want %q", c.color, c.reads, c.env, got, c.want)
+		}
+	}
+}
+
 // Passed hears the variables that pass: lets through to the program, empty
 // ones too, and not one that env: sets or one that no pattern names.
 func TestPassed(t *testing.T) {

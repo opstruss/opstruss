@@ -1,0 +1,48 @@
+# A program gets NO_COLOR=1 unless the output of the run is shown in color:
+# at a terminal, in GitHub Actions, or with FORCE_COLOR or CLICOLOR_FORCE,
+# which --json needs; NO_COLOR wins, and a program whose stream an output
+# reads always gets it.
+
+env HOME=$WORK/home
+exec opstruss up --yes
+stdout '^default/app \| no_color=1$'
+
+env FORCE_COLOR=1
+exec opstruss up --yes --force
+stdout '^default/app \| no_color=unset$'
+exec opstruss up --yes --force --json
+stdout '"message":"no_color=unset"'
+exec opstruss probe
+stdout '^probe: show \| no_color=1$'
+
+env CLICOLOR_FORCE=1
+env FORCE_COLOR=
+exec opstruss up --yes --force
+stdout '^default/app \| no_color=unset$'
+
+env NO_COLOR=1
+exec opstruss up --yes --force
+stdout '^default/app \| no_color=1$'
+
+env NO_COLOR=
+env CLICOLOR_FORCE=
+env GITHUB_ACTIONS=true
+exec opstruss up --yes --force
+stdout 'no_color=unset$'
+exec opstruss up --yes --force --json
+stdout '"message":"no_color=1"'
+
+-- opstruss.yaml --
+name: shop
+units:
+  app:
+    run: echo "no_color=${NO_COLOR-unset}"
+tasks:
+  probe:
+    steps:
+      - id: read
+        run: echo "no_color=${NO_COLOR-unset}"
+        outputs:
+          text: {from: stdout}
+      - name: show
+        run: [echo, "${{ steps.read.outputs.text }}"]

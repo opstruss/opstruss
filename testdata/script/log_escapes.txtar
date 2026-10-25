@@ -1,0 +1,32 @@
+# Lines of a program keep their color codes and lose every other escape,
+# so a program cannot set the title of the terminal that shows them; a
+# carriage return keeps the end of a progress bar, and a secret that color
+# codes cut is hidden too.
+
+env HOME=$WORK/home
+env API_TOKEN=split-secret-canary-1234
+exec opstruss up --yes
+stdout '^default/app \| xy$'
+stdout '^default/app \| 100%$'
+stdout '^default/app \| tok \*\*\*$'
+! stdout 'canary|title'
+
+exec opstruss up --yes --force --json
+stdout '"message":"xy"'
+stdout '"message":"\\u001b\[32mgreen\\u001b\[0m"'
+stdout '"message":"tok \*\*\*"'
+! stdout 'canary|title|\\r'
+exec sh -c 'cat .opstruss/runs/default/*/events.jsonl'
+! stdout 'canary|title'
+
+-- opstruss.yaml --
+name: shop
+units:
+  app:
+    pass: [API_TOKEN]
+    run: |
+      printf 'x\033]0;title\007y\n'
+      printf '10%%\r50%%\r100%%\r\n'
+      printf '\033[32mgreen\033[0m\n'
+      v=$API_TOKEN
+      printf 'tok %s\033[1m%s\033[0m\n' "${v%??????}" "${v#"${v%??????}"}"

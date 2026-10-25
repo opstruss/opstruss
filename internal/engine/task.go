@@ -15,6 +15,7 @@ import (
 	"github.com/opstruss/opstruss/internal/expr"
 	"github.com/opstruss/opstruss/internal/model"
 	"github.com/opstruss/opstruss/internal/plugin"
+	"github.com/opstruss/opstruss/internal/record"
 )
 
 // taskResult is how a call of a task or a step ended: its outcome, whether
@@ -113,6 +114,15 @@ type call struct {
 	unitRun *unitRun       // what the unit gives, for a task that runs for it
 	marks   map[string]any // which of the given inputs are sensitive
 	top     bool           // the call of the command line, whose inputs come from its flags
+}
+
+// address is the unit that runs the call, which the lines of its programs
+// name, or empty.
+func (c call) address() string {
+	if c.unit != nil {
+		return c.unit.address
+	}
+	return ""
 }
 
 // where is the instance of a component whose files write the task, or the
@@ -414,7 +424,8 @@ func (e *engine) callTask(ctx context.Context, name string, t *model.Task, dir s
 		label = f.address + "/" + name
 	}
 	fail := func(err error) *taskResult {
-		e.emit(Event{Type: "task", Level: "error", Task: label, Message: err.Error()})
+		e.emit(Event{Type: "task", Level: "error", Address: c.address(), Task: label, Status: record.Finished, Outcome: failure,
+			Message: err.Error()})
 		return failed(err)
 	}
 	decl := t.Inputs
@@ -503,7 +514,7 @@ func (e *engine) callTask(ctx context.Context, name string, t *model.Task, dir s
 			taskMarks[n] = m
 		}
 		if r.outcome != success {
-			e.sayTask(label, "", "skipped: task %s it needs is %s", n, r.outcome)
+			e.endTask(c.address(), label, "", skipped, "skipped: task %s it needs is %s", n, r.outcome)
 			return &taskResult{outcome: skipped, outputs: map[string]any{}, approval: r.approval}
 		}
 	}
@@ -528,7 +539,7 @@ func (e *engine) callTask(ctx context.Context, name string, t *model.Task, dir s
 			return fail(fmt.Errorf("if: %w", err))
 		}
 		if !ok {
-			e.sayTask(label, "", "skipped: if is false")
+			e.endTask(c.address(), label, "", skipped, "skipped: if is false")
 			return &taskResult{outcome: skipped, outputs: map[string]any{}}
 		}
 	}
@@ -561,7 +572,7 @@ func (e *engine) callTask(ctx context.Context, name string, t *model.Task, dir s
 			return fail(err)
 		}
 		if skip {
-			e.sayTask(label, "", "skipped: a run of %s is going on, and concurrency is skip", name)
+			e.endTask(c.address(), label, "", skipped, "skipped: a run of %s is going on, and concurrency is skip", name)
 			return &taskResult{outcome: skipped, outputs: map[string]any{}}
 		}
 		defer release()
@@ -642,7 +653,7 @@ func (e *engine) taskOnce(ctx context.Context, name, label string, t *model.Task
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	e.sayTask(label, "", "started")
+	e.startTask(c.address(), label, "")
 	var res *taskResult
 	env, pass := c.envPass(t)
 	switch {
@@ -667,12 +678,12 @@ func (e *engine) taskOnce(ctx context.Context, name, label string, t *model.Task
 	switch res.outcome {
 	case failure:
 		if t.ContinueOnError {
-			e.sayTask(label, "", "failed; continue_on_error goes on")
+			e.endTask(c.address(), label, "", failure, "failed; continue_on_error goes on")
 		} else {
-			e.sayTask(label, "", "failed")
+			e.endTask(c.address(), label, "", failure, "failed")
 		}
 	default:
-		e.sayTask(label, "", "%s", res.outcome)
+		e.endTask(c.address(), label, "", res.outcome, "%s", res.outcome)
 	}
 	return res
 }
@@ -818,6 +829,7 @@ func (tc *taskCtx) run(ctx context.Context, steps []*model.Step, d defaults, at 
 		label := cmp.Or(s.Name, s.ID, at+strconv.Itoa(i+1))
 		if res.outcome != success {
 			tc.record(s.ID, &taskResult{outcome: skipped, outputs: map[string]any{}})
+			tc.e.endTask(tc.c.address(), tc.label, label, skipped, "skipped")
 			continue
 		}
 		r := tc.step(ctx, s, label, d)
@@ -841,23 +853,25 @@ func (tc *taskCtx) step(ctx context.Context, s *model.Step, label string, d defa
 	if s.If != nil {
 		ok, err := expr.EvalCondition(s.If, scope)
 		if err != nil {
-			return tc.fail(label, fmt.Errorf("if: %w", err))
+			return tc.failEnded(label, fmt.Errorf("if: %w", err))
 		}
 		if !ok {
-			tc.e.sayTask(tc.label, label, "skipped")
+			tc.e.endTask(tc.c.address(), tc.label, label, skipped, "skipped")
 			return &taskResult{outcome: skipped, outputs: map[string]any{}}
 		}
 	}
 	if s.ForEach == nil {
-		return tc.stepOnce(ctx, s, label, d, scope)
+		return tc.stepGroup(ctx, s, label, d, scope)
 	}
 	items, eachMarks, err := tc.e.forEach(s.ForEach, scope)
 	if err != nil {
-		return tc.fail(label, fmt.Errorf("for_each: %w", err))
+		return tc.failEnded(label, fmt.Errorf("for_each: %w", err))
 	}
+	// Each item of for_each is a group of its own, as each instance of a
+	// task with for_each is.
 	results := map[string]*taskResult{}
 	for _, k := range slices.Sorted(maps.Keys(items)) {
-		r := tc.stepOnce(ctx, s, label+"["+k+"]", d, scope.WithMarks("each", map[string]any{"key": k, "value": items[k]}, itemMarks(eachMarks, k)))
+		r := tc.stepGroup(ctx, s, label+"["+k+"]", d, scope.WithMarks("each", map[string]any{"key": k, "value": items[k]}, itemMarks(eachMarks, k)))
 		results[k] = r
 		if r.outcome == failure && !s.ContinueOnError {
 			break
@@ -866,8 +880,28 @@ func (tc *taskCtx) step(ctx context.Context, s *model.Step, label string, d defa
 	return aggregate(results)
 }
 
+// stepGroup runs the body of a step, or of one item of its for_each,
+// between the events that start and end it.
+func (tc *taskCtx) stepGroup(ctx context.Context, s *model.Step, label string, d defaults, scope *expr.Scope) *taskResult {
+	tc.e.startTask(tc.c.address(), tc.label, label)
+	res := tc.stepOnce(ctx, s, label, d, scope)
+	msg := res.outcome
+	if res.outcome == failure {
+		msg = "failed"
+	}
+	tc.e.endTask(tc.c.address(), tc.label, label, res.outcome, "%s", msg)
+	return res
+}
+
 func (tc *taskCtx) fail(label string, err error) *taskResult {
 	tc.e.emit(Event{Type: "step", Level: "error", Task: tc.label, Step: label, Message: err.Error()})
+	return failed(err)
+}
+
+// failEnded is fail for a step that err ends before it starts.
+func (tc *taskCtx) failEnded(label string, err error) *taskResult {
+	tc.e.emit(Event{Type: "step", Level: "error", Address: tc.c.address(), Task: tc.label, Step: label, Status: record.Finished,
+		Outcome: failure, Message: err.Error()})
 	return failed(err)
 }
 
@@ -902,9 +936,6 @@ func (tc *taskCtx) stepOnce(ctx context.Context, s *model.Step, label string, d 
 		res = judge(res, s.FailedWhen, s.ChangedWhen, scope.WithMarks("outputs", res.outputs, anyMarks(res.marks)))
 	case len(s.Block) > 0:
 		res = tc.block(ctx, s, label, d.with(s.Shell, s.Dir, s.Env, s.Pass))
-	}
-	if res.outcome == failure {
-		tc.e.sayTask(tc.label, label, "failed")
 	}
 	return res
 }

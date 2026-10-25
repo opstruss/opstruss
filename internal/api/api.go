@@ -16,7 +16,7 @@ import (
 
 // Protocol is the version of the API, which a connection opens with in
 // initialize; a client that meets another one stops.
-const Protocol = 2
+const Protocol = 3
 
 // Request says which project and stack a call is about, with what the
 // caller brings: its directory, environment, and inputs, which a run
@@ -31,6 +31,7 @@ type Request struct {
 	Environ []string          `json:"environ,omitempty"`
 	Units   []string          `json:"units,omitempty"`
 	Yes     bool              `json:"yes,omitempty"`
+	Color   bool              `json:"color,omitempty"` // the caller shows the output of the run in color
 	Force   bool              `json:"force,omitempty"` // up: although unchanged; down: although pass values differ; cancel: kill at once
 	NoDeps  bool              `json:"no_deps,omitempty"`
 	Follow  bool              `json:"follow,omitempty"` // logs: go on with what is written
@@ -83,7 +84,7 @@ func (a *API) options(r Request) engine.Options {
 	}
 	return engine.Options{Locked: r.Locked, Dir: r.Dir, Cwd: r.Cwd, Stack: r.Stack, Inputs: r.Inputs, Flags: r.Flags, Environ: r.Environ,
 		LookupEnv: func(k string) (string, bool) { v, ok := env[k]; return v, ok },
-		Units:     r.Units, Yes: r.Yes, Force: r.Force, NoDeps: r.NoDeps, Follow: r.Follow, Debug: r.Debug, ShowSensitive: r.ShowSensitive,
+		Units:     r.Units, Yes: r.Yes, Color: r.Color, Force: r.Force, NoDeps: r.NoDeps, Follow: r.Follow, Debug: r.Debug, ShowSensitive: r.ShowSensitive,
 		Emit: a.h.Event, Approve: a.h.Approve, Ask: a.h.Ask, Supervisor: a.Supervisor}
 }
 

@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/opstruss/opstruss/internal/ansi"
 )
 
 // MaxLine is the longest line of output that one log event holds; a longer
@@ -11,9 +13,9 @@ import (
 const MaxLine = 64 << 10
 
 // Lines turns what a program writes to one stream into lines for emit, as
-// a Stream hides them, in bounded memory: a line longer than MaxLine goes
-// in pieces, cut where no value, shape, or key line that the Stream hides
-// is cut in two.
+// a Stream hides them and ansi.Clean cleans them, in bounded memory: a
+// line longer than MaxLine goes in pieces, cut where no value, shape, or
+// key line that the Stream hides is cut in two.
 type Lines struct {
 	s    *Stream
 	emit func(string)
@@ -47,7 +49,7 @@ func (l *Lines) Write(p []byte) (int, error) {
 		if len(l.buf) >= MaxLine {
 			out, keep := l.cut(string(l.buf))
 			if out != "" {
-				l.emit(strings.ToValidUTF8(out, "�"))
+				l.out(out)
 			}
 			l.buf = append(l.buf[:0], keep...)
 		}
@@ -67,7 +69,23 @@ func (l *Lines) line(text string) {
 	if l.s != nil {
 		text = l.s.Line(text)
 	}
-	l.emit(strings.ToValidUTF8(text, "�"))
+	l.out(text)
+}
+
+// out hands on a line, or a piece of one, that the Stream hid, as
+// ansi.Clean cleans it. A value or a shape that color codes cut, which the
+// bytes as they are do not show, is looked for in the text without them,
+// and when one is there, the line goes without color, hidden.
+func (l *Lines) out(text string) {
+	text = strings.ToValidUTF8(text, "�")
+	clean := ansi.Clean(text)
+	if l.s != nil && (clean != text || strings.IndexByte(clean, 0x1b) >= 0) {
+		plain := ansi.Strip(clean)
+		if hidden := l.s.r.Log(plain); hidden != plain {
+			clean = hidden
+		}
+	}
+	l.emit(clean)
 }
 
 // cut splits the start of a long line into what goes out now and what is

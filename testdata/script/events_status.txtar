@@ -1,0 +1,139 @@
+# A run, each operation of a unit that runs, each task, and each step start
+# with an event whose status is running and end with one whose status is
+# finished, with the outcome, so a reader of --json puts the lines of each
+# program between them; what does not run only ends.
+
+env HOME=$WORK/home
+env OPSTRUSS_PARALLEL=1
+exec chmod 755 plugins/echo/echo.sh
+
+exec sh -c 'opstruss build --json | jq -c "[.type, .task, .step, .status, .outcome, .message]"'
+cmp stdout build.want
+
+# a line per event leaves out what only pairs the groups
+! exec opstruss build
+cmp stdout build-lines.want
+
+exec sh -c 'opstruss up --yes --json | jq -c "[.type, .address, .task, .status, .outcome, .message]"'
+cmp stdout up.want
+
+# a unit that does not change only ends; the plan of a plugin still runs
+exec sh -c 'opstruss up --yes --json | jq -c "select(.status) | [.type, .address, .task, .status, .outcome, .message]"'
+cmp stdout again.want
+
+exec sh -c 'opstruss down --yes --json | jq -c "select(.status) | [.type, .address, .task, .status, .outcome, .message]"'
+cmp stdout down.want
+
+-- opstruss.yaml --
+name: shop
+uses:
+  echo: ./plugins/echo
+units:
+  web:
+    run: echo hello
+  net:
+    uses: echo
+    approval: auto
+tasks:
+  build:
+    steps:
+      - name: compile
+        run: echo compiling
+      - name: lint
+        if: false
+        run: echo never
+      - name: flaky
+        run: exit 3
+        continue_on_error: true
+      - name: each
+        for_each: [a, b]
+        run: [echo, "${{ each.value }}"]
+      - name: broken
+        run: exit 1
+      - name: after
+        run: echo never
+-- plugins/echo/opstruss.plugin.yaml --
+name: echo
+state: tool
+tasks:
+  plan:
+    run: [./echo.sh, plan]
+  up:
+    run: [./echo.sh, up]
+  down:
+    run: [./echo.sh, down]
+-- plugins/echo/echo.sh --
+#!/bin/sh
+echo "echo $1"
+if [ "$1" = plan ]; then
+  if [ -f "$OPSTRUSS_STATE_DIR/made" ]; then
+    echo '{"changes": [], "digest": "sha256:same", "exact": true}' > "$OPSTRUSS_PLAN"
+  else
+    echo '{"changes": [{"action": "create"}], "digest": "sha256:new", "exact": true}' > "$OPSTRUSS_PLAN"
+  fi
+fi
+[ "$1" != up ] || touch "$OPSTRUSS_STATE_DIR/made"
+-- build.want --
+["run","build",null,"running",null,"started"]
+["task","build",null,"running",null,"started"]
+["step","build","compile","running",null,"started"]
+["log","build","compile",null,null,"compiling"]
+["step","build","compile","finished","success","success"]
+["step","build","lint","finished","skipped","skipped"]
+["step","build","flaky","running",null,"started"]
+["step","build","flaky",null,null,"the program exited with 3"]
+["step","build","flaky","finished","failure","failed"]
+["step","build","flaky",null,null,"failed; continue_on_error goes on"]
+["step","build","each[a]","running",null,"started"]
+["log","build","each[a]",null,null,"a"]
+["step","build","each[a]","finished","success","success"]
+["step","build","each[b]","running",null,"started"]
+["log","build","each[b]",null,null,"b"]
+["step","build","each[b]","finished","success","success"]
+["step","build","broken","running",null,"started"]
+["step","build","broken",null,null,"the program exited with 1"]
+["step","build","broken","finished","failure","failed"]
+["step","build","after","finished","skipped","skipped"]
+["task","build",null,"finished","failure","failed"]
+["run","build",null,"finished","failure","failure"]
+-- build-lines.want --
+build: started
+build: compile | compiling
+build: lint: skipped
+build: flaky: failed
+build: flaky: failed; continue_on_error goes on
+build: each[a] | a
+build: each[b] | b
+build: broken: failed
+build: after: skipped
+build: failed
+-- up.want --
+["run",null,null,"running",null,"started"]
+["unit","default/net","plan","running",null,"plan: started"]
+["log","default/net","plan",null,null,"echo plan"]
+["plan","default/net","plan","finished","success","will run: new; plan: create"]
+["plan","default/web","plan","finished","success","will run: new"]
+["unit","default/net","up","running",null,"up: started"]
+["log","default/net","up",null,null,"echo up"]
+["unit","default/net","up","finished","success","up: done"]
+["unit","default/web","up","running",null,"up: started"]
+["log","default/web","up",null,null,"hello"]
+["unit","default/web","up","finished","success","up: done"]
+["run",null,null,"finished","success","success"]
+-- again.want --
+["run",null,null,"running",null,"started"]
+["unit","default/net","plan","running",null,"plan: started"]
+["plan","default/net","plan","finished","success","unchanged"]
+["plan","default/web","plan","finished","success","unchanged"]
+["unit","default/net","up","finished","success","unchanged"]
+["unit","default/web","up","finished","success","unchanged"]
+["run",null,null,"finished","success","success"]
+-- down.want --
+["run",null,null,"running",null,"started"]
+["plan","default/net","plan","finished","success","will go down"]
+["plan","default/web","plan","finished","success","will go down"]
+["unit","default/web","down","running",null,"down: started"]
+["unit","default/web","down","finished","success","forgotten without a down program"]
+["unit","default/net","down","running",null,"down: started"]
+["unit","default/net","down","finished","success","down: done"]
+["run",null,null,"finished","success","success"]

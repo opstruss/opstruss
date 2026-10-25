@@ -48,6 +48,9 @@ type Options struct {
 	Force     bool     // up: run the units named although unchanged; down: although pass values differ
 	NoDeps    bool     // leave out the dependencies of up and the dependents of down
 	Follow    bool     // logs: go on with what services and plugins write
+	// Color says that the output of the run is shown in color, so its
+	// programs may print color; without it they get NO_COLOR.
+	Color bool
 
 	ShowSensitive bool // outputs: give sensitive values as they are
 	Emit          func(Event)
@@ -325,6 +328,7 @@ func (e *engine) start(command, task string, with map[string]any, tr *Trigger) e
 	}
 	e.runID = e.rec.ID()
 	e.control()
+	e.emit(Event{Type: "run", Level: "info", Task: rec.Task, Status: record.Running, Message: "started"})
 	// The run is in its record now, which is what a webhook answers after;
 	// the rest of the start comes after that answer.
 	if opts.Started != nil {
@@ -344,7 +348,7 @@ func (e *engine) start(command, task string, with map[string]any, tr *Trigger) e
 	e.holder = state.NewHolder(e.runID, e.host)
 	run := &plugin.Run{SourceFiles: e.p.Sources.Files, RetainSources: e.p.Sources.Retain, PluginBins: e.p.PluginBinaries(), Project: p.Name, Stack: p.StackName, ID: e.runID, Parents: e.parents,
 		Temp: e.tempOf(e.runID), Artifacts: filepath.Join(e.root, "runs", p.StackName, e.runID, "artifacts"), Environ: opts.Environ,
-		Passed: e.passed}
+		Color: opts.Color, Passed: e.passed}
 	if err := run.Open(); err != nil {
 		e.abort(err)
 		return err
@@ -435,7 +439,8 @@ func (e *engine) close(outcome string, outputs, marks map[string]any) {
 	e.mu.Lock()
 	e.exit = code
 	e.mu.Unlock()
-	e.emit(Event{Type: "run", Level: "info", Task: e.rec.Task(), Message: outcome, Outcome: outcome, ExitCode: &code, Outputs: outputs})
+	e.emit(Event{Type: "run", Level: "info", Task: e.rec.Task(), Message: outcome, Status: record.Finished, Outcome: outcome,
+		ExitCode: &code, Outputs: outputs})
 	e.rec.Close()
 	if e.release != nil {
 		e.release()
@@ -622,7 +627,46 @@ func (e *engine) say(typ, addr, format string, args ...any) {
 
 // sayTask reports on a task, or on one of its steps.
 func (e *engine) sayTask(task, step, format string, args ...any) {
-	e.emit(Event{Type: map[bool]string{true: "step", false: "task"}[step != ""], Level: "info", Task: task, Step: step,
+	e.emit(Event{Type: taskType(step), Level: "info", Task: task, Step: step, Message: fmt.Sprintf(format, args...)})
+}
+
+func taskType(step string) string {
+	if step != "" {
+		return "step"
+	}
+	return "task"
+}
+
+// begin reports that a unit operation, a task, or a step starts. The event
+// that ends it has the same address, task, and step, so a reader pairs
+// the two and puts the lines of the program between them in one group.
+func (e *engine) begin(typ, addr, task, step, message string) {
+	e.emit(Event{Type: typ, Level: "info", Address: addr, Task: task, Step: step, Status: record.Running, Message: message})
+}
+
+// startTask reports that a task, or one of its steps, starts; addr is the
+// unit that runs it, as the lines of its programs say.
+func (e *engine) startTask(addr, task, step string) {
+	e.begin(taskType(step), addr, task, step, "started")
+}
+
+// endTask reports how a task, or one of its steps, ended.
+func (e *engine) endTask(addr, task, step, outcome, format string, args ...any) {
+	e.emit(Event{Type: taskType(step), Level: "info", Address: addr, Task: task, Step: step, Status: record.Finished,
+		Outcome: outcome, Message: fmt.Sprintf(format, args...)})
+}
+
+// ended reports how the operation op (plan, up, down) of the unit at addr
+// ended, whether it started or not.
+func (e *engine) ended(addr, op, outcome, format string, args ...any) {
+	e.emit(Event{Type: "unit", Level: "info", Address: addr, Task: op, Status: record.Finished, Outcome: outcome,
+		Message: fmt.Sprintf(format, args...)})
+}
+
+// stoppedAt reports that the operation op of the unit at addr waits for an
+// approval that it did not get, which ends the operation as skipped.
+func (e *engine) stoppedAt(addr, op, format string, args ...any) {
+	e.emit(Event{Type: "approval", Level: "info", Address: addr, Task: op, Status: record.Finished, Outcome: skipped,
 		Message: fmt.Sprintf(format, args...)})
 }
 
@@ -632,7 +676,17 @@ func (e *engine) warn(addr, format string, args ...any) {
 
 // fail reports err for addr and makes the run exit with 1.
 func (e *engine) fail(addr string, err error) {
-	e.emit(Event{Type: "unit", Level: "error", Address: addr, Message: err.Error()})
+	e.failWith(Event{Type: "unit", Level: "error", Address: addr, Message: err.Error()})
+}
+
+// failOp is fail for the operation op of a unit, which err ends.
+func (e *engine) failOp(addr, op string, err error) {
+	e.failWith(Event{Type: "unit", Level: "error", Address: addr, Task: op, Status: record.Finished, Outcome: failure,
+		Message: err.Error()})
+}
+
+func (e *engine) failWith(ev Event) {
+	e.emit(ev)
 	e.mu.Lock()
 	e.exit = 1
 	e.mu.Unlock()

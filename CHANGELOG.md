@@ -13,6 +13,33 @@ minor release can change what a project, a component, or a plugin relies on.
 
 ### Added
 
+- Runs, unit operations (the `plan` of a plugin, `up`, `down`), tasks, and
+  steps start with an event whose `status` is `running` and end with one
+  whose `status` is `finished`, with the `outcome`. Both carry the address,
+  task, and step of the lines of their programs, so a reader of `--json`
+  builds the tree of a run and times each part. What does not run, such
+  as an unchanged unit or a step skipped by `if` or after a failed step,
+  only ends.
+- At a terminal, a run shows a block for each unit operation, task, and
+  step: a line that starts it, the lines of its programs in their own
+  colors under a gutter, and a line with how it ended and how long it
+  took. While several programs print at once, each line is led by its
+  source. Without a terminal, the lines stay as they were, and a step
+  skipped after a failed step is listed as skipped.
+- In GitHub Actions, the lines of each unit operation, task, and step are
+  folded in a `::group::`, while the lines of OpsTruss itself stay
+  outside.
+- Color follows `NO_COLOR`, `FORCE_COLOR`, `CLICOLOR_FORCE`, and
+  `TERM=dumb`, then a terminal or GitHub Actions; with `--json`, only the
+  environment turns it on. Programs receive `NO_COLOR=1` when the output
+  of the run is not in color or an output reads their stream, so a plugin
+  can pick the color flag of its tool.
+- The lines of programs keep their color codes and lose every other
+  escape sequence and control character, so a program cannot move the
+  cursor or set the title of the terminal that shows it. A carriage
+  return keeps the last state of a line, and a known value or credential
+  shape cut by color codes is still hidden.
+
 - Official remote plugins and components from `github.com/opstruss/catalog`
   resolve to verified Git snapshots in a shared per-user cache. Transitive
   pins live in `opstruss.lock`; `--locked` refuses pin changes. The `plugins`

@@ -46,6 +46,7 @@ type Event struct {
 	Step     string         `json:"step,omitempty"`
 	Stream   string         `json:"stream,omitempty"`
 	Message  string         `json:"message"`
+	Status   string         `json:"status,omitempty"` // Running on the first event of a run, unit operation, task, or step; Finished, with Outcome, on the last
 	Outcome  string         `json:"outcome,omitempty"`
 	ExitCode *int           `json:"exit_code,omitempty"`
 	Outputs  map[string]any `json:"outputs,omitempty"`

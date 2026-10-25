@@ -3,21 +3,17 @@ package cli
 import (
 	"cmp"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"maps"
 	"os"
 	"os/signal"
-	"slices"
 	"strings"
 	"sync"
 	"syscall"
 
 	"github.com/opstruss/opstruss/internal/api"
 	"github.com/opstruss/opstruss/internal/engine"
-	"github.com/opstruss/opstruss/internal/expr"
 	"github.com/opstruss/opstruss/internal/model"
 	"github.com/opstruss/opstruss/internal/proc"
 	"github.com/spf13/cobra"
@@ -119,6 +115,7 @@ func (a *app) request(units []string) (api.Request, error) {
 	}
 	debug, _ := a.lookupEnv("OPSTRUSS_LOG")
 	return api.Request{Locked: a.locked, Dir: dir, Cwd: a.cwd, Stack: a.stackName(), Inputs: given, Environ: a.environ, Units: units,
+		Color: a.colorFor(a.stdout),
 		Debug: debug == "debug"}, nil
 }
 
@@ -286,78 +283,49 @@ func (a *app) execCommand() *cobra.Command {
 	}
 }
 
-// render prints events: with --json one per line, otherwise a line per
-// event led by its address, and program output after "| ".
+// render prints events to stdout, as renderer says.
 func (a *app) render() func(engine.Event) { return a.renderTo(a.stdout) }
 
 // renderTo is render with the events that are not warnings or errors on
 // out.
 func (a *app) renderTo(out io.Writer) func(engine.Event) {
+	r := a.rendererFor(out)
 	return func(ev engine.Event) {
 		// Runs and services write at once, a line each.
 		a.renderMu.Lock()
 		defer a.renderMu.Unlock()
-		if a.json {
-			data, _ := json.Marshal(ev)
-			a.write(out, string(data)+"\n", ev.Run)
-			return
+		for _, p := range r.render(ev) {
+			a.write(p.w, p.text, ev.Run)
 		}
-		w := out
-		if ev.Level != "info" {
-			w = a.stderr
-		}
-		who := ev.Address
-		if who == "" && ev.Task != "" {
-			who = ev.Task
-			if ev.Step != "" {
-				who += ": " + ev.Step
-			}
-		}
-		if a.repeatsPlan(ev) {
-			return
-		}
-		var text strings.Builder
-		switch {
-		case ev.Type == "log":
-			fmt.Fprintf(&text, "%s | %s\n", who, ev.Message)
-		case ev.Type == "run":
-			delete(a.planned, ev.Run)
-			for _, k := range slices.Sorted(maps.Keys(ev.Outputs)) {
-				fmt.Fprintf(&text, "  %s: %s\n", k, expr.Text(ev.Outputs[k]))
-			}
-		case who != "":
-			fmt.Fprintf(&text, "%s: %s\n", who, ev.Message)
-		default:
-			fmt.Fprintln(&text, ev.Message)
-		}
-		a.write(w, text.String(), ev.Run)
 	}
 }
 
-// repeatsPlan says whether ev is the turn of a unit that ended as the plan
-// line of its run already said, such as unchanged, with nothing of that
-// unit between them, which the terminal shows once; after another line,
-// such as waiting for a lock, the end shows again. The event itself stays
-// in --json and the record. The caller holds renderMu.
-func (a *app) repeatsPlan(ev engine.Event) bool {
-	if ev.Address == "" || ev.Level != "info" {
-		return false
+// rendererFor returns the one renderer of what the command writes to out.
+func (a *app) rendererFor(out io.Writer) *renderer {
+	a.renderMu.Lock()
+	defer a.renderMu.Unlock()
+	if r := a.renderers[out]; r != nil {
+		return r
 	}
-	switch ev.Type {
-	case "plan":
-		if a.planned == nil {
-			a.planned = map[string]map[string]string{}
-		}
-		if a.planned[ev.Run] == nil {
-			a.planned[ev.Run] = map[string]string{}
-		}
-		a.planned[ev.Run][ev.Address] = ev.Message
-	case "unit":
-		line, ok := a.planned[ev.Run][ev.Address]
-		delete(a.planned[ev.Run], ev.Address)
-		return ok && line == ev.Message
+	r := newRenderer(out, a.stderr, a.json, writesTerminal(out) && a.env["TERM"] != "dumb", a.env["GITHUB_ACTIONS"] == "true",
+		a.colorFor(out), a.colorFor(a.stderr))
+	if a.renderers == nil {
+		a.renderers = map[io.Writer]*renderer{}
 	}
-	return false
+	a.renderers[out] = r
+	return r
+}
+
+// endOutput ends what the renderers left open, such as a group in GitHub
+// Actions, once the command is done.
+func (a *app) endOutput() {
+	a.renderMu.Lock()
+	defer a.renderMu.Unlock()
+	for _, r := range a.renderers {
+		for _, p := range r.end() {
+			a.write(p.w, p.text, "")
+		}
+	}
 }
 
 // interrupts is how a command that runs stops on SIGINT and SIGTERM: the

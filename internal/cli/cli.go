@@ -19,6 +19,7 @@ import (
 
 	"context"
 
+	"github.com/opstruss/opstruss/internal/ansi"
 	"github.com/opstruss/opstruss/internal/model"
 	"github.com/opstruss/opstruss/internal/secret"
 	"github.com/opstruss/opstruss/internal/sources"
@@ -37,6 +38,23 @@ func Main() int {
 // device too, which CI and service managers give as stdin, and answers
 // nothing.
 func isTerminal(f *os.File) bool { return term.IsTerminal(int(f.Fd())) }
+
+// writesTerminal reports whether w is a terminal.
+func writesTerminal(w io.Writer) bool {
+	f, ok := w.(*os.File)
+	return ok && isTerminal(f)
+}
+
+// colorFor says whether what goes to w is in color (ansi.Color); with
+// --json, only the environment turns it on, for a reader that shows ANSI.
+func (a *app) colorFor(w io.Writer) bool {
+	get := func(k string) string { return a.env[k] }
+	if a.json {
+		on, _ := ansi.Forced(get)
+		return on
+	}
+	return ansi.Color(get, writesTerminal(w))
+}
 
 type app struct {
 	locked    bool
@@ -60,7 +78,7 @@ type app struct {
 	json       bool
 	completion string
 	renderMu   sync.Mutex
-	planned    map[string]map[string]string // the plan line of each address, by run, while the run goes on
+	renderers  map[io.Writer]*renderer // by where they write
 
 	// While a question waits at the terminal, the output of the run waits
 	// for its answer; past maxHeld only the record keeps it.
@@ -106,6 +124,7 @@ func start(args []string, stdin io.Reader, terminal bool, stdout, stderr io.Writ
 		root.SetOut(stdout)
 		root.SetErr(stderr)
 		err = root.Execute()
+		a.endOutput()
 	}
 	var exit *exitError
 	var probs model.Problems

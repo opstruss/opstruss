@@ -40,8 +40,8 @@ exec opstruss plan
 stdout '^default/db: will run: definition changed: sources$'
 stdout '^default/web: may run: plan after default/db \(run, env.URL\)$'
 exec opstruss plan --json
-stdout '"address":"default/db","message":"will run: definition changed: sources","plan":\{"changed":\["sources"\],"changes":\[\{"action":"run"\}\],"digest":"sha256:v1:[0-9a-f]+","exact":true,"outputs":\[\],"reason":"definition","summary":"will run: definition changed: sources"\}'
-stdout '"address":"default/web","message":"may run: plan after default/db \(run, env.URL\)","plan":\{"after":"default/db","changes":\[\],"digest":"[^"]*","exact":false,"outputs":\[\],"reads":\["run","env.URL"\],"summary":"may run: plan after default/db \(run, env.URL\)"\}'
+stdout '"address":"default/db","task":"plan","message":"will run: definition changed: sources","status":"finished","outcome":"success","plan":\{"changed":\["sources"\],"changes":\[\{"action":"run"\}\],"digest":"sha256:v1:[0-9a-f]+","exact":true,"outputs":\[\],"reason":"definition","summary":"will run: definition changed: sources"\}'
+stdout '"address":"default/web","task":"plan","message":"may run: plan after default/db \(run, env.URL\)","status":"finished","outcome":"success","plan":\{"after":"default/db","changes":\[\],"digest":"[^"]*","exact":false,"outputs":\[\],"reads":\["run","env.URL"\],"summary":"may run: plan after default/db \(run, env.URL\)"\}'
 exec opstruss up db --yes --no-deps
 stdout '^default/db: up: done$'
 rm build/db.done

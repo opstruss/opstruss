@@ -51,7 +51,7 @@ exec opstruss stop
 # disk takes it
 ! exec opstruss block --json
 stdout '"type":"diagnostic","level":"error","message":"the record of run [0-9a-fTZ-]+ was not written: .*is a directory; the next run of the stack marks it from its events"}$'
-stdout '"type":"run","level":"info","task":"block","message":"success","outcome":"success","exit_code":1}$'
+stdout '"type":"run","level":"info","task":"block","message":"success","status":"finished","outcome":"success","exit_code":1}$'
 exec opstruss keep
 stderr '^marking run [0-9a-fTZ-]+, which ended without its record: .*\.record\.tmp: is a directory$'
 exec sh -c 'rmdir .opstruss/runs/default/*/.record.tmp'

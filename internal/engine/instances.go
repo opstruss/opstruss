@@ -70,6 +70,18 @@ type plan struct {
 // with that of the plugin's plan.
 func (p plan) approval() string { return planDigest(p.digest, p.pluginDigest) }
 
+// outcome is how the plan of the unit ended: a unit that cannot be planned
+// failed, one left out or after a unit that cannot be planned is skipped.
+func (p plan) outcome() string {
+	switch {
+	case p.err != nil:
+		return failure
+	case p.locked != "" || p.blocked != "":
+		return skipped
+	}
+	return success
+}
+
 func (p plan) summary() string {
 	old := ""
 	if len(p.teardown) > 0 {

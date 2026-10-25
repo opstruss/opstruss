@@ -26,6 +26,7 @@
         "environ": { "type": "array", "items": { "type": "string" } },
         "units": { "type": "array", "items": { "type": "string" } },
         "yes": { "type": "boolean" },
+        "color": { "type": "boolean" },
         "force": { "type": "boolean" },
         "no_deps": { "type": "boolean" },
         "follow": { "type": "boolean" },

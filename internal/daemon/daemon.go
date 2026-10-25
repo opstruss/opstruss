@@ -19,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/opstruss/opstruss/internal/ansi"
 	"github.com/opstruss/opstruss/internal/api"
 	"github.com/opstruss/opstruss/internal/engine"
 	"github.com/opstruss/opstruss/internal/model"
@@ -193,7 +194,9 @@ func runOptions(dir, stack string, inputs map[string]string, environ []string, l
 			env[k] = v
 		}
 	}
-	return engine.Options{Locked: locked, Dir: dir, Stack: stack, Inputs: inputs, Environ: environ,
+	// A run of a trigger has no terminal: only its environment turns color on.
+	color, _ := ansi.Forced(func(k string) string { return env[k] })
+	return engine.Options{Locked: locked, Dir: dir, Stack: stack, Inputs: inputs, Environ: environ, Color: color,
 		LookupEnv: func(k string) (string, bool) { v, ok := env[k]; return v, ok }}
 }
 

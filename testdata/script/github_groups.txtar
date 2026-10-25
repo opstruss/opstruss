@@ -1,0 +1,40 @@
+# In GitHub Actions, without a terminal, the lines of each unit operation,
+# task, and step are a group that the log folds, and the lines of
+# OpsTruss itself stay outside; a line of a program keeps its prefix, so
+# the runner never reads it as a workflow command.
+
+env HOME=$WORK/home
+env GITHUB_ACTIONS=true
+exec opstruss up --yes
+cmp stdout up.want
+
+exec opstruss check
+stdout '^::group::check › lint$'
+stdout '^::endgroup::$'
+stdout '^check: success$'
+
+# without GitHub Actions, the lines are as they were
+env GITHUB_ACTIONS=
+exec opstruss up --yes --force
+! stdout '::group::'
+stdout '^default/app \| ::warning::x$'
+
+-- opstruss.yaml --
+name: shop
+units:
+  app:
+    run: |
+      echo one
+      echo '::warning::x'
+tasks:
+  check:
+    steps:
+      - name: lint
+        run: echo clean
+-- up.want --
+default/app: will run: new
+::group::default/app › up
+default/app | one
+default/app | ::warning::x
+::endgroup::
+default/app: up: done

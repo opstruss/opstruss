@@ -61,7 +61,8 @@ cmp turns want-turns
 # a step that fails skips the rest, and the exit code is 1
 ! exec opstruss broken
 stdout '^broken: .* failed$'
-! stdout never
+stdout '^broken: never: skipped$'
+! stdout '\| never'
 stdout '^  after: skipped$'
 
 # a task with approval: ask stops without --yes and exits with 2; a unit

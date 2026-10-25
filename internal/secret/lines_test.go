@@ -56,3 +56,29 @@ func TestLinesPlain(t *testing.T) {
 		}
 	}
 }
+
+// Lines go out clean: color stays, other escapes go, and a carriage
+// return starts the line again. A value or a shape that color codes cut
+// is hidden too, in a line that loses its color.
+func TestLinesClean(t *testing.T) {
+	red := NewRedactor()
+	red.Add("KNOWN-SECRET-CANARY")
+	shape := "gh" + "p_" + strings.Repeat("aB3dE5", 7)
+	for _, c := range []struct{ in, want string }{
+		{"\x1b[32mok\x1b[0m\n", "\x1b[32mok\x1b[0m"},
+		{"x\x1b]0;title\x07y\n", "xy"},
+		{"10%\r50%\r100%\r\n", "100%"},
+		{"\x1b[32mKNOWN-SECRET-CANARY\x1b[0m\n", "\x1b[32m" + Mask + "\x1b[0m"},
+		{"key KNOWN-\x1b[1mSECRET\x1b[0m-CANARY end\n", "key " + Mask + " end"},
+		{"token " + shape[:9] + "\x1b[33m" + shape[9:] + "\x1b[0m\n", "token " + Mask},
+		{"moved KNOWN-SECRET\x1b[2K-CANARY\n", "moved " + Mask},
+	} {
+		var got []string
+		l := NewLines(red.Stream(), func(s string) { got = append(got, s) })
+		_, _ = l.Write([]byte(c.in))
+		l.Flush()
+		if len(got) != 1 || got[0] != c.want {
+			t.Errorf("%q: got %q, want %q", c.in, got, c.want)
+		}
+	}
+}

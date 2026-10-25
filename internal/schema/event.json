@@ -15,6 +15,7 @@
     "step": { "type": "string" },
     "stream": { "enum": ["stdout", "stderr"] },
     "message": { "type": "string" },
+    "status": { "description": "Of the first event of a run, a unit operation, a task, or a step: running; of the last one, which also has outcome: finished.", "enum": ["running", "finished"] },
     "outcome": { "enum": ["success", "failure", "skipped", "cancelled"] },
     "exit_code": { "type": "integer" },
     "outputs": { "type": "object" },

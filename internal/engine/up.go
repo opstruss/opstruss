@@ -18,6 +18,7 @@ import (
 	"github.com/opstruss/opstruss/internal/failpoint"
 	"github.com/opstruss/opstruss/internal/model"
 	"github.com/opstruss/opstruss/internal/plugin"
+	"github.com/opstruss/opstruss/internal/record"
 	"github.com/opstruss/opstruss/internal/state"
 )
 
@@ -108,7 +109,8 @@ func (e *engine) previewAll(ctx context.Context) {
 // has it, for readers of --json, as terraform plan -json writes each
 // planned change.
 func (e *engine) sayPlan(inst *instance) {
-	e.emit(Event{Type: "plan", Level: "info", Address: inst.address, Message: inst.plan.summary(), Plan: inst.plan.view(inst.plan.exact())})
+	e.emit(Event{Type: "plan", Level: "info", Address: inst.address, Task: "plan", Message: inst.plan.summary(),
+		Status: record.Finished, Outcome: inst.plan.outcome(), Plan: inst.plan.view(inst.plan.exact())})
 }
 
 // broken stands for the instances of the unit at path, which could not be
@@ -201,6 +203,8 @@ func (e *engine) preview(ctx context.Context, inst *instance) {
 			return
 		}
 		defer func() { _ = e.store.Unlock(inst.address, token) }()
+		// The plan line of the unit ends what the plan of its plugin starts.
+		e.begin("unit", inst.address, "plan", "", "plan: started")
 	}
 	inst.plan = e.decide(ctx, inst, r, rec, nil)
 	// A pattern that matches nothing never runs the unit again, as Bazel
@@ -510,7 +514,7 @@ func (e *engine) skips(inst *instance) bool {
 	for _, d := range inst.deps {
 		if d.outcome != success {
 			e.finish(inst, skipped, false, nil, nil)
-			e.say("unit", inst.address, "skipped: %s is %s", d.address, d.outcome)
+			e.ended(inst.address, "up", skipped, "skipped: %s is %s", d.address, d.outcome)
 			return true
 		}
 	}
@@ -526,7 +530,7 @@ func (e *engine) turn(ctx context.Context, inst *instance, leave func()) {
 	addr := inst.address
 	failed := func(err error) {
 		e.finish(inst, failure, false, nil, nil)
-		e.fail(addr, err)
+		e.failOp(addr, "up", err)
 	}
 	if inst.plan.err != nil {
 		failed(inst.plan.err)
@@ -603,7 +607,7 @@ func (e *engine) turn(ctx context.Context, inst *instance, leave func()) {
 			}
 		}
 		e.finish(inst, success, false, rec.Outputs, hiddenMarks(rec.Hidden[state.PartOutputs]))
-		e.say("unit", addr, "unchanged")
+		e.ended(addr, "up", success, "unchanged")
 		return
 	}
 	approval := cmp.Or(inst.def.Approval, e.stackApproval(), "ask")
@@ -611,7 +615,7 @@ func (e *engine) turn(ctx context.Context, inst *instance, leave func()) {
 		source, why, waited := e.approves(ctx, Question{Op: "up", Address: addr, Summary: p.summary()}, p.approval(), inst.place)
 		if why != "" {
 			e.finish(inst, skipped, false, nil, nil)
-			e.say("approval", addr, "%s; %s, stopped at plan", p.summary(), why)
+			e.stoppedAt(addr, "up", "%s; %s, stopped at plan", p.summary(), why)
 			e.stopAtPlan()
 			return
 		}
@@ -626,6 +630,7 @@ func (e *engine) turn(ctx context.Context, inst *instance, leave func()) {
 	}
 	leave()
 	inst.approval = approval
+	e.begin("unit", addr, "up", "", "up: started")
 	if !p.run {
 		// Only old attempts are left to tear down; the approval covered them.
 		if err := e.tearDown(ctx, addr, rec, etag); err != nil {
@@ -633,6 +638,7 @@ func (e *engine) turn(ctx context.Context, inst *instance, leave func()) {
 			return
 		}
 		e.finish(inst, success, true, rec.Outputs, hiddenMarks(rec.Hidden[state.PartOutputs]))
+		e.ended(addr, "up", success, "up: done")
 		return
 	}
 	reason := "changed"
@@ -752,16 +758,19 @@ func (e *engine) turn(ctx context.Context, inst *instance, leave func()) {
 		_ = os.Remove(kept)
 		e.warn(addr, "removed %s, which this up replaces", kept)
 	}
-	if res.Changed {
-		e.say("unit", addr, "up: done")
-	} else {
-		e.say("unit", addr, "up: done, nothing changed")
+	msg := "up: done"
+	if !res.Changed {
+		msg = "up: done, nothing changed"
 	}
 	if err := e.tearDown(ctx, addr, done, etag); err != nil {
+		// The program did its up; an older attempt that it could not tear
+		// down ends the operation.
+		e.say("unit", addr, "%s", msg)
 		failed(err)
 		return
 	}
 	e.finish(inst, success, res.Changed, res.Outputs, outMarks)
+	e.ended(addr, "up", success, "%s", msg)
 	if _, missing, _, _ := files(inst.dir, nil, inst.def.Generates); len(missing) > 0 {
 		e.warn(addr, "generates still missing after up: %s", strings.Join(missing, ", "))
 	}
