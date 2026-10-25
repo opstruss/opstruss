@@ -20,7 +20,7 @@ waitgrep '"message":"attempt 3"' .opstruss/logs/default/flaky.jsonl
 grep '"type":"service","level":"warn","address":"default/flaky","message":"exited with 1; restarting in 100ms"' .opstruss/logs/default/_daemon.jsonl
 grep '"address": "default/web",\n\s+"id": "[0-9a-f]{16}",\n\s+"pid": ' .opstruss/daemon/default.json
 exec opstruss list
-stdout 'default/web +service running'
+stdout 'default/web +service +running'
 
 # the record names the service and how it stops
 exec opstruss state pull web
@@ -71,6 +71,16 @@ stdout 'default/once \| done'
 stdout 'default/once: exited with 0'
 exec opstruss status once
 stdout '^default/once: stopped$'
+
+# Ctrl-C stops that daemon with its services, and up exits with 130, as a
+# run that a signal stopped
+exec sh -c 'opstruss up --yes web > fg.out 2> fg.err & echo $! > pid; wait $!; echo $? > code' &fg&
+waitgrep 'this process is the daemon of stack default while its services run; Ctrl-C stops them' fg.out
+exec sh -c 'kill -INT $(cat pid)'
+wait fg
+grep '^130$' code
+grep '^interrupted: the programs stop within their stop.grace' fg.err
+grep '^default/web: stopped' fg.out
 
 # a service is validated as one
 ! exec opstruss validate -C bad

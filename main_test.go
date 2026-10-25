@@ -8,18 +8,21 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -43,6 +46,7 @@ func TestMain(m *testing.M) {
 // TestScripts runs the end-to-end tests in testdata/script: each .txtar
 // file holds a project, the commands, and what they print.
 func TestScripts(t *testing.T) {
+	workRoot(t)
 	testscript.Run(t, params("testdata/script"))
 }
 
@@ -51,7 +55,57 @@ func TestScripts(t *testing.T) {
 // the tools and services it talks to. make criteria runs them again in a
 // build with -tags failpoints, for the parts that kill OpsTruss.
 func TestUseCases(t *testing.T) {
+	workRoot(t)
 	testscript.Run(t, params("testdata/usecases"))
+}
+
+// workRoot puts the work directories of the scripts of t in a directory of
+// their own, removed when t ends, since testscript removes the directory
+// it makes only when every script in it ran, which -run with the name of a
+// script never does. An interrupt stops the daemons that scripts started
+// there, which live in sessions of their own, and removes what the run
+// leaves before the test process ends, as a script that fails has its
+// daemons stopped.
+func workRoot(t *testing.T) {
+	if f := flag.Lookup("testwork"); f != nil && f.Value.String() == "true" {
+		return
+	}
+	dir, err := os.MkdirTemp("", "opstruss-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GOTMPDIR", dir)
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-ch:
+			for _, pattern := range []string{"*/*/.opstruss/daemon/*.json", "*/*/*/.opstruss/daemon/*.json"} {
+				files, _ := filepath.Glob(filepath.Join(dir, pattern))
+				for _, f := range files {
+					_, _ = daemon.Stop(filepath.Dir(filepath.Dir(f)), strings.TrimSuffix(filepath.Base(f), ".json"))
+				}
+			}
+			writableFixtureCache(dir)
+			_ = os.RemoveAll(dir)
+			// testscript.Main puts the commands in testscript-main*/bin first
+			// in PATH and removes them as it returns, which exiting skips.
+			if bin := filepath.SplitList(os.Getenv("PATH"))[0]; strings.HasPrefix(filepath.Base(filepath.Dir(bin)), "testscript-main") {
+				_ = os.RemoveAll(filepath.Dir(bin))
+			}
+			os.Exit(1)
+		case <-done:
+		}
+	}()
+	t.Cleanup(func() {
+		signal.Stop(ch)
+		close(done)
+		writableFixtureCache(dir)
+		if err := os.RemoveAll(dir); err != nil {
+			t.Error(err)
+		}
+	})
 }
 
 // waitLimit is how long the wait commands wait: a chain of programs that

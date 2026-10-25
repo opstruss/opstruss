@@ -40,9 +40,12 @@ exec opstruss remember --value 7
 exec opstruss plan
 stdout 'site: will run'
 
-# names follow the rules of the keys of for_each
+# names follow the rules of the keys of for_each: validate checks a key as
+# written, and the run one that an expression gives
 ! exec opstruss bad-name
 stderr 'kv key "Bad Name" takes lower-case letters'
+! exec opstruss -C bad validate
+stderr '^opstruss.yaml:4:10: tasks.t.kv.key: kv key "qa/greeting" takes lower-case letters'
 
 -- opstruss.yaml --
 name: app
@@ -91,4 +94,9 @@ tasks:
   check-brief:
     set: {brief: "${{ kv('brief', 'none') }}"}
   bad-name:
-    kv: {key: Bad Name, value: 1}
+    kv: {key: "${{ 'Bad Name' }}", value: 1}
+-- bad/opstruss.yaml --
+name: bad
+tasks:
+  t:
+    kv: {key: qa/greeting, value: 1}

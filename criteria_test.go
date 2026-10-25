@@ -14,6 +14,7 @@ func TestCriteria(t *testing.T) {
 	if os.Getenv("OPSTRUSS_CRITERIA") == "" {
 		t.Skip("set OPSTRUSS_CRITERIA=1, as make criteria does")
 	}
+	workRoot(t)
 	testscript.Run(t, params("testdata/criteria"))
 }
 
@@ -24,5 +25,6 @@ func TestLoad(t *testing.T) {
 	if os.Getenv("OPSTRUSS_CRITERIA") == "" {
 		t.Skip("set OPSTRUSS_CRITERIA=1, as make criteria does")
 	}
+	workRoot(t)
 	testscript.Run(t, params("testdata/load"))
 }

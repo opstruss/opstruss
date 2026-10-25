@@ -204,8 +204,9 @@ func TestSchema(t *testing.T) {
 	r := &Record{ID: "7f3a9c1e", StateKey: "prod/web.7f3a9c1e", Kind: "run",
 		Inputs: map[string]any{"port": int64(8080)}, Outputs: map[string]any{"url": "https://x"},
 		Down:   &Down{Run: []string{"./clean.sh"}, Dir: ".", Pass: map[string]string{"AWS_PROFILE": "sha256:ab"}},
-		Digest: "sha256:v1:41d0", Run: "20261020T101530Z-4b2e91d0", Updated: "2026-10-20T10:15:51Z",
-		Pending:   &Attempt{Op: "up", Run: "20261020T101530Z-4b2e91d0", Holder: h, Inputs: map[string]any{"port": int64(9090)}},
+		Digest: "sha256:v1:41d0", Parts: map[string]string{"run": "0123456789abcdef"}, Run: "20261020T101530Z-4b2e91d0", Updated: "2026-10-20T10:15:51Z",
+		Pending: &Attempt{Op: "up", Run: "20261020T101530Z-4b2e91d0", Holder: h, Inputs: map[string]any{"port": int64(9090)},
+			Outcome: "failure", Ended: "2026-10-20T10:15:40Z"},
 		Abandoned: []*Attempt{{Op: "up", Run: "20261020T091530Z-1b2e91d0", Holder: h}}}
 	if _, err := s.Put("prod/web", r, ""); err != nil {
 		t.Fatal(err)

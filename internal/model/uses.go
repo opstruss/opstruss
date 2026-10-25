@@ -12,6 +12,7 @@ import (
 
 	"github.com/opstruss/opstruss/internal/expr"
 	"github.com/opstruss/opstruss/internal/sources"
+	"github.com/opstruss/opstruss/internal/state"
 )
 
 // Package is what a name in uses: stands for, or a path that a unit uses
@@ -380,6 +381,23 @@ func takes(pkg *Package, k string) bool {
 	return false
 }
 
+// holdsExpr reports whether v holds ${{ anywhere, written or escaped.
+func holdsExpr(v any) bool {
+	switch x := v.(type) {
+	case string:
+		return strings.Contains(x, "${{")
+	case []any:
+		return slices.ContainsFunc(x, holdsExpr)
+	case map[string]any:
+		for _, e := range x {
+			if holdsExpr(e) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // with checks the inputs given to t at path: each is one that t takes, and
 // each that t requires is given here or by its declaration; what is
 // missing is reported at missing.
@@ -389,11 +407,24 @@ func (c *checker) with(path, missing []string, t *Target, with map[string]any) {
 		return
 	}
 	for _, k := range slices.Sorted(maps.Keys(with)) {
-		switch v, ok := with[k].(string); {
+		v, text := with[k].(string)
+		switch {
 		case inputs[k] == nil:
 			c.add(at(path, k), "%s has no input %s", t.Name, k)
-		case inputs[k].Literal && ok && expr.HasExpr(v):
+		case inputs[k].Literal && text && expr.HasExpr(v):
 			c.add(at(path, k), "%s is taken as written; ${{ }} is not allowed in it (write $${{ for ${{)", k)
+		case holdsExpr(with[k]):
+			// Only a run knows the value; it checks it then.
+		default:
+			// A value as written is checked as a run checks it, as
+			// terraform validate checks a variable given a constant.
+			if _, err := inputs[k].Conform(with[k]); err != nil {
+				c.add(at(path, k), "%v", err)
+			} else if t.Kind == TargetBuiltin && t.Task == "kv" && k == "key" && text {
+				if err := state.CheckKVName(v); err != nil {
+					c.add(at(path, k), "%v", err)
+				}
+			}
 		}
 	}
 	for _, k := range slices.Sorted(maps.Keys(inputs)) {

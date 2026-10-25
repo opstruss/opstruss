@@ -28,7 +28,7 @@ stdout 'the firewall already matches rules.yaml'
 # digest to kv, and the firewall stays as it is
 cp rules/office.yaml rules.yaml
 exec opstruss propose
-grep '^POST /api/changes auth=Bearer itsm-test-token \{"plan":"will run: definition changed; plan: update hcloud_firewall.edge","title":"Firewall change"\}$' itsm/requests
+grep '^POST /api/changes auth=Bearer itsm-test-token \{"plan":"will run: definition changed: with.vars; plan: update hcloud_firewall.edge","title":"Firewall change"\}$' itsm/requests
 exists .opstruss/state/default/_kv/change-chg-101
 grep -count=1 '^apply ' tofu.log
 

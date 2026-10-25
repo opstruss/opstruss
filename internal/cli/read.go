@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"syscall"
+	"text/tabwriter"
 	"time"
 
 	"github.com/opstruss/opstruss/internal/api"
@@ -46,8 +47,11 @@ func (a *app) listCommand() *cobra.Command {
 			if a.json {
 				return a.printJSON(st)
 			}
+			// Columns are as wide as what they hold, so a long description
+			// does not run into the last run.
+			tw := tabwriter.NewWriter(a.stdout, 0, 0, 2, ' ', 0)
 			if len(st.Tasks) > 0 {
-				fmt.Fprintln(a.stdout, "Tasks")
+				fmt.Fprintln(tw, "Tasks")
 				for _, t := range st.Tasks {
 					last := "never run"
 					if t.Run != "" {
@@ -66,16 +70,19 @@ func (a *app) listCommand() *cobra.Command {
 					if t.Next != "" {
 						last += "; next " + t.Next
 					}
-					fmt.Fprintf(a.stdout, "  %-20s %-40s %s\n", t.Name, desc, last)
+					fmt.Fprintf(tw, "  %s\t%s\t%s\n", t.Name, desc, last)
+				}
+				if err := tw.Flush(); err != nil {
+					return err
 				}
 			}
 			if len(st.Units) > 0 {
-				fmt.Fprintln(a.stdout, "Units")
+				fmt.Fprintln(tw, "Units")
 				for _, u := range st.Units {
-					fmt.Fprintf(a.stdout, "  %-30s %-7s %s\n", u.Address, u.Kind, u.State)
+					fmt.Fprintf(tw, "  %s\t%s\t%s\n", u.Address, u.Kind, u.State)
 				}
 			}
-			return nil
+			return tw.Flush()
 		},
 	}
 }
@@ -128,6 +135,12 @@ func (a *app) outputsCommand() *cobra.Command {
 			if a.json {
 				return a.printJSON(out)
 			}
+			if len(out) == 0 {
+				// Every output the project declares is here, with a value or
+				// as an error, so none is not an output still to come.
+				fmt.Fprintln(a.stderr, "the project declares no outputs")
+				return nil
+			}
 			for _, k := range slices.Sorted(maps.Keys(out)) {
 				fmt.Fprintf(a.stdout, "%s: %s\n", k, expr.Text(out[k]))
 			}
@@ -169,6 +182,7 @@ func (a *app) runsCommand() *cobra.Command {
 			if a.json {
 				return a.printJSON(runs)
 			}
+			tw := tabwriter.NewWriter(a.stdout, 0, 0, 2, ' ', 0)
 			for _, r := range runs {
 				what := r.Command
 				if r.Task != "" {
@@ -178,9 +192,9 @@ func (a *app) runsCommand() *cobra.Command {
 				if t, err := time.Parse(time.RFC3339Nano, started); err == nil {
 					started = t.Format(time.RFC3339)
 				}
-				fmt.Fprintf(a.stdout, "%s  %-20s %-10s %s\n", r.Run, what, r.Outcome, started)
+				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", r.Run, what, r.Outcome, started)
 			}
-			return nil
+			return tw.Flush()
 		},
 	}
 	cmd.Flags().BoolVar(&follow, "follow", false, "go on with what a run that still runs writes, until it ends; -f is the same")

@@ -70,7 +70,12 @@ func (a *app) taskCommands(root *cobra.Command) {
 		if c, _, err := root.Find([]string{name}); err == nil && c != root {
 			continue
 		}
-		root.AddCommand(a.taskCommand(name, defs[name], !projectTask))
+		if !root.ContainsGroup(groupTasks) {
+			root.AddGroup(&cobra.Group{ID: groupTasks, Title: "Project tasks:"})
+		}
+		c := a.taskCommand(name, defs[name], !projectTask)
+		c.GroupID = groupTasks
+		root.AddCommand(c)
 	}
 }
 

@@ -1,7 +1,8 @@
 # Errors say what to write instead: a step field or output that does not
-# exist, a function read as a key, $NAME in an expression, a key that a
-# map lacks at run time, and a shell builtin as a program; help shows what
-# a task without a description runs.
+# exist, a function read as a key, $NAME in an expression, a name with -
+# read as a field, rescue: on a task, a key that a map lacks at run time, a
+# shell builtin as a program, a command written wrong, and a required input
+# without a terminal; help shows what a task without a description runs.
 
 env HOME=$WORK/home
 
@@ -14,6 +15,13 @@ stderr 'step b1 has no output toJSON; it gives exit_code, stderr, stdout; toJSON
 stderr 'step w has no output pth; it gives path; did you mean path'
 stderr 'an expression reads no environment variable; give it to an input or a secret with env: HOME, and read inputs.<name> or secrets.<name>'
 ! stderr 'token recognition'
+stderr 'write steps\[.my-step.\] for a name with -, which steps.my-step reads as a minus'
+! stderr 'undeclared reference'
+
+# rescue: on a task says where it goes
+cp rescue.yaml opstruss.yaml
+! exec opstruss validate
+stderr 'tasks.r.rescue: rescue and always go with block, in a step: steps: \[\{block: \[...\], rescue: \[...\], always: \[...\]\}\]'
 
 # what is right passes, also outputs known only at run time
 cp good.yaml opstruss.yaml
@@ -34,6 +42,17 @@ stdout '^  deep +steps: s, read$'
 stdout '^  long +run: echo a{39}…$'
 stdout '^  told +Say what it does$'
 
+# help keeps the tasks apart from the commands, and an unknown command,
+# also a task written wrong, gets a suggestion
+stdout '^Commands:$'
+stdout '^Project tasks:$'
+! exec opstruss tlod
+stderr '^opstruss: unknown command "tlod" for "opstruss"; did you mean told\?$'
+
+# a required input without a terminal names the flag that gives it
+! exec opstruss greet
+stderr '^greet: input name: required; pass --name <string>$'
+
 -- bad.yaml --
 name: shop
 tasks:
@@ -48,12 +67,25 @@ tasks:
         write: {path: out.txt, content: hi}
       - run: [echo, "${{ steps.w.outputs.pth }}"]
       - run: [echo, "${{ $HOME }}"]
+      - run: [echo, "${{ steps.my-step.outputs.stdout }}"]
+-- rescue.yaml --
+name: shop
+tasks:
+  r:
+    steps:
+      - run: [echo, hi]
+    rescue:
+      - run: [echo, rescued]
 -- good.yaml --
 name: shop
 tasks:
   told:
     description: Say what it does
     run: echo told
+  greet:
+    inputs:
+      name: {type: string, required: true}
+    run: echo "hello $INPUT_NAME"
   builtin:
     run: [export, X=1]
   long:

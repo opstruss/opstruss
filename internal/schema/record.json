@@ -16,6 +16,11 @@
     "outputs": { "type": "object" },
     "sensitive": { "$ref": "#/$defs/sensitive" },
     "digest": { "$ref": "#/$defs/digest" },
+    "parts": {
+      "description": "A digest of each part of the definition, such as run, sources, env.<name>, or with.<name>, so plan names what changed.",
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
     "run": { "$ref": "#/$defs/run" },
     "updated": { "type": "string", "format": "date-time" },
     "pending": { "$ref": "#/$defs/attempt" },
@@ -122,6 +127,8 @@
         "outputs": { "type": "object" },
         "raw_output": { "type": "string" },
         "peer": { "type": "string" },
+        "outcome": { "description": "How an attempt that ended without succeeding ended; none while it runs or after a crash.", "enum": ["failure", "cancelled"] },
+        "ended": { "type": "string", "format": "date-time" },
         "sensitive": { "$ref": "#/$defs/sensitive" }
       },
       "required": ["op", "run", "holder"]

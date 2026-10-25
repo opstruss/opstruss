@@ -14,7 +14,7 @@ stderr '^default/bucket: the program exited with 1$'
 env AWS_PROFILE=b
 cp ok.sh up.sh
 exec opstruss plan
-stdout '^default/bucket: will run: up of .* did not finish; then tear down the attempts of '
+stdout '^default/bucket: will run: up of .* failed; then tear down the attempts of '
 ! exec opstruss up --yes
 stdout '^default/bucket: up: done$'
 stderr '^default/bucket: the abandoned attempt of run .* needs AWS_PROFILE as it recorded them'

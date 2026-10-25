@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"cmp"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -39,6 +40,7 @@ type resolved struct {
 	timeout  time.Duration
 	stop     plugin.Stop
 	waitFor  string
+	reads    []string    // the parts that read outputs this run changes first, such as env.URL
 	plugin   *pluginUnit // for a unit that uses a plugin
 	task     *taskUnit   // for a unit that uses a task
 	service  *serviceDef // for a service unit
@@ -53,23 +55,41 @@ type resolved struct {
 
 // resolve evaluates the expressions of inst. In a preview, a unit that
 // reads outputs this run changes first is not evaluated: waitFor names the
-// upstream unit, and the unit is planned at its turn.
+// first upstream unit, reads the parts that read such outputs, and the
+// unit is planned at its turn.
 func (e *engine) resolve(inst *instance, preview bool) (*resolved, error) {
 	u := inst.def
 	r := &resolved{shell: u.Shell, timeout: DefaultTimeout}
 	if preview {
-		for _, v := range []any{argvOf(u.Run), argvOf(u.Service), argvOf(u.Down), envOf(u.Env), u.Dir, stdinOf(u.Stdin), u.Revision,
-			anyMap(u.With), readyOf(u.Ready), stopRunOf(u.Stop)} {
-			if up := e.changing(v, inst.frame); up != "" {
-				r.waitFor = up
-				return r, nil
+		reads := func(name string, v any, f *frame) {
+			if up := e.changing(v, f); up != "" {
+				r.waitFor = cmp.Or(r.waitFor, up)
+				r.reads = append(r.reads, name)
 			}
 		}
+		reads("run", argvOf(u.Run), inst.frame)
+		reads("service", argvOf(u.Service), inst.frame)
+		reads("down", argvOf(u.Down), inst.frame)
+		for _, k := range slices.Sorted(maps.Keys(u.Env)) {
+			reads("env."+k, u.Env[k].Text, inst.frame)
+		}
+		reads("dir", u.Dir, inst.frame)
+		reads("stdin", stdinOf(u.Stdin), inst.frame)
+		reads("revision", u.Revision, inst.frame)
+		for _, k := range slices.Sorted(maps.Keys(u.With)) {
+			reads("with."+k, u.With[k], inst.frame)
+		}
+		reads("ready", readyOf(u.Ready), inst.frame)
+		reads("stop.run", stopRunOf(u.Stop), inst.frame)
 		for f := inst.frame; f.node != nil; f = f.parent {
-			if up := e.changing(envOf(f.node.Unit.Env), f.parent); up != "" {
-				r.waitFor = up
-				return r, nil
+			for _, k := range slices.Sorted(maps.Keys(f.node.Unit.Env)) {
+				if !slices.Contains(r.reads, "env."+k) {
+					reads("env."+k, f.node.Unit.Env[k].Text, f.parent)
+				}
 			}
+		}
+		if r.waitFor != "" {
+			return r, nil
 		}
 	}
 	s := e.scope(inst)
@@ -230,14 +250,6 @@ func argvOf(c *model.Command) any {
 		list[i] = a
 	}
 	return list
-}
-
-func envOf(env model.Env) any {
-	m := map[string]any{}
-	for k, v := range env {
-		m[k] = v.Text
-	}
-	return m
 }
 
 func stdinOf(s *model.Stdin) any {
@@ -425,20 +437,28 @@ func (e *engine) downContract(inst *instance, r *resolved) *state.Down {
 	return d
 }
 
+// digested is what digest finds of a unit.
+type digested struct {
+	digest  string
+	parts   map[string]string // the digest of each part, by its name
+	missing []string          // the generates that are missing
+	empty   []string          // the patterns of sources that match no file
+}
+
 // digest is the digest trigger of a run unit: sha256 over the canonical
 // JSON of what decides its result, the files of sources outside generates
 // and a relative program included. The base environment, timeout, retry,
 // approval, and down are left out, since they do not change the result.
-func (e *engine) digest(inst *instance, r *resolved) (string, []string, error) {
-	sources, missing, err := files(inst.dir, inst.def.Sources, inst.def.Generates)
+func (e *engine) digest(inst *instance, r *resolved) (digested, error) {
+	sources, missing, empty, err := files(inst.dir, inst.def.Sources, inst.def.Generates)
 	if err != nil {
-		return "", nil, err
+		return digested{}, err
 	}
 	with := maps.Clone(r.inputs())
 	for k := range with {
 		if r.inputHidden[k] {
 			if with[k], err = e.hashed(inst, with[k]); err != nil {
-				return "", nil, err
+				return digested{}, err
 			}
 		}
 	}
@@ -453,7 +473,7 @@ func (e *engine) digest(inst *instance, r *resolved) (string, []string, error) {
 		case model.TargetProject:
 			src := map[string]any{}
 			if err := e.taskSource(inst.node.In, t.Task, src); err != nil {
-				return "", nil, err
+				return digested{}, err
 			}
 			def["source"] = src
 		case model.TargetTask:
@@ -472,7 +492,7 @@ func (e *engine) digest(inst *instance, r *resolved) (string, []string, error) {
 	rel, _ := filepath.Rel(e.p.Dir, r.cwd)
 	add("shell", shell, r.cmd.Script == "")
 	if id, _, err := e.locationOwner(inst, r, r.cwd); err != nil {
-		return "", nil, err
+		return digested{}, err
 	} else if id != nil {
 		add("dir", digestSource(id, ""), false)
 	} else {
@@ -481,7 +501,7 @@ func (e *engine) digest(inst *instance, r *resolved) (string, []string, error) {
 	if in := inst.node.In; in.Source != nil {
 		h, err := e.packageHash(in.Source, in.Catalog, in.Dir)
 		if err != nil {
-			return "", nil, err
+			return digested{}, err
 		}
 		def["owner"] = digestSource(in.Source, h)
 	}
@@ -498,7 +518,7 @@ func (e *engine) digest(inst *instance, r *resolved) (string, []string, error) {
 		var text any = v.Text
 		if r.envHidden[k] {
 			if text, err = e.hashed(inst, v.Text); err != nil {
-				return "", nil, err
+				return digested{}, err
 			}
 		}
 		if v.File {
@@ -517,7 +537,7 @@ func (e *engine) digest(inst *instance, r *resolved) (string, []string, error) {
 		v := r.stdinVal
 		if r.stdinSensitive {
 			if v, err = e.hashed(inst, v); err != nil {
-				return "", nil, err
+				return digested{}, err
 			}
 		}
 		def["stdin"] = map[string]any{"value": v, "format": inst.def.Stdin.Format}
@@ -534,7 +554,7 @@ func (e *engine) digest(inst *instance, r *resolved) (string, []string, error) {
 		}
 		sum, err := hashFile(prog)
 		if err != nil {
-			return "", nil, fmt.Errorf("program: %w", err)
+			return digested{}, fmt.Errorf("program: %w", err)
 		}
 		def["program"] = sum
 	}
@@ -545,10 +565,76 @@ func (e *engine) digest(inst *instance, r *resolved) (string, []string, error) {
 	}
 	data, err := canonical(def)
 	if err != nil {
-		return "", nil, err
+		return digested{}, err
+	}
+	parts, err := partsOf(def)
+	if err != nil {
+		return digested{}, err
 	}
 	sum := sha256.Sum256(data)
-	return "sha256:v1:" + hex.EncodeToString(sum[:]), missing, nil
+	return digested{digest: "sha256:v1:" + hex.EncodeToString(sum[:]), parts: parts, missing: missing, empty: empty}, nil
+}
+
+// partsOf gives each part of def a digest of its own, which a record keeps
+// so a plan names what changed, as bazel --explain does: an input of
+// with, a variable of env or pass, and each other key, such as run or
+// sources, with plugin for the files of a plugin and component for those
+// of the package a unit is in. Sensitive values are hashed already in def.
+func partsOf(def map[string]any) (map[string]string, error) {
+	out := map[string]string{}
+	add := func(name string, v any) error {
+		data, err := canonical(v)
+		if err != nil {
+			return err
+		}
+		sum := sha256.Sum256(data)
+		out[name] = hex.EncodeToString(sum[:8])
+		return nil
+	}
+	for k, v := range def {
+		m, ok := v.(map[string]any)
+		if !ok || k != "with" && k != "env" && k != "pass" {
+			name := k
+			switch {
+			case k == "owner":
+				name = "component"
+			case k == "source" && def["kind"] == "plugin":
+				name = "plugin"
+			}
+			if err := add(name, v); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		for name, x := range m {
+			if err := add(k+"."+name, x); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return out, nil
+}
+
+// changedParts names the parts whose digests differ between was and now,
+// or that only one has, sorted; nil when was is nil, as in a record that
+// keeps no parts.
+func changedParts(was, now map[string]string) []string {
+	if was == nil {
+		return nil
+	}
+	var out []string
+	for k, v := range now {
+		if was[k] != v {
+			out = append(out, k)
+		}
+	}
+	for k := range was {
+		if _, ok := now[k]; !ok {
+			out = append(out, k)
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 // digestSource is a remote source as a digest holds it: by repository and
@@ -607,14 +693,15 @@ func (e *engine) recordID(inst *instance) string {
 
 // files hashes the files of sources, relative to dir, without those that
 // match generates, and lists the generates that are missing: a path that
-// is not there, or a pattern that matches no file.
-func files(dir string, sources []model.PathItem, generates []string) (map[string]any, []string, error) {
+// is not there, or a pattern that matches no file; and the patterns of
+// sources that match no file.
+func files(dir string, sources []model.PathItem, generates []string) (map[string]any, []string, []string, error) {
 	made := map[string]bool{}
-	var missing []string
+	var missing, empty []string
 	for _, g := range generates {
 		matches, err := glob(dir, g)
 		if err != nil {
-			return nil, nil, fmt.Errorf("generates: %w", err)
+			return nil, nil, nil, fmt.Errorf("generates: %w", err)
 		}
 		if len(matches) == 0 {
 			missing = append(missing, g)
@@ -635,7 +722,10 @@ func files(dir string, sources []model.PathItem, generates []string) (map[string
 		}
 		matches, err := glob(dir, item.Pattern)
 		if err != nil {
-			return nil, nil, fmt.Errorf("sources: %w", err)
+			return nil, nil, nil, fmt.Errorf("sources: %w", err)
+		}
+		if len(matches) == 0 {
+			empty = append(empty, item.Pattern)
 		}
 		for _, m := range matches {
 			set[m] = true
@@ -648,12 +738,12 @@ func files(dir string, sources []model.PathItem, generates []string) (map[string
 		}
 		sum, err := hashFile(p)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		rel, _ := filepath.Rel(dir, p)
 		out[filepath.ToSlash(rel)] = sum
 	}
-	return out, missing, nil
+	return out, missing, empty, nil
 }
 
 // glob returns the files that pattern, relative to dir, matches.

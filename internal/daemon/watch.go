@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -372,18 +373,35 @@ func pathOf(tr *engine.Trigger, abs string) (string, bool) {
 	}
 	in := false
 	for _, it := range tr.Paths {
+		pattern, absolute := patternOf(tr, it.Pattern)
 		target := filepath.ToSlash(abs)
-		if !filepath.IsAbs(it.Pattern) {
+		if !absolute {
 			if !inside {
 				continue
 			}
 			target = shown
 		}
-		if ok, _ := doublestar.Match(filepath.ToSlash(it.Pattern), target); ok {
+		if ok, _ := doublestar.Match(pattern, target); ok {
 			in = !it.Exclude
 		}
 	}
 	return shown, in
+}
+
+// patternOf is pattern as the watch tr matches it, with slashes, and
+// whether it matches absolute paths: an absolute pattern, and a relative
+// one that leaves the directory of the task through .., which names the
+// absolute pattern it reaches; another relative one matches paths under
+// that directory.
+func patternOf(tr *engine.Trigger, pattern string) (string, bool) {
+	if filepath.IsAbs(pattern) {
+		return filepath.ToSlash(pattern), true
+	}
+	clean := path.Clean(filepath.ToSlash(pattern))
+	if clean != ".." && !strings.HasPrefix(clean, "../") {
+		return filepath.ToSlash(pattern), false
+	}
+	return path.Join(filepath.ToSlash(tr.Dir), clean), true
 }
 
 // pathRoots are the directories that the watch tr looks under: that of its
@@ -391,10 +409,11 @@ func pathOf(tr *engine.Trigger, abs string) (string, bool) {
 func pathRoots(tr *engine.Trigger) []string {
 	roots := []string{tr.Dir}
 	for _, it := range tr.Paths {
-		if it.Exclude || !filepath.IsAbs(it.Pattern) {
+		pattern, absolute := patternOf(tr, it.Pattern)
+		if it.Exclude || !absolute {
 			continue
 		}
-		base, _ := doublestar.SplitPattern(filepath.ToSlash(it.Pattern))
+		base, _ := doublestar.SplitPattern(pattern)
 		base = filepath.FromSlash(base)
 		if rel, err := filepath.Rel(tr.Dir, base); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 			continue

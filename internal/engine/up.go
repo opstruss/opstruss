@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/opstruss/opstruss/internal/expr"
@@ -75,7 +74,7 @@ func (e *engine) previewAll(ctx context.Context) {
 				e.preview(ctx, inst)
 			}
 			if e.sel.has(inst) {
-				e.say("plan", inst.address, "%s", inst.plan.summary())
+				e.sayPlan(inst)
 			}
 		}
 		e.mu.Lock()
@@ -96,13 +95,20 @@ func (e *engine) previewAll(ctx context.Context) {
 			other.plan, inst.plan = plan{err: err}, plan{err: err}
 			for _, i := range []*instance{other, inst} {
 				if e.sel.has(i) {
-					e.say("plan", i.address, "%s", i.plan.summary())
+					e.sayPlan(i)
 				}
 			}
 			continue
 		}
 		first[inst.backend] = inst
 	}
+}
+
+// sayPlan writes the plan line of inst, with its plan as units.<n>.plan
+// has it, for readers of --json, as terraform plan -json writes each
+// planned change.
+func (e *engine) sayPlan(inst *instance) {
+	e.emit(Event{Type: "plan", Level: "info", Address: inst.address, Message: inst.plan.summary(), Plan: inst.plan.view(inst.plan.exact())})
 }
 
 // broken stands for the instances of the unit at path, which could not be
@@ -133,6 +139,14 @@ func (e *engine) preview(ctx context.Context, inst *instance) {
 		inst.plan.err = err
 		return
 	}
+	// A unit after one that cannot be planned is not planned either, as up
+	// skips it, rather than read outputs that are not there.
+	for _, d := range inst.deps {
+		if e.sel.has(d) && (d.plan.err != nil || d.plan.blocked != "") {
+			inst.plan.blocked = cmp.Or(d.plan.blocked, d.address)
+			return
+		}
+	}
 	if h, held, err := e.store.Held(inst.address); err != nil {
 		inst.plan.err = err
 		return
@@ -146,7 +160,16 @@ func (e *engine) preview(ctx context.Context, inst *instance) {
 		inst.plan.err = err
 		return
 	case r.waitFor != "":
-		inst.plan.waitFor = e.p.StackName + "/" + r.waitFor
+		// What is known without the outputs it waits for is said now.
+		inst.plan.waitFor, inst.plan.reads = e.p.StackName+"/"+r.waitFor, r.reads
+		switch {
+		case rec == nil:
+			inst.plan.cause, inst.plan.reason = "new", "new"
+		case rec.Pending != nil:
+			inst.plan.cause, inst.plan.reason = "pending", pendingReason(rec.Pending)
+		case e.forced(inst):
+			inst.plan.cause, inst.plan.reason = "forced", "forced"
+		}
 		return
 	}
 	if r.plugin != nil && r.plugin.tool != "" {
@@ -179,7 +202,13 @@ func (e *engine) preview(ctx context.Context, inst *instance) {
 		}
 		defer func() { _ = e.store.Unlock(inst.address, token) }()
 	}
-	inst.plan = e.decide(ctx, inst, r, rec)
+	inst.plan = e.decide(ctx, inst, r, rec, nil)
+	// A pattern that matches nothing never runs the unit again, as Bazel
+	// refuses an empty glob; it may also name what a unit before it makes.
+	for _, pattern := range inst.plan.emptySources {
+		rel, _ := filepath.Rel(e.p.Dir, inst.dir)
+		e.warn(inst.address, "sources: %s matches no file in %s", pattern, filepath.ToSlash(rel)+"/")
+	}
 }
 
 // missing says which program of requires: is not in PATH.
@@ -222,13 +251,14 @@ func tombstoned(rec *state.Record) error {
 
 // decide plans an instance from its record: up runs a new unit, one whose
 // last attempt did not finish, one forced, one whose digest changed, and one
-// whose generates are missing.
-func (e *engine) decide(ctx context.Context, inst *instance, r *resolved, rec *state.Record) plan {
-	digest, missing, err := e.digest(inst, r)
+// whose generates are missing. What the plan of a plugin writes waits in
+// held when it is not nil.
+func (e *engine) decide(ctx context.Context, inst *instance, r *resolved, rec *state.Record, held *heldLogs) plan {
+	d, err := e.digest(inst, r)
 	if err != nil {
 		return plan{err: err}
 	}
-	p := plan{digest: digest, run: true}
+	p := plan{digest: d.digest, parts: d.parts, run: true, emptySources: d.empty}
 	if a := pendingMove(rec); a != nil {
 		return plan{err: fmt.Errorf("this address is moving to %s in run %s; the files with that moved: finish it", a.Peer, a.Run)}
 	}
@@ -252,9 +282,9 @@ func (e *engine) decide(ctx context.Context, inst *instance, r *resolved, rec *s
 	}
 	switch {
 	case rec == nil:
-		p.reason = "new"
+		p.cause, p.reason = "new", "new"
 	case rec.Pending != nil:
-		p.reason = fmt.Sprintf("%s of %s did not finish", rec.Pending.Op, rec.Pending.Holder)
+		p.cause, p.reason = "pending", pendingReason(rec.Pending)
 	case len(changedPass(rec, r)) > 0:
 		// The down of the record reaches the target of the values it
 		// recorded; up with others would leave that target without one.
@@ -262,15 +292,18 @@ func (e *engine) decide(ctx context.Context, inst *instance, r *resolved, rec *s
 		if !e.forced(inst) {
 			return plan{err: fmt.Errorf("context changed: %s differs from the record, whose down reaches the old target; up --force moves the unit and forgets that target", names)}
 		}
-		p.reason = "context changed: " + names + "; forced, the old target is forgotten"
+		p.cause, p.reason = "context", "context changed: "+names+"; forced, the old target is forgotten"
 	case e.forced(inst):
-		p.reason = "forced"
-	case rec.Digest != digest:
-		p.reason = "definition changed"
+		p.cause, p.reason = "forced", "forced"
+	case rec.Digest != d.digest:
+		p.cause, p.reason, p.changed = "definition", "definition changed", changedParts(rec.Parts, d.parts)
+		if len(p.changed) > 0 {
+			p.reason += ": " + someOf(p.changed, 5)
+		}
 	case r.service != nil && !e.running(inst.address):
-		p.reason = "not running"
-	case len(missing) > 0:
-		p.reason = "generates missing: " + strings.Join(missing, ", ")
+		p.cause, p.reason = "not_running", "not running"
+	case len(d.missing) > 0:
+		p.cause, p.reason = "generates", "generates missing: "+strings.Join(d.missing, ", ")
 	default:
 		p.run = false
 	}
@@ -278,19 +311,54 @@ func (e *engine) decide(ctx context.Context, inst *instance, r *resolved, rec *s
 		return plan{err: err}
 	}
 	if r.plugin != nil && r.plugin.plan != nil {
-		pp, err := e.planPlugin(ctx, inst, r, rec)
+		pp, err := e.planPlugin(ctx, inst, r, rec, held)
 		if err != nil {
 			return plan{err: err}
 		}
 		p.changes, p.outputs, p.pluginDigest, p.inexact = pp.Changes, pp.Outputs, pp.Digest, !pp.Exact
 		switch {
 		case len(pp.Changes) > 0 && !p.run:
-			p.run, p.reason = true, "plan: "+describe(pp.Changes)
+			p.run, p.cause, p.reason = true, "plan", "plan: "+describe(pp.Changes)
 		case len(pp.Changes) > 0:
 			p.reason += "; plan: " + describe(pp.Changes)
 		}
 	}
 	return p
+}
+
+// endAttempt writes in rec that its pending attempt ended without
+// succeeding, cancelled when parent, the context of the run, ended, so
+// the next plan says so rather than that it did not finish; a record that
+// cannot be written keeps the attempt as one that did not finish.
+func (e *engine) endAttempt(addr string, rec *state.Record, etag string, parent context.Context) {
+	rec.Pending.Outcome, rec.Pending.Ended = failure, time.Now().UTC().Format(time.RFC3339)
+	if parent.Err() != nil {
+		rec.Pending.Outcome = cancelled
+	}
+	if _, err := e.store.Put(addr, rec, etag); err != nil {
+		e.debug(addr, "the record keeps the attempt as one that did not finish: %v", err)
+	}
+}
+
+// pendingReason says what the attempt that a record has pending left: one
+// that ended without succeeding says how, and one that did not end, as
+// when its process died, says who ran it.
+func pendingReason(a *state.Attempt) string {
+	switch a.Outcome {
+	case failure:
+		return fmt.Sprintf("%s of run %s failed", a.Op, a.Run)
+	case cancelled:
+		return fmt.Sprintf("%s of run %s was cancelled", a.Op, a.Run)
+	}
+	return fmt.Sprintf("%s of %s did not finish", a.Op, a.Holder)
+}
+
+// someOf joins the first n of names, and says how many more there are.
+func someOf(names []string, n int) string {
+	if len(names) <= n {
+		return strings.Join(names, ", ")
+	}
+	return fmt.Sprintf("%s, and %d more", strings.Join(names[:n], ", "), len(names)-n)
 }
 
 func (e *engine) forced(inst *instance) bool {
@@ -383,41 +451,78 @@ func withHidden(hidden, more map[string][]string, parts ...string) map[string][]
 }
 
 // turns runs every instance once the instances it depends on are done, at
-// most OPSTRUSS_PARALLEL at once.
+// most OPSTRUSS_PARALLEL at once. Those that are ready start in the order
+// of the plan, each holding its place there before any of them runs, so
+// their questions come in that order whatever their plans take.
 func (e *engine) turns(ctx context.Context) {
-	sem := make(chan struct{}, e.parallel)
-	var wg sync.WaitGroup
+	left := map[*instance]int{} // the instances not started, by the instances they wait for
+	next := map[*instance][]*instance{}
 	for _, inst := range e.insts {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			defer close(inst.done)
-			for _, d := range inst.deps {
-				<-d.done
-			}
-			if !e.sel.has(inst) {
-				e.finish(inst, success, false, nil, nil)
-				return
-			}
-			for _, d := range inst.deps {
-				if d.outcome != success {
-					e.finish(inst, skipped, false, nil, nil)
-					e.say("unit", inst.address, "skipped: %s is %s", d.address, d.outcome)
-					return
-				}
-			}
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			e.turn(ctx, inst)
-		}()
+		left[inst] = len(inst.deps)
+		for _, d := range inst.deps {
+			next[d] = append(next[d], inst)
+		}
 	}
-	wg.Wait()
+	end := func(inst *instance) {
+		close(inst.done)
+		for _, n := range next[inst] {
+			left[n]--
+		}
+	}
+	ended := make(chan *instance)
+	running := 0
+	for len(left) > 0 || running > 0 {
+		moved := false
+		for place, inst := range e.insts {
+			if n, ok := left[inst]; !ok || n > 0 || running == e.parallel {
+				continue
+			}
+			delete(left, inst)
+			moved = true
+			if skip := e.skips(inst); skip {
+				end(inst)
+				continue
+			}
+			running++
+			inst.place = place
+			leave := e.asks.enter(place)
+			go func() {
+				e.turn(ctx, inst, leave)
+				ended <- inst
+			}()
+		}
+		if moved {
+			continue
+		}
+		inst := <-ended
+		running--
+		end(inst)
+	}
+}
+
+// skips finishes inst without its turn when it is not selected, or when an
+// instance it depends on did not succeed.
+func (e *engine) skips(inst *instance) bool {
+	if !e.sel.has(inst) {
+		e.finish(inst, success, false, nil, nil)
+		return true
+	}
+	for _, d := range inst.deps {
+		if d.outcome != success {
+			e.finish(inst, skipped, false, nil, nil)
+			e.say("unit", inst.address, "skipped: %s is %s", d.address, d.outcome)
+			return true
+		}
+	}
+	return false
 }
 
 // turn is the turn of one instance: it takes the address lock, plans again
 // with what its upstream units gave in this run, asks for approval, marks
-// the record pending, runs the program, and writes the record.
-func (e *engine) turn(ctx context.Context, inst *instance) {
+// the record pending, runs the program, and writes the record. It calls
+// leave once it asked or knows that it will not ask.
+func (e *engine) turn(ctx context.Context, inst *instance, leave func()) {
+	defer leave()
 	addr := inst.address
 	failed := func(err error) {
 		e.finish(inst, failure, false, nil, nil)
@@ -470,7 +575,16 @@ func (e *engine) turn(ctx context.Context, inst *instance) {
 		failed(err)
 		return
 	}
-	p := e.decide(ctx, inst, r, rec)
+	// The plan of the preview showed what the plugin wrote; the same plan
+	// again does not show it twice, as only a plan that changed is news.
+	var held *heldLogs
+	if inst.plan.pluginDigest != "" {
+		held = &heldLogs{}
+	}
+	p := e.decide(ctx, inst, r, rec, held)
+	if held != nil {
+		held.release(e, p.err != nil || p.approval() != inst.plan.approval())
+	}
 	if p.err != nil {
 		failed(p.err)
 		return
@@ -478,6 +592,7 @@ func (e *engine) turn(ctx context.Context, inst *instance) {
 	e.debug(addr, "took the lock; digest %s; %s", p.digest, p.summary())
 	down := e.downContract(inst, r)
 	if !p.run && len(p.teardown) == 0 {
+		leave()
 		// A down contract that changed alone is written without running.
 		if !same(rec.Down, down) {
 			rec.Down = down
@@ -493,7 +608,7 @@ func (e *engine) turn(ctx context.Context, inst *instance) {
 	}
 	approval := cmp.Or(inst.def.Approval, e.stackApproval(), "ask")
 	if approval != "auto" {
-		source, why, waited := e.approves(ctx, Question{Address: addr, Summary: p.summary()}, p.approval())
+		source, why, waited := e.approves(ctx, Question{Op: "up", Address: addr, Summary: p.summary()}, p.approval(), inst.place)
 		if why != "" {
 			e.finish(inst, skipped, false, nil, nil)
 			e.say("approval", addr, "%s; %s, stopped at plan", p.summary(), why)
@@ -509,6 +624,7 @@ func (e *engine) turn(ctx context.Context, inst *instance) {
 			defer more()
 		}
 	}
+	leave()
 	inst.approval = approval
 	if !p.run {
 		// Only old attempts are left to tear down; the approval covered them.
@@ -608,6 +724,7 @@ func (e *engine) turn(ctx context.Context, inst *instance) {
 	})
 	failpoint.Hit("up-after-program")
 	if err != nil {
+		e.endAttempt(addr, next, etag, parent)
 		failed(err)
 		return
 	}
@@ -619,7 +736,7 @@ func (e *engine) turn(ctx context.Context, inst *instance) {
 		return
 	}
 	done := &state.Record{ID: next.ID, StateKey: next.StateKey, Kind: r.kind(), Source: attempt.Source, Inputs: attempt.Inputs,
-		Down: down, Needs: attempt.Needs, Outputs: res.Outputs, Digest: p.digest, Run: e.runID,
+		Down: down, Needs: attempt.Needs, Outputs: res.Outputs, Digest: p.digest, Parts: p.parts, Run: e.runID,
 		Updated: time.Now().UTC().Format(time.RFC3339), Abandoned: next.Abandoned,
 		Hidden: withHidden(attempt.Hidden, map[string][]string{state.PartOutputs: slices.Sorted(maps.Keys(outMarks))}, state.PartOutputs, state.PartRawOutput)}
 	err = failpoint.Fail("up-before-put")
@@ -645,7 +762,7 @@ func (e *engine) turn(ctx context.Context, inst *instance) {
 		return
 	}
 	e.finish(inst, success, res.Changed, res.Outputs, outMarks)
-	if _, missing, _ := files(inst.dir, nil, inst.def.Generates); len(missing) > 0 {
+	if _, missing, _, _ := files(inst.dir, nil, inst.def.Generates); len(missing) > 0 {
 		e.warn(addr, "generates still missing after up: %s", strings.Join(missing, ", "))
 	}
 }

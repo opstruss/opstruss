@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/opstruss/opstruss/internal/record"
@@ -104,7 +105,7 @@ func (e *engine) unitPass(ctx context.Context, op string, p pass) (map[string]an
 	for _, inst := range e.insts {
 		if e.sel.has(inst) {
 			out[e.short(inst.address)] = map[string]any{"outcome": inst.outcome, "changed": inst.changed, "outputs": inst.outputsNow(),
-				"plan": inst.plan.view(inst.plan.err == nil && inst.plan.waitFor == "" && inst.plan.locked == "")}
+				"plan": inst.plan.view(inst.plan.exact())}
 			e.touch(e.short(inst.address), &record.Unit{Outcome: inst.outcome, Changed: inst.changed, Plan: inst.plan.summary(), Approval: inst.approval})
 			if m := inst.viewMarks(); m != nil {
 				marks[e.short(inst.address)] = m
@@ -124,9 +125,10 @@ func (e *engine) unitPass(ctx context.Context, op string, p pass) (map[string]an
 // why nothing does. With yes, a unit whose plan this run read is approved
 // only when that plan was exact and has the same digest, so what is
 // applied is what was seen; without yes, whoever is at the terminal is
-// asked, one question at a time, and the time of the answer does not
-// count toward the unit's timeout. It returns how long the question took.
-func (e *engine) approves(ctx context.Context, q Question, digest string) (source, why string, waited time.Duration) {
+// asked, one question at a time, in the order of place in the plan (see
+// askOrder), and the time of the answer does not count toward the unit's
+// timeout. It returns how long the question took.
+func (e *engine) approves(ctx context.Context, q Question, digest string, place int) (source, why string, waited time.Duration) {
 	if e.pass.yes {
 		read, ok := e.read[q.Address]
 		switch {
@@ -142,8 +144,8 @@ func (e *engine) approves(ctx context.Context, q Question, digest string) (sourc
 	if e.opts.Approve == nil {
 		return "", "needs approval", 0
 	}
-	e.promptMu.Lock()
-	defer e.promptMu.Unlock()
+	release := e.asks.wait(place)
+	defer release()
 	start := time.Now()
 	ok, err := e.opts.Approve(ctx, q)
 	waited = time.Since(start)
@@ -154,6 +156,66 @@ func (e *engine) approves(ctx context.Context, q Question, digest string) (sourc
 		return "", "the answer was no", waited
 	}
 	return "terminal", "", waited
+}
+
+// askOrder puts the questions of a run at the terminal one at a time, in
+// the order of the plan: a turn holds its place from when it starts until
+// it asked or knows it will not ask, and a question waits for the places
+// before its own. A place below 0, such as that of a task, waits only for
+// the terminal.
+type askOrder struct {
+	mu     sync.Mutex
+	cond   *sync.Cond
+	places map[int]bool
+	asking bool
+}
+
+func (o *askOrder) lock() {
+	o.mu.Lock()
+	if o.cond == nil {
+		o.cond, o.places = sync.NewCond(&o.mu), map[int]bool{}
+	}
+}
+
+// enter holds place until the leave it returns, which may be called more
+// than once.
+func (o *askOrder) enter(place int) (leave func()) {
+	o.lock()
+	o.places[place] = true
+	o.mu.Unlock()
+	return sync.OnceFunc(func() {
+		o.lock()
+		delete(o.places, place)
+		o.cond.Broadcast()
+		o.mu.Unlock()
+	})
+}
+
+// wait waits for the terminal and for the places before place, then holds
+// the terminal until the release it returns.
+func (o *askOrder) wait(place int) (release func()) {
+	o.lock()
+	for o.asking || place >= 0 && o.before(place) {
+		o.cond.Wait()
+	}
+	o.asking = true
+	o.mu.Unlock()
+	return func() {
+		o.lock()
+		o.asking = false
+		o.cond.Broadcast()
+		o.mu.Unlock()
+	}
+}
+
+// before says whether a place before place is held. The caller holds mu.
+func (o *askOrder) before(place int) bool {
+	for p := range o.places {
+		if p < place {
+			return true
+		}
+	}
+	return false
 }
 
 // setCollect says whether the instances of components that the pass finds
@@ -193,8 +255,16 @@ func (inst *instance) outputsNow() map[string]any {
 	return map[string]any{}
 }
 
+// exact says whether the plan of an instance is all that the run knows: not
+// one that failed, waits for outputs of its turn, or another run holds.
+func (p plan) exact() bool {
+	return p.err == nil && p.waitFor == "" && p.locked == "" && p.blocked == ""
+}
+
 // view is units.<n>.plan: one change "run" when up runs, the digest, and
-// whether the plan is exact, with the line the command line shows.
+// whether the plan is exact, with the line the command line shows; and why
+// it runs, the parts of the definition that changed, and the unit and the
+// parts whose outputs it waits for.
 func (p plan) view(exact bool) map[string]any {
 	changes := []any{}
 	switch {
@@ -212,6 +282,27 @@ func (p plan) view(exact bool) map[string]any {
 	for _, o := range p.outputs {
 		outputs = append(outputs, o)
 	}
-	return map[string]any{"changes": changes, "outputs": outputs, "exact": exact && !p.inexact, "digest": p.approval(),
+	v := map[string]any{"changes": changes, "outputs": outputs, "exact": exact && !p.inexact, "digest": p.approval(),
 		"summary": p.summary()}
+	if p.cause != "" {
+		v["reason"] = p.cause
+	}
+	if len(p.changed) > 0 {
+		v["changed"] = anyList(p.changed)
+	}
+	if p.waitFor != "" {
+		v["after"] = p.waitFor
+	}
+	if len(p.reads) > 0 {
+		v["reads"] = anyList(p.reads)
+	}
+	return v
+}
+
+func anyList(s []string) []any {
+	out := make([]any, len(s))
+	for i, x := range s {
+		out[i] = x
+	}
+	return out
 }

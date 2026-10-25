@@ -305,7 +305,7 @@ func (e *engine) statusPass(ctx context.Context, patterns []string) (map[string]
 			ev.Message = fmt.Sprintf("up, from run %s at %s", rec.Run, rec.Updated)
 			if rec.Pending != nil {
 				outputs["state"] = "pending"
-				ev.Message = fmt.Sprintf("pending: %s of run %s did not finish", rec.Pending.Op, rec.Pending.Run)
+				ev.Message = "pending: " + pendingReason(rec.Pending)
 			}
 		}
 		ev.Outputs = outputs
@@ -345,10 +345,10 @@ type pluginPlan struct {
 
 // planPlugin runs the plan of a plugin for inst under its lock, with the
 // work directory that up of the same turn finds again.
-func (e *engine) planPlugin(ctx context.Context, inst *instance, r *resolved, rec *state.Record) (*pluginPlan, error) {
+func (e *engine) planPlugin(ctx context.Context, inst *instance, r *resolved, rec *state.Record, held *heldLogs) (*pluginPlan, error) {
 	u := e.unitOf(inst, r, rec)
-	out := &lineWriter{e: e, addr: inst.address, task: "plan", stream: "stdout"}
-	errw := &lineWriter{e: e, addr: inst.address, task: "plan", stream: "stderr"}
+	out := &lineWriter{e: e, addr: inst.address, task: "plan", stream: "stdout", held: held}
+	errw := &lineWriter{e: e, addr: inst.address, task: "plan", stream: "stderr", held: held}
 	defer out.flush()
 	defer errw.flush()
 	pl := r.plugin.target.Package.Plugin

@@ -37,8 +37,8 @@ exec git -C repo commit -qam lib
 exec git -C repo tag -f v1
 exec opstruss plugins update
 exec opstruss plan --locked
-stdout '^default/a: will run: definition changed$'
-stdout '^default/site/page: will run: definition changed$'
+stdout '^default/a: will run: definition changed: plugin$'
+stdout '^default/site/page: will run: definition changed: component$'
 
 # Cleanup runs the down of the pin in the record, fetched again.
 cp removed.yaml opstruss.yaml

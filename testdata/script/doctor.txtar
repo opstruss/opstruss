@@ -1,7 +1,7 @@
 # doctor checks what a run of the stack needs on this machine: the
 # programs of requires: with their paths, the age key of this machine and
 # the data key, sops when a secret comes from a sops file, the variables
-# plugins ask for, and where .opstruss is. It exits 1 only for what fails a
+# plugins ask for that are set, and where .opstruss is. It exits 1 only for what fails a
 # run, and changes nothing: it never resolves a secret or makes a key.
 
 env HOME=$WORK/home
@@ -18,15 +18,19 @@ stdout '^skip   the programs that task build requires depend on its inputs, so e
 stdout '^ok     this machine has no age key yet; the first run that needs one makes it in .*/config/opstruss/age/keys.txt$'
 stdout '^ok     stack default has no data key yet; the first value that needs one makes it for the age key of this machine$'
 ! stdout sops
-stdout '^warn   plugin tool asks for TOOL_TOKEN, and no pass: of what uses it lets it through'
+! stdout TOOL_TOKEN
 ! stdout TOOL_REGION
 stdout '^ok     the project is on a local filesystem'
 ! exists ran-secret
 ! exists config
 
-# what a unit requires follows its inputs, per instance
+# what a unit requires follows its inputs, per instance; a variable that a
+# plugin asks for is missed only when it is set and nothing lets it through
+env TOOL_TOKEN=tool-token-value
 exec opstruss doctor --input extra=sh
 ! stdout '^error'
+stdout '^warn   plugin tool asks for TOOL_TOKEN, and no pass: of what uses it lets it through'
+env TOOL_TOKEN=
 
 # --json is one document, and keeps the exit code
 ! exec opstruss doctor --json

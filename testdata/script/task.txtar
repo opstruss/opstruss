@@ -35,9 +35,10 @@ stderr 'input args comes from --args or from what follows --, not both'
 # computed
 exec opstruss deploy
 stdout '^deploy: check \| port 5432$'
-stdout '^deploy: .* \| rescued failure$'
-stdout '^deploy: .* \| always failure$'
-stdout '^deploy: .* \| fine success$'
+stdout '^deploy: rel rescue 1 \| rescued failure$'
+stdout '^deploy: rel always 1 \| always failure$'
+stdout '^deploy: fine always 1 \| fine success$'
+stdout '^deploy: rel block 1: failed$'
 stdout '^deploy: loop\[a\] \| item a$'
 stdout '^deploy: loop\[b\] \| item b$'
 stdout '^  block: failure$'
@@ -46,6 +47,11 @@ stdout '^  greeting: hi 5432$'
 stdout '^  tries: 3$'
 # needs runs lint once per run; a task: step is always a call of its own
 grep -count=2 . lint.count
+
+# a step without a name or an id is labeled by where it is
+exec opstruss nested
+stdout '^nested: nested step 1 block 1 \| one$'
+stdout '^nested: nested step 1 always 1 \| two$'
 
 # for_each on a task with max_parallel: 1 runs its instances one after
 # another in the order of their keys
@@ -155,6 +161,12 @@ tasks:
         value: ${{ steps.hello.outputs.msg }}
       tries:
         value: ${{ steps.flaky.outputs.n }}
+  nested:
+    steps:
+      - block:
+          - run: [echo, one]
+        always:
+          - run: [echo, two]
   broken:
     steps:
       - run: exit 4

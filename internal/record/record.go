@@ -49,6 +49,7 @@ type Event struct {
 	Outcome  string         `json:"outcome,omitempty"`
 	ExitCode *int           `json:"exit_code,omitempty"`
 	Outputs  map[string]any `json:"outputs,omitempty"`
+	Plan     map[string]any `json:"plan,omitempty"` // of a plan event: the plan of its unit, as units.<n>.plan has it
 }
 
 // Record is record.json: who ran what and when, and how it ended.

@@ -349,8 +349,11 @@ func (d *doctor) sops() bool {
 	return false
 }
 
-// environment warns about the variables that a plugin asks for and that
-// no pass: of what uses it lets through, so its programs never get them.
+// environment warns about the variables that a plugin asks for, that the
+// operator set to a value, and that no pass: of what uses it lets
+// through, so its programs never get them; one that is not set misses
+// nothing, and an official plugin asks for many that are optional, such
+// as TF_LOG.
 func (d *doctor) environment() {
 	pkgs := slices.SortedFunc(maps.Keys(d.passes), func(a, b *model.Package) int {
 		return cmp.Or(strings.Compare(a.Name, b.Name), strings.Compare(a.Dir, b.Dir))
@@ -362,6 +365,13 @@ func (d *doctor) environment() {
 		}
 		for _, v := range pkg.Plugin.Env {
 			if slices.ContainsFunc(passes, func(p string) bool { ok, _ := path.Match(p, v); return ok }) {
+				continue
+			}
+			if !slices.ContainsFunc(d.e.opts.Environ, func(kv string) bool {
+				name, value, _ := strings.Cut(kv, "=")
+				ok, _ := path.Match(v, name)
+				return ok && value != ""
+			}) {
 				continue
 			}
 			d.add(&Check{Check: "env", Status: "warn", Name: v, For: []string{"plugin " + pkg.Name}, Message: fmt.Sprintf(

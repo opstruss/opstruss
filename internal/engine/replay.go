@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"time"
 
@@ -112,6 +113,29 @@ func (e *engine) keepReplay(rp *replay) {
 	if err != nil {
 		e.warn("", "runs rerun cannot run this run again, since its inputs and event were not kept: %v", e.redact.Err(err))
 	}
+}
+
+// keepAnswer keeps the answer to the question for input k of the task that
+// the command line runs as a flag, so runs rerun gives it again as gh run
+// rerun gives the inputs of workflow_dispatch; sealed as all of the
+// payload is, also when the input is sensitive.
+func (e *engine) keepAnswer(k, text string) {
+	if !e.keepsReplay {
+		return
+	}
+	e.mu.Lock()
+	if e.rerun == nil {
+		e.rerun = &replay{V: replayVersion, Inputs: e.opts.Inputs, Flags: e.opts.Flags}
+	}
+	flags := maps.Clone(e.rerun.Flags)
+	if flags == nil {
+		flags = map[string]any{}
+	}
+	flags[k] = text
+	e.rerun.Flags = flags
+	rp := e.rerun
+	e.mu.Unlock()
+	e.keepReplay(rp)
 }
 
 // Rerun runs the run id of the stack again: its command, task, and units,

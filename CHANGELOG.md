@@ -72,7 +72,8 @@ minor release can change what a project, a component, or a plugin relies on.
 - A run without a daemon that starts a service makes its process the
   daemon of the stack, which stays in the foreground with the output of
   its services until they end or Ctrl-C stops them, as `docker compose up`
-  does; the runs of other command lines go to it meanwhile.
+  does, and then exits with 130 or 143, as a run that a signal stopped; the
+  runs of other command lines go to it meanwhile.
 - A service runs in a session of its own with `OPSTRUSS_SERVICE_ID`, which
   its processes pass on, and a lock of its own on file descriptor 3, and
   is written in `.opstruss/daemon/<stack>.json` before it runs. When a
@@ -84,8 +85,12 @@ minor release can change what a project, a component, or a plugin relies on.
 - `opstruss validate` checks `opstruss.yaml`, its include files, and every
   stack against the schema and the rules of the model, among them that
   every `${{ }}` compiles and reads only what exists and may be read where
-  it is written, and that units, task calls, and locals form no cycle. It
-  names the file, line, and column of each problem; `--json` prints one
+  it is written, that a value of `with` written without `${{ }}` is one
+  its input takes, and that units, task calls, and locals form no cycle. It
+  names the file, line, and column of each problem, once for a `uses:`
+  declaration that fails rather than again where its name is used, and
+  says what to write instead, such as `units['my-db']` for a name with
+  `-` or `block:` for `rescue:` written on a task; `--json` prints one
   document.
 - `uses:` names local plugins (`./<path>` with `opstruss.plugin.yaml`),
   components, directories of components, and built-in tasks under another
@@ -112,7 +117,10 @@ minor release can change what a project, a component, or a plugin relies on.
   `up`, and writes `$OPSTRUSS_PLAN`: a unit whose definition did not
   change runs only when that plan has changes, `up` gets the plan's own
   digest as `OPSTRUSS_DIGEST`, and `units.<n>.plan` shows its changes and
-  whether it is exact. The record keeps the inputs, the outputs the plugin
+  whether it is exact. `up` plans the unit again at its turn, and shows
+  what that plan writes only when its digest differs from the plan before;
+  otherwise its lines stay in the record at level `debug`. The record
+  keeps the inputs, the outputs the plugin
   declares, and the program of `down` with the plugin's directory, which
   `down` runs; a plugin without `plan` runs as a `run` unit does, and one
   without `down` is forgotten.
@@ -204,7 +212,8 @@ minor release can change what a project, a component, or a plugin relies on.
 - A task with `on: watch` runs for each event of its source: a line that a
   service writes, or the `watch` hook of the plugin of a unit; a change of
   the files that `paths` names, relative to the directory of the task or
-  absolute, with `${{ }}` read as the daemon installs the trigger, through
+  absolute, also relative through `..` to outside that directory, with
+  `${{ }}` read as the daemon installs the trigger, through
   inotify on Linux and the stat of each file every second on macOS, for at
   most 50,000 files; or a line of a program that one call of a task runs,
   `command` or a task of a plugin, which the daemon keeps running as it
@@ -366,7 +375,7 @@ minor release can change what a project, a component, or a plugin relies on.
   here can make it, and how `encryption_keys` differs from what wraps it;
   sops 3.10.0 or newer when a secret comes from a sops file or
   `encryption_keys` has a key for sops; the variables that a plugin asks
-  for and no `pass:` lets through; and
+  for, that are set, and that no `pass:` lets through; and
   whether `.opstruss/` is on a network filesystem. Each finding is `ok`,
   `skip`, `warn`, or `error`, and only an `error`, which fails a run,
   makes it exit 1; `--json` prints one document.
@@ -396,8 +405,14 @@ minor release can change what a project, a component, or a plugin relies on.
   directory's name (or `--name`), and `.opstruss/` in `.gitignore`. With
   `--stack`, it also makes that stack's `_meta`; `--json` prints what it
   wrote. It makes no key: the first command that needs one does.
-- `plan` exits 1 when a unit cannot be planned; a unit that another run
-  holds still leaves it at 0.
+- `plan` exits 1 when a unit cannot be planned, and the units after it
+  are `skipped`, as `up` skips them; a unit that another run holds still
+  leaves it at 0. A unit that reads outputs a unit before it changes in
+  the run is planned at its turn, never with the old values, and its plan
+  line says what is known and what waits, as in `will run: new; plan after
+  default/db (env.URL)` or `may run: plan after default/db (env.URL)`.
+  With `--json`, each plan event carries the plan of its unit, as
+  `units.<n>.plan` has it, with `reason`, `changed`, `after`, and `reads`.
 - `plan` fails a unit whose `requires:` names a program that is not in
   `PATH`, unless a unit it depends on runs first in the same run; then it
   warns and checks again at the unit's turn.
@@ -454,7 +469,10 @@ minor release can change what a project, a component, or a plugin relies on.
   `up` take what they depend on, `down` what depends on them, unless
   `--no-deps`.
 - A unit runs again when its definition, a file of `sources`, `revision`,
-  or a `pass` value changes, or a file of `generates` is missing;
+  or a `pass` value changes, or a file of `generates` is missing; plan
+  names the parts that changed, as in `definition changed: sources,
+  env.URL`, from a digest of each part that the record keeps, and warns
+  about a pattern of `sources` that matches no file;
   `up --force` runs the units named anyway. A unit with `down:` whose
   `pass` values differ from its record is refused, since its down reaches
   the old target, unless `up --force` moves it and forgets that target.
@@ -468,7 +486,9 @@ minor release can change what a project, a component, or a plugin relies on.
   of another fails at once on a lock that run holds.
 - `up` marks the record pending before the program runs and keeps what a
   failed attempt parsed, so the next attempt gets it in `$OPSTRUSS_STATE`
-  with `OPSTRUSS_REASON=interrupted`; programs that a killed OpsTruss left
+  with `OPSTRUSS_REASON=interrupted`; an attempt that ended without
+  succeeding is marked so, and plan says that it failed or was cancelled
+  rather than that it did not finish; programs that a killed OpsTruss left
   running are waited for first. `retry`, `timeout`, and `requires:` apply
   to units. A record the backend refuses at the end is kept in
   `.opstruss/errored/`, while what the program made stays in pending for
@@ -500,20 +520,23 @@ minor release can change what a project, a component, or a plugin relies on.
   refuses an input whose flag is one of OpsTruss, such as `--yes` or
   `--event`, or that of another input. The program
   of a task gets its inputs as `INPUT_<NAME>` and in `$OPSTRUSS_INPUTS`, and
-  its outputs are printed at the end. In `--help`, a task without a
-  `description` shows the first line of its `run`, the ids of its steps,
-  or the task it calls.
+  its outputs are printed at the end. `--help` lists the tasks of the
+  project under "Project tasks", apart from the commands of OpsTruss; a
+  task without a `description` shows the first line of its `run`, the ids
+  of its steps, or the task it calls. An unknown command gets suggestions,
+  also of tasks, as git does.
 - `steps:` run in order: `run`, `task:` (`plan`, `up`, or `down` of
   `units:`, a project task with `with:`, or the task of each unit that has
-  it), and `block:` with `rescue:` and `always:`, which read the outcome
-  of `block:` as `steps.<id>.outcome`. `if`, `for_each`, `retry`,
-  `timeout`, `failed_when`, `changed_when`, and `continue_on_error` apply to
-  steps; `steps.<id>` holds `outputs` (with `stdout`, `stderr`, and
-  `exit_code` for `run`), `changed`, and `outcome`, and for a `task:` step
-  of units `units`, one entry for each instance it touched, also one that
-  `up` took down or forgot, which `task: plan` lists already with a plan
-  of its own (`delete` or `forget`, exact, with a digest of the operation
-  and the record); `value:` gives the outputs of a task with
+  it), and `block:` with `rescue:` and `always:`, which read the outcome of
+  `block:` as `steps.<id>.outcome`. `if`, `for_each`, `retry`, `timeout`,
+  `failed_when`, `changed_when`, and `continue_on_error` apply to steps, and
+  a step without `name` or `id` is labeled by where it is, such as `deploy
+  step 1 rescue 1`; `steps.<id>` holds `outputs` (with `stdout`, `stderr`,
+  and `exit_code` for `run`), `changed`, and `outcome`, and for a `task:`
+  step of units `units`, one entry for each instance it touched, also one
+  that `up` took down or forgot, which `task: plan` lists already with a
+  plan of its own (`delete` or `forget`, exact, with a digest of the
+  operation and the record); `value:` gives the outputs of a task with
   steps, also when it failed, as far as they can be computed.
 - `needs` runs each task it names once per run; `for_each` on a task runs
   its instances in parallel, at most `max_parallel` at once, starting them
@@ -534,13 +557,21 @@ minor release can change what a project, a component, or a plugin relies on.
 - The exit code of a task follows the outcome of the task called: 0, 1
   when it failed, and 2 when it stopped at plan for approval.
 - At a terminal, `up`, `down`, and a task with `approval: ask` ask before
-  each change, one question at a time, and only `y` or `yes` applies it;
-  the time an answer takes does not count toward `timeout`. A required
-  input of a task that has no value is asked for there too.
+  each change, one question at a time, naming what yes does (`Apply`,
+  `Take … down`, `Run`), and only `y` or `yes` applies it; the time an
+  answer takes does not count toward `timeout`. The units that are ready
+  start their turns in the order of the plan, so their questions come in
+  that order, and while a question waits the output of the run waits for
+  the answer, past 1 MiB in the record only. The end of a unit shows again
+  after another line of it, such as waiting for a lock. Stdin from a pipe or
+  `/dev/null` is no terminal. A required input of a task that has no value
+  is asked for there too, and without a terminal its error names the flag
+  that gives it, or for a sensitive input its `env:`.
 - `opstruss list` shows the tasks with their last run, also one that ran
   them inside the run of another task, which it names after `via`, and the
   units with their state; `opstruss outputs` prints the outputs of the
-  project from the stored outputs of its units, read without a lock;
+  project from the stored outputs of its units, read without a lock, and
+  says on stderr when the project declares none;
   `opstruss runs` lists the runs of the stack, newest first, and
   `opstruss runs <run>` shows the events of one again, and with `-f` goes
   on with a run that still runs until it ends; neither needs the inputs
@@ -556,9 +587,10 @@ minor release can change what a project, a component, or a plugin relies on.
   until the run ends and exits 0 when it ended cancelled, 1 otherwise.
   `opstruss runs rerun <run>` runs a task, `up`, or `down` again as a new
   run with `rerun_of` in its record: the units it chose, `--input`, the
-  flags and `with` of its caller, and its event, through the project as
-  it is now. `if:` of its trigger is not asked again, `with:` of that
-  trigger is, approval, `--yes`, and `--force` are the new caller's, and
+  flags and `with` of its caller, the answers to the questions for inputs
+  of the task it ran, and its event, through the project as it is now.
+  `if:` of its trigger is not asked again, `with:` of that trigger is,
+  approval, `--yes`, and `--force` are the new caller's, and
   the environment is read again. What came from outside is sealed whole
   for the age key of the machine in a `replay` file beside the record;
   a run on a machine without one goes on and says it cannot run again, and

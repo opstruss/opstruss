@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -141,8 +142,18 @@ func (a *app) approve(ctx context.Context, q engine.Question) (bool, error) {
 	if who == "" {
 		who = q.Task
 	}
-	fmt.Fprintf(a.stderr, "%s: %s\nApply %s? [y/N] ", who, q.Summary, who)
+	// The question names what yes does, as terraform destroy asks about
+	// destroying; a daemon older than op asks to apply.
+	ask := "Apply " + who
+	switch q.Op {
+	case "down":
+		ask = "Take " + who + " down"
+	case "task":
+		ask = "Run " + who
+	}
+	a.question(fmt.Sprintf("%s: %s\n%s? [y/N] ", who, q.Summary, ask))
 	line, err := a.readLine(ctx)
+	a.answered()
 	if err != nil {
 		return false, err
 	}
@@ -159,7 +170,8 @@ func (a *app) ask(ctx context.Context, name string, in *model.Input) (string, er
 	if in.Description != "" {
 		prompt += " (" + in.Description + ")"
 	}
-	fmt.Fprintf(a.stderr, "%s: ", prompt)
+	a.question(prompt + ": ")
+	defer a.answered()
 	if f, ok := a.in.(*os.File); ok && in.Sensitive && term.IsTerminal(int(f.Fd())) {
 		// A sensitive input is typed without echo.
 		b, err := term.ReadPassword(int(f.Fd()))
@@ -168,6 +180,55 @@ func (a *app) ask(ctx context.Context, name string, in *model.Input) (string, er
 	}
 	line, err := a.readLine(ctx)
 	return strings.TrimRight(line, "\r\n"), err
+}
+
+// maxHeld bounds the output that a question holds back.
+const maxHeld = 1 << 20
+
+// question writes text, which asks something at the terminal, and holds
+// the output of the run back until the answer, so the question stays the
+// last line there, as terraform apply asks with nothing else on screen.
+func (a *app) question(text string) {
+	a.renderMu.Lock()
+	defer a.renderMu.Unlock()
+	a.asking = true
+	fmt.Fprint(a.stderr, text)
+}
+
+// answered writes the output that came while the question waited, and
+// says how much of it, past maxHeld, only the record keeps.
+func (a *app) answered() {
+	a.renderMu.Lock()
+	defer a.renderMu.Unlock()
+	a.asking = false
+	for _, h := range a.held {
+		_, _ = io.WriteString(h.w, h.text)
+	}
+	if a.heldOver > 0 {
+		fmt.Fprintf(a.stderr, "%d more lines came while the question waited; opstruss runs %s shows them\n", a.heldOver, a.heldRun)
+	}
+	a.held, a.heldBytes, a.heldOver = nil, 0, 0
+}
+
+// write writes text to w, or holds it while a question waits. The caller
+// holds renderMu.
+func (a *app) write(w io.Writer, text, run string) {
+	switch {
+	case !a.asking:
+		_, _ = io.WriteString(w, text)
+	case a.heldBytes+len(text) > maxHeld:
+		a.heldOver += strings.Count(text, "\n")
+		a.heldRun = cmp.Or(run, a.heldRun)
+	default:
+		a.held = append(a.held, heldText{w, text})
+		a.heldBytes += len(text)
+	}
+}
+
+// heldText is output that a question holds back.
+type heldText struct {
+	w    io.Writer
+	text string
 }
 
 // readLine reads one line of stdin, or gives up when ctx ends.
@@ -238,7 +299,7 @@ func (a *app) renderTo(out io.Writer) func(engine.Event) {
 		defer a.renderMu.Unlock()
 		if a.json {
 			data, _ := json.Marshal(ev)
-			fmt.Fprintf(out, "%s\n", data)
+			a.write(out, string(data)+"\n", ev.Run)
 			return
 		}
 		w := out
@@ -255,26 +316,29 @@ func (a *app) renderTo(out io.Writer) func(engine.Event) {
 		if a.repeatsPlan(ev) {
 			return
 		}
+		var text strings.Builder
 		switch {
 		case ev.Type == "log":
-			fmt.Fprintf(w, "%s | %s\n", who, ev.Message)
+			fmt.Fprintf(&text, "%s | %s\n", who, ev.Message)
 		case ev.Type == "run":
 			delete(a.planned, ev.Run)
 			for _, k := range slices.Sorted(maps.Keys(ev.Outputs)) {
-				fmt.Fprintf(w, "  %s: %s\n", k, expr.Text(ev.Outputs[k]))
+				fmt.Fprintf(&text, "  %s: %s\n", k, expr.Text(ev.Outputs[k]))
 			}
 		case who != "":
-			fmt.Fprintf(w, "%s: %s\n", who, ev.Message)
+			fmt.Fprintf(&text, "%s: %s\n", who, ev.Message)
 		default:
-			fmt.Fprintln(w, ev.Message)
+			fmt.Fprintln(&text, ev.Message)
 		}
+		a.write(w, text.String(), ev.Run)
 	}
 }
 
 // repeatsPlan says whether ev is the turn of a unit that ended as the plan
-// line of its run already said, such as unchanged, which the terminal
-// shows once; the event itself stays in --json and the record. The caller
-// holds renderMu.
+// line of its run already said, such as unchanged, with nothing of that
+// unit between them, which the terminal shows once; after another line,
+// such as waiting for a lock, the end shows again. The event itself stays
+// in --json and the record. The caller holds renderMu.
 func (a *app) repeatsPlan(ev engine.Event) bool {
 	if ev.Address == "" || ev.Level != "info" {
 		return false
@@ -289,10 +353,9 @@ func (a *app) repeatsPlan(ev engine.Event) bool {
 		}
 		a.planned[ev.Run][ev.Address] = ev.Message
 	case "unit":
-		if line, ok := a.planned[ev.Run][ev.Address]; ok && line == ev.Message {
-			delete(a.planned[ev.Run], ev.Address)
-			return true
-		}
+		line, ok := a.planned[ev.Run][ev.Address]
+		delete(a.planned[ev.Run], ev.Address)
+		return ok && line == ev.Message
 	}
 	return false
 }
@@ -362,5 +425,5 @@ func (in *interrupts) exit(code int) error {
 func (a *app) notice(msg string) {
 	a.renderMu.Lock()
 	defer a.renderMu.Unlock()
-	fmt.Fprintln(a.stderr, msg)
+	a.write(a.stderr, msg+"\n", "")
 }

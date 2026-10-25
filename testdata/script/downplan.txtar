@@ -9,7 +9,7 @@ stdout '^default/site\[b\]: up: done$'
 # b left for_each before task: plan: its down is planned, then approved
 exec opstruss only-a
 exec opstruss review
-stdout '^review: show \| \{"changed":false,"outcome":"success","outputs":\{\},"plan":\{"changes":\[\{"action":"delete"\}\],"digest":"sha256:v1:[0-9a-f]{64}","exact":true,"outputs":\[\],"summary":"will go down: its instance is no longer in if or for_each"\}\}$'
+stdout '^review: show \| \{"changed":false,"outcome":"success","outputs":\{\},"plan":\{"changes":\[\{"action":"delete"\}\],"digest":"sha256:v1:[0-9a-f]{64}","exact":true,"outputs":\[\],"reason":"gone","summary":"will go down: its instance is no longer in if or for_each"\}\}$'
 stdout '^default/site\[b\]: down: done$'
 grep '^down b$' downs
 
@@ -19,7 +19,7 @@ exec opstruss a-and-b
 exec opstruss up --yes
 exec opstruss only-a
 ! exec opstruss review-edited
-stdout '^default/site\[b\]: will go down \(its instance is no longer in if or for_each\); the plan changed since this run read it, stopped at plan$'
+stdout '^default/site\[b\]: will go down: its instance is no longer in if or for_each; the plan changed since this run read it, stopped at plan$'
 exec opstruss state list
 stdout '^default/site\[b\]\t'
 
@@ -27,7 +27,7 @@ stdout '^default/site\[b\]\t'
 # up, so its down stops at plan too
 exec opstruss a-and-b
 ! exec opstruss review-late
-stdout '^default/site\[b\]: will go down \(its instance is no longer in if or for_each\); the plan changed since this run read it, stopped at plan$'
+stdout '^default/site\[b\]: will go down: its instance is no longer in if or for_each; the plan changed since this run read it, stopped at plan$'
 
 -- opstruss.yaml --
 name: shop

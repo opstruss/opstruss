@@ -17,7 +17,7 @@ stdout '^default/b: unchanged$'
 exec sh -c 'echo "# changed" >> catalog/plugins/b/up.sh'
 exec opstruss plan
 stdout '^default/a: unchanged$'
-stdout '^default/b: will run: definition changed$'
+stdout '^default/b: will run: definition changed: plugin$'
 exec opstruss up
 ! stdout 'hello from a'
 stdout 'default/b \| hello from b'
@@ -25,8 +25,8 @@ stdout 'default/b \| hello from b'
 # a shared path
 exec sh -c 'echo "# changed" >> catalog/lib/opstruss.sh'
 exec opstruss plan
-stdout '^default/a: will run: definition changed$'
-stdout '^default/b: will run: definition changed$'
+stdout '^default/a: will run: definition changed: plugin$'
+stdout '^default/b: will run: definition changed: plugin$'
 exec opstruss up
 stdout 'default/a \| hello from a'
 stdout 'default/b \| hello from b'

@@ -17,10 +17,10 @@ stdout '^default/config: unchanged$'
 # the task and the programs it names are its definition
 exec sh -c 'echo "# changed" >> build.sh'
 exec opstruss plan
-stdout '^default/image: will run: definition changed$'
+stdout '^default/image: will run: definition changed: source$'
 exec sh -c 'sed s/v1/v2/ opstruss.yaml > o.yaml && mv o.yaml opstruss.yaml'
 exec opstruss plan
-stdout '^default/image: will run: definition changed$'
+stdout '^default/image: will run: definition changed: source, with.tag$'
 exec opstruss up
 stdout 'building v2'
 

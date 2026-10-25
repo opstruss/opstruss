@@ -31,6 +31,7 @@ type leftover struct {
 	etag    string // of the record as it was read
 	forget  bool
 	reason  string
+	cause   string      // why, as a word: requested, gone, or removed
 	def     *model.Unit // nil for a unit no longer in the files
 	done    chan struct{}
 	outcome string
@@ -38,8 +39,12 @@ type leftover struct {
 
 // summary is the line of plan for a leftover of up.
 func (l *leftover) summary() string {
-	if l.forget {
+	switch {
+	case l.forget:
 		return "will be forgotten without going down: removed: with destroy: false"
+	case l.reason == "requested":
+		// down takes what it was asked to; there is nothing more to say.
+		return "will go down"
 	}
 	return "will go down: " + l.reason
 }
@@ -53,7 +58,13 @@ func (l *leftover) view() map[string]any {
 		action = "forget"
 	}
 	return map[string]any{"changes": []any{map[string]any{"action": action}}, "outputs": []any{}, "exact": true,
-		"digest": downDigest(action, l.address, l.etag), "summary": l.summary()}
+		"digest": downDigest(action, l.address, l.etag), "summary": l.summary(), "reason": l.cause}
+}
+
+// sayPlan writes the plan line of l, with its plan as units.<n>.plan has
+// it.
+func (l *leftover) sayPlan(e *engine) {
+	e.emit(Event{Type: "plan", Level: "info", Address: l.address, Message: l.summary(), Plan: l.view()})
 }
 
 // downDigest is the digest of taking the record at addr with etag down,
@@ -86,9 +97,9 @@ func (e *engine) downPass(ctx context.Context) ([]*leftover, error) {
 			if err := e.checkDownSources(ctx, l.record); err != nil {
 				return nil, err
 			}
-			l.reason = "requested"
+			l.reason, l.cause = "requested", "requested"
 			items = append(items, l)
-			e.say("plan", l.address, "will go down")
+			l.sayPlan(e)
 		}
 	}
 	if len(e.p.Units) == 0 && len(records) == 0 {
@@ -196,19 +207,19 @@ func (e *engine) previewLeftovers() []*leftover {
 				e.fail(l.address, errors.New("its instance is no longer in if or for_each, and protect: true refuses down; it stays"))
 				continue
 			}
-			l.reason = "its instance is no longer in if or for_each"
-			e.say("plan", l.address, "%s", l.summary())
+			l.reason, l.cause = "its instance is no longer in if or for_each", "gone"
+			l.sayPlan(e)
 		case !e.sel.all:
 			continue
 		case rm == nil:
 			e.warn(l.address, "orphan: its unit is no longer in the files; decide with removed:")
 			continue
 		case rm.Destroy:
-			l.reason = "removed: with destroy: true"
-			e.say("plan", l.address, "%s", l.summary())
+			l.reason, l.cause = "removed: with destroy: true", "removed"
+			l.sayPlan(e)
 		default:
-			l.forget = true
-			e.say("plan", l.address, "%s", l.summary())
+			l.forget, l.cause = true, "removed"
+			l.sayPlan(e)
 		}
 		if !l.forget {
 			if err := e.checkDownSources(e.ctx, l.record); err != nil {
@@ -330,6 +341,7 @@ func (e *engine) downOne(ctx context.Context, l *leftover) string {
 			timeout = t
 		}
 	}
+	parent := ctx
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	token, err := e.lock(ctx, addr)
@@ -380,9 +392,9 @@ func (e *engine) downOne(ctx context.Context, l *leftover) string {
 		approval = cmp.Or(l.def.Approval, approval)
 	}
 	if approval != "auto" {
-		source, why, _ := e.approves(ctx, Question{Address: addr, Summary: "will go down (" + l.reason + ")"}, downDigest("delete", addr, etag))
+		source, why, _ := e.approves(ctx, Question{Op: "down", Address: addr, Summary: l.summary()}, downDigest("delete", addr, etag), -1)
 		if why != "" {
-			e.say("approval", addr, "will go down (%s); %s, stopped at plan", l.reason, why)
+			e.say("approval", addr, "%s; %s, stopped at plan", l.summary(), why)
 			e.stopAtPlan()
 			return skipped
 		}
@@ -401,6 +413,7 @@ func (e *engine) downOne(ctx context.Context, l *leftover) string {
 	for len(contracts) > 0 {
 		c := contracts[0]
 		if err := e.runDown(ctx, addr, rec.StateKey, c); err != nil {
+			e.endAttempt(addr, rec, etag, parent)
 			return fail(err)
 		}
 		contracts = contracts[1:]

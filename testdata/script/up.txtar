@@ -7,7 +7,7 @@ env HOME=$WORK/home
 # the units that depend on it; exit code 2 says so
 exec opstruss plan
 stdout '^default/db: will run: new$'
-stdout '^default/web: planned after default/db$'
+stdout '^default/web: will run: new; plan after default/db \(run, env.URL\)$'
 ! exec opstruss up
 stdout '^default/db: will run: new; needs approval, stopped at plan$'
 stdout '^default/web: skipped: default/db is skipped$'
@@ -37,7 +37,11 @@ stdout '^default/web: unchanged$'
 # make the unit run again; files that generates matches stay out of sources
 cp src/schema2.sql src/schema.sql
 exec opstruss plan
-stdout '^default/db: will run: definition changed$'
+stdout '^default/db: will run: definition changed: sources$'
+stdout '^default/web: may run: plan after default/db \(run, env.URL\)$'
+exec opstruss plan --json
+stdout '"address":"default/db","message":"will run: definition changed: sources","plan":\{"changed":\["sources"\],"changes":\[\{"action":"run"\}\],"digest":"sha256:v1:[0-9a-f]+","exact":true,"outputs":\[\],"reason":"definition","summary":"will run: definition changed: sources"\}'
+stdout '"address":"default/web","message":"may run: plan after default/db \(run, env.URL\)","plan":\{"after":"default/db","changes":\[\],"digest":"[^"]*","exact":false,"outputs":\[\],"reads":\["run","env.URL"\],"summary":"may run: plan after default/db \(run, env.URL\)"\}'
 exec opstruss up db --yes --no-deps
 stdout '^default/db: up: done$'
 rm build/db.done
@@ -59,6 +63,19 @@ grep '^OPSTRUSS_REASON=forced$' web.facts
 # a pattern names no unit
 ! exec opstruss up nothing
 stderr 'no unit matches nothing'
+
+# a unit after one that cannot be planned is skipped, as up skips it,
+# rather than planned with outputs that are not there
+! exec opstruss -C blocked plan
+stdout '^default/maker: error: requires: '
+stdout '^default/user: skipped: default/maker cannot be planned$'
+! stderr 'no such key'
+
+# a pattern of sources that matches no file says so, as it never runs the
+# unit again; it is read from the directory of the file that writes it
+exec opstruss -C glob plan
+stderr '^default/a: sources: src/\*\.txt matches no file in qa/$'
+! stderr 'qa.md'
 
 -- opstruss.yaml --
 name: shop
@@ -86,3 +103,25 @@ units:
 create table a;
 -- src/schema2.sql --
 create table b;
+-- glob/opstruss.yaml --
+name: glob
+include: [qa/units.yaml]
+-- glob/qa/units.yaml --
+units:
+  a:
+    run: [echo, a]
+    sources: [src/*.txt, qa.md]
+-- glob/qa/qa.md --
+here
+-- glob/src/a.txt --
+a
+-- blocked/opstruss.yaml --
+name: blocked
+units:
+  maker:
+    run: [echo, hi]
+    requires: [no-such-program-anywhere]
+    outputs:
+      x: {type: string}
+  user:
+    run: [echo, "${{ units.maker.outputs.x }}"]

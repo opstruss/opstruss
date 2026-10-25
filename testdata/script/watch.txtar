@@ -14,7 +14,7 @@ exec chmod 755 feed/lines.sh
 # 500 files come before inbox/ in its watch, so its first stat reaches
 # inbox/ only after a while on macOS; a file written as soon as up -d
 # returns still makes an event
-exec sh -c 'mkdir -p bulk inbox && cd bulk && seq 500 | xargs touch'
+exec sh -c 'mkdir -p bulk inbox up && cd bulk && seq 500 | xargs touch'
 exec opstruss up -d --yes
 cp note.md inbox/note.md
 waitgrep '^inbox inbox/note.md$' fired
@@ -25,6 +25,11 @@ waitgrep '^source \{"n":2\} 2$' fired
 waitgrep '^feed token of 11 characters$' fired
 exists where
 ! exists feed/where
+
+# a relative pattern that leaves the directory of its task through ..
+# watches the files it names there, which event.paths shows absolute
+cp note.md up/n.txt
+waitgrep '^parent /.*/up/n.txt$' fired
 
 # files that change make one run with debounce
 mkdir src
@@ -39,7 +44,7 @@ exec opstruss up --yes
 waitgrep '^paths 1 src/c.txt$' fired
 grep -count=1 '^source one -$' fired
 grep -count=1 '^feed token of 11 characters$' fired
-grep 'installed 9 triggers: 0 sources started, 5 kept, 0 stopped, 0 failed' .opstruss/logs/default/_daemon.jsonl
+grep 'installed 10 triggers: 0 sources started, 6 kept, 0 stopped, 0 failed' .opstruss/logs/default/_daemon.jsonl
 
 # a changed task takes effect without starting its source again
 exec sed -i.bak 's/echo "paths /echo "again /' opstruss.yaml
@@ -60,6 +65,7 @@ exec opstruss stop
 a note
 -- opstruss.yaml --
 name: shop
+include: [sub/tasks.yaml]
 inputs:
   src: {type: string, default: src}
 uses:
@@ -125,6 +131,14 @@ tasks:
     run: echo "t5 after $T" >> fired
     env: {T: '${{ event.task }}'}
     on: {after: {task: t4}}
+-- sub/tasks.yaml --
+tasks:
+  parent:
+    run: echo "parent $P" >> ../fired
+    env: {P: '${{ event.paths.map(p, p.path).join(",") }}'}
+    on:
+      watch:
+        paths: [../up/*.txt]
 -- feed/opstruss.plugin.yaml --
 name: feed
 tasks:

@@ -322,9 +322,14 @@ func Eval(src string, s *Scope) (any, error) {
 // envVar is a variable of the environment as a shell writes it.
 var envVar = regexp.MustCompile(`\$\{?([A-Za-z_][A-Za-z0-9_]*)`)
 
+// dashName is a name with - read as a field, such as units.my-db, which
+// an expression reads as units.my minus db.
+var dashName = regexp.MustCompile(`\b(units|tasks|steps|secrets|locals|inputs)\.([a-z0-9_]+(?:-[a-z0-9_]+)+)`)
+
 // compileError is why src does not compile, with what to write instead
 // where the parser says it poorly: $NAME reads the environment in a
-// shell, which an expression never reads.
+// shell, which an expression never reads, and a name with - is read with
+// brackets.
 func compileError(src string, err error) error {
 	if strings.Contains(err.Error(), "token recognition error at: '$'") {
 		name := "<VAR>"
@@ -332,6 +337,9 @@ func compileError(src string, err error) error {
 			name = m[1]
 		}
 		return fmt.Errorf("${{ %s }}: an expression reads no environment variable; give it to an input or a secret with env: %s, and read inputs.<name> or secrets.<name>", src, name)
+	}
+	if m := dashName.FindStringSubmatch(src); m != nil && strings.Contains(err.Error(), "undeclared reference") {
+		return fmt.Errorf("${{ %s }}: write %s['%s'] for a name with -, which %s.%s reads as a minus", src, m[1], m[2], m[1], m[2])
 	}
 	return fmt.Errorf("${{ %s }}: %w", src, err)
 }

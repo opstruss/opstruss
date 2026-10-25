@@ -218,17 +218,22 @@ func (c *checker) uses() {
 		c.environment(path, decl.Env, decl.Pass)
 		src := decl.Source
 		var pkg *Package
+		// A declaration that fails is reported once; what uses its name
+		// is not reported again, as with a plugin whose file has problems.
+		broke := func() { c.p.Packages[name] = &Package{Name: name, Decl: decl, broken: true} }
 		switch {
 		case localPath(src):
 			var err error
 			if pkg, err = c.pkg(name, decl, filepath.Join(c.p.DirOf("uses."+name), src)); err != nil {
 				c.add(path, "%v", err)
+				broke()
 				continue
 			}
 			c.packageNames(path, pkg)
 		case strings.HasPrefix(src, "opstruss."):
 			if Builtin(strings.TrimPrefix(src, "opstruss.")) == nil {
 				c.add(path, "there is no built-in task %s", strings.TrimPrefix(src, "opstruss."))
+				broke()
 				continue
 			}
 			pkg = &Package{Name: name, Decl: decl, Builtin: strings.TrimPrefix(src, "opstruss.")}
@@ -236,11 +241,13 @@ func (c *checker) uses() {
 			var err error
 			if pkg, err = c.sourcePackage(name, decl, src); err != nil {
 				c.add(path, "%v", err)
+				broke()
 				continue
 			}
 			c.packageNames(path, pkg)
 		default:
 			c.add(path, "a source is ./<path>, ../<path>, github.com/opstruss/<repo>@<ref>, or opstruss.<task>")
+			broke()
 			continue
 		}
 		c.declaredWith(path, pkg)
@@ -782,6 +789,10 @@ func schemaHint(path []string, msg string, doc map[string]any) (string, bool) {
 			hint += "; did you mean " + near + "?"
 		}
 		return hint, true
+	case n >= 3 && path[n-3] == "tasks" && (path[n-1] == "rescue" || path[n-1] == "always"):
+		// Another key of a task is a call of a task, which takes a map;
+		// Ansible and GitHub Actions users write these on the task.
+		return "rescue and always go with block, in a step: steps: [{block: [...], rescue: [...], always: [...]}]", true
 	case !isKeys:
 	case len(keys) == 0 && strings.HasPrefix(msg, "minItems"):
 		return "encryption_keys lists at least one key; without it, the data key is wrapped for the age key of the machine that makes it", true

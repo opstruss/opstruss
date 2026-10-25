@@ -298,6 +298,8 @@ func TestRules(t *testing.T) {
 		{"name: app\ntasks:\n  t:\n    steps:\n      - task: u\n        env: {A: b}\n", "a task: step passes data through with:"},
 		{"name: app\ntasks:\n  t:\n    steps:\n      - id: a\n        run: [x]\n      - id: a\n        run: [y]\n", "step id a is used twice"},
 		{"name: app\ntasks:\n  t:\n    steps:\n      - rescue: [{run: [x]}]\n", "rescue and always go with block"},
+		{"name: app\ntasks:\n  t:\n    steps: [{run: [x]}]\n    rescue: [{run: [y]}]\n", "tasks.t.rescue: rescue and always go with block, in a step: steps: [{block: [...]"},
+		{"name: app\nunits:\n  u:\n    run: [x]\n    tasks:\n      t:\n        steps: [{run: [x]}]\n        always: [{run: [y]}]\n", "units.u.tasks.t.always: rescue and always go with block"},
 		{"name: app\ntasks:\n  t:\n    steps:\n      - run: [x]\n    outputs:\n      o: {type: string}\n", "an output of a task with steps has value:"},
 		{"name: app\ntasks:\n  t:\n    run: [x]\n    needs: [n]\n  n:\n    inputs:\n      v: {type: string, required: true}\n    run: [y]\n", "task n needs input v"},
 		{"name: app\ntasks:\n  t:\n    http: {url: x}\n", ""},
@@ -525,6 +527,11 @@ func TestUses(t *testing.T) {
 		{files("units:\n  db:\n    uses: a\n"), "a needs input file"},
 		{files("units:\n  db:\n    uses: a\n    with: {file: x, nope: 1}\n"), "units.db.with.nope: a has no input nope"},
 		{files("units:\n  db:\n    run: [x]\n    with: {file: x}\n"), "with is for units that use a plugin, task, or component"},
+		{files("units:\n  db:\n    uses: a\n    with: {file: 42}\n"), "units.db.with.file: expected string, got integer"},
+		{files("units:\n  db:\n    uses: a\n    with: {file: \"${{ 'x' }}\"}\n"), ""},
+		{files("tasks:\n  t:\n    kv: {key: qa/greeting}\n"), `tasks.t.kv.key: kv key "qa/greeting" takes lower-case letters`},
+		{files("tasks:\n  t:\n    kv: {key: \"qa-${{ 'x' }}\"}\n"), ""},
+		{files("tasks:\n  t:\n    http: {url: x, method: 7}\n"), "tasks.t.http.method: expected string, got integer"},
 		{files("  gh: ./plugins/gh\nunits:\n  db:\n    uses: gh\n", gh("  comment:\n    run: [x]\n")...), "plugin gh has no up, so a unit uses one of its tasks, as uses: gh.<task>"},
 		// calls of tasks by name
 		{files("tasks:\n  t:\n    steps:\n      - fetch: {url: x}\n      - http: {url: x}\n      - opstruss.log: {msg: hi}\n      - a.build: {file: x}\n"), ""},
@@ -580,6 +587,15 @@ func TestBrokenPlugin(t *testing.T) {
 	}), "")
 	if len(got) != 1 || !strings.HasPrefix(got[0], "plugins/a/opstruss.plugin.yaml:4:11:") {
 		t.Errorf("got:\n%s", strings.Join(got, "\n"))
+	}
+	// So is a declaration that fails.
+	for _, src := range []string{"/abs/plugins/a", "opstruss.nope", "./plugins/none"} {
+		got := problems(t, write(t, map[string]string{
+			"opstruss.yaml": "name: app\nuses:\n  a: " + src + "\nunits:\n  db:\n    uses: a\ntasks:\n  t:\n    a.build: {}\n",
+		}), "")
+		if len(got) != 1 || !strings.Contains(got[0], " uses.a: ") {
+			t.Errorf("uses: {a: %s}: got:\n%s", src, strings.Join(got, "\n"))
+		}
 	}
 }
 

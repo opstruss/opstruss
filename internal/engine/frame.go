@@ -438,7 +438,7 @@ func (inst *instance) view() map[string]any {
 		v["outcome"], v["changed"] = inst.outcome, inst.changed
 	}
 	if inst.plan.digest != "" || inst.plan.waitFor != "" {
-		v["plan"] = inst.plan.view(inst.plan.err == nil && inst.plan.waitFor == "" && inst.plan.locked == "")
+		v["plan"] = inst.plan.view(inst.plan.exact())
 	}
 	return v
 }

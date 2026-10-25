@@ -17,7 +17,8 @@
     "message": { "type": "string" },
     "outcome": { "enum": ["success", "failure", "skipped", "cancelled"] },
     "exit_code": { "type": "integer" },
-    "outputs": { "type": "object" }
+    "outputs": { "type": "object" },
+    "plan": { "description": "Of a plan event: the plan of its unit, as units.<n>.plan has it: changes, outputs, exact, digest, summary, and reason, changed, after, and reads when they apply.", "type": "object" }
   },
   "required": ["v", "seq", "time", "run", "type", "level", "message"]
 }

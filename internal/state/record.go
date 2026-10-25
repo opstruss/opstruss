@@ -37,6 +37,7 @@ type Record struct {
 	Outputs   map[string]any               `json:"outputs,omitempty"`
 	Sensitive map[string]map[string]string `json:"sensitive,omitempty"`
 	Digest    string                       `json:"digest,omitempty"`
+	Parts     map[string]string            `json:"parts,omitempty"` // a digest of each part of the definition, for plan to name what changed
 	Run       string                       `json:"run,omitempty"`
 	Updated   string                       `json:"updated,omitempty"`
 	Pending   *Attempt                     `json:"pending,omitempty"`
@@ -110,6 +111,8 @@ type Attempt struct {
 	Outputs   map[string]any `json:"outputs,omitempty"`
 	RawOutput string         `json:"raw_output,omitempty"`
 	Peer      string         `json:"peer,omitempty"`
+	Outcome   string         `json:"outcome,omitempty"` // failure or cancelled, once the attempt ended without succeeding
+	Ended     string         `json:"ended,omitempty"`
 
 	Sensitive map[string]map[string]string `json:"sensitive,omitempty"`
 	Hidden    map[string][]string          `json:"-"` // as in Record

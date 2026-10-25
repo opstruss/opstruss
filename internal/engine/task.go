@@ -112,6 +112,7 @@ type call struct {
 	plugin  *pluginRun     // the plugin, for a task of a plugin
 	unitRun *unitRun       // what the unit gives, for a task that runs for it
 	marks   map[string]any // which of the given inputs are sensitive
+	top     bool           // the call of the command line, whose inputs come from its flags
 }
 
 // where is the instance of a component whose files write the task, or the
@@ -162,7 +163,7 @@ func Task(ctx context.Context, opts Options, name string, inputs map[string]any)
 // task runs the task name in the run that e started.
 func (e *engine) task(ctx context.Context, name string, inputs map[string]any) *Result {
 	e.rootTask = name
-	c := call{yes: e.opts.Yes, source: "--yes"}
+	c := call{yes: e.opts.Yes, source: "--yes", top: !e.trigger}
 	var res *taskResult
 	if err := e.syncKey(); err != nil {
 		e.emit(Event{Type: "task", Level: "error", Task: name, Message: err.Error()})
@@ -465,6 +466,9 @@ func (e *engine) callTask(ctx context.Context, name string, t *model.Task, dir s
 				return fail(fmt.Errorf("input %s: %w", k, err))
 			}
 			given[k] = v
+			if c.top {
+				e.keepAnswer(k, text)
+			}
 		}
 	}
 	// A sensitive value is known before the schema checks it, so the error
@@ -486,6 +490,9 @@ func (e *engine) callTask(ctx context.Context, name string, t *model.Task, dir s
 	}
 	inputs, err := conform(decl, given)
 	if err != nil {
+		if c.top && e.opts.RerunOf == "" {
+			err = flagHint(decl, given, err)
+		}
 		return fail(err)
 	}
 	tasks, taskMarks := map[string]any{}, map[string]any{}
@@ -528,9 +535,9 @@ func (e *engine) callTask(ctx context.Context, name string, t *model.Task, dir s
 	if t.Approval == "ask" && !c.yes {
 		ok := false
 		if e.opts.Approve != nil {
-			e.promptMu.Lock()
-			ok, err = e.opts.Approve(ctx, Question{Task: label, Summary: "run task " + name})
-			e.promptMu.Unlock()
+			release := e.asks.wait(-1)
+			ok, err = e.opts.Approve(ctx, Question{Op: "task", Task: label, Summary: "run task " + name})
+			release()
 		}
 		if !ok || err != nil {
 			e.say("approval", label, "task %s needs approval; stopped", name)
@@ -685,7 +692,7 @@ func (e *engine) stepsWithRetry(ctx context.Context, name, label string, t *mode
 	for i := 1; ; i++ {
 		tc := &taskCtx{e: e, name: name, label: label, dir: dir, scope: scope, steps: map[string]any{}, marks: map[string]any{}, c: c}
 		env, pass := c.envPass(t)
-		res := tc.run(ctx, t.Steps, defaults{shell: t.Shell, dir: t.Dir, env: env, pass: pass})
+		res := tc.run(ctx, t.Steps, defaults{shell: t.Shell, dir: t.Dir, env: env, pass: pass}, tc.label+" step ")
 		res.outputs, res.marks = tc.values(t.Outputs)
 		js := tc.scopeNow().WithMarks("outputs", res.outputs, anyMarks(res.marks))
 		res = judge(res, t.FailedWhen, t.ChangedWhen, js)
@@ -802,11 +809,13 @@ func (tc *taskCtx) values(decl map[string]*model.Output) (map[string]any, map[st
 }
 
 // run runs steps in order: a step that fails, unless continue_on_error,
-// skips the steps after it in its block or task.
-func (tc *taskCtx) run(ctx context.Context, steps []*model.Step, d defaults) *taskResult {
+// skips the steps after it in its block or task. A step without a name or
+// an id is labeled by where it is, from at: <task> step 2, or <task> step
+// 1 rescue 1 for a step in rescue: of the first step.
+func (tc *taskCtx) run(ctx context.Context, steps []*model.Step, d defaults, at string) *taskResult {
 	res := &taskResult{outcome: success, outputs: map[string]any{}}
 	for i, s := range steps {
-		label := cmp.Or(s.Name, s.ID, tc.label+" step "+strconv.Itoa(i+1))
+		label := cmp.Or(s.Name, s.ID, at+strconv.Itoa(i+1))
 		if res.outcome != success {
 			tc.record(s.ID, &taskResult{outcome: skipped, outputs: map[string]any{}})
 			continue
@@ -903,12 +912,12 @@ func (tc *taskCtx) stepOnce(ctx context.Context, s *model.Step, label string, d 
 // block runs block:, then rescue: when a step of block: failed, then
 // always:, also after a timeout or cancel, within stop.grace.
 func (tc *taskCtx) block(ctx context.Context, s *model.Step, label string, d defaults) *taskResult {
-	res := tc.run(ctx, s.Block, d)
+	res := tc.run(ctx, s.Block, d, label+" block ")
 	part := res.outcome
 	// rescue: and always: read steps.<id>.outcome as the outcome of block:.
 	tc.record(s.ID, &taskResult{outcome: part, changed: res.changed, outputs: map[string]any{}})
 	if res.outcome == failure && len(s.Rescue) > 0 {
-		r := tc.run(ctx, s.Rescue, d)
+		r := tc.run(ctx, s.Rescue, d, label+" rescue ")
 		res.changed = res.changed || r.changed
 		res.outcome, res.approval = r.outcome, r.approval
 	}
@@ -919,7 +928,7 @@ func (tc *taskCtx) block(ctx context.Context, s *model.Step, label string, d def
 			actx, cancel = context.WithTimeout(context.WithoutCancel(ctx), plugin.DefaultStop.Grace)
 			defer cancel()
 		}
-		r := tc.run(actx, s.Always, d)
+		r := tc.run(actx, s.Always, d, label+" always ")
 		res.changed = res.changed || r.changed
 		if r.outcome != success && r.outcome != skipped {
 			res.outcome, res.approval = r.outcome, r.approval
@@ -1179,6 +1188,34 @@ func conform(decl map[string]*model.Input, given map[string]any) (map[string]any
 		out[k] = v
 	}
 	return out, nil
+}
+
+// flagHint is err of a call of the command line that left out a required
+// input, with how the command line gives it, as gh and kubectl name the
+// flag that is missing; a sensitive input takes no flag.
+func flagHint(decl map[string]*model.Input, given map[string]any, err error) error {
+	for _, k := range slices.Sorted(maps.Keys(decl)) {
+		in := decl[k]
+		if given[k] != nil || !in.Required || in.Default != nil {
+			continue
+		}
+		flag := model.FlagName(k)
+		how := fmt.Sprintf("pass --%s <%s>", flag, cmp.Or(in.Type, "value"))
+		switch {
+		case in.Sensitive && in.Env != "":
+			how = "set $" + in.Env + ", or answer it at a terminal"
+		case in.Sensitive:
+			how = "answer it at a terminal"
+		case in.Type == "boolean":
+			how = fmt.Sprintf("pass --%s or --no-%s", flag, flag)
+		case in.Type == "array":
+			how = fmt.Sprintf("pass --%s <item>, once for each item", flag)
+		case in.Type == "object":
+			how = fmt.Sprintf("pass --%s with JSON or @<file>", flag)
+		}
+		return fmt.Errorf("input %s: required; %s", k, how)
+	}
+	return err
 }
 
 // taskScope is what the expressions of a task read: its inputs with those

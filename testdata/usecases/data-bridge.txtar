@@ -17,7 +17,7 @@ exec sops encrypt --filename-override secrets.sops.yaml --output secrets.sops.ya
 # dns waits for the servers that hosts reports
 exec opstruss plan
 stdout '^default/hosts: will run: new$'
-stdout '^default/dns: planned after default/hosts$'
+stdout '^default/dns: will run: new; plan after default/hosts \(with.vars\)$'
 
 # rollout: Ansible, then tofu with the servers as a map, then NetBox and
 # the files

@@ -12,7 +12,7 @@ stdout '^default/app: unchanged$'
 
 exec sh -c 'echo "# changed" >> shared/up.sh'
 exec opstruss plan
-stdout '^default/app: will run: definition changed$'
+stdout '^default/app: will run: definition changed: plugin$'
 exec opstruss up
 stdout 'default/app: up: done'
 exec opstruss plan

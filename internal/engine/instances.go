@@ -38,17 +38,25 @@ type instance struct {
 	outputs  map[string]any
 	outMarks map[string]any // the sensitive outputs
 	done     chan struct{}
+	place    int // where it is in the plan, which orders its questions
 }
 
 // plan is what the run will do to an instance.
 type plan struct {
-	run      bool     // up runs its program
-	reason   string   // why, when it runs
-	waitFor  string   // an upstream unit whose outputs this run changes before this one's turn
-	locked   string   // the holder of the address, for another run
-	digest   string   // the digest trigger, which the record keeps
-	teardown []string // runs whose attempts up tears down after it succeeds
+	run      bool              // up runs its program
+	cause    string            // why, as a word: new, pending, forced, context, definition, not_running, generates, or plan
+	reason   string            // why, when it runs, as the plan line says it
+	parts    map[string]string // the digests of the parts of the definition, which the record keeps
+	changed  []string          // the parts that differ from the record
+	waitFor  string            // an upstream unit whose outputs this run changes before this one's turn
+	reads    []string          // the parts that read such outputs
+	blocked  string            // an upstream unit that cannot be planned
+	locked   string            // the holder of the address, for another run
+	digest   string            // the digest trigger, which the record keeps
+	teardown []string          // runs whose attempts up tears down after it succeeds
 	err      error
+
+	emptySources []string // patterns of sources that match no file
 
 	// From the plan of a plugin: its changes, the outputs that change, its
 	// own digest, which up gets, and whether it promised to be exact.
@@ -72,8 +80,19 @@ func (p plan) summary() string {
 		return "error: " + p.err.Error()
 	case p.locked != "":
 		return "locked by " + p.locked + "; left out"
+	case p.blocked != "":
+		return "skipped: " + p.blocked + " cannot be planned"
 	case p.waitFor != "":
-		return "planned after " + p.waitFor
+		// As (known after apply) in Terraform: what reads the outputs is
+		// named, and planned at its turn, never with the old values.
+		after := "plan after " + p.waitFor
+		if len(p.reads) > 0 {
+			after += " (" + strings.Join(p.reads, ", ") + ")"
+		}
+		if p.reason != "" {
+			return "will run: " + p.reason + "; " + after
+		}
+		return "may run: " + after
 	case p.run && old != "":
 		return "will run: " + p.reason + "; then " + old
 	case p.run:

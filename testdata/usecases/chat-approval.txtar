@@ -39,7 +39,7 @@ waitgrep '^updates token=set$' chat.log
 # summary of the plan waits for an approver
 exec sh -c 'cat updates/isolate-web-01 >> updates.in'
 waitgrep '^ask ' chat.log
-grep '^ask \{"allowed":\["upik","rina"\],"chat":-1001234567890,"options":\["Setujui","Tolak"\],"text":"upik minta isolate web-01: ada aktivitas aneh\\nwill run: definition changed; plan: update proxmox_virtual_environment_firewall_options.vm","thread_ts":"","token":"set"\}$' chat.log
+grep '^ask \{"allowed":\["upik","rina"\],"chat":-1001234567890,"options":\["Setujui","Tolak"\],"text":"upik minta isolate web-01: ada aktivitas aneh\\nwill run: definition changed: with.vars; plan: update proxmox_virtual_environment_firewall_options.vm","thread_ts":"","token":"set"\}$' chat.log
 grep '^web-01: \{node: pve1, vmid: 101, isolated: true\}$' vms.yaml
 grep '^claude key=set$' calls
 

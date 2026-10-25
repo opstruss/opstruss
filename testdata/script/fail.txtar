@@ -11,7 +11,7 @@ exec opstruss state pull db
 stdout '"op": "up"'
 stdout '"id": "db-1"'
 exec opstruss plan db
-stdout '^default/db: will run: up of run .* did not finish$'
+stdout '^default/db: will run: up of run .* failed$'
 
 # the next attempt reads what the last one made, and succeeds
 cp ok.sh db.sh

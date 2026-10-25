@@ -29,9 +29,9 @@ grep -count=1 '^pg_restore ' calls
 exec opstruss plan
 stdout '^default/dump: unchanged$'
 stdout '^default/archive: unchanged$'
-stdout '^default/restore: will run: up of run \S+ \(pid [0-9]+ on .*\) did not finish$'
-stdout '^default/verify: planned after default/restore$'
-stdout '^default/cutover: planned after default/verify$'
+stdout '^default/restore: will run: up of run \S+ failed$'
+stdout '^default/verify: will run: new; plan after default/restore \(env.RESTORED\)$'
+stdout '^default/cutover: will run: new; plan after default/verify \(env.ROWS\)$'
 
 # with room on db-new, up starts at the restore: what the failed attempt
 # left goes first, and the phases after it follow

@@ -7,11 +7,13 @@ chmod 755 plugins/fake/plan.sh
 chmod 755 plugins/fake/up.sh
 chmod 755 plugins/fake/down.sh
 
-# a new unit runs, with what the plugin's plan says
+# a new unit runs, with what the plugin's plan says; up plans it again at
+# its turn and shows what the plan writes once, as that plan is the same
 exec opstruss plan
 stdout '^default/db: will run: new; plan: create db$'
 stdout '^default/notes: will run: new$'
 exec opstruss up
+stdout -count=1 '^default/db \| planning db$'
 stdout 'default/db: up: done'
 stdout '^default/site \| id db-small$'
 exists cloud/db
@@ -28,12 +30,12 @@ grep '^small$' cloud/db
 # new inputs change the definition, and so does a script of the plugin
 exec sh -c 'sed s/small/large/ opstruss.yaml > o.yaml && mv o.yaml opstruss.yaml'
 exec opstruss plan
-stdout '^default/db: will run: definition changed; plan: update db$'
+stdout '^default/db: will run: definition changed: with.size; plan: update db$'
 exec opstruss up
 grep '^large$' cloud/db
 exec sh -c 'echo "# changed" >> plugins/fake/up.sh'
 exec opstruss plan
-stdout '^default/db: will run: definition changed$'
+stdout '^default/db: will run: definition changed: plugin$'
 exec opstruss up
 
 # down runs the plugin's down from its record
@@ -73,6 +75,7 @@ tasks:
     run: [./down.sh]
 -- plugins/fake/plan.sh --
 #!/bin/sh
+echo "planning $INPUT_NAME"
 have=$(cat "cloud/$INPUT_NAME" 2>/dev/null)
 if [ "$have" = "$INPUT_SIZE" ]; then
   echo '{"changes": [], "digest": "sha256:same", "exact": true}' > "$OPSTRUSS_PLAN"

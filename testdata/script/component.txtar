@@ -9,8 +9,8 @@ chmod 755 components/dns/zone.sh
 # db inside runs before app outside, which web inside reads
 exec opstruss plan
 stdout '^default/site\[eu\]/db: will run: new$'
-stdout '^default/app: planned after default/site\[eu\]/db$'
-stdout '^default/site\[eu\]/web: planned after default/app$'
+stdout '^default/app: will run: new; plan after default/site\[eu\]/db \(env.DB\)$'
+stdout '^default/site\[eu\]/web: will run: new; plan after default/app \(run\)$'
 exec opstruss up
 stdout '^default/dns/zone \| zone example.com token abc at default/dns/zone$'
 stdout '^default/site\[us\]/web \| web us app http://app db.eu$'

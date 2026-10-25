@@ -73,6 +73,7 @@ type Options struct {
 
 // Question is a change that waits for approval.
 type Question struct {
+	Op      string `json:"op,omitempty"` // up, down, or task: what yes approves
 	Address string `json:"address,omitempty"`
 	Task    string `json:"task,omitempty"`
 	Summary string `json:"summary"`
@@ -155,13 +156,15 @@ type engine struct {
 	collect    bool                     // the pass previews the moves of the instances of components it finds
 	stale      []string                 // records of instances of components that the pass did not find
 
-	mu       sync.Mutex
-	exit     int
-	promptMu sync.Mutex
-	inPass   bool              // a pass is expanding and planning units
-	kv       *kvMemory         // what kv() reads in this pass
-	kvLocals bool              // a local reads kv()
-	hashes   map[string]string // of plugin directories, read once a run
+	mu          sync.Mutex
+	exit        int
+	asks        askOrder          // the questions at the terminal, one at a time
+	rerun       *replay           // what runs rerun gives again, or nil while nothing
+	keepsReplay bool              // runs rerun can run this run again
+	inPass      bool              // a pass is expanding and planning units
+	kv          *kvMemory         // what kv() reads in this pass
+	kvLocals    bool              // a local reads kv()
+	hashes      map[string]string // of plugin directories, read once a run
 
 	redact     *secret.Redactor // hides the sensitive values the run knows in what it writes out
 	shortPass  map[string]bool  // the variables passed whose value is too short to hide, warned of; under mu
@@ -328,8 +331,9 @@ func (e *engine) start(command, task string, with map[string]any, tr *Trigger) e
 		opts.Started(e.runID)
 	}
 	if opts.RerunOf != "" {
-		e.say("diagnostic", "", "runs run %s again", opts.RerunOf)
+		e.say("diagnostic", "", "rerun of run %s", opts.RerunOf)
 	}
+	e.rerun, e.keepsReplay = rp, rec.Replay != nil
 	if rp != nil {
 		e.keepReplay(rp)
 	}
@@ -499,6 +503,9 @@ func (e *engine) emit(ev Event) {
 	ev.Message = e.redact.Log(ev.Message)
 	if ev.Outputs != nil {
 		ev.Outputs = e.redact.LogValue(ev.Outputs).(map[string]any)
+	}
+	if ev.Plan != nil {
+		ev.Plan = e.redact.LogValue(ev.Plan).(map[string]any)
 	}
 	e.send(ev)
 }
@@ -712,15 +719,67 @@ type lineWriter struct {
 	step   string
 	stream string
 	lines  *secret.Lines
+	held   *heldLogs // nil, or where the lines wait
 }
 
 func (w *lineWriter) Write(p []byte) (int, error) {
 	if w.lines == nil {
 		w.lines = secret.NewLines(w.e.redact.Stream(), func(text string) {
-			w.e.send(Event{Type: "log", Level: "info", Address: w.addr, Task: w.task, Step: w.step, Stream: w.stream, Message: text})
+			ev := Event{Type: "log", Level: "info", Address: w.addr, Task: w.task, Step: w.step, Stream: w.stream, Message: text}
+			if !w.held.hold(w.e, ev) {
+				w.e.send(ev)
+			}
 		})
 	}
 	return w.lines.Write(p)
+}
+
+// maxHeldLogs bounds the lines that heldLogs holds back.
+const maxHeldLogs = 4 << 20
+
+// heldLogs holds the lines of a program back until what it found shows
+// whether they are worth showing again; past maxHeldLogs they go out as
+// they come.
+type heldLogs struct {
+	mu     sync.Mutex
+	events []Event
+	bytes  int
+	off    bool
+}
+
+// hold keeps ev, or sends it with those held when the bound is passed; it
+// reports whether ev is taken care of.
+func (h *heldLogs) hold(e *engine, ev Event) bool {
+	if h == nil {
+		return false
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.off {
+		return false
+	}
+	h.events, h.bytes = append(h.events, ev), h.bytes+len(ev.Message)
+	if h.bytes > maxHeldLogs {
+		for _, ev := range h.events {
+			e.send(ev)
+		}
+		h.events, h.off = nil, true
+	}
+	return true
+}
+
+// release sends the lines held: as they are when shown, and otherwise at
+// level debug, which the record keeps and OPSTRUSS_LOG=debug shows.
+func (h *heldLogs) release(e *engine, shown bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, ev := range h.events {
+		if !shown {
+			ev.Level = "debug"
+		}
+		e.send(ev)
+	}
+	h.events, h.off = nil, true
 }
 
 func (w *lineWriter) flush() {

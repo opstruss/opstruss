@@ -24,15 +24,19 @@ import (
 	"github.com/opstruss/opstruss/internal/sources"
 	"github.com/spf13/cobra"
 	"go.yaml.in/yaml/v3"
+	"golang.org/x/term"
 )
 
 // Main runs the command line with the process arguments and returns the
 // exit code. A terminal on stdin can answer the questions of a run.
 func Main() int {
-	info, err := os.Stdin.Stat()
-	terminal := err == nil && info.Mode()&os.ModeCharDevice != 0
-	return start(os.Args[1:], os.Stdin, terminal, os.Stdout, os.Stderr, os.Environ())
+	return start(os.Args[1:], os.Stdin, isTerminal(os.Stdin), os.Stdout, os.Stderr, os.Environ())
 }
+
+// isTerminal reports whether f is a terminal. /dev/null is a character
+// device too, which CI and service managers give as stdin, and answers
+// nothing.
+func isTerminal(f *os.File) bool { return term.IsTerminal(int(f.Fd())) }
 
 type app struct {
 	locked    bool
@@ -57,6 +61,14 @@ type app struct {
 	completion string
 	renderMu   sync.Mutex
 	planned    map[string]map[string]string // the plan line of each address, by run, while the run goes on
+
+	// While a question waits at the terminal, the output of the run waits
+	// for its answer; past maxHeld only the record keeps it.
+	asking    bool
+	held      []heldText
+	heldBytes int
+	heldOver  int    // lines left out
+	heldRun   string // the run whose record has them
 }
 
 // exitError ends a command that already wrote why it failed.
@@ -179,9 +191,21 @@ func joinDir(base, dir string) string {
 
 func (a *app) root() *cobra.Command {
 	root := &cobra.Command{
-		Use:               "opstruss",
-		Short:             "Event-driven workflow orchestration that runs any tool and hands its typed results to the next.",
-		Args:              cobra.NoArgs,
+		Use:                        "opstruss",
+		Short:                      "Event-driven workflow orchestration that runs any tool and hands its typed results to the next.",
+		SuggestionsMinimumDistance: 2,
+		// cobra.NoArgs would leave out the suggestions of an unknown
+		// command, which git and kubectl give.
+		Args: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				return nil
+			}
+			msg := fmt.Sprintf("unknown command %q for %q", args[0], cmd.CommandPath())
+			if near := cmd.SuggestionsFor(args[0]); len(near) > 0 {
+				msg += "; did you mean " + strings.Join(near, " or ") + "?"
+			}
+			return errors.New(msg)
+		},
 		SilenceErrors:     true,
 		SilenceUsage:      true,
 		CompletionOptions: cobra.CompletionOptions{DisableDefaultCmd: true},
@@ -211,9 +235,24 @@ func (a *app) root() *cobra.Command {
 	root.AddCommand(a.unitCommands()...)
 	root.AddCommand(a.listCommand(), a.outputsCommand(), a.runsCommand(), a.execCommand(), a.doctorCommand(),
 		a.stopCommand(), a.unlockCommand(), a.daemonCommand(), a.pluginsCommand())
+	// Help shows the commands of OpsTruss apart from the tasks of the
+	// project, as npm run and just --list show scripts on their own.
+	root.AddGroup(&cobra.Group{ID: groupCommands, Title: "Commands:"})
+	root.SetHelpCommandGroupID(groupCommands)
 	a.taskCommands(root)
+	for _, c := range root.Commands() {
+		if c.GroupID == "" {
+			c.GroupID = groupCommands
+		}
+	}
 	return root
 }
+
+// The groups of commands in help.
+const (
+	groupCommands = "commands"
+	groupTasks    = "tasks"
+)
 
 func (a *app) printCompletion(root *cobra.Command) error {
 	switch a.completion {
