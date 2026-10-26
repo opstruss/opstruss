@@ -16,7 +16,8 @@ exec chmod 755 bin/sops
 env XDG_CONFIG_HOME=$WORK/m1
 exec opstruss up --yes
 stdout 'made the age key age1[0-9a-z]+ of this machine in .*/m1/opstruss/age/keys.txt; back it up'
-stdout 'made the data key of stack default in default/_meta, with age for age1[0-9a-z]+$'
+! stdout 'made the data key'
+grep -count=1 '"age1[0-9a-z]+"' .opstruss/state/default/_meta
 stdout '^default/api \| deploying with \*\*\*$'
 exec sh pub.sh m1
 cp stdout m1.pub

@@ -284,38 +284,48 @@ func (e *engine) statusPass(ctx context.Context, patterns []string) (map[string]
 			if m := res.viewMarks(); m != nil {
 				marks[short] = m
 			}
+			// What the record says comes too, as a pending up that the
+			// plugin cannot know of.
+			e.recordStatus(inst)
 			continue
 		}
-		outputs := map[string]any{"state": "absent", "run": "", "updated": "", "outputs": map[string]any{}}
-		ev := Event{Type: "unit", Level: "info", Address: inst.address}
-		switch rec := inst.record; {
-		case inst.def.Service != nil:
-			outputs = e.serviceStatus(inst)
-			ev.Message = fmt.Sprint(outputs["state"])
-			if pid := outputs["pid"].(int64); pid != 0 {
-				ev.Message += fmt.Sprintf(", pid %d since %s, %d restarts", pid, outputs["since"], outputs["restarts"])
-			}
-		case rec == nil || rec.Tombstone != nil:
-			ev.Message = "absent"
-		default:
-			outputs["state"], outputs["run"], outputs["updated"] = "up", rec.Run, rec.Updated
-			if shown := e.shown(rec.Outputs, hiddenMarks(rec.Hidden[state.PartOutputs])); shown != nil {
-				outputs["outputs"] = shown
-			}
-			ev.Message = fmt.Sprintf("up, from run %s at %s", rec.Run, rec.Updated)
-			if rec.Pending != nil {
-				outputs["state"] = "pending"
-				ev.Message = "pending: " + pendingReason(rec.Pending)
-			}
-		}
-		ev.Outputs = outputs
-		e.emit(ev)
-		if o, _ := outputs["outputs"].(map[string]any); len(o) > 0 && outputs["state"] == "up" {
-			e.say("unit", inst.address, "outputs: %s", expr.JSON(o))
-		}
+		outputs := e.recordStatus(inst)
 		out[short] = map[string]any{"outcome": success, "changed": false, "outputs": outputs}
 	}
 	return out, marks, nil
+}
+
+// recordStatus says the state of inst as its record, or its service, says
+// it, with the outputs of a unit that is up, and returns it.
+func (e *engine) recordStatus(inst *instance) map[string]any {
+	outputs := map[string]any{"state": "absent", "run": "", "updated": "", "outputs": map[string]any{}}
+	ev := Event{Type: "unit", Level: "info", Address: inst.address}
+	switch rec := inst.record; {
+	case inst.def.Service != nil:
+		outputs = e.serviceStatus(inst)
+		ev.Message = fmt.Sprint(outputs["state"])
+		if pid := outputs["pid"].(int64); pid != 0 {
+			ev.Message += fmt.Sprintf(", pid %d since %s, %d restarts", pid, outputs["since"], outputs["restarts"])
+		}
+	case rec == nil || rec.Tombstone != nil:
+		ev.Message = "absent"
+	default:
+		outputs["state"], outputs["run"], outputs["updated"] = "up", rec.Run, rec.Updated
+		if shown := e.shown(rec.Outputs, hiddenMarks(rec.Hidden[state.PartOutputs])); shown != nil {
+			outputs["outputs"] = shown
+		}
+		ev.Message = fmt.Sprintf("up, from run %s at %s", rec.Run, rec.Updated)
+		if rec.Pending != nil {
+			outputs["state"] = "pending"
+			ev.Message = "pending: " + pendingReason(rec.Pending)
+		}
+	}
+	ev.Outputs = outputs
+	e.emit(ev)
+	if o, _ := outputs["outputs"].(map[string]any); len(o) > 0 && outputs["state"] == "up" {
+		e.say("unit", inst.address, "outputs: %s", expr.JSON(o))
+	}
+	return outputs
 }
 
 // toolMoved stops a unit whose tool keeps state in tool/ while its input

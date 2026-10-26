@@ -137,7 +137,7 @@ func (e *engine) preview(ctx context.Context, inst *instance) {
 	if !e.sel.has(inst) {
 		return
 	}
-	if err := tombstoned(rec); err != nil {
+	if err := tombstoned(rec, e.short(inst.address)); err != nil {
 		inst.plan.err = err
 		return
 	}
@@ -164,6 +164,7 @@ func (e *engine) preview(ctx context.Context, inst *instance) {
 	case r.waitFor != "":
 		// What is known without the outputs it waits for is said now.
 		inst.plan.waitFor, inst.plan.reads = e.p.StackName+"/"+r.waitFor, r.reads
+		inst.plan.auto = e.approvalOf(inst.def) == "auto"
 		switch {
 		case rec == nil:
 			inst.plan.cause, inst.plan.reason = "new", "new"
@@ -183,6 +184,7 @@ func (e *engine) preview(ctx context.Context, inst *instance) {
 		// A unit that runs first in this run may install the program.
 		if up := e.runsBefore(inst); up != "" {
 			inst.plan.waitFor = up
+			inst.plan.auto = e.approvalOf(inst.def) == "auto"
 			e.warn(inst.address, "%v; planned at its turn, after %s", err, up)
 			return
 		}
@@ -207,6 +209,7 @@ func (e *engine) preview(ctx context.Context, inst *instance) {
 		e.begin("unit", inst.address, "plan", "", "plan: started")
 	}
 	inst.plan = e.decide(ctx, inst, r, rec, nil)
+	inst.plan.auto = e.approvalOf(inst.def) == "auto"
 	// A pattern that matches nothing never runs the unit again, as Bazel
 	// refuses an empty glob; it may also name what a unit before it makes.
 	for _, pattern := range inst.plan.emptySources {
@@ -238,9 +241,10 @@ func (e *engine) runsBefore(inst *instance) string {
 	return ""
 }
 
-// tombstoned says why a unit cannot take the address of rec: a move or a
-// forget left it, or an instance of a component has it.
-func tombstoned(rec *state.Record) error {
+// tombstoned says why a unit cannot take the address of rec, which name
+// writes as opstruss state rm takes it: a move or a forget left it, or an
+// instance of a component has it.
+func tombstoned(rec *state.Record, name string) error {
 	if rec != nil && rec.Tombstone == nil && rec.Kind == "component" {
 		return errors.New("an instance of a component has this address; take what is inside down with the files that still use the component first")
 	}
@@ -250,7 +254,7 @@ func tombstoned(rec *state.Record) error {
 	if to := rec.Tombstone.MovedTo; to != "" {
 		return fmt.Errorf("this address moved to %s in run %s; these files are older than that move", to, rec.Tombstone.Run)
 	}
-	return fmt.Errorf("this address was forgotten in run %s; opstruss state rm removes the tombstone so the name can be used again", rec.Tombstone.Run)
+	return fmt.Errorf("this address was forgotten in run %s; opstruss state rm %s removes the tombstone so the name can be used again", rec.Tombstone.Run, name)
 }
 
 // decide plans an instance from its record: up runs a new unit, one whose
@@ -528,7 +532,19 @@ func (e *engine) skips(inst *instance) bool {
 func (e *engine) turn(ctx context.Context, inst *instance, leave func()) {
 	defer leave()
 	addr := inst.address
+	if errors.Is(ctx.Err(), context.Canceled) {
+		// The run was interrupted before this turn, as at a question.
+		e.finish(inst, cancelled, false, nil, nil)
+		e.ended(addr, "up", cancelled, "interrupted before its turn")
+		return
+	}
 	failed := func(err error) {
+		if errors.Is(ctx.Err(), context.Canceled) {
+			// The run was interrupted while the unit ran, which stopped it.
+			e.finish(inst, cancelled, false, nil, nil)
+			e.ended(addr, "up", cancelled, "interrupted: %v", err)
+			return
+		}
 		e.finish(inst, failure, false, nil, nil)
 		e.failOp(addr, "up", err)
 	}
@@ -560,7 +576,7 @@ func (e *engine) turn(ctx context.Context, inst *instance, leave func()) {
 	defer func() { _ = e.store.Unlock(addr, token) }()
 	rec, etag, err := e.store.Get(addr)
 	if err == nil {
-		err = tombstoned(rec)
+		err = tombstoned(rec, e.short(addr))
 	}
 	if err == nil && rec != nil && rec.Pending != nil && rec.Pending.Run != e.runID {
 		err = e.waitForPrograms(ctx, addr, rec.Pending)
@@ -610,9 +626,15 @@ func (e *engine) turn(ctx context.Context, inst *instance, leave func()) {
 		e.ended(addr, "up", success, "unchanged")
 		return
 	}
-	approval := cmp.Or(inst.def.Approval, e.stackApproval(), "ask")
+	approval := e.approvalOf(inst.def)
 	if approval != "auto" {
 		source, why, waited := e.approves(ctx, Question{Op: "up", Address: addr, Summary: p.summary()}, p.approval(), inst.place)
+		if why != "" && errors.Is(ctx.Err(), context.Canceled) {
+			// The run was interrupted while the unit waited for its answer.
+			e.finish(inst, cancelled, false, nil, nil)
+			e.ended(addr, "up", cancelled, "interrupted before its approval")
+			return
+		}
 		if why != "" {
 			e.finish(inst, skipped, false, nil, nil)
 			e.stoppedAt(addr, "up", "%s; %s, stopped at plan", p.summary(), why)

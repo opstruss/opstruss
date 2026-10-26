@@ -35,6 +35,7 @@ func (e *engine) unitPass(ctx context.Context, op string, p pass) (map[string]an
 	e.kv = e.newKV()
 	e.mu.Unlock()
 	e.pass = p
+	e.answers = nil
 	e.resetUnits()
 	marks := map[string]any{}
 	if op == "down" {
@@ -99,6 +100,7 @@ func (e *engine) unitPass(ctx context.Context, op string, p pass) (map[string]an
 		}
 		return out, marks, nil
 	}
+	e.askFirst(ctx, e.insts, leftovers)
 	e.applyMoves(ctx)
 	e.turns(ctx)
 	e.settle(ctx, leftovers)
@@ -144,6 +146,15 @@ func (e *engine) approves(ctx context.Context, q Question, digest string, place 
 	if e.opts.Approve == nil {
 		return "", "needs approval", 0
 	}
+	if d, ok := e.answers[q.Address]; ok {
+		// Asked before the turns, about this plan or one that changed since.
+		switch d {
+		case "":
+			return "", "the answer was no", 0
+		case digest:
+			return "terminal", "", 0
+		}
+	}
 	release := e.asks.wait(place)
 	defer release()
 	start := time.Now()
@@ -156,6 +167,48 @@ func (e *engine) approves(ctx context.Context, q Question, digest string, place 
 		return "", "the answer was no", waited
 	}
 	return "terminal", "", waited
+}
+
+// askFirst asks at the terminal about each change of the pass whose plan
+// is known, in the order of the plan, before anything moves or runs, as
+// terraform apply asks before it applies: an interrupt or a no at a
+// question then leaves everything as it was, also the units with
+// approval: auto. Each answer holds for the plan it saw; a unit whose plan
+// changes by its turn, or waits for the outputs of another unit, asks at
+// its turn.
+func (e *engine) askFirst(ctx context.Context, insts []*instance, leftovers []*leftover) {
+	if e.opts.Approve == nil || e.pass.yes {
+		return
+	}
+	e.answers = map[string]string{}
+	ask := func(q Question, digest string) bool {
+		ok, err := e.opts.Approve(ctx, q)
+		if err != nil {
+			// Interrupted, or no terminal answers any more: the turns ask
+			// again, or stop.
+			return false
+		}
+		e.answers[q.Address] = map[bool]string{true: digest, false: ""}[ok]
+		return true
+	}
+	for _, inst := range insts {
+		p := inst.plan
+		if !e.sel.has(inst) || p.err != nil || p.locked != "" || p.blocked != "" || p.waitFor != "" ||
+			!p.run && len(p.teardown) == 0 || e.approvalOf(inst.def) == "auto" {
+			continue
+		}
+		if !ask(Question{Op: "up", Address: inst.address, Summary: p.summary()}, p.approval()) {
+			return
+		}
+	}
+	for _, l := range leftovers {
+		if l.forget || e.approvalOf(l.def) == "auto" {
+			continue
+		}
+		if !ask(Question{Op: "down", Address: l.address, Summary: l.summary()}, downDigest("delete", l.address, l.etag)) {
+			return
+		}
+	}
 }
 
 // askOrder puts the questions of a run at the terminal one at a time, in
@@ -284,6 +337,9 @@ func (p plan) view(exact bool) map[string]any {
 	}
 	v := map[string]any{"changes": changes, "outputs": outputs, "exact": exact && !p.inexact, "digest": p.approval(),
 		"summary": p.summary()}
+	if p.auto {
+		v["approval"] = "auto"
+	}
 	if p.cause != "" {
 		v["reason"] = p.cause
 	}

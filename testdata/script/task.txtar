@@ -12,6 +12,11 @@ stdout '^greet \| hello world x1 null false$'
 ! exec opstruss greet --times three
 stderr '--times: "three" is not an integer'
 
+# the help of a flag names the type and the default of its input
+exec opstruss greet --help
+stdout '--times integer +\(default 1\)'
+stdout '--who string +\(default world\)'
+
 # a boolean takes the value written, and its two flags do not go together
 exec opstruss greet --loud=false
 stdout '^greet \| hello world x1 null false$'

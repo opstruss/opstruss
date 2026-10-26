@@ -68,6 +68,11 @@ stderr 'item 1: a sensitive value cannot be an item of argv, which other users c
 ! stdout 'from-program'
 ! stderr 'from-program'
 
+# an item of argv that has the text of a sensitive value in the files
+# themselves, not from an expression, runs, with the value hidden
+exec sh -c 'WORD=plainword opstruss literal'
+stdout '^literal: .* \| has \*\*\*$'
+
 # write keeps sensitive content for the user alone; kv keeps a sensitive
 # value encrypted with the data key of the stack, which the first value
 # that needs it makes; a sensitive list is not a for_each
@@ -77,7 +82,8 @@ exec opstruss keep
 stdout '^600$'
 grep 's3cr3t-token-value' secret.txt
 exec opstruss memo
-stdout 'made the data key of stack default in default/_meta'
+! stdout 'made the data key'
+grep '"age1[0-9a-z]+"' .opstruss/state/default/_meta
 ! exec sh -c 'grep -r s3cr3t .opstruss'
 ! exec opstruss each
 stderr 'a sensitive list would make its items keys'
@@ -134,6 +140,12 @@ tasks:
       - run: echo "got $S"
         env: {S: '${{ steps.get.outputs.secret }}'}
       - run: [echo, '${{ steps.get.outputs.secret }}']
+  literal:
+    inputs:
+      word: {type: string, sensitive: true, env: WORD}
+    steps:
+      - run: [sh, -c, 'echo "has $0"', plainword]
+        env: {W: '${{ inputs.word }}'}
   vault:
     steps:
       - name: item

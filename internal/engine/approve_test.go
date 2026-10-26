@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -86,5 +87,47 @@ func TestRerunKeepsAnswers(t *testing.T) {
 	}
 	if n := slices.Index(lines, "hello Sari"); slices.Index(lines[n+1:], "hello Sari") < 0 {
 		t.Fatalf("the rerun did not greet Sari: %q", lines)
+	}
+}
+
+// TestAskFirst: a run that asks at the terminal asks about every unit whose
+// plan is known before any program runs, also one with approval: auto, so
+// no output comes between the questions; a unit whose plan waits for the
+// outputs of another is asked at its turn.
+func TestAskFirst(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	project := t.TempDir()
+	yaml := `name: first
+units:
+  a:
+    run: [touch, a-ran]
+  b:
+    run: [sh, -c, 'touch b-ran; printf "{\"n\": 1}" > "$OPSTRUSS_OUTPUT"']
+    outputs:
+      n: {type: number}
+    approval: auto
+  c:
+    run: [touch, c-ran]
+    env:
+      N: ${{ units.b.outputs.n }}
+`
+	if err := os.WriteFile(filepath.Join(project, "opstruss.yaml"), []byte(yaml), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	var asked []string
+	res, err := Up(t.Context(), Options{Dir: project, Environ: os.Environ(), LookupEnv: os.LookupEnv,
+		Approve: func(_ context.Context, q Question) (bool, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			_, err := os.Stat(filepath.Join(project, "b-ran"))
+			asked = append(asked, q.Address+" after b: "+strconv.FormatBool(err == nil))
+			return true, nil
+		}})
+	if err != nil || res.ExitCode != 0 {
+		t.Fatalf("up: %v, %+v", err, res)
+	}
+	if want := []string{"default/a after b: false", "default/c after b: true"}; !slices.Equal(asked, want) {
+		t.Fatalf("asked %q, want %q", asked, want)
 	}
 }

@@ -83,6 +83,8 @@ type app struct {
 	// While a question waits at the terminal, the output of the run waits
 	// for its answer; past maxHeld only the record keeps it.
 	asking    bool
+	live      bool   // the output goes on above the question at the terminal
+	prompt    string // the question that waits, to write again under the output
 	held      []heldText
 	heldBytes int
 	heldOver  int    // lines left out
@@ -208,26 +210,29 @@ func joinDir(base, dir string) string {
 	return filepath.Join(base, dir)
 }
 
+// unknownCommand is the error of a name that is no command of cmd, with
+// the suggestions that git and kubectl give, which cobra.NoArgs would leave
+// out.
+func unknownCommand(cmd *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return nil
+	}
+	msg := fmt.Sprintf("unknown command %q for %q", args[0], cmd.CommandPath())
+	if near := cmd.SuggestionsFor(args[0]); len(near) > 0 {
+		msg += "; did you mean " + strings.Join(near, " or ") + "?"
+	}
+	return errors.New(msg)
+}
+
 func (a *app) root() *cobra.Command {
 	root := &cobra.Command{
 		Use:                        "opstruss",
 		Short:                      "Event-driven workflow orchestration that runs any tool and hands its typed results to the next.",
 		SuggestionsMinimumDistance: 2,
-		// cobra.NoArgs would leave out the suggestions of an unknown
-		// command, which git and kubectl give.
-		Args: func(cmd *cobra.Command, args []string) error {
-			if len(args) == 0 {
-				return nil
-			}
-			msg := fmt.Sprintf("unknown command %q for %q", args[0], cmd.CommandPath())
-			if near := cmd.SuggestionsFor(args[0]); len(near) > 0 {
-				msg += "; did you mean " + strings.Join(near, " or ") + "?"
-			}
-			return errors.New(msg)
-		},
-		SilenceErrors:     true,
-		SilenceUsage:      true,
-		CompletionOptions: cobra.CompletionOptions{DisableDefaultCmd: true},
+		Args:                       unknownCommand,
+		SilenceErrors:              true,
+		SilenceUsage:               true,
+		CompletionOptions:          cobra.CompletionOptions{DisableDefaultCmd: true},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if a.completion != "" {
 				return a.printCompletion(cmd)

@@ -33,7 +33,7 @@ tasks:
         run: echo clean
 -- up.want --
 default/app: will run: new
-::group::default/app › up
+::group::app › up
 default/app | one
 default/app | ::warning::x
 ::endgroup::

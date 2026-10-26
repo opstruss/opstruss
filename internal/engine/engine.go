@@ -135,6 +135,7 @@ type engine struct {
 	pass     pass
 	passMu   sync.Mutex
 	read     map[string]string // digests of the exact plans read in this run, by address; empty when not exact
+	answers  map[string]string // digests of the plans of the pass approved at the terminal before its turns, by address; empty for a no
 	rec      *record.Run
 	touched  map[string]*record.Unit
 	ran      map[string]*record.Task // the tasks of the project that ran inside the run, through task:, needs, or a unit

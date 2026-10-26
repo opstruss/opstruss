@@ -34,6 +34,7 @@ type leftover struct {
 	reason  string
 	cause   string      // why, as a word: requested, gone, or removed
 	def     *model.Unit // nil for a unit no longer in the files
+	auto    bool        // approval: auto, so down asks nothing
 	done    chan struct{}
 	outcome string
 }
@@ -43,11 +44,25 @@ func (l *leftover) summary() string {
 	switch {
 	case l.forget:
 		return "will be forgotten without going down: removed: with destroy: false"
+	case noDown(l.record) && l.reason == "requested":
+		// Only its record goes, as down will say.
+		return "will be forgotten: it has no down program"
+	case noDown(l.record):
+		return "will be forgotten: " + l.reason + "; it has no down program"
 	case l.reason == "requested":
 		// down takes what it was asked to; there is nothing more to say.
 		return "will go down"
 	}
 	return "will go down: " + l.reason
+}
+
+// noDown reports whether down of rec runs no program: it has no down
+// contract, no attempt left to tear down, and no service to stop.
+func noDown(rec *state.Record) bool {
+	if rec == nil || rec.Down != nil || rec.Kind == "service" || len(rec.Abandoned) > 0 {
+		return false
+	}
+	return rec.Pending == nil || rec.Pending.Op != "up" || rec.Pending.Down == nil
 }
 
 // view is the plan of a leftover of up, as task: plan gives it: exact,
@@ -58,8 +73,18 @@ func (l *leftover) view() map[string]any {
 	if l.forget {
 		action = "forget"
 	}
-	return map[string]any{"changes": []any{map[string]any{"action": action}}, "outputs": []any{}, "exact": true,
+	v := map[string]any{"changes": []any{map[string]any{"action": action}}, "outputs": []any{}, "exact": true,
 		"digest": downDigest(action, l.address, l.etag), "summary": l.summary(), "reason": l.cause}
+	if l.auto && !l.forget {
+		v["approval"] = "auto"
+	}
+	return v
+}
+
+// warnOrphan warns of the record of l, whose unit the files no longer
+// have, with the removed: entry that decides what happens to it.
+func (e *engine) warnOrphan(l *leftover) {
+	e.warn(l.address, "orphan: its unit is no longer in the files; add {from: %s, destroy: true} to removed: to take it down, or destroy: false to forget it", l.unit)
 }
 
 // sayPlan writes the plan line of l, with its plan as units.<n>.plan has
@@ -93,7 +118,7 @@ func (e *engine) downPass(ctx context.Context) ([]*leftover, error) {
 		case l.record.Kind == "component":
 		case l.def == nil:
 			if e.sel.all {
-				e.warn(l.address, "orphan: its unit is no longer in the files; decide with removed:")
+				e.warnOrphan(l)
 			}
 		case e.sel.picked(l.unit, l.keys, false):
 			if err := e.checkDownSources(ctx, l.record); err != nil {
@@ -118,6 +143,7 @@ func (e *engine) downPass(ctx context.Context) ([]*leftover, error) {
 		}
 	}
 	if !protected {
+		e.askFirst(ctx, nil, items)
 		e.downAll(ctx, items)
 		e.dropFrames(ctx, framesOfDown(e, items))
 	}
@@ -163,6 +189,7 @@ func (e *engine) records(skip map[string]bool) ([]*leftover, error) {
 		if n := e.p.Nodes[l.unit]; n != nil && n.Component() == nil && rec.Kind != "component" {
 			l.def = n.Def()
 		}
+		l.auto = e.approvalOf(l.def) == "auto"
 		out = append(out, l)
 	}
 	return out, nil
@@ -214,7 +241,7 @@ func (e *engine) previewLeftovers() []*leftover {
 		case !e.sel.all:
 			continue
 		case rm == nil:
-			e.warn(l.address, "orphan: its unit is no longer in the files; decide with removed:")
+			e.warnOrphan(l)
 			continue
 		case rm.Destroy:
 			l.reason, l.cause = "removed: with destroy: true", "removed"
@@ -333,7 +360,17 @@ func (e *engine) downAll(ctx context.Context, items []*leftover) {
 // context its record holds; then the record goes.
 func (e *engine) downOne(ctx context.Context, l *leftover) string {
 	addr := l.address
+	if errors.Is(ctx.Err(), context.Canceled) {
+		// The run was interrupted before this turn, as at a question.
+		e.ended(addr, "down", cancelled, "interrupted before its turn")
+		return cancelled
+	}
 	fail := func(err error) string {
+		if errors.Is(ctx.Err(), context.Canceled) {
+			// The run was interrupted while the unit went down, which stopped it.
+			e.ended(addr, "down", cancelled, "interrupted: %v", err)
+			return cancelled
+		}
 		e.failOp(addr, "down", err)
 		return failure
 	}
@@ -389,12 +426,14 @@ func (e *engine) downOne(ctx context.Context, l *leftover) string {
 			}
 		}
 	}
-	approval := cmp.Or(e.stackApproval(), "ask")
-	if l.def != nil {
-		approval = cmp.Or(l.def.Approval, approval)
-	}
+	approval := e.approvalOf(l.def)
 	if approval != "auto" {
 		source, why, _ := e.approves(ctx, Question{Op: "down", Address: addr, Summary: l.summary()}, downDigest("delete", addr, etag), -1)
+		if why != "" && errors.Is(ctx.Err(), context.Canceled) {
+			// The run was interrupted while the unit waited for its answer.
+			e.ended(addr, "down", cancelled, "interrupted before its approval")
+			return cancelled
+		}
 		if why != "" {
 			e.stoppedAt(addr, "down", "%s; %s, stopped at plan", l.summary(), why)
 			e.stopAtPlan()
@@ -445,6 +484,16 @@ func (e *engine) downOne(ctx context.Context, l *leftover) string {
 		e.ended(addr, "down", success, "down: done")
 	}
 	return success
+}
+
+// approvalOf is how a change to a unit of def is approved: by its own
+// approval:, that of its stack, or ask.
+func (e *engine) approvalOf(def *model.Unit) string {
+	own := ""
+	if def != nil {
+		own = def.Approval
+	}
+	return cmp.Or(own, e.stackApproval(), "ask")
 }
 
 func (e *engine) stackApproval() string {

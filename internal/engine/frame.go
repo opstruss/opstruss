@@ -685,7 +685,7 @@ func (e *engine) holdFrames(ctx context.Context, inst *instance) (release func()
 func (e *engine) writeFrame(f *frame) error {
 	rec, etag, err := e.store.Get(f.address)
 	if err == nil && rec != nil && rec.Tombstone != nil {
-		err = tombstoned(rec)
+		err = tombstoned(rec, e.short(f.address))
 	}
 	if err == nil && rec != nil && rec.Tombstone == nil && rec.Kind != "component" {
 		err = fmt.Errorf("it holds a unit of another kind; take that unit down with the files that still have it first")

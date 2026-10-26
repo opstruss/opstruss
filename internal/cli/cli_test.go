@@ -27,7 +27,9 @@ func TestRun(t *testing.T) {
 		{args: []string{"version", "--json"}, stdout: `"os": "` + runtime.GOOS + `"`},
 		{args: []string{"version", "extra"}, code: 1, stderr: `unknown command "extra"`},
 		{args: []string{"nope"}, code: 1, stderr: `unknown command "nope"`},
-		{args: []string{"pln"}, code: 1, stderr: `unknown command "pln" for "opstruss"; did you mean plan?`},
+		{args: []string{"pln"}, code: 1, stderr: `unknown command "pln" for "opstruss"; did you mean plan or run?`},
+		{args: []string{"run", "nope"}, code: 1, stderr: `unknown command "nope" for "opstruss run"`},
+		{args: []string{"run"}, stdout: "Usage:"},
 		{args: []string{"--help"}, stdout: "Commands:\n"},
 		{args: []string{"--completion", "zsh"}, stdout: "#compdef opstruss"},
 		{args: []string{"--completion", "csh"}, code: 1, stderr: "--completion takes bash, zsh, or fish"},
@@ -72,6 +74,8 @@ func TestApprove(t *testing.T) {
 	}{
 		{engine.Question{Op: "up", Address: "default/web", Summary: "will run: new"}, "default/web: will run: new\nApply default/web? [y/N] "},
 		{engine.Question{Op: "down", Address: "default/site", Summary: "will go down"}, "default/site: will go down\nTake default/site down? [y/N] "},
+		{engine.Question{Op: "down", Address: "default/job", Summary: "will be forgotten: it has no down program"},
+			"default/job: will be forgotten: it has no down program\nForget default/job? [y/N] "},
 		{engine.Question{Op: "task", Task: "deploy", Summary: "run task deploy"}, "deploy: run task deploy\nRun deploy? [y/N] "},
 		{engine.Question{Address: "default/web", Summary: "will run: new"}, "default/web: will run: new\nApply default/web? [y/N] "},
 	}

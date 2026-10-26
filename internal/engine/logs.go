@@ -248,18 +248,26 @@ func (e *engine) unitLogs(ctx context.Context, inst *instance, follow bool) (any
 		return failed(err), nil
 	}
 	for _, r := range runs {
-		if r.Units[e.short(inst.address)] == nil || r.Run == e.runID {
+		u := r.Units[e.short(inst.address)]
+		if u == nil || r.Run == e.runID || u.Outcome == skipped || u.Outcome == success && !u.Changed {
+			// A run that left the unit as it was, or skipped it, ran none of
+			// its programs.
 			continue
 		}
 		what := cmp.Or(r.Task, r.Command)
 		e.say("unit", inst.address, "output of %s in run %s at %s", what, r.Run, r.Started)
+		printed := false
 		err := record.ReadRun(ctx, filepath.Join(e.root, "runs", e.p.StackName, r.Run), false, func(ev Event) {
 			if ev.Type == "log" && ev.Address == inst.address {
+				printed = printed || ev.Level != "debug" || e.opts.Debug
 				e.replay(ev)
 			}
 		})
 		if err != nil {
 			return failed(err), nil
+		}
+		if !printed {
+			e.say("unit", inst.address, "its programs printed nothing in that run")
 		}
 		return done, nil
 	}
@@ -271,6 +279,11 @@ func (e *engine) unitLogs(ctx context.Context, inst *instance, follow bool) (any
 // own time and run, and not to the record of this run, which would keep a
 // second copy of it.
 func (e *engine) replay(ev Event) {
+	if ev.Level == "debug" && !e.opts.Debug {
+		// As the run showed it: lines such as a plan that came out the same
+		// again are kept at level debug.
+		return
+	}
 	if e.opts.Emit != nil {
 		e.opts.Emit(ev)
 	}

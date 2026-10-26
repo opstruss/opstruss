@@ -49,9 +49,10 @@ func logLine(addr, task, step, msg string) engine.Event {
 	return engine.Event{Run: "r", Type: "log", Level: "info", Address: addr, Task: task, Step: step, Stream: "stdout", Message: msg}
 }
 
-// Steps one after another are blocks: a line that starts each, the lines
-// of its program under the gutter, and a line with how it ended and the
-// time it took.
+// Steps one after another are blocks: a line that starts each with its
+// first line, the lines of its program under the gutter, and a line with
+// how it ended and the time it took; a task that prints nothing of its own
+// starts no block.
 func TestRenderBlocks(t *testing.T) {
 	out, _ := renderAll(terminalRenderer(false),
 		at(ev("run", "", "build", "", "running", "", "started"), 0),
@@ -66,8 +67,7 @@ func TestRenderBlocks(t *testing.T) {
 		at(ev("task", "", "build", "", "finished", "failure", "failed"), 906),
 		at(ev("run", "", "build", "", "finished", "failure", "failure"), 907),
 	)
-	want := `▸ build
-▸ build › compile
+	want := `▸ build › compile
 │ compiling
 ✓ build › compile  0.4s
 ○ build › lint
@@ -81,8 +81,10 @@ func TestRenderBlocks(t *testing.T) {
 	}
 }
 
-// While two operations print at once, each line of a program is led by its
-// source; once one ends, the block of the other starts again.
+// While two operations print at once, the block that printed first shows
+// its lines as they come, and the other holds its lines and shows whole
+// once the first ends, as turbo run --log-order=grouped does. Units are
+// named without their stack.
 func TestRenderParallel(t *testing.T) {
 	out, _ := renderAll(terminalRenderer(false),
 		at(ev("unit", "default/net", "up", "", "running", "", "up: started"), 0),
@@ -94,16 +96,14 @@ func TestRenderParallel(t *testing.T) {
 		at(logLine("default/net", "up", "", "created"), 901),
 		at(ev("unit", "default/net", "up", "", "finished", "failure", "the program exited with 1"), 950),
 	)
-	want := `▸ default/net › up
-▸ default/web › up
-▸ default/net › up
+	want := `▸ net › up
 │ creating
-default/web › up │ added 312 packages
-default/net › up │ still creating
-✓ default/web › up: done  0.9s
-▸ default/net › up
+│ still creating
 │ created
-✗ default/net › up: the program exited with 1  0.9s
+✗ net › up: the program exited with 1  0.9s
+▸ web › up
+│ added 312 packages
+✓ web › up: done  0.9s
 `
 	if out != want {
 		t.Errorf("got\n%s\nwant\n%s", out, want)
@@ -111,17 +111,24 @@ default/net › up │ still creating
 }
 
 // Services print without a start or an end: two of them lead each line
-// with their names, padded to the widest.
+// with their names, padded to the widest. What OpsTruss says of a unit
+// while it goes up, as that its service started, is a line of its block.
 func TestRenderServices(t *testing.T) {
 	out, _ := renderAll(terminalRenderer(false),
+		at(ev("unit", "default/api", "up", "", "running", "", "up: started"), 0),
+		at(ev("unit", "default/api", "", "", "", "", "started, pid 7"), 1),
+		at(ev("unit", "default/api", "up", "", "finished", "success", "up: done"), 100),
 		logLine("default/api", "", "", "listening"),
 		logLine("default/worker-pool", "", "", "ready"),
 		logLine("default/api", "", "", "GET /"),
 	)
-	want := `▸ default/api
+	want := `▸ api › up
+│ started, pid 7
+✓ api › up: done  0.1s
+▸ api
 │ listening
-default/worker-pool │ ready
-default/api         │ GET /
+worker-pool │ ready
+api         │ GET /
 `
 	if out != want {
 		t.Errorf("got\n%s\nwant\n%s", out, want)
@@ -142,11 +149,11 @@ func TestRenderColor(t *testing.T) {
 	events[0].Plan = map[string]any{"changes": []any{map[string]any{"action": "delete"}}}
 	events[4].Level = "warn"
 	out, errs := renderAll(terminalRenderer(false), events...)
-	if strings.Contains(out+errs, "\x1b") || !strings.Contains(out, "│ gone \n") || errs != "default/db: a warning\n" {
+	if strings.Contains(out+errs, "\x1b") || !strings.Contains(out, "│ gone \n") || errs != "db: a warning\n" {
 		t.Errorf("without color:\n%q\n%q", out, errs)
 	}
 	out, errs = renderAll(terminalRenderer(true), events...)
-	for _, s := range []string{"\x1b[31m-\x1b[0m default/db  will go down", "\x1b[32mgone\x1b[0m", "\x1b[32m✓\x1b[0m default/db › down: done"} {
+	for _, s := range []string{"\x1b[31m-\x1b[0m db  go down", "\x1b[32mgone\x1b[0m", "\x1b[32m✓\x1b[0m db › down: done"} {
 		if !strings.Contains(out, s) {
 			t.Errorf("in color, no %q in\n%q", s, out)
 		}
@@ -163,7 +170,7 @@ func TestRenderOldEvents(t *testing.T) {
 		logLine("default/web", "up", "", "hello"),
 		ev("unit", "default/web", "", "", "", "", "up: done"),
 	)
-	want := "= default/web  will run: new\n▸ default/web › up\n│ hello\ndefault/web: up: done\n"
+	want := "  + web  new\n\nPlan of stack default: 1 to run\n\n▸ web › up\n│ hello\nweb: up: done\n"
 	if out != want {
 		t.Errorf("got\n%s\nwant\n%s", out, want)
 	}
@@ -208,18 +215,173 @@ func TestRenderGitHubGroups(t *testing.T) {
 		ev("unit", "default/db", "up", "", "", "failure", "the program exited with 1"),
 		logLine("default/app", "up", "", "four"),
 	)
-	want := `::group::default/app › up
+	want := `::group::app › up
 default/app | one
 default/app | ::warning::two
 ::endgroup::
-::group::default/db › up
+::group::db › up
 default/db | three
 ::endgroup::
-::group::default/app › up
+::group::app › up
 default/app | four
 ::endgroup::
 `
 	if got != want || gotErr != "default/db: the program exited with 1\n" {
 		t.Errorf("got\n%s\nwant\n%s\nstderr %q", got, want, gotErr)
+	}
+}
+
+func planEvent(addr, outcome, msg string, plan map[string]any) engine.Event {
+	e := ev("plan", addr, "plan", "", "finished", outcome, msg)
+	e.Plan = plan
+	return e
+}
+
+// The plan lines of the units wait until the plan is done, then show as
+// one table: the changes first, then a unit that only a warning names,
+// then those that cannot be planned, each hint on a line of its own, and a
+// line that counts them, also the units that do not change, which the
+// table leaves out. The block of the plan of a plugin, without its blank
+// first line, ends before it.
+func TestRenderPlanTable(t *testing.T) {
+	created := map[string]any{"changes": []any{map[string]any{"action": "create", "resource": "terraform_data.greeting"}}}
+	waits := map[string]any{"changes": []any{}, "after": "default/qa-out", "reason": "new"}
+	may := map[string]any{"changes": []any{}, "after": "default/infra"}
+	auto := map[string]any{"changes": []any{map[string]any{"action": "run"}}, "approval": "auto"}
+	orphan := ev("diagnostic", "default/qa-http", "", "", "", "", "orphan: its unit is no longer in the files; add {from: qa-http, destroy: true} to removed: to take it down, or destroy: false to forget it")
+	orphan.Level = "warn"
+	out, _ := renderAll(terminalRenderer(false),
+		at(ev("unit", "default/infra", "plan", "", "running", "", "plan: started"), 0),
+		at(logLine("default/infra", "plan", "", ""), 1),
+		at(logLine("default/infra", "plan", "", "OpenTofu will perform the following actions:"), 2),
+		at(planEvent("default/infra", "success", "will run: new; plan: create terraform_data.greeting", created), 400),
+		planEvent("default/qa-build", "success", "will run: new", auto),
+		planEvent("default/tesunit", "success", "unchanged", map[string]any{"changes": []any{}}),
+		planEvent("default/qa-each[a]", "failure", "error: this address was forgotten in run R; opstruss state rm qa-each[a] removes the tombstone so the name can be used again", nil),
+		planEvent("default/qa-stdin", "success", "will run: new; plan after default/qa-out (stdin)", waits),
+		planEvent("default/web", "success", "may run: plan after default/infra (env.GREETING)", may),
+		planEvent("default/qa-secret", "failure", "error: env.TOKEN: secret qa_token: QA_TOKEN is not set", nil),
+		orphan,
+		ev("unit", "default/qa-build", "up", "", "running", "", "up: started"),
+		logLine("default/qa-build", "up", "", "built"),
+	)
+	want := `▸ infra › plan
+│ OpenTofu will perform the following actions:
+✓ infra › plan  0.4s
+
+  + infra       new · create terraform_data.greeting
+  + qa-build    new · approval: auto
+  + qa-stdin    new · after qa-out (stdin)
+  ? web         after infra (env.GREETING)
+  ! qa-http     orphan: its unit is no longer in the files
+                → add {from: qa-http, destroy: true} to removed: to take it down, or destroy: false to forget it
+  ✗ qa-each[a]  this address was forgotten in run R
+                → opstruss state rm qa-each[a] removes the tombstone so the name can be used again
+  ✗ qa-secret   env.TOKEN: secret qa_token: QA_TOKEN is not set
+
+Plan of stack default: 3 to run, 1 may run, 1 unchanged, 1 orphan, 2 cannot be planned
+
+▸ qa-build › up
+│ built
+`
+	if out != want {
+		t.Errorf("got\n%s\nwant\n%s", out, want)
+	}
+}
+
+// A note of the run that comes while the plan is gathered, as that this
+// machine got an age key, comes under the table, not between the blocks of
+// the plans of plugins.
+func TestRenderNotesAfterPlan(t *testing.T) {
+	run := map[string]any{"changes": []any{map[string]any{"action": "run"}}}
+	out, _ := renderAll(terminalRenderer(false),
+		planEvent("default/web", "success", "will run: new", run),
+		ev("diagnostic", "", "", "", "", "", "made the age key age1x of this machine in keys.txt; back it up"),
+		planEvent("default/db", "success", "will run: new", run),
+		ev("unit", "default/web", "up", "", "running", "", "up: started"),
+	)
+	want := "  + web  new\n  + db   new\n\nPlan of stack default: 2 to run\n\nmade the age key age1x of this machine in keys.txt; back it up\n\n"
+	if out != want {
+		t.Errorf("got\n%s\nwant\n%s", out, want)
+	}
+}
+
+// Each line of a message is a line of its block at a terminal, and led by
+// its source without one, so a line of a log step never reads as a
+// workflow command in GitHub Actions; the line end that closes the message
+// adds no blank line.
+func TestRenderMultiline(t *testing.T) {
+	events := []engine.Event{
+		at(ev("step", "", "notify", "say", "running", "", "started"), 0),
+		at(logLine("", "notify", "say", "first\n::error::second\n"), 1),
+		at(ev("step", "", "notify", "say", "finished", "success", "success"), 2),
+	}
+	out, _ := renderAll(terminalRenderer(false), events...)
+	if want := "▸ notify › say\n│ first\n│ ::error::second\n✓ notify › say  0.0s\n"; out != want {
+		t.Errorf("at a terminal, got\n%s\nwant\n%s", out, want)
+	}
+	var o, e strings.Builder
+	out, _ = renderAll(newRenderer(&o, &e, false, false, true, false, false), events...)
+	if want := "::group::notify › say\nnotify: say | first\nnotify: say | ::error::second\n::endgroup::\n"; out != want {
+		t.Errorf("in GitHub Actions, got\n%s\nwant\n%s", out, want)
+	}
+}
+
+func statusEvent(addr, msg string, outputs map[string]any) engine.Event {
+	e := ev("unit", addr, "", "", "", "", msg)
+	e.Outputs = outputs
+	return e
+}
+
+// The status of the units is a table too: what the record of each says,
+// also of a unit whose plugin printed its status above, with a status of a
+// plugin that failed as a warning under its unit.
+func TestRenderStatusTable(t *testing.T) {
+	out, _ := renderAll(terminalRenderer(false),
+		at(ev("task", "default/infra", "default/infra/status", "", "running", "", "started"), 0),
+		at(logLine("default/infra", "default/infra/status", "", "terraform_data.greeting"), 1),
+		at(ev("task", "default/infra", "default/infra/status", "", "finished", "success", "success"), 400),
+		statusEvent("default/infra", "up, from run R1 at 2026-10-25T12:58:33Z",
+			map[string]any{"state": "up", "run": "R1", "updated": "2026-10-25T12:58:33Z"}),
+		ev("unit", "default/infra", "", "", "", "", `outputs: {"greeting":"hi"}`),
+		at(ev("task", "default/web", "default/web/status", "", "running", "", "started"), 500),
+		at(ev("task", "default/web", "default/web/status", "", "finished", "failure", "failed"), 600),
+		statusEvent("default/web", "pending: up of run R1 failed", map[string]any{"state": "pending", "run": "R1", "updated": ""}),
+		statusEvent("default/db", "absent", map[string]any{"state": "absent", "run": "", "updated": ""}),
+	)
+	want := `▸ infra › status
+│ terraform_data.greeting
+✓ infra › status  0.4s
+✗ web › status  0.1s
+
+  ● infra  up · 2026-10-25 12:58 UTC · run R1
+           outputs: {"greeting":"hi"}
+  ! web    pending: up of run R1 failed
+           ! the status of its plugin failed, above
+  ○ db     absent
+
+Status of stack default: 1 up, 1 pending, 1 absent
+
+`
+	if out != want {
+		t.Errorf("got\n%s\nwant\n%s", out, want)
+	}
+}
+
+// A unit that an interrupt stopped ends cancelled; one that it kept from
+// starting, also after a unit it needs, shows no line of its own, and the
+// summary counts both as cancelled.
+func TestRenderInterrupted(t *testing.T) {
+	out, _ := renderAll(terminalRenderer(false),
+		at(ev("unit", "default/net", "up", "", "running", "", "up: started"), 0),
+		at(logLine("default/net", "up", "", "creating"), 1),
+		at(ev("unit", "default/net", "up", "", "finished", "cancelled", "interrupted: the program exited with 130"), 500),
+		at(ev("unit", "default/web", "up", "", "finished", "skipped", "skipped: default/net is cancelled"), 501),
+		at(ev("unit", "default/db", "up", "", "finished", "cancelled", "interrupted before its turn"), 502),
+		at(ev("run", "", "", "", "finished", "cancelled", "cancelled"), 503),
+	)
+	want := "▸ net › up\n│ creating\n■ net › up: interrupted: the program exited with 130  0.5s\n\nUp of stack default: 3 cancelled\n"
+	if out != want {
+		t.Errorf("got\n%s\nwant\n%s", out, want)
 	}
 }

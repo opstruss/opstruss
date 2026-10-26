@@ -26,7 +26,11 @@ import (
 // internal, and of every task of its units, also under opstruss run, which
 // still reaches a task that a later built-in command shadows.
 func (a *app) taskCommands(root *cobra.Command) {
-	run := &cobra.Command{Use: "run <task>", Short: "Run a task of the project, also one that a built-in command shadows"}
+	run := &cobra.Command{Use: "run <task>", Short: "Run a task of the project, also one that a built-in command shadows",
+		// A name that is no task is an error, as at the root, rather than
+		// the help with exit code 0.
+		Args: unknownCommand, SuggestionsMinimumDistance: 2,
+		RunE: func(c *cobra.Command, _ []string) error { return c.Help() }}
 	root.AddCommand(run)
 	// A built-in command needs no task commands, so the project is read
 	// for them only when the command may be a task, or for completion.
@@ -132,6 +136,36 @@ func (a *app) commandProject() *model.Project {
 	return p
 }
 
+// inputFact is what the help of the flag of an input says besides its
+// description: that it is required, or its default, when the tasks that
+// declare it agree.
+func inputFact(decls []*model.Input) string {
+	first := decls[0]
+	for _, d := range decls[1:] {
+		if d.Required != first.Required || expr.JSON(d.Default) != expr.JSON(first.Default) {
+			return ""
+		}
+	}
+	switch {
+	case first.Required:
+		return "required"
+	case first.Default != nil:
+		return "default " + expr.Text(first.Default)
+	}
+	return ""
+}
+
+// textFlag takes the text of an input, which the engine reads by its type,
+// and names that type in the help: --times number.
+type textFlag struct {
+	p   *string
+	typ string
+}
+
+func (f *textFlag) String() string     { return *f.p }
+func (f *textFlag) Set(s string) error { *f.p = s; return nil }
+func (f *textFlag) Type() string       { return f.typ }
+
 // taskCommand runs one task, of the project or of the units that have it:
 // each input of those tasks is a flag, arrays repeat it, an object takes
 // JSON or @file, a boolean also has --no-<name>, and an input with args:
@@ -165,6 +199,9 @@ func (a *app) taskCommand(name string, tasks []*model.Task, ofUnits bool) *cobra
 		for _, d := range decls[in] {
 			help = cmp.Or(help, d.Description)
 		}
+		if fact := inputFact(decls[in]); fact != "" {
+			help = strings.TrimSpace(help + " (" + fact + ")")
+		}
 		if slices.ContainsFunc(decls[in], func(d *model.Input) bool { return d.Args }) {
 			argsInput = in
 		}
@@ -184,7 +221,11 @@ func (a *app) taskCommand(name string, tasks []*model.Task, ofUnits bool) *cobra
 			cmd.Flags().StringArrayVar(lists[in], flag, nil, help)
 		default:
 			texts[in] = new(string)
-			cmd.Flags().StringVar(texts[in], flag, "", help)
+			typ := "string"
+			if t := decls[in][0].Type; t != "" && all(in, typed(t)) {
+				typ = t
+			}
+			cmd.Flags().Var(&textFlag{texts[in], typ}, flag, help)
 		}
 	}
 	cmd.Flags().BoolVar(&yes, "yes", false, "approve the changes of this run, as in CI")

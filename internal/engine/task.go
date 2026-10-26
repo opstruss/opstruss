@@ -550,6 +550,11 @@ func (e *engine) callTask(ctx context.Context, name string, t *model.Task, dir s
 			ok, err = e.opts.Approve(ctx, Question{Op: "task", Task: label, Summary: "run task " + name})
 			release()
 		}
+		if err != nil && errors.Is(ctx.Err(), context.Canceled) {
+			// The run was interrupted while the task waited for its answer.
+			e.endTask(c.address(), label, "", cancelled, "interrupted before its approval")
+			return &taskResult{outcome: cancelled, outputs: map[string]any{}}
+		}
 		if !ok || err != nil {
 			e.say("approval", label, "task %s needs approval; stopped", name)
 			e.stopAtPlan()

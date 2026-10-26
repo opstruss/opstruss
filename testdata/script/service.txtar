@@ -79,7 +79,7 @@ waitgrep 'this process is the daemon of stack default while its services run; Ct
 exec sh -c 'kill -INT $(cat pid)'
 wait fg
 grep '^130$' code
-grep '^interrupted: the programs stop within their stop.grace' fg.err
+grep '^interrupted: nothing more starts, and the programs that run stop within their stop.grace' fg.err
 grep '^default/web: stopped' fg.out
 
 # a service is validated as one

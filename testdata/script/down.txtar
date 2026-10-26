@@ -39,7 +39,7 @@ stdout '"app\[us\]": \{\s+"outcome": "success",\s+"changed": true,\s+"plan": "wi
 # a unit that leaves the files is an orphan until removed: decides
 cp opstruss3.yaml opstruss.yaml
 exec opstruss up --yes
-stderr '^default/cache: orphan: its unit is no longer in the files; decide with removed:$'
+stderr '^default/cache: orphan: its unit is no longer in the files; add \{from: cache, destroy: true\} to removed: to take it down, or destroy: false to forget it$'
 exists .opstruss/state/default/cache/state.json
 cp opstruss4.yaml opstruss.yaml
 exec opstruss plan

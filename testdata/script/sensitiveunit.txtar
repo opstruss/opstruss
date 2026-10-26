@@ -7,9 +7,11 @@ env HOME=$WORK/home
 env XDG_CONFIG_HOME=$WORK/config
 env TOKEN=s3cr3t-token-value
 
-# the first value that needs the data key makes it
+# the first value that needs the data key makes it, which only the record
+# and OPSTRUSS_LOG=debug say
 exec opstruss up --yes
-stdout 'made the data key of stack default in default/_meta, with age for age1'
+! stdout 'made the data key'
+grep '"age1[0-9a-z]+"' .opstruss/state/default/_meta
 stdout '^default/api \| deploying with \*\*\*$'
 stderr 'output auth holds a sensitive value, so it is sensitive'
 ! stdout s3cr3t

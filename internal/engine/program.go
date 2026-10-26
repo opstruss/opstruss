@@ -3,6 +3,7 @@ package engine
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"path"
@@ -248,7 +249,12 @@ func (e *engine) execProgram(ctx context.Context, p progSpec, c *plugin.Call) (*
 	if err := outcomeErr(res); err != nil {
 		r.outcome = failure
 		if p.failedWhen == nil {
-			e.emit(Event{Type: "step", Level: "error", Task: p.label, Step: p.step, Message: err.Error()})
+			ev := Event{Type: "step", Level: "error", Task: p.label, Step: p.step, Message: err.Error()}
+			if errors.Is(ctx.Err(), context.Canceled) {
+				// The run was interrupted, which stopped the program.
+				ev.Level, ev.Message = "warn", "interrupted: "+err.Error()
+			}
+			e.emit(ev)
 		}
 	}
 	return r, judged, nil

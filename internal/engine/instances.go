@@ -64,6 +64,9 @@ type plan struct {
 	outputs      []string
 	pluginDigest string
 	inexact      bool
+	// auto says that the unit is approved by approval: auto, of its own or
+	// of its stack, so up asks nothing.
+	auto bool
 }
 
 // approval is the digest that approves the plan: the digest trigger joined

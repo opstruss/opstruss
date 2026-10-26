@@ -135,6 +135,10 @@ func (a *app) answers() bool { return a.terminal && a.stdin != nil }
 // approve asks at the terminal whether to apply one change; only y or yes
 // approves it, as the prompt of terraform apply wants yes.
 func (a *app) approve(ctx context.Context, q engine.Question) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		// An interrupted run asks nothing more.
+		return false, err
+	}
 	who := q.Address
 	if who == "" {
 		who = q.Task
@@ -142,15 +146,38 @@ func (a *app) approve(ctx context.Context, q engine.Question) (bool, error) {
 	// The question names what yes does, as terraform destroy asks about
 	// destroying; a daemon older than op asks to apply.
 	ask := "Apply " + who
-	switch q.Op {
-	case "down":
+	switch {
+	case q.Op == "down" && strings.HasPrefix(q.Summary, "will be forgotten"):
+		// Only its record goes.
+		ask = "Forget " + who
+	case q.Op == "down":
 		ask = "Take " + who + " down"
-	case "task":
+	case q.Op == "task":
 		ask = "Run " + who
 	}
-	a.question(fmt.Sprintf("%s: %s\n%s? [y/N] ", who, q.Summary, ask))
+	question := fmt.Sprintf("%s: %s\n%s? [y/N] ", who, q.Summary, ask)
+	a.renderMu.Lock()
+	r := a.renderers[a.stdout]
+	shown := false
+	if r != nil {
+		for _, lines := range r.planned {
+			shown = shown || lines[q.Address] == q.Summary
+		}
+	}
+	a.renderMu.Unlock()
+	if r != nil && r.terminal {
+		// The question names the unit as the plan table does, in one line,
+		// and says the plan only when it is not the one the table showed.
+		ask = strings.Replace(ask, who, unitName(who), 1)
+		question = ask + "? "
+		if why := planText(engine.Event{Address: q.Address, Message: q.Summary}); !shown && q.Op != "task" && why != "go down" {
+			question += paint(a.colorFor(a.stderr), dim, "("+why+")") + " "
+		}
+		question += "[y/N] "
+	}
+	a.question(question)
 	line, err := a.readLine(ctx)
-	a.answered()
+	a.answered(err != nil)
 	if err != nil {
 		return false, err
 	}
@@ -167,15 +194,18 @@ func (a *app) ask(ctx context.Context, name string, in *model.Input) (string, er
 	if in.Description != "" {
 		prompt += " (" + in.Description + ")"
 	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	a.question(prompt + ": ")
-	defer a.answered()
 	if f, ok := a.in.(*os.File); ok && in.Sensitive && term.IsTerminal(int(f.Fd())) {
-		// A sensitive input is typed without echo.
+		// A sensitive input is typed without echo, so the line ends here.
 		b, err := term.ReadPassword(int(f.Fd()))
-		fmt.Fprintln(a.stderr)
+		a.answered(true)
 		return string(b), err
 	}
 	line, err := a.readLine(ctx)
+	a.answered(err != nil)
 	return strings.TrimRight(line, "\r\n"), err
 }
 
@@ -188,16 +218,33 @@ const maxHeld = 1 << 20
 func (a *app) question(text string) {
 	a.renderMu.Lock()
 	defer a.renderMu.Unlock()
+	// The plan is done once the run asks about it.
+	for _, r := range a.renderers {
+		for _, p := range r.flushPlan() {
+			a.write(p.w, p.text, "")
+		}
+	}
 	a.asking = true
+	// At a terminal, the output of the run goes on above the question, which
+	// stays the last line, as prompt_toolkit prints above its prompt;
+	// elsewhere the output waits for the answer.
+	r := a.renderers[a.stdout]
+	a.live = r != nil && r.terminal && writesTerminal(a.stderr) && !strings.Contains(text, "\n")
+	a.prompt = text
 	fmt.Fprint(a.stderr, text)
 }
 
 // answered writes the output that came while the question waited, and
 // says how much of it, past maxHeld, only the record keeps.
-func (a *app) answered() {
+// The line of a question that got no answer, as one Ctrl-C ended, ends
+// with closeLine.
+func (a *app) answered(closeLine bool) {
 	a.renderMu.Lock()
 	defer a.renderMu.Unlock()
-	a.asking = false
+	if closeLine && a.prompt != "" {
+		fmt.Fprintln(a.stderr)
+	}
+	a.asking, a.live, a.prompt = false, false, ""
 	for _, h := range a.held {
 		_, _ = io.WriteString(h.w, h.text)
 	}
@@ -213,6 +260,13 @@ func (a *app) write(w io.Writer, text, run string) {
 	switch {
 	case !a.asking:
 		_, _ = io.WriteString(w, text)
+	case a.live:
+		// The question line gives way to the output and comes back under it.
+		_, _ = io.WriteString(a.stderr, "\r\x1b[2K")
+		_, _ = io.WriteString(w, text)
+		if a.prompt != "" {
+			_, _ = io.WriteString(a.stderr, a.prompt)
+		}
 	case a.heldBytes+len(text) > maxHeld:
 		a.heldOver += strings.Count(text, "\n")
 		a.heldRun = cmp.Or(run, a.heldRun)
@@ -356,7 +410,7 @@ func (a *app) interrupts() *interrupts {
 					in.mu.Lock()
 					in.got, _ = s.(syscall.Signal)
 					in.mu.Unlock()
-					a.notice("interrupted: the programs stop within their stop.grace; interrupt again to kill them at once")
+					a.notice("interrupted: nothing more starts, and the programs that run stop within their stop.grace; interrupt again to kill them at once")
 					cancel()
 				case 1:
 					a.notice("two interrupts received: killing the programs at once; the next plan shows what did not finish")
@@ -393,5 +447,21 @@ func (in *interrupts) exit(code int) error {
 func (a *app) notice(msg string) {
 	a.renderMu.Lock()
 	defer a.renderMu.Unlock()
+	terminal := writesTerminal(a.stderr)
+	if terminal {
+		msg = paint(a.colorFor(a.stderr), yellow, msg)
+	}
+	if a.asking && a.live && a.prompt != "" {
+		// An interrupt ends the question: its line stays as it is, with
+		// the ^C of the terminal, and the notice comes under it.
+		a.prompt = ""
+		_, _ = io.WriteString(a.stderr, "\n"+msg+"\n")
+		return
+	}
+	if terminal {
+		// The terminal wrote ^C at the start of a line; the notice comes
+		// under it.
+		msg = "\n" + msg
+	}
 	a.write(a.stderr, msg+"\n", "")
 }

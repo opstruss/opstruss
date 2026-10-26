@@ -196,7 +196,11 @@ func (e *engine) command(c *model.Command, s *expr.Scope) (model.Command, error)
 		if err != nil {
 			return model.Command{}, fmt.Errorf("item %d: %w", i, err)
 		}
-		if sensitive || e.redact.Contains(text) {
+		// A value that the run knows as sensitive and that an expression put
+		// in the item would show in the list of processes. Text that the
+		// file itself writes, such as "token" in a script while a secret's
+		// value is token, is not such a value.
+		if sensitive || e.redact.Contains(text) && !e.redact.Contains(a) {
 			return model.Command{}, fmt.Errorf("item %d: %w", i, errArgv)
 		}
 		argv = append(argv, text)

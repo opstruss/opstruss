@@ -1,7 +1,7 @@
 # A plugin with state: tool keeps the tool's own state in tool/ of the
 # unit, OPSTRUSS_STATE_DIR; with outputs: tool its outputs are what the
-# tool names. status runs the plugin's status task, or says what the
-# record holds.
+# tool names. status runs the plugin's status task, and says what the
+# record holds, as a pending up that the plugin cannot know of.
 
 env HOME=$WORK/home
 chmod 755 plugins/tool/up.sh
@@ -13,9 +13,11 @@ stdout '^default/web \| port 8080 tags \["a","b"\]$'
 exists .opstruss/state/default/infra/tool/state.json
 
 # status reads the record and tool/ without the lock; a unit whose plugin
-# has no status task gets what its record says
+# has no status task gets what its record says, and one whose plugin has
+# it gets that too
 exec opstruss status
 stdout '^default/infra \| serial 1 in tool, outputs port 8080$'
+stdout '^default/infra: up, from run '
 stdout '^default/web: up, from run '
 exec opstruss ps web
 stdout '^default/web: up, from run '

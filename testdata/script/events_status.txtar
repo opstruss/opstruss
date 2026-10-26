@@ -21,8 +21,12 @@ cmp stdout up.want
 exec sh -c 'opstruss up --yes --json | jq -c "select(.status) | [.type, .address, .task, .status, .outcome, .message]"'
 cmp stdout again.want
 
-exec sh -c 'opstruss down --yes --json | jq -c "select(.status) | [.type, .address, .task, .status, .outcome, .message]"'
-cmp stdout down.want
+# one unit at a time, as two that do not depend on each other go down in
+# no set order
+exec sh -c 'opstruss down --yes --json net | jq -c "select(.status) | [.type, .address, .task, .status, .outcome, .message]"'
+cmp stdout down-net.want
+exec sh -c 'opstruss down --yes --json web | jq -c "select(.status) | [.type, .address, .task, .status, .outcome, .message]"'
+cmp stdout down-web.want
 
 -- opstruss.yaml --
 name: shop
@@ -128,12 +132,15 @@ build: failed
 ["unit","default/net","up","finished","success","unchanged"]
 ["unit","default/web","up","finished","success","unchanged"]
 ["run",null,null,"finished","success","success"]
--- down.want --
+-- down-net.want --
 ["run",null,null,"running",null,"started"]
 ["plan","default/net","plan","finished","success","will go down"]
-["plan","default/web","plan","finished","success","will go down"]
-["unit","default/web","down","running",null,"down: started"]
-["unit","default/web","down","finished","success","forgotten without a down program"]
 ["unit","default/net","down","running",null,"down: started"]
 ["unit","default/net","down","finished","success","down: done"]
+["run",null,null,"finished","success","success"]
+-- down-web.want --
+["run",null,null,"running",null,"started"]
+["plan","default/web","plan","finished","success","will be forgotten: it has no down program"]
+["unit","default/web","down","running",null,"down: started"]
+["unit","default/web","down","finished","success","forgotten without a down program"]
 ["run",null,null,"finished","success","success"]

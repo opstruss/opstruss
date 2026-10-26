@@ -89,7 +89,7 @@ func (e *engine) execUnit(ctx context.Context, unit string, argv []string, tty S
 	defer func() { _ = e.store.Unlock(inst.address, token) }()
 	rec, _, err := e.store.Get(inst.address)
 	if err == nil {
-		err = tombstoned(rec)
+		err = tombstoned(rec, e.short(inst.address))
 	}
 	if err != nil {
 		return 0, err

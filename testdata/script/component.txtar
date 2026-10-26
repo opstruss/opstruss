@@ -44,7 +44,7 @@ exists .opstruss/state/default/dns/zone/state.json
 # record goes
 cp one.yaml opstruss.yaml
 exec opstruss up
-stdout '^default/site\[us\]/web: will go down: its instance is no longer in if or for_each$'
+stdout '^default/site\[us\]/web: will be forgotten: its instance is no longer in if or for_each; it has no down program$'
 stdout '^default/site\[us\]: the instance has no units left; its record is gone$'
 ! exists '.opstruss/state/default/site[us]/state.json'
 
@@ -54,7 +54,7 @@ cp moved.yaml opstruss.yaml
 exec opstruss up --yes
 stdout '^default/portal\[eu\]/db: moved from default/site\[eu\]/db$'
 ! stdout 'portal\[eu\]/db: up'
-stdout '^default/dns/zone: will go down: removed: with destroy: true$'
+stdout '^default/dns/zone: will be forgotten: removed: with destroy: true; it has no down program$'
 stdout '^default/dns: the instance has no units left; its record is gone$'
 exec opstruss state list
 stdout '^default/site\[eu\]\tmoved to default/portal\[eu\]$'

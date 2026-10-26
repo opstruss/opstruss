@@ -41,7 +41,7 @@ cp moved.yaml site/opstruss.yaml
 exec opstruss up --yes
 stdout '^default/site\[eu\]/database: moved from default/site\[eu\]/db$'
 stdout '^default/site\[us\]/database: moved from default/site\[us\]/db$'
-stdout '^default/site\[eu\]/old: will go down: removed: with destroy: true$'
+stdout '^default/site\[eu\]/old: will be forgotten: removed: with destroy: true; it has no down program$'
 ! stdout 'database: up'
 exec opstruss state list
 stdout '^default/site\[us\]/db\tmoved to default/site\[us\]/database$'

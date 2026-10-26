@@ -21,14 +21,27 @@ minor release can change what a project, a component, or a plugin relies on.
   as an unchanged unit or a step skipped by `if` or after a failed step,
   only ends.
 - At a terminal, a run shows a block for each unit operation, task, and
-  step: a line that starts it, the lines of its programs in their own
-  colors under a gutter, and a line with how it ended and how long it
-  took. While several programs print at once, each line is led by its
-  source. Without a terminal, the lines stay as they were, and a step
-  skipped after a failed step is listed as skipped.
+  step: a line that starts it with its first line, the lines of its
+  programs in their own colors under a gutter, and a line with how it
+  ended and how long it took. Units are named without their stack. While
+  several run at once, one block shows its lines as they come and the
+  others show whole once they end, as `turbo run --log-order=grouped`
+  does; what OpsTruss says of a unit, such as a warning or that its
+  service started, stays in its block. The plan prints as one table after
+  the plans of plugins, as `pulumi preview` does: a mark for each unit
+  (`+`, `~`, `±`, `-`, `?`, `○`, `!`, `✗`), what changes, each hint on a
+  line of its own, the units that do not change counted but not listed,
+  and a line such as `Plan of stack default: 2 to run, 3 unchanged`;
+  notes of the run that came meanwhile, such as a new age key of this
+  machine, follow it. `status` prints a table too, and `up` and `down`
+  end with a line that counts what the units did. A question is one line,
+  and the output of the run goes on above it. Without a terminal, the
+  lines stay as they were, and a step skipped after a failed step is
+  listed as skipped; each line of a message of several lines, as of a
+  `log` step, is led by its source.
 - In GitHub Actions, the lines of each unit operation, task, and step are
-  folded in a `::group::`, while the lines of OpsTruss itself stay
-  outside.
+  folded in a `::group::` named as the terminal names it (`app › up`),
+  while the lines of OpsTruss itself stay outside.
 - Color follows `NO_COLOR`, `FORCE_COLOR`, `CLICOLOR_FORCE`, and
   `TERM=dumb`, then a terminal or GitHub Actions; with `--json`, only the
   environment turns it on. Programs receive `NO_COLOR=1` when the output
@@ -150,7 +163,7 @@ minor release can change what a project, a component, or a plugin relies on.
   keeps the inputs, the outputs the plugin
   declares, and the program of `down` with the plugin's directory, which
   `down` runs; a plugin without `plan` runs as a `run` unit does, and one
-  without `down` is forgotten.
+  without `down` is forgotten, as its plan says.
 - A plugin with `state: tool` keeps the tool's own state in `tool/` of
   each unit, which its programs get as `OPSTRUSS_STATE_DIR` and which goes
   with the record: `moved:` moves it, `down` removes it, and `removed:`
@@ -294,8 +307,9 @@ minor release can change what a project, a component, or a plugin relies on.
 - `opstruss logs [unit|task]...` shows the output of the units: the log of
   a service, from the files it turned over into first; the `logs` task of
   a unit's plugin, with the input `follow` when the task declares it; and
-  for other units the output of the last run that touched them, as
-  `docker logs` shows that of a container that ended. `-f` (or `--follow`)
+  for other units the output of the last run that ran their programs,
+  not one that left them unchanged, as `docker logs` shows that of a
+  container that ended. `-f` (or `--follow`)
   goes on with the logs of services, also after they turn over, and with
   plugins that follow, until Ctrl-C. `logs` runs in the caller's process
   also while a daemon runs, and the lines it shows keep their own time and
@@ -307,9 +321,10 @@ minor release can change what a project, a component, or a plugin relies on.
   which `logs` exits with 0. A name of a unit and a task shows both, and
   one of neither fails.
 - `opstruss status [unit]...` (also `ps`) runs the `status` task of each
-  unit's plugin without the unit's lock, with its record to read, and for
-  other units says what the record holds: up with its last run and
-  outputs, pending, or absent. A `task: status` step gives what each unit
+  unit's plugin without the unit's lock, with its record to read, and
+  says for every unit what its record holds: up with its last run and
+  outputs, pending, or absent, so an `up` that did not finish shows also
+  for a plugin that cannot know of it. A `task: status` step gives what each unit
   says as `steps.<id>.units['<unit>'].outputs`, and `--json` carries it in
   the event of each unit.
 - A sensitive value is hidden as `***` wherever a run writes it: the
@@ -351,7 +366,7 @@ minor release can change what a project, a component, or a plugin relies on.
   `sensitive`. A line of a program or a service longer than 64 KiB is cut
   as it comes, where no hidden value is cut in two.
 - The data key of a stack, made the first time a value needs it, plan
-  included, is kept in `<stack>/_meta`, wrapped with age inside OpsTruss
+  included, with a line only at `OPSTRUSS_LOG=debug`, is kept in `<stack>/_meta`, wrapped with age inside OpsTruss
   for the age key of this machine, or for `encryption_keys`, and a run
   opens it once. Sensitive values
   of units, components, plugins, and `kv` are kept encrypted with it
@@ -507,7 +522,12 @@ minor release can change what a project, a component, or a plugin relies on.
   which instances exist, from what is known when the run starts.
 - A change needs approval: `approval: auto`, or `--yes` for the run;
   otherwise the unit stops at plan, the units that depend on it are
-  skipped, and the run exits with 2.
+  skipped, and the run exits with 2. At a terminal, the run first asks
+  about every unit whose plan is known, in the order of the plan, before
+  any program runs, also one with `approval: auto`; an answer holds for
+  that plan, and a plan that changed at the unit's turn is asked again. A
+  unit whose plan waits for the outputs of another is asked at its turn.
+  After Ctrl-C nothing more is asked.
 - Each unit holds the lock of its address from its plan to the end of its
   program, waiting while another run holds it; a run nested in a program
   of another fails at once on a lock that run holds.
@@ -550,8 +570,10 @@ minor release can change what a project, a component, or a plugin relies on.
   its outputs are printed at the end. `--help` lists the tasks of the
   project under "Project tasks", apart from the commands of OpsTruss; a
   task without a `description` shows the first line of its `run`, the ids
-  of its steps, or the task it calls. An unknown command gets suggestions,
-  also of tasks, as git does.
+  of its steps, or the task it calls. An unknown command, also a name
+  after `opstruss run` that is no task, fails with suggestions, also of
+  tasks, as git does. The help of each input flag names its type and its
+  default, or that it is required.
 - `steps:` run in order: `run`, `task:` (`plan`, `up`, or `down` of
   `units:`, a project task with `with:`, or the task of each unit that has
   it), and `block:` with `rescue:` and `always:`, which read the outcome of
@@ -689,8 +711,9 @@ minor release can change what a project, a component, or a plugin relies on.
   leaves in its group when it exits are stopped the same way. A second
   Ctrl-C or SIGTERM kills the groups at once, also of services that stop
   in a daemon in the foreground, and the run still writes its record and
-  pending marks. A run that a signal ended exits with 130 or 143, as a
-  shell reports it.
+  pending marks. A unit or a step whose program a cancel stopped ends
+  `cancelled`, not failed, and a timeout still fails it. A run that a
+  signal ended exits with 130 or 143, as a shell reports it.
 - Every program holds the lock of its run on file descriptor 3, which
   tells OpsTruss that programs of an interrupted run still live, also
   where their environment cannot be read; a program leaves it open.
