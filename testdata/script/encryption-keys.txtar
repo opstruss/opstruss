@@ -30,7 +30,7 @@ exec sh -c 'grep -F "$(cat m1.pub)" .opstruss/state/default/_meta'
 # another machine cannot open it, and learns its own key to add
 env XDG_CONFIG_HOME=$WORK/m2
 ! exec opstruss up --yes
-stderr 'the data key of stack default does not open on this machine: default/_meta has it with age for age1[0-9a-z]+; the age key of this machine is age1[0-9a-z]+ \(in .*/m2/opstruss/age/keys.txt, made just now\): add it to encryption_keys, and run plan, up, or down on a machine that opens the data key, which wraps it again'
+stderr 'the data key of stack default does not open on this machine: default/_meta has it with age for age1[0-9a-z]+; the age key of this machine is age1[0-9a-z]+ \(in .*/m2/opstruss/age/keys.txt, made just now\): add it to encryption_keys, and run plan, up, or destroy on a machine that opens the data key, which wraps it again'
 exec sh pub.sh m2
 cp stdout m2.pub
 
@@ -40,7 +40,7 @@ exec sh -c 'printf "encryption_keys:\n  - %s\n  - %s\n" "$(cat m1.pub)" "$(cat m
 exec opstruss validate
 ! exec opstruss up --yes
 stderr 'encryption_keys differs from what wraps the data key in default/_meta, which this run cannot wrap again'
-stderr 'encryption_keys has the age key of this machine, age1[0-9a-z]+ \(in .*/m2/opstruss/age/keys.txt\): a plan, up, or down on a machine that opens the data key wraps it again for it'
+stderr 'encryption_keys has the age key of this machine, age1[0-9a-z]+ \(in .*/m2/opstruss/age/keys.txt\): a plan, up, or destroy on a machine that opens the data key wraps it again for it'
 
 # doctor on the first machine says where its key is, what opens the data
 # key, and how the list differs
@@ -48,7 +48,7 @@ env XDG_CONFIG_HOME=$WORK/m1
 exec opstruss doctor
 stdout '^ok     the age key of this machine is age1[0-9a-z]+, from .*/m1/opstruss/age/keys.txt$'
 stdout '^ok     the data key of stack default opens with the age key in .*/m1/opstruss/age/keys.txt$'
-stdout '^warn   encryption_keys differs from what wraps the data key in default/_meta \(\+age1[0-9a-z]+\); the next plan, up, down, or task run here wraps it again$'
+stdout '^warn   encryption_keys differs from what wraps the data key in default/_meta \(\+age1[0-9a-z]+\); the next plan, up, destroy, or task run here wraps it again$'
 ! stdout sops
 
 # a plan there wraps it again, and the second machine opens it

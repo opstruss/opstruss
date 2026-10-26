@@ -52,8 +52,8 @@ stdout '"kind": "plugin"'
 cp removed.yaml opstruss.yaml
 exec sh -c 'chmod -R u+w "$HOME/.opstruss/cache/git"; rm -rf "$HOME/.opstruss/cache/git"'
 exec opstruss up --stack alpha --yes
-stdout 'down-v1 first'
-! stdout 'down-v2'
+stdout 'destroy-v1 first'
+! stdout 'destroy-v2'
 ! exists .opstruss/state/alpha/db/state.json
 
 # A cached source executes offline across projects; a cold one fails before programs.
@@ -117,8 +117,8 @@ inputs:
 tasks:
   up:
     run: [sh, '${{ opstruss.dir }}/tool.sh', up]
-  down:
-    run: [sh, '${{ opstruss.dir }}/tool.sh', down]
+  destroy:
+    run: [sh, '${{ opstruss.dir }}/tool.sh', destroy]
   echo:
     inputs:
       message: {type: string, required: true}
@@ -127,14 +127,14 @@ tasks:
 #!/bin/sh
 case "$1" in
 up) echo "up-v1 $INPUT_NAME" ;;
-down) echo "down-v1 $INPUT_NAME" ;;
+destroy) echo "destroy-v1 $INPUT_NAME" ;;
 task) echo "task-v1 $INPUT_MESSAGE" ;;
 esac
 -- v2.sh --
 #!/bin/sh
 case "$1" in
 up) echo "up-v2 $INPUT_NAME" ;;
-down) echo "down-v2 $INPUT_NAME" ;;
+destroy) echo "destroy-v2 $INPUT_NAME" ;;
 task) echo "task-v2 $INPUT_MESSAGE" ;;
 esac
 -- repo/demo/components/site/opstruss.yaml --
@@ -144,7 +144,7 @@ uses:
 units:
   command:
     run: [echo, component-v1]
-    down: [echo, component-down-v1]
+    destroy: [echo, component-destroy-v1]
 tasks:
   remote-task:
     parent.echo: {message: component}

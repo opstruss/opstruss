@@ -20,16 +20,17 @@ import (
 	"golang.org/x/term"
 )
 
-// unitCommands are the commands that change units: plan, up, and down,
-// with the aliases that Terraform and Pulumi users reach for.
+// unitCommands are the commands that change units: plan, up, and destroy.
+// They have no aliases: the names that users of other tools reach for are
+// only suggested, as git suggests a command for a typo.
 func (a *app) unitCommands() []*cobra.Command {
 	type flags struct{ yes, force, noDeps bool }
-	command := func(use, alias, short, force string) *cobra.Command {
+	command := func(use, short, force string, suggestFor ...string) *cobra.Command {
 		var f flags
 		cmd := &cobra.Command{
-			Use:     use + " [unit]...",
-			Aliases: []string{alias},
-			Short:   short,
+			Use:        use + " [unit]...",
+			Short:      short,
+			SuggestFor: suggestFor,
 			RunE: func(_ *cobra.Command, units []string) error {
 				req, err := a.request(units)
 				if err != nil {
@@ -45,15 +46,15 @@ func (a *app) unitCommands() []*cobra.Command {
 				return in.exit(res.ExitCode)
 			},
 		}
-		cmd.Flags().BoolVar(&f.noDeps, "no-deps", false, "leave out the units that the ones named depend on, or for down those that depend on them")
+		cmd.Flags().BoolVar(&f.noDeps, "no-deps", false, "leave out the units that the ones named depend on, or for destroy those that depend on them")
 		if force != "" {
 			cmd.Flags().BoolVar(&f.yes, "yes", false, "approve the changes of this run, as in CI")
 			cmd.Flags().BoolVar(&f.force, "force", false, force)
 		}
 		return cmd
 	}
-	up := command("up", "apply", "Bring the units up: each runs when its definition changed",
-		"run the units named although unchanged")
+	up := command("up", "Bring the units up: each runs when its definition changed",
+		"run the units named although unchanged", "apply", "deploy", "start")
 	up.Long = up.Short + `.
 
 With -d, up runs in the daemon of the stack, which starts in the background
@@ -63,11 +64,11 @@ this process the daemon of the stack, which shows the output of its services
 and stays while they run; Ctrl-C stops them.`
 	up.Annotations = map[string]string{detachable: "true"}
 	return []*cobra.Command{
-		command("plan", "preview", "Show what up would do and why, without changing anything", ""),
+		command("plan", "Show what up would do and why, without changing anything", "", "preview", "diff"),
 		up,
-		command("down", "destroy", "Take the units down with the down contract of their records",
-			"run down although pass values differ from those recorded"),
-		command("status", "ps", "Show the state of the units: the status task of their plugin, or what their record says", ""),
+		command("destroy", "Destroy the units with the destroy contract of their records",
+			"run destroy although pass values differ from those recorded", "down", "delete", "remove", "rm"),
+		command("status", "Show the state of the units: the status task of their plugin, or what their record says", "", "ps"),
 		a.logsCommand(),
 	}
 }
@@ -147,11 +148,11 @@ func (a *app) approve(ctx context.Context, q engine.Question) (bool, error) {
 	// destroying; a daemon older than op asks to apply.
 	ask := "Apply " + who
 	switch {
-	case q.Op == "down" && strings.HasPrefix(q.Summary, "will be forgotten"):
+	case q.Op == "destroy" && strings.HasPrefix(q.Summary, "will be forgotten"):
 		// Only its record goes.
 		ask = "Forget " + who
-	case q.Op == "down":
-		ask = "Take " + who + " down"
+	case q.Op == "destroy":
+		ask = "Destroy " + who
 	case q.Op == "task":
 		ask = "Run " + who
 	}
@@ -170,7 +171,7 @@ func (a *app) approve(ctx context.Context, q engine.Question) (bool, error) {
 		// and says the plan only when it is not the one the table showed.
 		ask = strings.Replace(ask, who, unitName(who), 1)
 		question = ask + "? "
-		if why := planText(engine.Event{Address: q.Address, Message: q.Summary}); !shown && q.Op != "task" && why != "go down" {
+		if why := planText(engine.Event{Address: q.Address, Message: q.Summary}); !shown && q.Op != "task" && why != "destroy" {
 			question += paint(a.colorFor(a.stderr), dim, "("+why+")") + " "
 		}
 		question += "[y/N] "

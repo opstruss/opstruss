@@ -16,7 +16,7 @@ import (
 
 // Protocol is the version of the API, which a connection opens with in
 // initialize; a client that meets another one stops.
-const Protocol = 3
+const Protocol = 1
 
 // Request says which project and stack a call is about, with what the
 // caller brings: its directory, environment, and inputs, which a run
@@ -32,7 +32,7 @@ type Request struct {
 	Units   []string          `json:"units,omitempty"`
 	Yes     bool              `json:"yes,omitempty"`
 	Color   bool              `json:"color,omitempty"` // the caller shows the output of the run in color
-	Force   bool              `json:"force,omitempty"` // up: although unchanged; down: although pass values differ; cancel: kill at once
+	Force   bool              `json:"force,omitempty"` // up: although unchanged; destroy: although pass values differ; cancel: kill at once
 	NoDeps  bool              `json:"no_deps,omitempty"`
 	Follow  bool              `json:"follow,omitempty"` // logs: go on with what is written
 	Task    string            `json:"task,omitempty"`   // run: the task
@@ -102,8 +102,8 @@ func (a *API) Call(ctx context.Context, method string, r Request) (*Result, erro
 		return a.Plan(ctx, r)
 	case "up":
 		return a.Up(ctx, r)
-	case "down":
-		return a.Down(ctx, r)
+	case "destroy":
+		return a.Destroy(ctx, r)
 	case "status":
 		return a.StatusUnits(ctx, r)
 	case "run":
@@ -126,9 +126,9 @@ func (a *API) Up(ctx context.Context, r Request) (*Result, error) {
 	return result(engine.Up(ctx, a.options(r)))
 }
 
-// Down takes the units of the request down.
-func (a *API) Down(ctx context.Context, r Request) (*Result, error) {
-	return result(engine.Down(ctx, a.options(r)))
+// Destroy destroys the units of the request.
+func (a *API) Destroy(ctx context.Context, r Request) (*Result, error) {
+	return result(engine.Destroy(ctx, a.options(r)))
 }
 
 // Status runs status of the units of the request.

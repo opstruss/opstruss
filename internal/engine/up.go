@@ -35,12 +35,14 @@ func PlanContext(ctx context.Context, opts Options) (*Result, error) {
 }
 
 // Up runs the turn of each selected unit in graph order, units that do not
-// depend on each other in parallel, then takes down what left the files.
+// depend on each other in parallel, then destroys what left the files.
 func Up(ctx context.Context, opts Options) (*Result, error) { return runCommand(ctx, opts, "up") }
 
-// Down takes the selected units down, units that depend on others first,
-// each with the down contract in its record.
-func Down(ctx context.Context, opts Options) (*Result, error) { return runCommand(ctx, opts, "down") }
+// Destroy destroys the selected units, units that depend on others first,
+// each with the destroy contract in its record.
+func Destroy(ctx context.Context, opts Options) (*Result, error) {
+	return runCommand(ctx, opts, "destroy")
+}
 
 func runCommand(ctx context.Context, opts Options, op string) (*Result, error) {
 	e, err := open(ctx, opts, op, "")
@@ -246,7 +248,7 @@ func (e *engine) runsBefore(inst *instance) string {
 // instance of a component has it.
 func tombstoned(rec *state.Record, name string) error {
 	if rec != nil && rec.Tombstone == nil && rec.Kind == "component" {
-		return errors.New("an instance of a component has this address; take what is inside down with the files that still use the component first")
+		return errors.New("an instance of a component has this address; destroy what is inside with the files that still use the component first")
 	}
 	if rec == nil || rec.Tombstone == nil {
 		return nil
@@ -272,17 +274,17 @@ func (e *engine) decide(ctx context.Context, inst *instance, r *resolved, rec *s
 	}
 	if rec != nil {
 		// Attempts with the contract up writes become part of the record.
-		down := e.downContract(inst, r)
+		destroy := e.destroyContract(inst, r)
 		for _, a := range rec.Abandoned {
-			if !sameTarget(a.Down, down) {
-				if err := e.checkDown(ctx, a.Down); err != nil {
+			if !sameTarget(a.Destroy, destroy) {
+				if err := e.checkDestroy(ctx, a.Destroy); err != nil {
 					return plan{err: err}
 				}
 				p.teardown = append(p.teardown, a.Run)
 			}
 		}
-		if a := rec.Pending; a != nil && a.Op == "up" && !sameTarget(a.Down, down) {
-			if err := e.checkDown(ctx, a.Down); err != nil {
+		if a := rec.Pending; a != nil && a.Op == "up" && !sameTarget(a.Destroy, destroy) {
+			if err := e.checkDestroy(ctx, a.Destroy); err != nil {
 				return plan{err: err}
 			}
 			p.teardown = append(p.teardown, a.Run)
@@ -294,11 +296,11 @@ func (e *engine) decide(ctx context.Context, inst *instance, r *resolved, rec *s
 	case rec.Pending != nil:
 		p.cause, p.reason = "pending", pendingReason(rec.Pending)
 	case len(changedPass(rec, r)) > 0:
-		// The down of the record reaches the target of the values it
+		// The destroy of the record reaches the target of the values it
 		// recorded; up with others would leave that target without one.
 		names := strings.Join(changedPass(rec, r), ", ")
 		if !e.forced(inst) {
-			return plan{err: fmt.Errorf("context changed: %s differs from the record, whose down reaches the old target; up --force moves the unit and forgets that target", names)}
+			return plan{err: fmt.Errorf("context changed: %s differs from the record, whose destroy reaches the old target; up --force moves the unit and forgets that target", names)}
 		}
 		p.cause, p.reason = "context", "context changed: "+names+"; forced, the old target is forgotten"
 	case e.forced(inst):
@@ -374,13 +376,13 @@ func (e *engine) forced(inst *instance) bool {
 }
 
 // changedPass names the pass variables whose values differ from those
-// recorded with down.
+// recorded with destroy.
 func changedPass(rec *state.Record, r *resolved) []string {
-	if rec.Down == nil {
+	if rec.Destroy == nil {
 		return nil
 	}
 	var names []string
-	for k, fp := range rec.Down.Pass {
+	for k, fp := range rec.Destroy.Pass {
 		if v, ok := r.pass[k]; !ok || fingerprint(v) != fp {
 			names = append(names, k)
 		}
@@ -610,13 +612,13 @@ func (e *engine) turn(ctx context.Context, inst *instance, leave func()) {
 		return
 	}
 	e.debug(addr, "took the lock; digest %s; %s", p.digest, p.summary())
-	down := e.downContract(inst, r)
+	destroy := e.destroyContract(inst, r)
 	if !p.run && len(p.teardown) == 0 {
 		leave()
-		// A down contract that changed alone is written without running.
-		if !same(rec.Down, down) {
-			rec.Down = down
-			rec.Hidden = withHidden(rec.Hidden, r.hidden(down), state.PartEnv, state.PartEnvFiles)
+		// A destroy contract that changed alone is written without running.
+		if !same(rec.Destroy, destroy) {
+			rec.Destroy = destroy
+			rec.Hidden = withHidden(rec.Hidden, r.hidden(destroy), state.PartEnv, state.PartEnvFiles)
 			if _, err := e.store.Put(addr, rec, etag); err != nil {
 				failed(err)
 				return
@@ -654,7 +656,7 @@ func (e *engine) turn(ctx context.Context, inst *instance, leave func()) {
 	inst.approval = approval
 	e.begin("unit", addr, "up", "", "up: started")
 	if !p.run {
-		// Only old attempts are left to tear down; the approval covered them.
+		// Only old attempts are left to destroy; the approval covered them.
 		if err := e.tearDown(ctx, addr, rec, etag); err != nil {
 			failed(err)
 			return
@@ -679,21 +681,21 @@ func (e *engine) turn(ctx context.Context, inst *instance, leave func()) {
 		next.StateKey = addr + "." + next.ID
 	}
 	attempt := &state.Attempt{Op: "up", Run: e.runID, Holder: e.holder, Approval: approval, Digest: p.digest,
-		Down: down, Needs: e.needs(inst), Inputs: r.inputs(), Source: r.source(inst), Hidden: r.hidden(down)}
+		Destroy: destroy, Needs: e.needs(inst), Inputs: r.inputs(), Source: r.source(inst), Hidden: r.hidden(destroy)}
 	if r.sensitive() {
 		// What the program writes may hold what it was given.
 		attempt.Hidden = withHidden(attempt.Hidden, map[string][]string{state.PartRawOutput: {""}}, state.PartRawOutput)
 	}
 	if prev := next.Pending; prev != nil {
-		if sameTarget(prev.Down, down) {
+		if sameTarget(prev.Destroy, destroy) {
 			// What an interrupted attempt parsed stays until this one parses
 			// its own, so ids of what it made are not lost if this one stops
 			// too.
 			attempt.Outputs, attempt.RawOutput = prev.Outputs, prev.RawOutput
 			attempt.Hidden = withHidden(attempt.Hidden, prev.Hidden, state.PartOutputs)
 		} else {
-			// An attempt with another down contract may have made something
-			// elsewhere; it is kept to be torn down after this one succeeds,
+			// An attempt with another destroy contract may have made something
+			// elsewhere; it is kept to be destroyed after this one succeeds,
 			// as Terraform keeps a deposed object.
 			next.Abandoned = append(next.Abandoned, prev)
 		}
@@ -764,7 +766,7 @@ func (e *engine) turn(ctx context.Context, inst *instance, leave func()) {
 		return
 	}
 	done := &state.Record{ID: next.ID, StateKey: next.StateKey, Kind: r.kind(), Source: attempt.Source, Inputs: attempt.Inputs,
-		Down: down, Needs: attempt.Needs, Outputs: res.Outputs, Digest: p.digest, Parts: p.parts, Run: e.runID,
+		Destroy: destroy, Needs: attempt.Needs, Outputs: res.Outputs, Digest: p.digest, Parts: p.parts, Run: e.runID,
 		Updated: time.Now().UTC().Format(time.RFC3339), Abandoned: next.Abandoned,
 		Hidden: withHidden(attempt.Hidden, map[string][]string{state.PartOutputs: slices.Sorted(maps.Keys(outMarks))}, state.PartOutputs, state.PartRawOutput)}
 	err = failpoint.Fail("up-before-put")
@@ -786,7 +788,7 @@ func (e *engine) turn(ctx context.Context, inst *instance, leave func()) {
 	}
 	if err := e.tearDown(ctx, addr, done, etag); err != nil {
 		// The program did its up; an older attempt that it could not tear
-		// down ends the operation.
+		// destroy ends the operation.
 		e.say("unit", addr, "%s", msg)
 		failed(err)
 		return
@@ -798,48 +800,48 @@ func (e *engine) turn(ctx context.Context, inst *instance, leave func()) {
 	}
 }
 
-// tearDown runs down for each abandoned attempt of rec once up succeeded,
-// under the same lock, and drops each one whose down succeeded; one that
+// tearDown runs destroy for each abandoned attempt of rec once up succeeded,
+// under the same lock, and drops each one whose destroy succeeded; one that
 // fails stays in the record, and the unit fails. An attempt with the
-// contract of the record is dropped without down, since what it made now
+// contract of the record is dropped without destroy, since what it made now
 // belongs to the record.
 func (e *engine) tearDown(ctx context.Context, addr string, rec *state.Record, etag string) error {
 	for len(rec.Abandoned) > 0 {
 		a := rec.Abandoned[0]
-		if sameTarget(a.Down, rec.Down) {
+		if sameTarget(a.Destroy, rec.Destroy) {
 			rec.Abandoned = rec.Abandoned[1:]
 			var err error
 			if etag, err = e.store.Put(addr, rec, etag); err != nil {
 				return err
 			}
-			e.say("unit", addr, "the attempt of run %s has the contract of the record now; dropped without down", a.Run)
+			e.say("unit", addr, "the attempt of run %s has the contract of the record now; dropped without destroy", a.Run)
 			continue
 		}
-		if names := e.passDiffers(a.Down); len(names) > 0 {
-			return fmt.Errorf("the abandoned attempt of run %s needs %s as it recorded them; run up with those values, or down --force", a.Run, strings.Join(names, ", "))
+		if names := e.passDiffers(a.Destroy); len(names) > 0 {
+			return fmt.Errorf("the abandoned attempt of run %s needs %s as it recorded them; run up with those values, or destroy --force", a.Run, strings.Join(names, ", "))
 		}
-		if err := e.runDown(ctx, addr, rec.StateKey, a); err != nil {
-			return fmt.Errorf("tearing down the attempt of run %s: %w", a.Run, err)
+		if err := e.runDestroy(ctx, addr, rec.StateKey, a); err != nil {
+			return fmt.Errorf("destroying the attempt of run %s: %w", a.Run, err)
 		}
 		rec.Abandoned = rec.Abandoned[1:]
 		var err error
 		if etag, err = e.store.Put(addr, rec, etag); err != nil {
 			return err
 		}
-		e.say("unit", addr, "tore down the attempt of run %s", a.Run)
+		e.say("unit", addr, "tore destroy the attempt of run %s", a.Run)
 	}
 	return nil
 }
 
-// sameTarget reports whether two down contracts take down the same thing:
+// sameTarget reports whether two destroy contracts destroy the same thing:
 // the same program, directory, env, and pass values. Timeout and stop do
 // not change that.
-func sameTarget(a, b *state.Down) bool {
+func sameTarget(a, b *state.Destroy) bool {
 	if a == nil || b == nil {
 		return a == b
 	}
-	return same([]any{a.Run, a.Shell, a.Dir, a.Plugin, a.Env, a.EnvFiles, a.Pass, downIdentities(a), a.DirSource, a.PluginSource, a.Binaries},
-		[]any{b.Run, b.Shell, b.Dir, b.Plugin, b.Env, b.EnvFiles, b.Pass, downIdentities(b), b.DirSource, b.PluginSource, b.Binaries})
+	return same([]any{a.Run, a.Shell, a.Dir, a.Plugin, a.Env, a.EnvFiles, a.Pass, destroyIdentities(a), a.DirSource, a.PluginSource, a.Binaries},
+		[]any{b.Run, b.Shell, b.Dir, b.Plugin, b.Env, b.EnvFiles, b.Pass, destroyIdentities(b), b.DirSource, b.PluginSource, b.Binaries})
 }
 
 // attempts runs the program as often as retry allows: while an attempt
@@ -984,7 +986,7 @@ func (e *engine) path() string {
 	return ""
 }
 
-// needs are the addresses inst depends on, which down follows in reverse.
+// needs are the addresses inst depends on, which destroy follows in reverse.
 func (e *engine) needs(inst *instance) []string {
 	var out []string
 	for _, d := range inst.deps {

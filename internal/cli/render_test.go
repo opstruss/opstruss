@@ -140,10 +140,10 @@ api         │ GET /
 // nothing but color reaches the terminal.
 func TestRenderColor(t *testing.T) {
 	events := []engine.Event{
-		at(ev("plan", "default/db", "plan", "", "finished", "success", "will go down"), 0),
-		at(ev("unit", "default/db", "down", "", "running", "", "down: started"), 1),
-		at(logLine("default/db", "down", "", "\x1b[32mgone\x1b[0m\x1b]0;title\x07 \x1b[2K"), 2),
-		at(ev("unit", "default/db", "down", "", "finished", "success", "down: done"), 3),
+		at(ev("plan", "default/db", "plan", "", "finished", "success", "will be destroyed"), 0),
+		at(ev("unit", "default/db", "destroy", "", "running", "", "destroy: started"), 1),
+		at(logLine("default/db", "destroy", "", "\x1b[32mgone\x1b[0m\x1b]0;title\x07 \x1b[2K"), 2),
+		at(ev("unit", "default/db", "destroy", "", "finished", "success", "destroy: done"), 3),
 		at(ev("diagnostic", "default/db", "", "", "", "", "a \x1b]52;c;Zm9v\x07warning"), 4),
 	}
 	events[0].Plan = map[string]any{"changes": []any{map[string]any{"action": "delete"}}}
@@ -153,7 +153,7 @@ func TestRenderColor(t *testing.T) {
 		t.Errorf("without color:\n%q\n%q", out, errs)
 	}
 	out, errs = renderAll(terminalRenderer(true), events...)
-	for _, s := range []string{"\x1b[31m-\x1b[0m db  go down", "\x1b[32mgone\x1b[0m", "\x1b[32m✓\x1b[0m db › down: done"} {
+	for _, s := range []string{"\x1b[31m-\x1b[0m db  destroy", "\x1b[32mgone\x1b[0m", "\x1b[32m✓\x1b[0m db › destroy: done"} {
 		if !strings.Contains(out, s) {
 			t.Errorf("in color, no %q in\n%q", s, out)
 		}
@@ -248,7 +248,7 @@ func TestRenderPlanTable(t *testing.T) {
 	waits := map[string]any{"changes": []any{}, "after": "default/qa-out", "reason": "new"}
 	may := map[string]any{"changes": []any{}, "after": "default/infra"}
 	auto := map[string]any{"changes": []any{map[string]any{"action": "run"}}, "approval": "auto"}
-	orphan := ev("diagnostic", "default/qa-http", "", "", "", "", "orphan: its unit is no longer in the files; add {from: qa-http, destroy: true} to removed: to take it down, or destroy: false to forget it")
+	orphan := ev("diagnostic", "default/qa-http", "", "", "", "", "orphan: its unit is no longer in the files; add {from: qa-http, destroy: true} to removed: to destroy it, or destroy: false to forget it")
 	orphan.Level = "warn"
 	out, _ := renderAll(terminalRenderer(false),
 		at(ev("unit", "default/infra", "plan", "", "running", "", "plan: started"), 0),
@@ -274,7 +274,7 @@ func TestRenderPlanTable(t *testing.T) {
   + qa-stdin    new · after qa-out (stdin)
   ? web         after infra (env.GREETING)
   ! qa-http     orphan: its unit is no longer in the files
-                → add {from: qa-http, destroy: true} to removed: to take it down, or destroy: false to forget it
+                → add {from: qa-http, destroy: true} to removed: to destroy it, or destroy: false to forget it
   ✗ qa-each[a]  this address was forgotten in run R
                 → opstruss state rm qa-each[a] removes the tombstone so the name can be used again
   ✗ qa-secret   env.TOKEN: secret qa_token: QA_TOKEN is not set

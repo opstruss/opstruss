@@ -73,9 +73,9 @@ func TestApprove(t *testing.T) {
 		want string
 	}{
 		{engine.Question{Op: "up", Address: "default/web", Summary: "will run: new"}, "default/web: will run: new\nApply default/web? [y/N] "},
-		{engine.Question{Op: "down", Address: "default/site", Summary: "will go down"}, "default/site: will go down\nTake default/site down? [y/N] "},
-		{engine.Question{Op: "down", Address: "default/job", Summary: "will be forgotten: it has no down program"},
-			"default/job: will be forgotten: it has no down program\nForget default/job? [y/N] "},
+		{engine.Question{Op: "destroy", Address: "default/site", Summary: "will be destroyed"}, "default/site: will be destroyed\nDestroy default/site? [y/N] "},
+		{engine.Question{Op: "destroy", Address: "default/job", Summary: "will be forgotten: it has no destroy program"},
+			"default/job: will be forgotten: it has no destroy program\nForget default/job? [y/N] "},
 		{engine.Question{Op: "task", Task: "deploy", Summary: "run task deploy"}, "deploy: run task deploy\nRun deploy? [y/N] "},
 		{engine.Question{Address: "default/web", Summary: "will run: new"}, "default/web: will run: new\nApply default/web? [y/N] "},
 	}

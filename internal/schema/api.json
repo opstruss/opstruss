@@ -15,7 +15,7 @@
       "additionalProperties": false
     },
     "request": {
-      "description": "params of plan, up, down, status, run, and unlock: the project, the stack, and what the caller brings.",
+      "description": "params of plan, up, destroy, status, run, and unlock: the project, the stack, and what the caller brings.",
       "type": "object",
       "properties": {
         "locked": { "type": "boolean" },
@@ -56,7 +56,7 @@
       "additionalProperties": false
     },
     "result": {
-      "description": "result of plan, up, down, status, run, unlock, and rerun.",
+      "description": "result of plan, up, destroy, status, run, unlock, and rerun.",
       "type": "object",
       "properties": {
         "run": { "type": "string" },
@@ -69,7 +69,7 @@
       "description": "params of approve, which the daemon asks of a caller with a terminal.",
       "type": "object",
       "properties": {
-        "op": { "description": "What yes approves: up, down, or task.", "type": "string" },
+        "op": { "description": "What yes approves: up, destroy, or task.", "type": "string" },
         "address": { "type": "string" },
         "task": { "type": "string" },
         "summary": { "type": "string" }

@@ -41,8 +41,8 @@ stderr 'pass values differ'
 exists resource-v1
 env KEEP=same-value
 exec opstruss up --yes
-stdout 'down-v1'
-stdout 'down-v2'
+stdout 'destroy-v1'
+stdout 'destroy-v2'
 ! exists resource-v1
 ! exists .opstruss/state/default/resource/state.json
 
@@ -64,17 +64,17 @@ env: [KEEP]
 tasks:
   up:
     run: [sh, '${{ opstruss.dir }}/tool.sh', up]
-  down:
-    run: [sh, '${{ opstruss.dir }}/tool.sh', down]
+  destroy:
+    run: [sh, '${{ opstruss.dir }}/tool.sh', destroy]
 -- repo/demo/tool.sh --
 #!/bin/sh
 case "$1" in
 up) touch resource-v1 ;;
-down) rm -f resource-v1; echo down-v1 ;;
+destroy) rm -f resource-v1; echo destroy-v1 ;;
 esac
 -- v2.sh --
 #!/bin/sh
 case "$1" in
 up) touch resource-v2 ;;
-down) rm -f resource-v2; echo down-v2 ;;
+destroy) rm -f resource-v2; echo destroy-v2 ;;
 esac

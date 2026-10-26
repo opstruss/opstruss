@@ -46,14 +46,14 @@ stdout 'binary-down-v1 resource'
 ! exists .opstruss/state/default/db/state.json
 ! exists .opstruss/state/default/db/tool
 
-# A complete warm cache can execute the new version and take it down offline.
+# A complete warm cache can execute the new version and destroy it offline.
 cp full.yaml opstruss.yaml
 exec opstruss plugins fetch
 exec touch offline
 exec touch assets/offline
 exec opstruss up --yes
 stdout 'binary-up-v2 resource'
-exec opstruss down --yes
+exec opstruss destroy --yes
 stdout 'binary-down-v2 resource'
 
 -- opstruss.yaml --
@@ -94,7 +94,7 @@ bin:
 tasks:
   up:
     run: [demo-tool, up]
-  down:
+  destroy:
     run: [demo-tool, down]
   echo:
     run: [demo-tool, echo]
@@ -113,7 +113,7 @@ bin:
 tasks:
   up:
     run: [demo-tool, up]
-  down:
+  destroy:
     run: [demo-tool, down]
   echo:
     run: [demo-tool, echo]

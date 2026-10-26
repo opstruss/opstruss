@@ -53,7 +53,7 @@ exec opstruss up --stack dev
 stdout '^dev/nginx: up: done$'
 
 # the health check fails three times, so site-down tells the team
-cp api/routes.down api/routes
+cp api/routes.destroy api/routes
 ! exec opstruss health --stack dev
 waitgrep '^POST /slack .*gagal health check tiga kali' api/requests
 grep -count=3 '^GET /healthz$' api/requests
@@ -100,8 +100,8 @@ stdout '^cloudflare_record.www$'
 ! exec opstruss up --stack prod
 stdout 'needs approval, stopped at plan'
 
-# protect refuses down of the whole stack before anything goes down
-! exec opstruss down --stack dev --yes
+# protect refuses destroy of the whole stack before anything is destroyed
+! exec opstruss destroy --stack dev --yes
 stderr 'protect'
 exec opstruss stop --stack dev
 
@@ -117,9 +117,9 @@ GET /healthz 200 ok
 POST /ping/* 200 OK
 GET /repos/acme/platform/issues 200 []
 POST /repos/acme/platform/issues 500 {"message": "GitHub is down"}
--- api/routes.down --
+-- api/routes.destroy --
 POST /slack 200 ok
-GET /healthz 503 down
+GET /healthz 503 destroy
 POST /ping/* 200 OK
 -- api/routes.ok --
 POST /slack 200 ok
@@ -311,7 +311,7 @@ units:
         origin_ip: ${{ inputs.origin_ip }}
     env:
       CLOUDFLARE_API_TOKEN: ${{ inputs.api_token }}
-    protect: true                         # down, delete, dan replace ditolak
+    protect: true                         # destroy, delete, dan replace ditolak
 -- components/dns/main.tf --
 terraform {
   required_providers {

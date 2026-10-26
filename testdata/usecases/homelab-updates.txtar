@@ -68,7 +68,7 @@ DELETE /api2/json/nodes/pve/qemu/120/snapshot/* 200 {"data": "UPID:pve:delete"}
 ]}
 -- api/routes --
 POST /homelab 200 {"id": "n1"}
-GET /health/immich 503 down
+GET /health/immich 503 destroy
 GET /health/jellyfin 200 ok
 GET /health/paperless 200 ok
 GET /health/vaultwarden 200 ok

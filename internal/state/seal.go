@@ -11,8 +11,8 @@ import (
 const (
 	PartInputs    = "inputs"
 	PartOutputs   = "outputs"
-	PartEnv       = "down.env"
-	PartEnvFiles  = "down.env_files"
+	PartEnv       = "destroy.env"
+	PartEnvFiles  = "destroy.env_files"
 	PartRawOutput = "raw_output" // OPSTRUSS_OUTPUT as written, encrypted as a whole
 )
 
@@ -26,18 +26,18 @@ func (e *KeyError) Unwrap() error { return e.Err }
 // parts points at what a record or an attempt keeps values in.
 type parts struct {
 	inputs, outputs *map[string]any
-	down            **Down
+	destroy         **Destroy
 	raw             *string
 	hidden          *map[string][]string
 	sensitive       *map[string]map[string]string
 }
 
 func (r *Record) parts() parts {
-	return parts{&r.Inputs, &r.Outputs, &r.Down, nil, &r.Hidden, &r.Sensitive}
+	return parts{&r.Inputs, &r.Outputs, &r.Destroy, nil, &r.Hidden, &r.Sensitive}
 }
 
 func (a *Attempt) parts() parts {
-	return parts{&a.Inputs, &a.Outputs, &a.Down, &a.RawOutput, &a.Hidden, &a.Sensitive}
+	return parts{&a.Inputs, &a.Outputs, &a.Destroy, &a.RawOutput, &a.Hidden, &a.Sensitive}
 }
 
 // sealer encrypts and decrypts the sensitive values of one record, asking
@@ -73,12 +73,12 @@ func (p parts) plain(part string) map[string]any {
 	case PartOutputs:
 		return *p.outputs
 	}
-	if *p.down == nil {
+	if *p.destroy == nil {
 		return nil
 	}
-	env := (*p.down).Env
+	env := (*p.destroy).Env
 	if part == PartEnvFiles {
-		env = (*p.down).EnvFiles
+		env = (*p.destroy).EnvFiles
 	}
 	out := map[string]any{}
 	for k, v := range env {
@@ -125,10 +125,10 @@ func (s *sealer) seal(p parts) error {
 			return err
 		}
 	}
-	if *p.down != nil {
-		d := **p.down
+	if *p.destroy != nil {
+		d := **p.destroy
 		d.Env, d.EnvFiles = maps.Clone(d.Env), maps.Clone(d.EnvFiles)
-		*p.down = &d
+		*p.destroy = &d
 	}
 	*p.inputs, *p.outputs = maps.Clone(*p.inputs), maps.Clone(*p.outputs)
 	for part, names := range hidden {
@@ -152,9 +152,9 @@ func (s *sealer) seal(p parts) error {
 			case PartOutputs:
 				delete(*p.outputs, name)
 			case PartEnv:
-				delete((*p.down).Env, name)
+				delete((*p.destroy).Env, name)
 			case PartEnvFiles:
-				delete((*p.down).EnvFiles, name)
+				delete((*p.destroy).EnvFiles, name)
 			}
 		}
 	}
@@ -203,13 +203,13 @@ func (s *sealer) open(p parts) error {
 				}
 				(*m)[name] = v
 			case PartEnv, PartEnvFiles:
-				if *p.down == nil {
-					*p.down = &Down{}
+				if *p.destroy == nil {
+					*p.destroy = &Destroy{}
 				}
 				text, _ := v.(string)
-				env := &(*p.down).Env
+				env := &(*p.destroy).Env
 				if part == PartEnvFiles {
-					env = &(*p.down).EnvFiles
+					env = &(*p.destroy).EnvFiles
 				}
 				if *env == nil {
 					*env = map[string]string{}

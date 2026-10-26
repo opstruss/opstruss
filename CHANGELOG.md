@@ -13,7 +13,7 @@ minor release can change what a project, a component, or a plugin relies on.
 
 ### Added
 
-- Runs, unit operations (the `plan` of a plugin, `up`, `down`), tasks, and
+- Runs, unit operations (the `plan` of a plugin, `up`, `destroy`), tasks, and
   steps start with an event whose `status` is `running` and end with one
   whose `status` is `finished`, with the `outcome`. Both carry the address,
   task, and step of the lines of their programs, so a reader of `--json`
@@ -33,7 +33,7 @@ minor release can change what a project, a component, or a plugin relies on.
   line of its own, the units that do not change counted but not listed,
   and a line such as `Plan of stack default: 2 to run, 3 unchanged`;
   notes of the run that came meanwhile, such as a new age key of this
-  machine, follow it. `status` prints a table too, and `up` and `down`
+  machine, follow it. `status` prints a table too, and `up` and `destroy`
   end with a line that counts what the units did. A question is one line,
   and the output of the run goes on above it. Without a terminal, the
   lines stay as they were, and a step skipped after a failed step is
@@ -64,8 +64,6 @@ minor release can change what a project, a component, or a plugin relies on.
   `tar.gz` payloads with SHA-256 verification and a private plugin PATH.
   Cleanup restores the source and binary pins of each stored contract,
   including pending and abandoned attempts after updates or cache removal.
-  Records now use version 2 and the daemon API uses protocol 2; older
-  local records remain readable.
 - A catalog marks its root with `opstruss.catalog.yaml`, whose `shared:`
   names the paths that every package in it may use. A unit's digest hashes
   its plugin or component package with those paths and names a remote
@@ -81,7 +79,7 @@ minor release can change what a project, a component, or a plugin relies on.
   the background when none runs; a task takes `-d` as well. The daemon
   stays until `opstruss stop`, which sends it SIGTERM once its pid and
   start time match `.opstruss/daemon/<stack>.json`, then waits for it to
-  end. While a daemon runs, `plan`, `up`, `down`, `status`, and tasks run
+  end. While a daemon runs, `plan`, `up`, `destroy`, `status`, and tasks run
   in it with the caller's files and environment and ask at the caller's
   terminal, so they share its locks and concurrency; Ctrl-C cancels such a
   run, a second Ctrl-C kills its programs at once, and one whose caller
@@ -102,7 +100,7 @@ minor release can change what a project, a component, or a plugin relies on.
   exits, 100 ms later at first and twice as long each time up to a
   minute, from the start again once it ran for 10 seconds. It stops with
   `stop.run`, then `stop.signal` (default `SIGTERM`) to its process group,
-  and a kill after `stop.grace` (default 10s). `down` stops it and drops
+  and a kill after `stop.grace` (default 10s). `destroy` stops it and drops
   its record, while `opstruss stop` stops it with the daemon and keeps the
   record. Its output goes to `.opstruss/logs/<stack>/<unit>.jsonl`, which
   turns over as the daemon's log does, with the sensitive values of the
@@ -149,7 +147,7 @@ minor release can change what a project, a component, or a plugin relies on.
   steps, and the facts.
 - `requires:` of a task, and of the plugin of a task, is checked before
   it runs: a program that is not in `PATH` fails the task with its name.
-- A unit with `uses: <plugin>` runs the plugin's `plan`, `up`, and `down`
+- A unit with `uses: <plugin>` runs the plugin's `plan`, `up`, and `destroy`
   with its `with:` as inputs. Its definition, and so its digest, holds the
   plugin's source by the content of its directory, where a symlink to a
   file counts as that file, so a changed script runs the unit again. The
@@ -161,12 +159,12 @@ minor release can change what a project, a component, or a plugin relies on.
   what that plan writes only when its digest differs from the plan before;
   otherwise its lines stay in the record at level `debug`. The record
   keeps the inputs, the outputs the plugin
-  declares, and the program of `down` with the plugin's directory, which
-  `down` runs; a plugin without `plan` runs as a `run` unit does, and one
-  without `down` is forgotten, as its plan says.
+  declares, and the program of `destroy` with the plugin's directory, which
+  `destroy` runs; a plugin without `plan` runs as a `run` unit does, and one
+  without `destroy` is forgotten, as its plan says.
 - A plugin with `state: tool` keeps the tool's own state in `tool/` of
   each unit, which its programs get as `OPSTRUSS_STATE_DIR` and which goes
-  with the record: `moved:` moves it, `down` removes it, and `removed:`
+  with the record: `moved:` moves it, `destroy` removes it, and `removed:`
   with `destroy: false` sets it aside. A unit whose `tool/` holds state
   while its input `backend` names another place stops at plan, and two
   units with the same `backend` are refused. A plugin with `outputs: tool`
@@ -177,10 +175,10 @@ minor release can change what a project, a component, or a plugin relies on.
   with its `with:` as inputs, as a `run` unit runs its program: the
   task's outputs become the unit's, its programs and steps are the unit's
   (with `OPSTRUSS_WORKDIR` and `$OPSTRUSS_STATE`, and `opstruss.state_key`
-  and `opstruss.reason` in its expressions), and the unit's `down:` takes
+  and `opstruss.reason` in its expressions), and the unit's `destroy:` takes
   it away. Its definition holds the task as written, the tasks it calls,
   and the programs they name by a relative path. A task that runs `plan`,
-  `up`, or `down` of units cannot be used by a unit.
+  `up`, or `destroy` of units cannot be used by a unit.
 - A unit that uses a component (`uses: ./components/dns`, or
   `<name>.<component>` from a directory of components) runs the units
   inside at addresses under its own, such as `prod/dns/zone` and
@@ -320,7 +318,7 @@ minor release can change what a project, a component, or a plugin relies on.
   of the task, of the daemon or of another terminal, until Ctrl-C, after
   which `logs` exits with 0. A name of a unit and a task shows both, and
   one of neither fails.
-- `opstruss status [unit]...` (also `ps`) runs the `status` task of each
+- `opstruss status [unit]...` runs the `status` task of each
   unit's plugin without the unit's lock, with its record to read, and
   says for every unit what its record holds: up with its last run and
   outputs, pending, or absent, so an `up` that did not finish shows also
@@ -332,7 +330,7 @@ minor release can change what a project, a component, or a plugin relies on.
   `explain`, line by line, in its JSON form, and quoted as error messages
   quote values, also inside values computed from it, such as
   `base64.encode()`, and when a run only reads it back from a record, as
-  `down` does. A value of one `${{ }}` is sensitive as a whole, while a
+  `destroy` does. A value of one `${{ }}` is sensitive as a whole, while a
   map or a list written in YAML keeps it to its keys or items, so the
   other fields beside a password stay readable, also as `each.value` of a
   `for_each` over it. Inputs with `sensitive: true` of the project, a
@@ -371,7 +369,7 @@ minor release can change what a project, a component, or a plugin relies on.
   opens it once. Sensitive values
   of units, components, plugins, and `kv` are kept encrypted with it
   (AES-256-GCM, `enc:v1:`) and bound to their record or name: inputs,
-  outputs, the env of `down`, and, for a unit with sensitive values, what
+  outputs, the env of `destroy`, and, for a unit with sensitive values, what
   its program wrote to `$OPSTRUSS_OUTPUT` when it could not be read, also
   in `pending`, abandoned attempts, and `.opstruss/errored/`. The digest
   of a unit hashes its sensitive values with HMAC, under a key from the
@@ -398,7 +396,7 @@ minor release can change what a project, a component, or a plugin relies on.
   an `age` and a `sops` envelope, each with the keys it was wrapped for: a
   run tries every age key of this machine, and runs sops only when age
   cannot open it. When the list and an envelope differ, `plan`, `up`,
-  `down`, and runs of tasks wrap that envelope again at their start, under
+  `destroy`, and runs of tasks wrap that envelope again at their start, under
   the lock of `_meta`, and leave the data key as it is; a machine that
   cannot open it yet only warns, and a list that would leave the data key
   closed to the machine that writes it stops the run before any unit.
@@ -495,8 +493,8 @@ minor release can change what a project, a component, or a plugin relies on.
 - `opstruss state list`, `pull`, `push`, and `rm` read and repair the
   records of a stack under their locks: `push` takes the etag of a `pull`,
   or `--force`, and refuses a stale copy, a record for another address,
-  and a record of a newer OpsTruss; `rm` forgets a record without taking
-  anything down and leaves a tombstone, and removes a tombstone. `list`
+  and a record of a newer OpsTruss; `rm` forgets a record without
+  destroying anything and leaves a tombstone, and removes a tombstone. `list`
   shows the keys of `kv` too, and `rm _kv/<name>` removes one under the
   lock of `kv`, with the etag of a `pull` or `--force`, such as a claim
   that a run left.
@@ -504,19 +502,18 @@ minor release can change what a project, a component, or a plugin relies on.
   atomically with a backup of the previous content. `_meta` names the
   project a stack belongs to, and a stack of another project, of a newer
   layout, or with records but no `_meta` is never written.
-- `opstruss plan`, `up`, and `down` (also `preview`, `apply`, and
-  `destroy`) run the `run` units of a stack in graph order, units that do
-  not depend on each other in parallel, at most `OPSTRUSS_PARALLEL` (10) at
-  once. Names and patterns with `*` or `name[key]` pick units; `plan` and
-  `up` take what they depend on, `down` what depends on them, unless
-  `--no-deps`.
+- `opstruss plan`, `up`, and `destroy` run the `run` units of a stack in
+  graph order, units that do not depend on each other in parallel, at most
+  `OPSTRUSS_PARALLEL` (10) at once. Names and patterns with `*` or
+  `name[key]` pick units; `plan` and `up` take what they depend on,
+  `destroy` what depends on them, unless `--no-deps`.
 - A unit runs again when its definition, a file of `sources`, `revision`,
   or a `pass` value changes, or a file of `generates` is missing; plan
   names the parts that changed, as in `definition changed: sources,
   env.URL`, from a digest of each part that the record keeps, and warns
   about a pattern of `sources` that matches no file;
-  `up --force` runs the units named anyway. A unit with `down:` whose
-  `pass` values differ from its record is refused, since its down reaches
+  `up --force` runs the units named anyway. A unit with `destroy:` whose
+  `pass` values differ from its record is refused, since its destroy reaches
   the old target, unless `up --force` moves it and forgets that target.
   `if` and `for_each` decide
   which instances exist, from what is known when the run starts.
@@ -545,16 +542,16 @@ minor release can change what a project, a component, or a plugin relies on.
   one is interrupted, and leaves a tombstone that older files stop at.
   Entries chain; a target that has a record of its own is refused, and so
   is a source whose last attempt did not finish.
-- An attempt that did not finish with another down contract, such as other
+- An attempt that did not finish with another destroy contract, such as other
   `pass` values, is kept as abandoned when `up` runs again, shown in the
-  plan, and torn down after that `up` succeeds, with the values it
-  recorded; one with the contract of the record is dropped without down.
-- `down` runs the `down:` recorded for each unit, units that depend on
+  plan, and destroyed after that `up` succeeds, with the values it
+  recorded; one with the contract of the record is dropped without destroy.
+- `destroy` runs the `destroy:` recorded for each unit, units that depend on
   others first, with the context it was written with: it refuses `pass`
-  values that differ unless `--force`, and nothing goes down while a unit
+  values that differ unless `--force`, and nothing is destroyed while a unit
   it reaches has `protect: true`. Instances that leave `if` or `for_each`
-  go down at `up`; units that leave the files stay as orphans until
-  `removed:` takes them down or forgets them, which leaves a tombstone.
+  are destroyed at `up`; units that leave the files stay as orphans until
+  `removed:` destroys them or forgets them, which leaves a tombstone.
 - Every task of the project that is not `internal`, and every task of its
   units, is a command: `opstruss <task>`, also `opstruss run <task>`. Its
   inputs are flags with types (`--name value`, `--name`, `--name=false`,
@@ -572,9 +569,13 @@ minor release can change what a project, a component, or a plugin relies on.
   task without a `description` shows the first line of its `run`, the ids
   of its steps, or the task it calls. An unknown command, also a name
   after `opstruss run` that is no task, fails with suggestions, also of
-  tasks, as git does. The help of each input flag names its type and its
+  tasks, as git does. Commands have no aliases; the names that other tools
+  use only suggest ours: `apply`, `deploy`, and `start` suggest `up`,
+  `down` suggests `stop` or `destroy`, `delete`, `remove`, and `rm` suggest
+  `destroy`, `preview` and `diff` suggest `plan`, and `ps` suggests
+  `status`. The help of each input flag names its type and its
   default, or that it is required.
-- `steps:` run in order: `run`, `task:` (`plan`, `up`, or `down` of
+- `steps:` run in order: `run`, `task:` (`plan`, `up`, or `destroy` of
   `units:`, a project task with `with:`, or the task of each unit that has
   it), and `block:` with `rescue:` and `always:`, which read the outcome of
   `block:` as `steps.<id>.outcome`. `if`, `for_each`, `retry`, `timeout`,
@@ -583,7 +584,7 @@ minor release can change what a project, a component, or a plugin relies on.
   step 1 rescue 1`; `steps.<id>` holds `outputs` (with `stdout`, `stderr`,
   and `exit_code` for `run`), `changed`, and `outcome`, and for a `task:`
   step of units `units`, one entry for each instance it touched, also one
-  that `up` took down or forgot, which `task: plan` lists already with a
+  that `up` destroyed or forgot, which `task: plan` lists already with a
   plan of its own (`delete` or `forget`, exact, with a digest of the
   operation and the record); `value:` gives the outputs of a task with
   steps, also when it failed, as far as they can be computed.
@@ -591,7 +592,7 @@ minor release can change what a project, a component, or a plugin relies on.
   its instances in parallel, at most `max_parallel` at once, starting them
   in the order of their keys. A task with `approval: ask` stops without
   `--yes`, and `yes: true` on a `task:` step approves that call, but only
-  plans this run read as exact, with the same digest, also the down of an
+  plans this run read as exact, with the same digest, also the destroy of an
   instance that left `if` or `for_each`.
 - `concurrency` keeps one call of a task at a time in a stack and
   checkout, through a lock file in `.opstruss/tasks/<stack>/`: `queue`
@@ -605,9 +606,9 @@ minor release can change what a project, a component, or a plugin relies on.
   which the lock of the unit's address holds, take no lock.
 - The exit code of a task follows the outcome of the task called: 0, 1
   when it failed, and 2 when it stopped at plan for approval.
-- At a terminal, `up`, `down`, and a task with `approval: ask` ask before
+- At a terminal, `up`, `destroy`, and a task with `approval: ask` ask before
   each change, one question at a time, naming what yes does (`Apply`,
-  `Take … down`, `Run`), and only `y` or `yes` applies it; the time an
+  `Destroy`, `Run`), and only `y` or `yes` applies it; the time an
   answer takes does not count toward `timeout`. The units that are ready
   start their turns in the order of the plan, so their questions come in
   that order, and while a question waits the output of the run waits for
@@ -634,7 +635,7 @@ minor release can change what a project, a component, or a plugin relies on.
   as the first request; it ends `cancelled` with reason `requested`, its
   events name who asked, and its process exits 1. `runs cancel` waits
   until the run ends and exits 0 when it ended cancelled, 1 otherwise.
-  `opstruss runs rerun <run>` runs a task, `up`, or `down` again as a new
+  `opstruss runs rerun <run>` runs a task, `up`, or `destroy` again as a new
   run with `rerun_of` in its record: the units it chose, `--input`, the
   flags and `with` of its caller, the answers to the questions for inputs
   of the task it ran, and its event, through the project as it is now.
@@ -650,7 +651,7 @@ minor release can change what a project, a component, or a plugin relies on.
 - `OPSTRUSS_LOG=debug` writes the diagnostics of the engine to stderr.
 - Every run keeps `record.json` (who ran what and when, the units it
   touched with their outcome, plan, and approval, also the instances that
-  `up` took down or forgot, the tasks of the project that ran inside it
+  `up` destroyed or forgot, the tasks of the project that ran inside it
   through `task:`, `needs`, or a unit, with one outcome each, and the
   outcome, exit code, and outputs of the run) and `events.jsonl` in
   `.opstruss/runs/<stack>/<run>/`, whose name an exclusive mkdir makes

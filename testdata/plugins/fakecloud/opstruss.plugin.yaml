@@ -9,5 +9,5 @@ outputs:
 tasks:
   up:
     run: [fakecloud, up, "${{ inputs.cloud }}"]
-  down:
-    run: [fakecloud, down, "${{ inputs.cloud }}"]
+  destroy:
+    run: [fakecloud, destroy, "${{ inputs.cloud }}"]

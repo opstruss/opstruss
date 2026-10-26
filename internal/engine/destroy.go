@@ -21,7 +21,7 @@ import (
 	"github.com/opstruss/opstruss/internal/state"
 )
 
-// leftover is a record that down takes down or forgets: in down, every
+// leftover is a record that destroy destroys or forgets: in destroy, every
 // selected record; in up, an instance that left if or for_each, and a
 // unit that removed: decides.
 type leftover struct {
@@ -34,7 +34,7 @@ type leftover struct {
 	reason  string
 	cause   string      // why, as a word: requested, gone, or removed
 	def     *model.Unit // nil for a unit no longer in the files
-	auto    bool        // approval: auto, so down asks nothing
+	auto    bool        // approval: auto, so destroy asks nothing
 	done    chan struct{}
 	outcome string
 }
@@ -43,26 +43,26 @@ type leftover struct {
 func (l *leftover) summary() string {
 	switch {
 	case l.forget:
-		return "will be forgotten without going down: removed: with destroy: false"
-	case noDown(l.record) && l.reason == "requested":
-		// Only its record goes, as down will say.
-		return "will be forgotten: it has no down program"
-	case noDown(l.record):
-		return "will be forgotten: " + l.reason + "; it has no down program"
+		return "will be forgotten without being destroyed: removed: with destroy: false"
+	case noDestroy(l.record) && l.reason == "requested":
+		// Only its record goes, as destroy will say.
+		return "will be forgotten: it has no destroy program"
+	case noDestroy(l.record):
+		return "will be forgotten: " + l.reason + "; it has no destroy program"
 	case l.reason == "requested":
-		// down takes what it was asked to; there is nothing more to say.
-		return "will go down"
+		// destroy takes what it was asked to; there is nothing more to say.
+		return "will be destroyed"
 	}
-	return "will go down: " + l.reason
+	return "will be destroyed: " + l.reason
 }
 
-// noDown reports whether down of rec runs no program: it has no down
-// contract, no attempt left to tear down, and no service to stop.
-func noDown(rec *state.Record) bool {
-	if rec == nil || rec.Down != nil || rec.Kind == "service" || len(rec.Abandoned) > 0 {
+// noDestroy reports whether destroy of rec runs no program: it has no destroy
+// contract, no attempt left to destroy, and no service to stop.
+func noDestroy(rec *state.Record) bool {
+	if rec == nil || rec.Destroy != nil || rec.Kind == "service" || len(rec.Abandoned) > 0 {
 		return false
 	}
-	return rec.Pending == nil || rec.Pending.Op != "up" || rec.Pending.Down == nil
+	return rec.Pending == nil || rec.Pending.Op != "up" || rec.Pending.Destroy == nil
 }
 
 // view is the plan of a leftover of up, as task: plan gives it: exact,
@@ -74,7 +74,7 @@ func (l *leftover) view() map[string]any {
 		action = "forget"
 	}
 	v := map[string]any{"changes": []any{map[string]any{"action": action}}, "outputs": []any{}, "exact": true,
-		"digest": downDigest(action, l.address, l.etag), "summary": l.summary(), "reason": l.cause}
+		"digest": destroyDigest(action, l.address, l.etag), "summary": l.summary(), "reason": l.cause}
 	if l.auto && !l.forget {
 		v["approval"] = "auto"
 	}
@@ -84,7 +84,7 @@ func (l *leftover) view() map[string]any {
 // warnOrphan warns of the record of l, whose unit the files no longer
 // have, with the removed: entry that decides what happens to it.
 func (e *engine) warnOrphan(l *leftover) {
-	e.warn(l.address, "orphan: its unit is no longer in the files; add {from: %s, destroy: true} to removed: to take it down, or destroy: false to forget it", l.unit)
+	e.warn(l.address, "orphan: its unit is no longer in the files; add {from: %s, destroy: true} to removed: to destroy it, or destroy: false to forget it", l.unit)
 }
 
 // sayPlan writes the plan line of l, with its plan as units.<n>.plan has
@@ -94,17 +94,17 @@ func (l *leftover) sayPlan(e *engine) {
 		Status: record.Finished, Outcome: success, Plan: l.view()})
 }
 
-// downDigest is the digest of taking the record at addr with etag down,
+// destroyDigest is the digest of destroying the record at addr with etag,
 // or of forgetting it: the same while neither the operation nor the
 // record changes, so yes: true approves only what task: plan showed.
-func downDigest(action, addr, etag string) string {
+func destroyDigest(action, addr, etag string) string {
 	sum := sha256.Sum256([]byte(action + "\n" + addr + "\n" + etag))
 	return "sha256:v1:" + hex.EncodeToString(sum[:])
 }
 
-// downPass takes the selected units down, units that depend on others
-// first, each with the down contract in its record.
-func (e *engine) downPass(ctx context.Context) ([]*leftover, error) {
+// destroyPass destroys the selected units, units that depend on others
+// first, each with the destroy contract in its record.
+func (e *engine) destroyPass(ctx context.Context) ([]*leftover, error) {
 	if err := e.selectUnits(true); err != nil {
 		return nil, err
 	}
@@ -121,7 +121,7 @@ func (e *engine) downPass(ctx context.Context) ([]*leftover, error) {
 				e.warnOrphan(l)
 			}
 		case e.sel.picked(l.unit, l.keys, false):
-			if err := e.checkDownSources(ctx, l.record); err != nil {
+			if err := e.checkDestroySources(ctx, l.record); err != nil {
 				return nil, err
 			}
 			l.reason, l.cause = "requested", "requested"
@@ -133,26 +133,26 @@ func (e *engine) downPass(ctx context.Context) ([]*leftover, error) {
 		e.say("run", "", "no units")
 	}
 	// As Terraform and Pulumi refuse a destroy that reaches a protected
-	// resource, nothing goes down while one of the units is protected,
+	// resource, nothing is destroyed while one of the units is protected,
 	// rather than the units that depend on it going first.
 	protected := false
 	for _, l := range items {
 		if l.def.Protect {
-			e.fail(l.address, errors.New("protect: true refuses down; remove it from the unit first, or leave the unit out; nothing went down"))
+			e.fail(l.address, errors.New("protect: true refuses destroy; remove it from the unit first, or leave the unit out; nothing was destroyed"))
 			protected = true
 		}
 	}
 	if !protected {
 		e.askFirst(ctx, nil, items)
-		e.downAll(ctx, items)
-		e.dropFrames(ctx, framesOfDown(e, items))
+		e.destroyAll(ctx, items)
+		e.dropFrames(ctx, framesOfDestroy(e, items))
 	}
 	return items, nil
 }
 
-// framesOfDown are the instances of components that the items which went
-// down or were forgotten were in.
-func framesOfDown(e *engine, items []*leftover) []string {
+// framesOfDestroy are the instances of components that held the items that
+// were destroyed or forgotten.
+func framesOfDestroy(e *engine, items []*leftover) []string {
 	var out []string
 	for _, l := range items {
 		if l.outcome == success || l.forget {
@@ -195,7 +195,7 @@ func (e *engine) records(skip map[string]bool) ([]*leftover, error) {
 	return out, nil
 }
 
-// previewLeftovers finds what up takes down or forgets after the turns:
+// previewLeftovers finds what up destroys or forgets after the turns:
 // instances that if or for_each no longer has, and units that removed:
 // decides. Units gone from the files without removed: stay, with a
 // warning.
@@ -233,7 +233,7 @@ func (e *engine) previewLeftovers() []*leftover {
 				continue
 			}
 			if l.def.Protect {
-				e.fail(l.address, errors.New("its instance is no longer in if or for_each, and protect: true refuses down; it stays"))
+				e.fail(l.address, errors.New("its instance is no longer in if or for_each, and protect: true refuses destroy; it stays"))
 				continue
 			}
 			l.reason, l.cause = "its instance is no longer in if or for_each", "gone"
@@ -251,7 +251,7 @@ func (e *engine) previewLeftovers() []*leftover {
 			l.sayPlan(e)
 		}
 		if !l.forget {
-			if err := e.checkDownSources(e.ctx, l.record); err != nil {
+			if err := e.checkDestroySources(e.ctx, l.record); err != nil {
 				e.fail(l.address, err)
 				continue
 			}
@@ -286,25 +286,25 @@ func (e *engine) removal(l *leftover) *model.Removed {
 	return nil
 }
 
-// settle takes down and forgets the leftovers of up, once every turn is
-// done, so no unit still reads an instance that goes down.
+// settle destroys and forgets the leftovers of up, once every turn is
+// done, so no unit still reads an instance that is destroyed.
 func (e *engine) settle(ctx context.Context, items []*leftover) {
-	var downs []*leftover
+	var destroys []*leftover
 	for _, l := range items {
 		if !l.forget {
-			downs = append(downs, l)
+			destroys = append(destroys, l)
 			continue
 		}
 		if err := e.forget(ctx, l.address); err != nil {
-			e.failOp(l.address, "down", err)
+			e.failOp(l.address, "destroy", err)
 			l.forget, l.outcome = false, failure
 			continue
 		}
 		l.outcome = success
-		e.ended(l.address, "down", success, "forgotten; a tombstone stays at the address")
+		e.ended(l.address, "destroy", success, "forgotten; a tombstone stays at the address")
 	}
-	e.downAll(ctx, downs)
-	e.dropFrames(ctx, append(framesOfDown(e, items), e.stale...))
+	e.destroyAll(ctx, destroys)
+	e.dropFrames(ctx, append(framesOfDestroy(e, items), e.stale...))
 }
 
 func (e *engine) forget(ctx context.Context, addr string) error {
@@ -317,9 +317,9 @@ func (e *engine) forget(ctx context.Context, addr string) error {
 	return err
 }
 
-// downAll runs down for each item after the items that need it, at most
+// destroyAll runs destroy for each item after the items that need it, at most
 // OPSTRUSS_PARALLEL at once.
-func (e *engine) downAll(ctx context.Context, items []*leftover) {
+func (e *engine) destroyAll(ctx context.Context, items []*leftover) {
 	by := map[string]*leftover{}
 	for _, l := range items {
 		by[l.address] = l
@@ -343,39 +343,39 @@ func (e *engine) downAll(ctx context.Context, items []*leftover) {
 				<-n.done
 				if n.outcome != success {
 					l.outcome = skipped
-					e.ended(l.address, "down", skipped, "skipped: %s, which needs it, is %s", n.address, n.outcome)
+					e.ended(l.address, "destroy", skipped, "skipped: %s, which needs it, is %s", n.address, n.outcome)
 					return
 				}
 			}
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			l.outcome = e.downOne(ctx, l)
+			l.outcome = e.destroyOne(ctx, l)
 		}()
 	}
 	wg.Wait()
 }
 
-// downOne takes one address down under its lock: the attempts that did not
+// destroyOne destroys one address under its lock: the attempts that did not
 // finish first, then the last contract that succeeded, each with the
 // context its record holds; then the record goes.
-func (e *engine) downOne(ctx context.Context, l *leftover) string {
+func (e *engine) destroyOne(ctx context.Context, l *leftover) string {
 	addr := l.address
 	if errors.Is(ctx.Err(), context.Canceled) {
 		// The run was interrupted before this turn, as at a question.
-		e.ended(addr, "down", cancelled, "interrupted before its turn")
+		e.ended(addr, "destroy", cancelled, "interrupted before its turn")
 		return cancelled
 	}
 	fail := func(err error) string {
 		if errors.Is(ctx.Err(), context.Canceled) {
-			// The run was interrupted while the unit went down, which stopped it.
-			e.ended(addr, "down", cancelled, "interrupted: %v", err)
+			// The run was interrupted while the unit was being destroyed, which stopped it.
+			e.ended(addr, "destroy", cancelled, "interrupted: %v", err)
 			return cancelled
 		}
-		e.failOp(addr, "down", err)
+		e.failOp(addr, "destroy", err)
 		return failure
 	}
 	timeout := DefaultTimeout
-	if d := l.record.Down; d != nil && d.Timeout != "" {
+	if d := l.record.Destroy; d != nil && d.Timeout != "" {
 		if t, err := time.ParseDuration(d.Timeout); err == nil {
 			timeout = t
 		}
@@ -393,10 +393,10 @@ func (e *engine) downOne(ctx context.Context, l *leftover) string {
 		return fail(err)
 	}
 	if rec == nil || rec.Tombstone != nil {
-		e.ended(addr, "down", success, "already down")
+		e.ended(addr, "destroy", success, "already destroy")
 		return success
 	}
-	if err := e.checkDownSources(ctx, rec); err != nil {
+	if err := e.checkDestroySources(ctx, rec); err != nil {
 		return fail(err)
 	}
 	if a := pendingMove(rec); a != nil {
@@ -408,45 +408,45 @@ func (e *engine) downOne(ctx context.Context, l *leftover) string {
 		}
 	}
 	// An up that did not finish may have made something with its own
-	// contract, so that contract is torn down too, before the last one.
-	if a := rec.Pending; a != nil && a.Op == "up" && a.Down != nil && !same(a.Down, rec.Down) {
+	// contract, so that contract is destroyed too, before the last one.
+	if a := rec.Pending; a != nil && a.Op == "up" && a.Destroy != nil && !same(a.Destroy, rec.Destroy) {
 		rec.Abandoned = append(rec.Abandoned, a)
 	}
 	contracts := slices.Clone(rec.Abandoned)
-	// A service goes down when its supervisor stops it; its down contract
-	// says how.
+	// A service is destroyed by stopping it in its supervisor; its destroy
+	// contract says how.
 	service := rec.Kind == "service"
-	if rec.Down != nil && !service {
-		contracts = append(contracts, &state.Attempt{Source: rec.Source, Inputs: rec.Inputs, Outputs: rec.Outputs, Down: rec.Down, Hidden: rec.Hidden})
+	if rec.Destroy != nil && !service {
+		contracts = append(contracts, &state.Attempt{Source: rec.Source, Inputs: rec.Inputs, Outputs: rec.Outputs, Destroy: rec.Destroy, Hidden: rec.Hidden})
 	}
 	if !e.pass.force {
 		for _, c := range contracts {
-			if names := e.passDiffers(c.Down); len(names) > 0 {
-				return fail(fmt.Errorf("pass values differ from those of the record: %s; down --force runs with the values now", strings.Join(names, ", ")))
+			if names := e.passDiffers(c.Destroy); len(names) > 0 {
+				return fail(fmt.Errorf("pass values differ from those of the record: %s; destroy --force runs with the values now", strings.Join(names, ", ")))
 			}
 		}
 	}
 	approval := e.approvalOf(l.def)
 	if approval != "auto" {
-		source, why, _ := e.approves(ctx, Question{Op: "down", Address: addr, Summary: l.summary()}, downDigest("delete", addr, etag), -1)
+		source, why, _ := e.approves(ctx, Question{Op: "destroy", Address: addr, Summary: l.summary()}, destroyDigest("delete", addr, etag), -1)
 		if why != "" && errors.Is(ctx.Err(), context.Canceled) {
 			// The run was interrupted while the unit waited for its answer.
-			e.ended(addr, "down", cancelled, "interrupted before its approval")
+			e.ended(addr, "destroy", cancelled, "interrupted before its approval")
 			return cancelled
 		}
 		if why != "" {
-			e.stoppedAt(addr, "down", "%s; %s, stopped at plan", l.summary(), why)
+			e.stoppedAt(addr, "destroy", "%s; %s, stopped at plan", l.summary(), why)
 			e.stopAtPlan()
 			return skipped
 		}
 		approval = source
 	}
-	e.begin("unit", addr, "down", "", "down: started")
-	rec.Pending = &state.Attempt{Op: "down", Run: e.runID, Holder: e.holder, Approval: approval, Source: rec.Source, Down: rec.Down, Inputs: rec.Inputs, Hidden: rec.Hidden}
+	e.begin("unit", addr, "destroy", "", "destroy: started")
+	rec.Pending = &state.Attempt{Op: "destroy", Run: e.runID, Holder: e.holder, Approval: approval, Source: rec.Source, Destroy: rec.Destroy, Inputs: rec.Inputs, Hidden: rec.Hidden}
 	if etag, err = e.store.Put(addr, rec, etag); err != nil {
 		return fail(err)
 	}
-	failpoint.Hit("down-before-program")
+	failpoint.Hit("destroy-before-program")
 	if service {
 		if err := e.services().Stop(ctx, addr); err != nil {
 			return fail(err)
@@ -454,7 +454,7 @@ func (e *engine) downOne(ctx context.Context, l *leftover) string {
 	}
 	for len(contracts) > 0 {
 		c := contracts[0]
-		if err := e.runDown(ctx, addr, rec.StateKey, c); err != nil {
+		if err := e.runDestroy(ctx, addr, rec.StateKey, c); err != nil {
 			e.endAttempt(addr, rec, etag, parent)
 			return fail(err)
 		}
@@ -466,7 +466,7 @@ func (e *engine) downOne(ctx context.Context, l *leftover) string {
 			}
 		}
 	}
-	failpoint.Hit("down-after-program")
+	failpoint.Hit("destroy-after-program")
 	if err := e.store.Delete(addr, etag); err != nil {
 		return fail(err)
 	}
@@ -477,11 +477,11 @@ func (e *engine) downOne(ctx context.Context, l *leftover) string {
 	_ = os.RemoveAll(e.workdir(addr))
 	switch {
 	case service:
-		e.ended(addr, "down", success, "down: stopped")
-	case rec.Down == nil:
-		e.ended(addr, "down", success, "forgotten without a down program")
+		e.ended(addr, "destroy", success, "destroy: stopped")
+	case rec.Destroy == nil:
+		e.ended(addr, "destroy", success, "forgotten without a destroy program")
 	default:
-		e.ended(addr, "down", success, "down: done")
+		e.ended(addr, "destroy", success, "destroy: done")
 	}
 	return success
 }
@@ -504,9 +504,9 @@ func (e *engine) stackApproval() string {
 }
 
 // passDiffers names the variables whose values now differ from the
-// fingerprints in a down contract, since a down that finds nothing at
+// fingerprints in a destroy contract, since a destroy that finds nothing at
 // another target reports success while the old one keeps running.
-func (e *engine) passDiffers(d *state.Down) []string {
+func (e *engine) passDiffers(d *state.Destroy) []string {
 	if d == nil {
 		return nil
 	}
@@ -525,19 +525,19 @@ func (e *engine) passDiffers(d *state.Down) []string {
 	return names
 }
 
-// runDown runs one down contract, with the inputs and outputs it was
+// runDestroy runs one destroy contract, with the inputs and outputs it was
 // written with in $OPSTRUSS_STATE.
-func (e *engine) runDown(ctx context.Context, addr, stateKey string, c *state.Attempt) error {
-	d := c.Down
+func (e *engine) runDestroy(ctx context.Context, addr, stateKey string, c *state.Attempt) error {
+	d := c.Destroy
 	if d == nil {
 		return nil
 	}
-	dir, pluginDir, bins, files, release, err := e.prepareDown(ctx, d)
+	dir, pluginDir, bins, files, release, err := e.prepareDestroy(ctx, d)
 	if err != nil {
 		return err
 	}
 	defer release()
-	cmd, err := downCommand(d.Run)
+	cmd, err := destroyCommand(d.Run)
 	if err != nil {
 		return err
 	}
@@ -554,16 +554,16 @@ func (e *engine) runDown(ctx context.Context, addr, stateKey string, c *state.At
 			return err
 		}
 	}
-	out := &lineWriter{e: e, addr: addr, task: "down", stream: "stdout"}
-	errw := &lineWriter{e: e, addr: addr, task: "down", stream: "stderr"}
+	out := &lineWriter{e: e, addr: addr, task: "destroy", stream: "stdout"}
+	errw := &lineWriter{e: e, addr: addr, task: "destroy", stream: "stderr"}
 	defer out.flush()
 	defer errw.flush()
 	call := &plugin.Call{Command: cmd, Shell: d.Shell, Base: e.p.Dir, Dir: dir, BinDirs: bins, LeaseFiles: files, Env: env,
-		Pass: slices.Sorted(maps.Keys(d.Pass)), Stop: stop, Task: "down", Reason: "requested",
+		Pass: slices.Sorted(maps.Keys(d.Pass)), Stop: stop, Task: "destroy", Reason: "requested",
 		Unit:   &plugin.Unit{Address: addr, StateKey: stateKey, Workdir: e.workdir(addr), State: map[string]any{"inputs": c.Inputs, "outputs": c.Outputs}},
 		Stdout: out, Stderr: errw}
 	if d.Plugin != "" {
-		// down of a plugin runs from its directory with the inputs it was
+		// destroy of a plugin runs from its directory with the inputs it was
 		// written with.
 		call.PluginDir, call.Inputs = pluginDir, c.Inputs
 		if call.Inputs == nil {
@@ -581,13 +581,13 @@ func (e *engine) runDown(ctx context.Context, addr, stateKey string, c *state.At
 		e.warn(addr, "%s", w)
 	}
 	if res.ExitCode != 0 {
-		return fmt.Errorf("down exited with %d", res.ExitCode)
+		return fmt.Errorf("destroy exited with %d", res.ExitCode)
 	}
 	return nil
 }
 
-// downCommand reads the program of a down contract: a script, or argv.
-func downCommand(run any) (model.Command, error) {
+// destroyCommand reads the program of a destroy contract: a script, or argv.
+func destroyCommand(run any) (model.Command, error) {
 	switch x := run.(type) {
 	case string:
 		return model.Command{Script: x}, nil
@@ -596,11 +596,11 @@ func downCommand(run any) (model.Command, error) {
 		for _, a := range x {
 			s, ok := a.(string)
 			if !ok {
-				return model.Command{}, fmt.Errorf("the record's down program has %v, not a string", a)
+				return model.Command{}, fmt.Errorf("the record's destroy program has %v, not a string", a)
 			}
 			argv = append(argv, s)
 		}
 		return model.Command{Argv: argv}, nil
 	}
-	return model.Command{}, fmt.Errorf("the record's down program is %T, not a script or a list", run)
+	return model.Command{}, fmt.Errorf("the record's destroy program is %T, not a script or a list", run)
 }

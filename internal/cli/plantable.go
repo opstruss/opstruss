@@ -74,8 +74,8 @@ func planText(ev engine.Event) string {
 			msg = strings.Replace(msg, "plan: "+d, "plan: "+describe(changes, true), 1)
 		}
 	}
-	for _, p := range [][2]string{{"will run: ", ""}, {"may run: ", ""}, {"will go down", "go down"},
-		{"will be forgotten", "forget"}, {"will tear down", "tear down"}} {
+	for _, p := range [][2]string{{"will run: ", ""}, {"may run: ", ""}, {"will be destroyed", "destroy"},
+		{"will be forgotten", "forget"}, {"will destroy", "destroy"}} {
 		if after, ok := strings.CutPrefix(msg, p[0]); ok {
 			msg = p[1] + after
 			break
@@ -188,8 +188,8 @@ func planKind(msg string) string {
 	switch {
 	case strings.HasPrefix(msg, "may run"):
 		return "may run"
-	case strings.HasPrefix(msg, "will go down"):
-		return "to go down"
+	case strings.HasPrefix(msg, "will be destroyed"):
+		return "to destroy"
 	case strings.HasPrefix(msg, "will be forgotten"):
 		return "to forget"
 	case strings.HasPrefix(msg, "unchanged"):
@@ -201,7 +201,7 @@ func planKind(msg string) string {
 // summaryKinds are the counts of the summary in their order, with their
 // colors.
 var summaryKinds = []struct{ kind, code string }{
-	{"to run", green}, {"may run", yellow}, {"to go down", red}, {"to forget", red}, {"unchanged", dim},
+	{"to run", green}, {"may run", yellow}, {"to destroy", red}, {"to forget", red}, {"unchanged", dim},
 	{"left out", dim}, {"orphan", yellow}, {"warning", yellow}, {"cannot be planned", red},
 }
 
@@ -307,9 +307,9 @@ func keepsTable(ev engine.Event) bool {
 	case ev.Type == "diagnostic":
 		return true
 	case ev.Type == "log":
-		// A line of up or down comes after the plan, also from an older
+		// A line of up or destroy comes after the plan, also from an older
 		// OpsTruss, whose operations have no start.
-		return ev.Task != "up" && ev.Task != "down"
+		return ev.Task != "up" && ev.Task != "destroy"
 	case ev.Address != "" && ev.Task == "plan":
 		return true
 	}
@@ -354,7 +354,7 @@ func planMark(ev engine.Event) (string, string) {
 		return "+", green
 	case strings.HasPrefix(msg, "may run"):
 		return "?", yellow
-	case strings.HasPrefix(msg, "will go down"), strings.HasPrefix(msg, "will be forgotten"):
+	case strings.HasPrefix(msg, "will be destroyed"), strings.HasPrefix(msg, "will be forgotten"):
 		return "-", red
 	case strings.HasPrefix(msg, "error"):
 		return "✗", red

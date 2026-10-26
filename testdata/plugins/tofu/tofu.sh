@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# tofu.sh plan|up|down: what tofu would do with the .tf files of
+# tofu.sh plan|up|destroy: what tofu would do with the .tf files of
 # INPUT_SOURCE, for the use cases. The resources are the resource blocks of
 # those files, up computes the outputs with outputs.jq of INPUT_SOURCE from
 # $vars, and the tool's own state, terraform.tfstate in
 # $OPSTRUSS_STATE_DIR, keeps vars, resources, and outputs. Every up and
-# down writes a line to tofu.log with the names of the credentials it got.
+# destroy writes a line to tofu.log with the names of the credentials it got.
 set -euo pipefail
 sum() { { sha256sum 2>/dev/null || shasum -a 256; } | cut -d' ' -f1; }
 src=$INPUT_SOURCE
@@ -32,7 +32,7 @@ up)
   echo "apply $src ${creds% }" >> tofu.log
   printf '%s' "$outputs" > "$OPSTRUSS_OUTPUT"
   ;;
-down)
+destroy)
   rm -f "$tfstate"
   echo "destroy $src ${creds% }" >> tofu.log
   ;;

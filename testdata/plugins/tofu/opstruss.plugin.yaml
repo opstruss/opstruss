@@ -11,7 +11,7 @@ tasks:
     run: [./tofu.sh, plan]
   up:
     run: [./tofu.sh, up]
-  down:
-    run: [./tofu.sh, down]
+  destroy:
+    run: [./tofu.sh, destroy]
   exec:
     run: [./exec.sh]

@@ -170,17 +170,17 @@ func (d *serviceDef) digest(r *resolved, def map[string]any) {
 	}
 }
 
-// down is the down contract of a service: how it stops.
-func (d *serviceDef) down(r *resolved) *state.Down {
-	stop := &state.DownStop{Signal: proc.SignalName(r.stop.Signal), Grace: r.stop.Grace.String()}
-	down := &state.Down{Stop: stop}
+// destroy is the destroy contract of a service: how it stops.
+func (d *serviceDef) destroy(r *resolved) *state.Destroy {
+	stop := &state.DestroyStop{Signal: proc.SignalName(r.stop.Signal), Grace: r.stop.Grace.String()}
+	destroy := &state.Destroy{Stop: stop}
 	if d.stopRun != nil {
 		stop.Run = cmdValue(*d.stopRun)
 		if d.stopRun.Script != "" {
-			down.Shell = r.shell
+			destroy.Shell = r.shell
 		}
 	}
-	return down
+	return destroy
 }
 
 // services is the supervisor of the run's services, or one that knows of

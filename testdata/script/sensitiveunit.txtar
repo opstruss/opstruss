@@ -21,7 +21,7 @@ exec opstruss state pull _meta
 stdout '"data": "-----BEGIN AGE ENCRYPTED FILE-----'
 stdout '"project": "app"'
 exec opstruss state pull api
-stdout '"down.env": \{'
+stdout '"destroy.env": \{'
 stdout '"T": "enc:v1:'
 stdout '"auth": "enc:v1:'
 stdout '"id": "api-1"'
@@ -64,9 +64,9 @@ exec opstruss state pull broken
 stdout '"raw_output": "enc:v1:'
 ! exec sh -c 'grep -r s3cr3t .opstruss'
 
-# down runs with the value it kept
-exec opstruss down api --yes
-stdout '^default/api \| down with \*\*\*$'
+# destroy runs with the value it kept
+exec opstruss destroy api --yes
+stdout '^default/api \| destroy with \*\*\*$'
 
 # a machine whose age key cannot be read or made: a unit with a sensitive
 # value fails before it runs, and an output a program marks sensitive is
@@ -99,7 +99,7 @@ units:
       printf 'id=api-1\nauth=Bearer %s\n' "$T" > "$OPSTRUSS_OUTPUT"
       echo "deploying with $T"
     env: {T: '${{ inputs.token }}'}
-    down: echo "down with $T"
+    destroy: echo "destroy with $T"
     approval: auto
     outputs:
       id: {type: string}

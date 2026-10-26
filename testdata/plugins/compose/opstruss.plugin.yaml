@@ -12,5 +12,5 @@ tasks:
     run: [./compose.sh, plan]
   up:
     run: [./compose.sh, up]
-  down:
-    run: [./compose.sh, down]
+  destroy:
+    run: [./compose.sh, destroy]

@@ -1,6 +1,6 @@
 # Crash for units that use something: a plugin whose state OpsTruss keeps,
 # a plugin with state: tool, and a task with an http step, each killed at
-# every point of up, down, and moved:, and up after output that does not
+# every point of up, destroy, and moved:, and up after output that does not
 # parse and after a last write that fails: after up again, no resource
 # lacks a record, no unit has two, records read, and every interrupted
 # operation shows in plan.
@@ -76,13 +76,13 @@ stdout '^3 resources, each with a record$'
 exec opstruss exec store --input rev=12 -- true
 stdout '^faketool state: r-'
 
-# down killed before and after its program finishes with the next down
-env OPSTRUSS_FAILPOINT=down-before-program=kill
-! exec opstruss down --yes --input rev=12
-env OPSTRUSS_FAILPOINT=down-after-program=kill
-! exec opstruss down --yes --input rev=12
+# destroy killed before and after its program finishes with the next destroy
+env OPSTRUSS_FAILPOINT=destroy-before-program=kill
+! exec opstruss destroy --yes --input rev=12
+env OPSTRUSS_FAILPOINT=destroy-after-program=kill
+! exec opstruss destroy --yes --input rev=12
 env OPSTRUSS_FAILPOINT=
-exec opstruss down --yes --input rev=12
+exec opstruss destroy --yes --input rev=12
 exec fakecloud check cloud .opstruss/state
 stdout '^0 resources, each with a record$'
 ! exists .opstruss/state/default/store/tool
@@ -94,8 +94,8 @@ grep '^up-before-program$' visited
 grep '^program-started$' visited
 grep '^up-after-program$' visited
 grep '^up-before-put$' visited
-grep '^down-before-program$' visited
-grep '^down-after-program$' visited
+grep '^destroy-before-program$' visited
+grep '^destroy-after-program$' visited
 grep '^moved-after-pending$' visited
 grep '^moved-after-copy$' visited
 grep '^moved-after-tombstone$' visited
@@ -134,7 +134,7 @@ units:
   h:
     uses: create
     with: {tag: "${{ inputs.rev }}"}
-    down: [fakecloud, down, cloud]
+    destroy: [fakecloud, destroy, cloud]
 -- moved.yaml --
 name: shop
 inputs:
@@ -165,6 +165,6 @@ units:
   h:
     uses: create
     with: {tag: "${{ inputs.rev }}"}
-    down: [fakecloud, down, cloud]
+    destroy: [fakecloud, destroy, cloud]
 moved:
   - {from: t, to: store}

@@ -54,7 +54,7 @@
     "rerun_of": { "type": "string", "description": "The run that opstruss runs rerun ran again." },
     "replay": {
       "type": "object",
-      "description": "Of a run of a task, up, or down: what opstruss runs rerun needs beside the record. Without it, the run cannot run again.",
+      "description": "Of a run of a task, up, or destroy: what opstruss runs rerun needs beside the record. Without it, the run cannot run again.",
       "properties": {
         "trigger": { "type": "string", "description": "The key of the trigger whose event made the run, in the project file." },
         "time": { "type": "string", "description": "event.time of that event." },

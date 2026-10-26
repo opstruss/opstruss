@@ -196,7 +196,7 @@ units:
       value: ${{ units['vms-a'].outputs.vms }}
       format: json
     approval: auto                         # hanya menulis file dokumentasi
-    down: rm -f docs/network.md
+    destroy: rm -f docs/network.md
 
 tasks:
   change-vm:

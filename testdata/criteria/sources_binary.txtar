@@ -10,7 +10,7 @@ grep '^binary-before-publish$' visited
 grep '^binary-after-publish$' visited
 exec opstruss plugins prune
 exec sh -c 'test -z "$(ls -A "$HOME/.opstruss/cache/tmp")"'
-exec opstruss down --yes --locked
+exec opstruss destroy --yes --locked
 stdout 'binary-down-v1 resource'
 
 -- opstruss.yaml --
@@ -51,7 +51,7 @@ bin:
 tasks:
   up:
     run: [demo-tool, up]
-  down:
+  destroy:
     run: [demo-tool, down]
   echo:
     run: [demo-tool, echo]
@@ -70,7 +70,7 @@ bin:
 tasks:
   up:
     run: [demo-tool, up]
-  down:
+  destroy:
     run: [demo-tool, down]
   echo:
     run: [demo-tool, echo]

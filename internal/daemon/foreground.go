@@ -90,7 +90,7 @@ func (f *Foreground) Stop(ctx context.Context, addr string) error {
 	_, unclear, err := Recover(f.root(), f.Stack, addr)
 	var running *RunningError
 	if errors.As(err, &running) {
-		return fmt.Errorf("the daemon of stack %s started meanwhile, pid %d; run down again, which goes to it", f.Stack, running.PID)
+		return fmt.Errorf("the daemon of stack %s started meanwhile, pid %d; run destroy again, which goes to it", f.Stack, running.PID)
 	}
 	if err != nil {
 		return err

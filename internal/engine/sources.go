@@ -30,7 +30,7 @@ func sourceOf(id *sources.Identity) *state.Source {
 }
 
 // sourceContract records every snapshot needed by the already resolved cleanup.
-func (e *engine) sourceContract(inst *instance, r *resolved, d *state.Down) {
+func (e *engine) sourceContract(inst *instance, r *resolved, d *state.Destroy) {
 	if d == nil {
 		return
 	}
@@ -72,9 +72,9 @@ func (e *engine) sourceContract(inst *instance, r *resolved, d *state.Down) {
 	}
 }
 
-// prepareDown restores pins without consulting current definitions or the lock.
+// prepareDestroy restores pins without consulting current definitions or the lock.
 // It is shared by planning and execution, including pending/abandoned cleanup.
-func (e *engine) prepareDown(ctx context.Context, d *state.Down) (dir, pluginDir string, bins []string, files []*os.File, release func(), err error) {
+func (e *engine) prepareDestroy(ctx context.Context, d *state.Destroy) (dir, pluginDir string, bins []string, files []*os.File, release func(), err error) {
 	var leases []*sources.Lease
 	release = func() {
 		for _, l := range leases {
@@ -144,16 +144,16 @@ func (e *engine) prepareDown(ctx context.Context, d *state.Down) (dir, pluginDir
 	return dir, pluginDir, bins, files, release, nil
 }
 
-func (e *engine) checkDownSources(ctx context.Context, rec *state.Record) error {
-	contracts := []*state.Down{rec.Down}
+func (e *engine) checkDestroySources(ctx context.Context, rec *state.Record) error {
+	contracts := []*state.Destroy{rec.Destroy}
 	if rec.Pending != nil {
-		contracts = append(contracts, rec.Pending.Down)
+		contracts = append(contracts, rec.Pending.Destroy)
 	}
 	for _, a := range rec.Abandoned {
-		contracts = append(contracts, a.Down)
+		contracts = append(contracts, a.Destroy)
 	}
 	for _, d := range contracts {
-		if err := e.checkDown(ctx, d); err != nil {
+		if err := e.checkDestroy(ctx, d); err != nil {
 			return err
 		}
 	}
@@ -174,7 +174,7 @@ func (e *engine) requiredPath(r *resolved) string {
 	return e.path()
 }
 
-func downIdentities(d *state.Down) []sources.Identity {
+func destroyIdentities(d *state.Destroy) []sources.Identity {
 	var ids []sources.Identity
 	for _, location := range d.Sources {
 		ids = append(ids, location.Source)
@@ -182,8 +182,8 @@ func downIdentities(d *state.Down) []sources.Identity {
 	return ids
 }
 
-func (e *engine) checkDown(ctx context.Context, d *state.Down) error {
-	_, _, _, _, release, err := e.prepareDown(ctx, d)
+func (e *engine) checkDestroy(ctx context.Context, d *state.Destroy) error {
+	_, _, _, _, release, err := e.prepareDestroy(ctx, d)
 	if err != nil {
 		return err
 	}

@@ -1,4 +1,4 @@
-# Context: a unit whose target comes from pass. Up in context a, then down
+# Context: a unit whose target comes from pass. Up in context a, then destroy
 # or the orphan from context b is refused; an attempt of a that did not
 # finish, then up from b, goes to abandoned; no resource lacks a record.
 
@@ -10,9 +10,9 @@ exec opstruss up --yes
 exec fakecloud check cloud-a .opstruss/state
 stdout '^1 resources, each with a record$'
 
-# from context b, neither down nor the orphan's down reaches cloud-a
+# from context b, neither destroy nor the orphan's destroy reaches cloud-a
 env AWS_PROFILE=b
-! exec opstruss down --yes
+! exec opstruss destroy --yes
 stderr 'pass values differ from those of the record: AWS_PROFILE'
 cp removed.yaml opstruss.yaml
 ! exec opstruss up --yes
@@ -21,7 +21,7 @@ exec fakecloud check cloud-a .opstruss/state
 stdout '^1 resources, each with a record$'
 
 # an attempt in a that did not finish, then up from b: it is abandoned and
-# keeps its record, since only context a can take it down
+# keeps its record, since only context a can destroy it
 cp fresh.yaml opstruss.yaml
 env AWS_PROFILE=a
 env OPSTRUSS_FAILPOINT=program-started=kill
@@ -43,7 +43,7 @@ name: shop
 units:
   bucket:
     run: fakecloud up "cloud-$AWS_PROFILE"
-    down: fakecloud down "cloud-$AWS_PROFILE"
+    destroy: fakecloud destroy "cloud-$AWS_PROFILE"
     pass: [AWS_PROFILE]
     outputs:
       id: {}
@@ -56,13 +56,13 @@ name: shop
 units:
   bucket:
     run: fakecloud up "cloud-$AWS_PROFILE"
-    down: fakecloud down "cloud-$AWS_PROFILE"
+    destroy: fakecloud destroy "cloud-$AWS_PROFILE"
     pass: [AWS_PROFILE]
     outputs:
       id: {}
   fresh:
     run: sleep 0.3; fakecloud up "cloud-$AWS_PROFILE"
-    down: fakecloud down "cloud-$AWS_PROFILE"
+    destroy: fakecloud destroy "cloud-$AWS_PROFILE"
     pass: [AWS_PROFILE]
     outputs:
       id: {}

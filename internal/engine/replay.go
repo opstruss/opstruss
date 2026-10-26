@@ -43,7 +43,7 @@ func (rp *replay) empty() bool {
 }
 
 // rerunnable are the commands whose runs run again.
-var rerunnable = []string{"task", "up", "down"}
+var rerunnable = []string{"task", "up", "destroy"}
 
 // replayOf is what rec keeps to run the run again, and the payload to seal
 // beside it, of a run of command with the inputs with, made by the
@@ -151,7 +151,7 @@ func Rerun(ctx context.Context, opts Options, id string) (*Result, error) {
 		return nil, err
 	}
 	if !slices.Contains(rerunnable, rec.Command) {
-		return nil, fmt.Errorf("runs rerun runs tasks, up, and down again; run %s is %s", rec.Run, rec.Command)
+		return nil, fmt.Errorf("runs rerun runs tasks, up, and destroy again; run %s is %s", rec.Run, rec.Command)
 	}
 	if rec.Replay == nil {
 		return nil, fmt.Errorf("run %s cannot run again: it kept nothing for runs rerun, as an older OpsTruss made it", rec.Run)

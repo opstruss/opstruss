@@ -1,7 +1,7 @@
 # One preview per pull request: GitHub's webhooks, checked by their
 # signature, change the set of previews in kv through one writer, and the
-# instances of a unit follow that set, a key that leaves it going down as
-# planned; a limit turns more away, and a nightly sweep takes down the
+# instances of a unit follow that set, a key that leaves it being destroyed as
+# planned; a limit turns more away, and a nightly sweep destroys the
 # previews whose pull request closed without a webhook. GitHub is
 # fakeapi, Compose is the compose test plugin, and the limit is two.
 
@@ -41,7 +41,7 @@ webhook POST /hooks/github '{"action":"opened","pull_request":{"number":813,"hea
 waitgrep '^POST /repos/acme/web/issues/813/comments auth=Bearer gh-test-token \{"body":"Preview tidak dibuat: sudah 2 preview aktif."\}$' api/requests
 ! grep 'web-pr-813' compose.log
 
-# 812 is merged: its key leaves the set, so its preview goes down as
+# 812 is merged: its key leaves the set, so its preview is destroyed as
 # planned, and a push to 813 now finds room
 webhook POST /hooks/github '{"action":"closed","pull_request":{"number":812,"head":{"sha":"c812"}},"repository":{"full_name":"acme/web"}}' -github hook-test-secret -header 'X-GitHub-Event: pull_request'
 waitgrep '^down web-pr-812$' compose.log
@@ -49,7 +49,7 @@ webhook POST /hooks/github '{"action":"synchronize","pull_request":{"number":813
 waitgrep '^up web-pr-813 .* IMAGE_TAG=e813 ' compose.log
 
 # the closed webhook of 790 never came: the sweep finds it closed on
-# GitHub and takes its preview down
+# GitHub and destroys its preview
 exec opstruss sweep
 grep '^GET /repos/acme/web/pulls\?state=open&per_page=100 auth=Bearer gh-test-token$' api/requests
 grep '^down web-pr-790$' compose.log
@@ -214,7 +214,7 @@ tasks:
           value: ${{ steps.set.outputs.value }}
       - name: Apply
         task: up
-        units: [site]                      # key yang hilang menjadi down terencana
+        units: [site]                      # key yang hilang menjadi destroy terencana
 
   sweep:
     description: Remove previews whose pull request is closed or idle

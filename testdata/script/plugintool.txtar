@@ -5,7 +5,7 @@
 
 env HOME=$WORK/home
 chmod 755 plugins/tool/up.sh
-chmod 755 plugins/tool/down.sh
+chmod 755 plugins/tool/destroy.sh
 chmod 755 plugins/tool/status.sh
 
 exec opstruss up
@@ -19,7 +19,7 @@ exec opstruss status
 stdout '^default/infra \| serial 1 in tool, outputs port 8080$'
 stdout '^default/infra: up, from run '
 stdout '^default/web: up, from run '
-exec opstruss ps web
+exec opstruss status web
 stdout '^default/web: up, from run '
 
 # a backend input while tool/ still holds the state stops at plan
@@ -27,9 +27,9 @@ exec sh -c 'sed "s/name: infra}/name: infra, backend: {bucket: b}}/" opstruss.ya
 ! exec opstruss plan
 stdout 'the tool.s state is still in tool/ while input backend names another place'
 
-# down takes tool/ away with the record
+# destroy takes tool/ away with the record
 exec sh -c 'sed "s/, backend: {bucket: b}//" opstruss.yaml > o.yaml && mv o.yaml opstruss.yaml'
-exec opstruss down
+exec opstruss destroy
 ! exists .opstruss/state/default/infra/tool
 ! exists cloud/infra
 
@@ -67,8 +67,8 @@ inputs:
 tasks:
   up:
     run: [./up.sh]
-  down:
-    run: [./down.sh]
+  destroy:
+    run: [./destroy.sh]
   status:
     run: [./status.sh]
 -- plugins/tool/up.sh --
@@ -77,7 +77,7 @@ mkdir -p cloud
 touch "cloud/$INPUT_NAME"
 echo '{"serial": 1}' > "$OPSTRUSS_STATE_DIR/state.json"
 echo '{"port": 8080, "tags": ["a", "b"]}' > "$OPSTRUSS_OUTPUT"
--- plugins/tool/down.sh --
+-- plugins/tool/destroy.sh --
 #!/bin/sh
 test -f "$OPSTRUSS_STATE_DIR/state.json" || exit 1
 rm -f "cloud/$INPUT_NAME"

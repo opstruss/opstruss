@@ -26,7 +26,7 @@ import (
 var BuiltinTasks = []string{"command", "http", "read", "write", "set", "assert", "wait", "log", "kv"}
 
 // StandardTasks are the lifecycle tasks of units.
-var StandardTasks = []string{"plan", "up", "down", "status", "logs"}
+var StandardTasks = []string{"plan", "up", "destroy", "status", "logs"}
 
 // BuiltinFlags are the flags of OpsTruss on the command of a task, which no
 // input of the task may make.
@@ -35,10 +35,9 @@ var BuiltinFlags = []string{"stack", "input", "json", "yes", "locked", "no-deps"
 // Hooks are plugin tasks that only the engine calls.
 var Hooks = []string{"watch", "exec", "migrate"}
 
-// Commands are the built-in commands and their aliases, which tasks cannot
-// be named.
+// Commands are the built-in commands, which tasks cannot be named.
 var Commands = []string{"init", "validate", "explain", "doctor", "list", "outputs", "stop", "mcp", "plugins",
-	"unlock", "state", "runs", "run", "exec", "version", "help", "apply", "destroy", "preview", "ps"}
+	"unlock", "state", "runs", "run", "exec", "version", "help"}
 
 // ansible maps keywords of Ansible to what OpsTruss writes instead.
 var ansible = map[string]string{
@@ -299,7 +298,7 @@ func (c *checker) environment(path []string, env Env, pass []string) {
 
 // unitCommands are the programs of a unit, by their keys.
 func unitCommands(u *Unit) map[string]*Command {
-	cmds := map[string]*Command{"run": u.Run, "service": u.Service, "down": u.Down}
+	cmds := map[string]*Command{"run": u.Run, "service": u.Service, "destroy": u.Destroy}
 	if u.Ready != nil {
 		cmds["ready.run"] = u.Ready.Run
 	}
@@ -374,8 +373,8 @@ func (c *checker) units() {
 				c.add(at(path, "stop", "run"), "stop.run is for service units")
 			}
 		} else {
-			if u.Down != nil {
-				c.add(at(path, "down"), "a service stops through stop:, not down")
+			if u.Destroy != nil {
+				c.add(at(path, "destroy"), "a service stops through stop:, not destroy:")
 			}
 			if len(u.Generates) > 0 {
 				c.add(at(path, "generates"), "generates is for run units and units that use a task")
@@ -470,7 +469,7 @@ func (c *checker) componentKeys(path []string, u *Unit) {
 		key string
 		set bool
 	}{{"requires", u.Requires != nil}, {"shell", u.Shell != ""}, {"dir", u.Dir != ""}, {"stdin", u.Stdin != nil},
-		{"sources", len(u.Sources) > 0}, {"generates", len(u.Generates) > 0}, {"revision", u.Revision != ""}, {"down", u.Down != nil}} {
+		{"sources", len(u.Sources) > 0}, {"generates", len(u.Generates) > 0}, {"revision", u.Revision != ""}, {"destroy", u.Destroy != nil}} {
 		if k.set {
 			c.add(at(path, k.key), "%s is not for a unit that uses a component; the units inside have their own", k.key)
 		}

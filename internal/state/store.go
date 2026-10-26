@@ -26,7 +26,7 @@ type Store struct {
 	// value that the run knows, which is then kept encrypted too.
 	Known func(part, name string, v any) bool
 	// Opened, when set, gets each sensitive value that a record gives up
-	// decrypted, so the run hides it in what it writes out, as down prints
+	// decrypted, so the run hides it in what it writes out, as destroy prints
 	// what it kept.
 	Opened func(v any)
 
@@ -280,7 +280,7 @@ func (s *Store) Inventory() ([]string, error) {
 }
 
 // Forget leaves a tombstone at address instead of its record, without
-// taking anything down, and moves the tool's state of a local unit to
+// destroying anything, and moves the tool's state of a local unit to
 // <stack>/_forgotten/<run>/. On a tombstone it removes the tombstone, so
 // the name can be used again.
 func (s *Store) Forget(address, run string) (string, error) {
@@ -357,7 +357,7 @@ func (s *Store) ToolDir(address string) (string, bool) {
 	return filepath.Join(l.root, filepath.FromSlash(address), "tool"), true
 }
 
-// RemoveTool removes tool/ of address, once down took the unit away.
+// RemoveTool removes tool/ of address, once destroy took the unit away.
 func (s *Store) RemoveTool(address string) error {
 	dir, ok := s.ToolDir(address)
 	if !ok {

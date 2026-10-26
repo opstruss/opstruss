@@ -1,11 +1,11 @@
-# A unit that uses a plugin runs the plugin's plan, up, and down with the
+# A unit that uses a plugin runs the plugin's plan, up, and destroy with the
 # unit's inputs: up runs when the definition changes or the plan has
-# changes, its outputs go to the record, and down takes it away.
+# changes, its outputs go to the record, and destroy takes it away.
 
 env HOME=$WORK/home
 chmod 755 plugins/fake/plan.sh
 chmod 755 plugins/fake/up.sh
-chmod 755 plugins/fake/down.sh
+chmod 755 plugins/fake/destroy.sh
 
 # a new unit runs, with what the plugin's plan says; up plans it again at
 # its turn and shows what the plan writes once, as that plan is the same
@@ -38,8 +38,8 @@ exec opstruss plan
 stdout '^default/db: will run: definition changed: plugin$'
 exec opstruss up
 
-# down runs the plugin's down from its record
-exec opstruss down
+# destroy runs the plugin's destroy from its record
+exec opstruss destroy
 ! exists cloud/db
 exec opstruss state list
 ! stdout 'default/db'
@@ -71,8 +71,8 @@ tasks:
     run: [./plan.sh]
   up:
     run: [./up.sh]
-  down:
-    run: [./down.sh]
+  destroy:
+    run: [./destroy.sh]
 -- plugins/fake/plan.sh --
 #!/bin/sh
 echo "planning $INPUT_NAME"
@@ -90,7 +90,7 @@ printf '{"changes": [{"action": "%s", "resource": "%s"}], "digest": "sha256:%s-%
 mkdir -p cloud
 echo "$INPUT_SIZE" > "cloud/$INPUT_NAME"
 echo "id=$INPUT_NAME-$INPUT_SIZE" > "$OPSTRUSS_OUTPUT"
--- plugins/fake/down.sh --
+-- plugins/fake/destroy.sh --
 #!/bin/sh
 rm -f "cloud/$INPUT_NAME"
 -- plugins/simple/opstruss.plugin.yaml --

@@ -35,7 +35,7 @@ type resolved struct {
 	stdin    []byte
 	stdinVal any
 	revision string
-	down     *model.Command
+	destroy  *model.Command
 	requires []string
 	timeout  time.Duration
 	stop     plugin.Stop
@@ -69,7 +69,7 @@ func (e *engine) resolve(inst *instance, preview bool) (*resolved, error) {
 		}
 		reads("run", argvOf(u.Run), inst.frame)
 		reads("service", argvOf(u.Service), inst.frame)
-		reads("down", argvOf(u.Down), inst.frame)
+		reads("destroy", argvOf(u.Destroy), inst.frame)
 		for _, k := range slices.Sorted(maps.Keys(u.Env)) {
 			reads("env."+k, u.Env[k].Text, inst.frame)
 		}
@@ -97,12 +97,12 @@ func (e *engine) resolve(inst *instance, preview bool) (*resolved, error) {
 	if r.cmd, err = e.command(u.Run, s); err != nil {
 		return nil, fmt.Errorf("run: %w", err)
 	}
-	if u.Down != nil {
-		cmd, err := e.command(u.Down, s)
+	if u.Destroy != nil {
+		cmd, err := e.command(u.Destroy, s)
 		if err != nil {
-			return nil, fmt.Errorf("down: %w", err)
+			return nil, fmt.Errorf("destroy: %w", err)
 		}
-		r.down = &cmd
+		r.destroy = &cmd
 	}
 	if r.dir, err = expr.EvalText(u.Dir, s); err != nil {
 		return nil, fmt.Errorf("dir: %w", err)
@@ -299,7 +299,7 @@ func (r *resolved) kind() string {
 	return "run"
 }
 
-// inputs are the plugin's inputs, which the record keeps for down and
+// inputs are the plugin's inputs, which the record keeps for destroy and
 // $OPSTRUSS_STATE.
 func (r *resolved) inputs() map[string]any {
 	switch {
@@ -327,8 +327,8 @@ func (r *resolved) evalEnv(e *engine, k string, v model.EnvValue, s *expr.Scope)
 }
 
 // hidden names what the record of the unit keeps encrypted: its sensitive
-// inputs, and the sensitive variables of the env of down d.
-func (r *resolved) hidden(d *state.Down) map[string][]string {
+// inputs, and the sensitive variables of the env of destroy d.
+func (r *resolved) hidden(d *state.Destroy) map[string][]string {
 	out := map[string][]string{}
 	for _, k := range slices.Sorted(maps.Keys(r.inputs())) {
 		if r.inputHidden[k] {
@@ -387,7 +387,7 @@ func (r *resolved) source(inst *instance) *state.Source {
 	return nil
 }
 
-// fingerprint is the sha256 of a pass value, which down compares with the
+// fingerprint is the sha256 of a pass value, which destroy compares with the
 // value it then finds.
 func fingerprint(v string) string {
 	sum := sha256.Sum256([]byte(v))
@@ -405,21 +405,21 @@ func (r *resolved) fingerprints() map[string]string {
 	return out
 }
 
-// downContract is what down runs for the unit, with the context it needs.
-func (e *engine) downContract(inst *instance, r *resolved) *state.Down {
+// destroyContract is what destroy runs for the unit, with the context it needs.
+func (e *engine) destroyContract(inst *instance, r *resolved) *state.Destroy {
 	if r.service != nil {
-		d := r.service.down(r)
+		d := r.service.destroy(r)
 		e.sourceContract(inst, r, d)
 		return d
 	}
-	if r.down == nil {
+	if r.destroy == nil {
 		return nil
 	}
 	rel, err := filepath.Rel(e.p.Dir, r.cwd)
 	if err != nil {
 		rel = r.cwd
 	}
-	d := &state.Down{Run: cmdValue(*r.down), Shell: r.shell, Dir: filepath.ToSlash(rel), Plugin: e.pluginOf(r),
+	d := &state.Destroy{Run: cmdValue(*r.destroy), Shell: r.shell, Dir: filepath.ToSlash(rel), Plugin: e.pluginOf(r),
 		Tool: r.plugin != nil && r.plugin.tool != "", Pass: r.fingerprints(), Timeout: inst.def.Timeout}
 	for k, v := range r.env {
 		if v.File {
@@ -435,7 +435,7 @@ func (e *engine) downContract(inst *instance, r *resolved) *state.Down {
 		}
 	}
 	if s := inst.def.Stop; s != nil {
-		d.Stop = &state.DownStop{Signal: s.Signal, Grace: s.Grace}
+		d.Stop = &state.DestroyStop{Signal: s.Signal, Grace: s.Grace}
 	}
 	e.sourceContract(inst, r, d)
 	return d
@@ -452,7 +452,7 @@ type digested struct {
 // digest is the digest trigger of a run unit: sha256 over the canonical
 // JSON of what decides its result, the files of sources outside generates
 // and a relative program included. The base environment, timeout, retry,
-// approval, and down are left out, since they do not change the result.
+// approval, and destroy are left out, since they do not change the result.
 func (e *engine) digest(inst *instance, r *resolved) (digested, error) {
 	sources, missing, empty, err := files(inst.dir, inst.def.Sources, inst.def.Generates)
 	if err != nil {

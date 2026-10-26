@@ -11,7 +11,7 @@
     "kind": { "enum": ["run", "service", "uses", "component"] },
     "source": { "$ref": "#/$defs/source" },
     "inputs": { "type": "object" },
-    "down": { "$ref": "#/$defs/down" },
+    "destroy": { "$ref": "#/$defs/destroy" },
     "needs": { "type": "array", "items": { "type": "string" } },
     "outputs": { "type": "object" },
     "sensitive": { "$ref": "#/$defs/sensitive" },
@@ -50,7 +50,7 @@
         "hash": { "type": "string" }
       }
     },
-    "down": {
+    "destroy": {
       "type": "object",
       "properties": {
         "sources": { "type": "array", "items": { "type": "object", "properties": { "source": {"type": "object", "properties": {"repository": {"const": "github.com/opstruss/catalog"}, "path": {"type": "string"}, "ref": {"type": "string"}, "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"}, "hash": {"type": "string", "pattern": "^h1:[A-Za-z0-9+/]{43}=$"}}, "required": ["repository", "path", "ref", "commit", "hash"], "additionalProperties": false}, "root": { "type": "string" } }, "required": ["source", "root"], "additionalProperties": false } },
@@ -115,14 +115,14 @@
     "attempt": {
       "type": "object",
       "properties": {
-        "op": { "enum": ["up", "down", "moved"] },
+        "op": { "enum": ["up", "destroy", "moved"] },
         "run": { "$ref": "#/$defs/run" },
         "holder": { "$ref": "#/$defs/holder" },
         "approval": { "type": "string" },
         "digest": { "$ref": "#/$defs/digest" },
         "source": { "$ref": "#/$defs/source" },
         "inputs": { "type": "object" },
-        "down": { "$ref": "#/$defs/down" },
+        "destroy": { "$ref": "#/$defs/destroy" },
         "needs": { "type": "array", "items": { "type": "string" } },
         "outputs": { "type": "object" },
         "raw_output": { "type": "string" },
@@ -134,7 +134,7 @@
       "required": ["op", "run", "holder"]
     },
     "sensitive": {
-      "description": "Sensitive values by the part they belong to (inputs, outputs, down.env, down.env_files), each encrypted with the data key of the stack.",
+      "description": "Sensitive values by the part they belong to (inputs, outputs, destroy.env, destroy.env_files), each encrypted with the data key of the stack.",
       "type": "object",
       "additionalProperties": {
         "type": "object",

@@ -680,7 +680,7 @@ func (e *engine) holdFrames(ctx context.Context, inst *instance) (release func()
 }
 
 // writeFrame writes the record of the component instance f under its
-// lock: its source and inputs, and no down, since the units inside have
+// lock: its source and inputs, and no destroy, since the units inside have
 // records of their own.
 func (e *engine) writeFrame(f *frame) error {
 	rec, etag, err := e.store.Get(f.address)
@@ -688,7 +688,7 @@ func (e *engine) writeFrame(f *frame) error {
 		err = tombstoned(rec, e.short(f.address))
 	}
 	if err == nil && rec != nil && rec.Tombstone == nil && rec.Kind != "component" {
-		err = fmt.Errorf("it holds a unit of another kind; take that unit down with the files that still have it first")
+		err = fmt.Errorf("it holds a unit of another kind; destroy that unit with the files that still have it first")
 	}
 	if err != nil {
 		return err

@@ -72,7 +72,7 @@ grep '^restic backup b2:acme-mc:world password=set aws= b2=b2-test-id$' calls
 grep -count=1 '^mcrcon save-on pass=set$' calls
 
 # B2 cannot be reached: the snapshot fails, and saving resumes anyway
-exec sh -c 'echo b2:acme-mc:world > down.txt'
+exec sh -c 'echo b2:acme-mc:world > destroy.txt'
 ! exec opstruss backup
 grep -count=2 '^mcrcon save-on pass=set$' calls
 
@@ -142,11 +142,11 @@ esac
 -- fakes/restic --
 #!/bin/sh
 # restic with each repository as a directory of repos/, named after
-# RESTIC_REPOSITORY; a repository listed in down.txt cannot be reached.
+# RESTIC_REPOSITORY; a repository listed in destroy.txt cannot be reached.
 dir=${0%/*}/..
 repo=$dir/repos/$(printf %s "$RESTIC_REPOSITORY" | tr -c 'A-Za-z0-9._-' _)
 echo "restic $1 $RESTIC_REPOSITORY password=${RESTIC_PASSWORD:+set} aws=${AWS_ACCESS_KEY_ID:-} b2=${B2_ACCOUNT_ID:-}" >> "$dir/calls"
-if grep -qxF "$RESTIC_REPOSITORY" "$dir/down.txt" 2>/dev/null; then
+if grep -qxF "$RESTIC_REPOSITORY" "$dir/destroy.txt" 2>/dev/null; then
   echo "Fatal: unable to open repository at $RESTIC_REPOSITORY" >&2
   exit 1
 fi
@@ -314,7 +314,7 @@ tasks:
       - name: Stop when empty long enough
         if: "steps.count.outcome == 'success' && steps.count.outputs.n == 0 && kv('mc.empty_since') != null && opstruss.time - timestamp(kv('mc.empty_since')) > duration(string(inputs.idle_minutes) + 'm')"
         block:
-          - task: down
+          - task: destroy
             units: [mc]
           - kv: {key: mc.empty_since, value: null}
           - announce:

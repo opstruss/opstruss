@@ -181,9 +181,10 @@ func (a *app) daemonCommand() *cobra.Command {
 // What a daemon that ended left of its services is stopped too.
 func (a *app) stopCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "stop",
-		Short: "Stop the daemon of the stack, which cancels the runs in it and stops its services",
-		Args:  cobra.NoArgs,
+		Use:        "stop",
+		Short:      "Stop the daemon of the stack, which cancels the runs in it and stops its services",
+		SuggestFor: []string{"down"},
+		Args:       cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error {
 			dir, err := a.projectDir()
 			if err != nil {

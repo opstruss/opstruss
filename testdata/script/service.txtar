@@ -1,6 +1,6 @@
 # A service runs in the daemon of its stack: up starts it and waits until
 # it is ready, restarts follow restart:, a changed definition restarts it,
-# stop stops it with the daemon and keeps its record, and down stops it
+# stop stops it with the daemon and keeps its record, and destroy stops it
 # and drops the record. A run without a daemon that starts a service makes
 # its process the daemon, in the foreground while the service runs.
 
@@ -54,11 +54,11 @@ exec opstruss plan web
 stdout 'default/web: will run: not running'
 ! grep '"address": "default/web"' .opstruss/daemon/default.json
 
-# up -d starts it again; down stops it and drops its record
+# up -d starts it again; destroy stops it and drops its record
 exec opstruss up -d --yes web
 stdout 'default/web: running'
-exec opstruss down --yes web
-stdout 'default/web: down: stopped'
+exec opstruss destroy --yes web
+stdout 'default/web: destroy: stopped'
 exec opstruss status web
 stdout '^default/web: absent$'
 exec opstruss stop

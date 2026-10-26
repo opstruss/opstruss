@@ -372,7 +372,7 @@
         "generates": { "$ref": "#/$defs/globs" },
         "revision": { "type": "string" },
         "outputs": { "$ref": "#/$defs/outputs" },
-        "down": { "$ref": "#/$defs/command" },
+        "destroy": { "$ref": "#/$defs/command" },
         "restart": { "enum": ["no", "on-failure", "always"] },
         "stop": { "$ref": "#/$defs/stop" },
         "ready": {

@@ -2,7 +2,7 @@
 # outside them runs nothing again, while records and cleanup keep pins.
 env HOME=$WORK/home
 chmod 755 repo/plugins/a/up.sh
-chmod 755 repo/plugins/a/down.sh
+chmod 755 repo/plugins/a/destroy.sh
 sourcerepo repo
 exec git -C repo config user.name Fixture
 exec git -C repo config user.email fixture@example.invalid
@@ -40,12 +40,12 @@ exec opstruss plan --locked
 stdout '^default/a: will run: definition changed: plugin$'
 stdout '^default/site/page: will run: definition changed: component$'
 
-# Cleanup runs the down of the pin in the record, fetched again.
+# Cleanup runs the destroy of the pin in the record, fetched again.
 cp removed.yaml opstruss.yaml
 exec sh -c 'chmod -R u+w "$HOME/.opstruss/cache/git"; rm -rf "$HOME/.opstruss/cache/git"'
 exec opstruss up --yes
-stdout 'default/a \| down-v1'
-! stdout 'down-v2'
+stdout 'default/a \| destroy-v1'
+! stdout 'destroy-v2'
 
 # The relative paths of a package stay in it and the shared paths.
 cp full.yaml opstruss.yaml
@@ -113,16 +113,16 @@ name: a
 tasks:
   up:
     run: [./up.sh]
-  down:
-    run: [./down.sh]
+  destroy:
+    run: [./destroy.sh]
 -- repo/plugins/a/up.sh --
 #!/bin/sh
 . "$OPSTRUSS_PLUGIN_DIR/../../lib/opstruss.sh"
 echo "up-$version"
--- repo/plugins/a/down.sh --
+-- repo/plugins/a/destroy.sh --
 #!/bin/sh
 . "$OPSTRUSS_PLUGIN_DIR/../../lib/opstruss.sh"
-echo "down-$version"
+echo "destroy-$version"
 -- repo/plugins/b/units.yaml --
 units:
   other:
@@ -147,12 +147,12 @@ name: a
 tasks:
   up:
     run: [../b/up.sh]
-  down:
-    run: [./down.sh]
+  destroy:
+    run: [./destroy.sh]
 -- outside.yaml --
 name: a
 tasks:
   up:
     run: [../../../outside.sh]
-  down:
-    run: [./down.sh]
+  destroy:
+    run: [./destroy.sh]

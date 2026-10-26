@@ -94,8 +94,8 @@ func (c *checker) pluginRules() {
 		case !unit && (slices.Contains(StandardTasks, name) || slices.Contains(Hooks, name)):
 			c.add(path, "%s runs only through a unit, and a plugin is a unit only when it has up; give the task another name", name)
 		}
-		if unit && (name == "plan" || name == "up" || name == "down") && t.Run == nil {
-			// The record keeps the program of down to take the unit down
+		if unit && (name == "plan" || name == "up" || name == "destroy") && t.Run == nil {
+			// The record keeps the program of destroy to destroy the unit
 			// without the plugin's file, and up and plan are its peers.
 			c.add(path, "%s of a plugin runs one program, written as run", name)
 		}
@@ -110,7 +110,7 @@ func (c *checker) pluginRules() {
 				c.add(at(path, "inputs", in), "%s is an input of the plugin already; a task adds inputs of other names", in)
 			case dup:
 				c.add(at(path, "inputs", in), "inputs %s and %s are both %s for the program; rename one", other, in, InputEnv(in))
-			case unit && (in == "units" || (in == "force" && (name == "up" || name == "down"))):
+			case unit && (in == "units" || (in == "force" && (name == "up" || name == "destroy"))):
 				c.add(at(path, "inputs", in), "%s is an argument of the tasks of a unit (--%s); name the input otherwise", in, in)
 			}
 		}

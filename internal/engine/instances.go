@@ -53,7 +53,7 @@ type plan struct {
 	blocked  string            // an upstream unit that cannot be planned
 	locked   string            // the holder of the address, for another run
 	digest   string            // the digest trigger, which the record keeps
-	teardown []string          // runs whose attempts up tears down after it succeeds
+	teardown []string          // runs whose attempts up destroys after it succeeds
 	err      error
 
 	emptySources []string // patterns of sources that match no file
@@ -88,7 +88,7 @@ func (p plan) outcome() string {
 func (p plan) summary() string {
 	old := ""
 	if len(p.teardown) > 0 {
-		old = "tear down the attempts of " + strings.Join(p.teardown, ", ")
+		old = "destroy the attempts of " + strings.Join(p.teardown, ", ")
 	}
 	switch {
 	case p.err != nil:
@@ -121,7 +121,7 @@ func (p plan) summary() string {
 var forEachKey = regexp.MustCompile(`^[a-z0-9._-]+$`)
 
 // selection is the units a run is about: those named and, unless
-// --no-deps, the units they depend on, or for down those that depend on
+// --no-deps, the units they depend on, or for destroy those that depend on
 // them. A name picks by the segments of an address: site picks a unit, or
 // every unit inside a component, site[eu] one instance, and site/db a unit
 // inside; * matches any text in a segment.
@@ -142,7 +142,7 @@ type pick struct {
 // selectUnits reads the names and patterns, then follows the graph: a
 // dependency inside the same instances of components as the unit that
 // needs it is picked in those instances only.
-func (e *engine) selectUnits(down bool) error {
+func (e *engine) selectUnits(destroy bool) error {
 	s := &selection{picks: map[string][]pick{}, frames: map[string][]pick{}}
 	e.sel = s
 	if len(e.pass.units) == 0 {
@@ -206,7 +206,7 @@ func (e *engine) selectUnits(down bool) error {
 		return nil
 	}
 	next := e.p.Deps
-	if down {
+	if destroy {
 		next = map[string][]string{}
 		for u, deps := range e.p.Deps {
 			for _, d := range deps {

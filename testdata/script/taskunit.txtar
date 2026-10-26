@@ -1,6 +1,6 @@
 # A unit that uses a task runs it at up with its with: as inputs: a task
 # of the project, of a plugin, or a built-in task. Its outputs become the
-# unit's, its programs are the unit's, and down: of the unit takes it away.
+# unit's, its programs are the unit's, and destroy: of the unit takes it away.
 
 env HOME=$WORK/home
 chmod 755 build.sh
@@ -24,8 +24,8 @@ stdout '^default/image: will run: definition changed: source, with.tag$'
 exec opstruss up
 stdout 'building v2'
 
-# down: of a unit that uses a task takes it away; one without is forgotten
-exec opstruss down
+# destroy: of a unit that uses a task takes it away; one without is forgotten
+exec opstruss destroy
 stdout 'removed image'
 exec opstruss state list
 ! stdout default
@@ -47,7 +47,7 @@ units:
   image:
     uses: build
     with: {tag: v1}
-    down: [sh, -c, 'echo removed image']
+    destroy: [sh, -c, 'echo removed image']
     approval: auto
   mark:
     uses: stamp.make

@@ -2,7 +2,7 @@
 # and one of three lines, goes through the log, a line printed in pieces,
 # with a value that pass: lets through by a secret's name and the shape
 # of a credential that no one told the run of,
-# --json, records and events, kv, error messages, outputs, down, and the
+# --json, records and events, kv, error messages, outputs, destroy, and the
 # pending and errored copies a failpoint leaves: no plaintext of it shows
 # anywhere OpsTruss writes, only in what programs write themselves (tool/,
 # work/, artifacts/).
@@ -78,10 +78,10 @@ exec opstruss state pull app
 stdout '"raw_output": "enc:v1:'
 ! stdout 'CANARY|PEM[a-z]'
 
-# down runs with what it kept
+# destroy runs with what it kept
 exec opstruss up app --yes --input rev=6
-exec opstruss down app --yes
-stdout '^default/app \| down \*\*\*$'
+exec opstruss destroy app --yes
+stdout '^default/app \| destroy \*\*\*$'
 ! stdout 'CANARY|PEM[a-z]'
 
 # nowhere that OpsTruss writes holds it
@@ -112,7 +112,7 @@ units:
     env:
       C: ${{ secrets.canary }}
       PEM: ${{ secrets.pem }}
-    down: echo "down $C"
+    destroy: echo "destroy $C"
     pass: [PASSED_TOKEN]
     revision: ${{ inputs.rev }}
     outputs:

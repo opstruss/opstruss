@@ -976,7 +976,7 @@ func (tc *taskCtx) block(ctx context.Context, s *model.Step, label string, d def
 	return res
 }
 
-// callStep runs a task: step: plan, up, or down of units, a task of the
+// callStep runs a task: step: plan, up, or destroy of units, a task of the
 // project with with: as its inputs, or the task of each unit that has it.
 func (tc *taskCtx) callStep(ctx context.Context, s *model.Step, label string, scope *expr.Scope) *taskResult {
 	e := tc.e
@@ -992,7 +992,7 @@ func (tc *taskCtx) callStep(ctx context.Context, s *model.Step, label string, sc
 	f := tc.c.where(e)
 	units = e.within(f, units)
 	switch s.Task {
-	case "plan", "up", "down", "status", "logs":
+	case "plan", "up", "destroy", "status", "logs":
 		var got, gotMarks map[string]any
 		var err error
 		switch s.Task {

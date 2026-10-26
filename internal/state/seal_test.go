@@ -34,7 +34,7 @@ func TestSealRecord(t *testing.T) {
 	s := &Store{Key: func() ([]byte, error) { asked++; return key, nil }}
 	r := &Record{ID: "7f3a9c1e", Inputs: map[string]any{"token": "t0k3n", "zone": "a"},
 		Outputs: map[string]any{"id": "x", "pin": "1234"},
-		Down:    &Down{Env: map[string]string{"T": "t0k3n", "U": "u"}},
+		Destroy: &Destroy{Env: map[string]string{"T": "t0k3n", "U": "u"}},
 		Hidden:  map[string][]string{PartInputs: {"token"}, PartOutputs: {"pin"}, PartEnv: {"T"}},
 		Pending: &Attempt{Op: "up", Inputs: map[string]any{"token": "t0k3n"}, RawOutput: "pin=1234",
 			Hidden: map[string][]string{PartInputs: {"token"}}}}
@@ -45,7 +45,7 @@ func TestSealRecord(t *testing.T) {
 	if strings.Contains(string(data), "t0k3n") || strings.Contains(string(data), "1234") {
 		t.Fatalf("plain text in %s", data)
 	}
-	if r.Inputs["token"] != "t0k3n" || r.Down.Env["T"] != "t0k3n" {
+	if r.Inputs["token"] != "t0k3n" || r.Destroy.Env["T"] != "t0k3n" {
 		t.Fatal("Encode changed the record it was given")
 	}
 	got, err := DecodeRecord(data, "")
@@ -55,7 +55,7 @@ func TestSealRecord(t *testing.T) {
 	if err := s.openRecord(got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Inputs["token"] != "t0k3n" || got.Outputs["pin"] != "1234" || got.Down.Env["T"] != "t0k3n" ||
+	if got.Inputs["token"] != "t0k3n" || got.Outputs["pin"] != "1234" || got.Destroy.Env["T"] != "t0k3n" ||
 		got.Pending.RawOutput != "pin=1234" || got.Hidden[PartEnv][0] != "T" || got.Sensitive != nil {
 		t.Fatalf("openRecord: %+v", got)
 	}

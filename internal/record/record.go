@@ -85,7 +85,7 @@ type Record struct {
 	// RerunOf is the run that opstruss runs rerun ran again.
 	RerunOf string `json:"rerun_of,omitempty"`
 	// Replay is what runs rerun needs beside the record, of a run of a
-	// task, up, or down; a record without it cannot run again.
+	// task, up, or destroy; a record without it cannot run again.
 	Replay *Replay `json:"replay,omitempty"`
 }
 

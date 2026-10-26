@@ -26,7 +26,7 @@ waitgrep '^POST /bot123:tg-test-token/sendMessage {"chat_id":"-1001234567890","t
 # the nas is down: the other destinations still get the dump, each with
 # its own credentials, the report names every outcome, the assert fails
 # the run, and after alerts the chat
-exec sh -c 'echo "sftp:backup@nas.office.lan:/volume1/backup/db-01" > down.txt'
+exec sh -c 'echo "sftp:backup@nas.office.lan:/volume1/backup/db-01" > destroy.txt'
 ! exec opstruss nightly
 stderr 'some backup destinations failed'
 grep '^pg_dump --format=custom --file=backups/app/app.dump.tmp PGDATABASE=app password=set$' calls
@@ -42,7 +42,7 @@ grep -count=1 'tidak ada backup berhasil' api/requests
 
 # with the nas back, every destination succeeds, and kv keeps the time of
 # the last good backup
-rm down.txt
+rm destroy.txt
 exec opstruss nightly
 grep '^POST /bot.*"text":"backup .*: b2=success, nas=success, s3=success"}$' api/requests
 exists .opstruss/state/default/_kv/backup.last_ok
@@ -73,11 +73,11 @@ POST /bot* 200 {"ok": true}
 -- fakes/restic --
 #!/bin/sh
 # restic with each repository as a directory of repos/, named after
-# RESTIC_REPOSITORY; a repository listed in down.txt cannot be reached.
+# RESTIC_REPOSITORY; a repository listed in destroy.txt cannot be reached.
 dir=${0%/*}/..
 repo=$dir/repos/$(printf %s "$RESTIC_REPOSITORY" | tr -c 'A-Za-z0-9._-' _)
 echo "restic $1 $RESTIC_REPOSITORY password=${RESTIC_PASSWORD:+set} aws=${AWS_ACCESS_KEY_ID:-} b2=${B2_ACCOUNT_ID:-}" >> "$dir/calls"
-if grep -qxF "$RESTIC_REPOSITORY" "$dir/down.txt" 2>/dev/null; then
+if grep -qxF "$RESTIC_REPOSITORY" "$dir/destroy.txt" 2>/dev/null; then
   echo "Fatal: unable to open repository at $RESTIC_REPOSITORY" >&2
   exit 1
 fi

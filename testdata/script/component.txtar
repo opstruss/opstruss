@@ -36,15 +36,15 @@ stdout '^default/site\[us\]/web: up: done$'
 stderr 'no unit matches nope/db'
 
 # protect: true of the component unit holds every unit inside
-! exec opstruss down dns --yes
-stderr '^default/dns/zone: protect: true refuses down'
+! exec opstruss destroy dns --yes
+stderr '^default/dns/zone: protect: true refuses destroy'
 exists .opstruss/state/default/dns/zone/state.json
 
-# an instance gone from for_each takes the units inside down, then its
+# an instance gone from for_each destroys the units inside, then its
 # record goes
 cp one.yaml opstruss.yaml
 exec opstruss up
-stdout '^default/site\[us\]/web: will be forgotten: its instance is no longer in if or for_each; it has no down program$'
+stdout '^default/site\[us\]/web: will be forgotten: its instance is no longer in if or for_each; it has no destroy program$'
 stdout '^default/site\[us\]: the instance has no units left; its record is gone$'
 ! exists '.opstruss/state/default/site[us]/state.json'
 
@@ -54,14 +54,14 @@ cp moved.yaml opstruss.yaml
 exec opstruss up --yes
 stdout '^default/portal\[eu\]/db: moved from default/site\[eu\]/db$'
 ! stdout 'portal\[eu\]/db: up'
-stdout '^default/dns/zone: will be forgotten: removed: with destroy: true; it has no down program$'
+stdout '^default/dns/zone: will be forgotten: removed: with destroy: true; it has no destroy program$'
 stdout '^default/dns: the instance has no units left; its record is gone$'
 exec opstruss state list
 stdout '^default/site\[eu\]\tmoved to default/portal\[eu\]$'
 ! stdout '^default/dns'
 
-# down takes everything down, and the records of instances go last
-exec opstruss down --yes
+# destroy destroys everything, and the records of instances go last
+exec opstruss destroy --yes
 stdout '^default/portal\[eu\]: the instance has no units left; its record is gone$'
 exec opstruss state list
 ! stdout '\tok$'

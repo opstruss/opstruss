@@ -522,7 +522,7 @@ func (r *renderer) owner(ev engine.Event, key string) string {
 		return key
 	}
 	if ev.Address != "" && ev.Task == "" {
-		for _, op := range []string{"up", "down", "plan"} {
+		for _, op := range []string{"up", "destroy", "plan"} {
 			k := ev.Address + "\x00" + op + "\x00"
 			if _, ok := r.open[k]; ok {
 				return k
@@ -622,7 +622,7 @@ func (r *renderer) promote(color bool) []piece {
 // started, so the lines of one burst line up.
 func (r *renderer) tag(ev engine.Event, key string) {
 	l := r.labels[key]
-	if ev.Address != "" && ev.Step == "" && (ev.Task == "" || ev.Task == "plan" || ev.Task == "up" || ev.Task == "down") {
+	if ev.Address != "" && ev.Step == "" && (ev.Task == "" || ev.Task == "plan" || ev.Task == "up" || ev.Task == "destroy") {
 		l = unitName(ev.Address)
 	}
 	l = shorten(ansi.Strip(l), maxLabel)
@@ -633,7 +633,7 @@ func (r *renderer) tag(ev engine.Event, key string) {
 // count notes how an operation of a unit ended, for the summary of the
 // run: done, unchanged, failed, skipped, or cancelled.
 func (r *renderer) count(ev engine.Event) {
-	if ev.Status != record.Finished || ev.Address == "" || (ev.Task != "up" && ev.Task != "down") {
+	if ev.Status != record.Finished || ev.Address == "" || (ev.Task != "up" && ev.Task != "destroy") {
 		return
 	}
 	if ev.Type != "unit" && ev.Type != "approval" {
@@ -641,7 +641,7 @@ func (r *renderer) count(ev engine.Event) {
 	}
 	kind := map[string]string{"success": "done", "failure": "failed", "skipped": "skipped", "cancelled": "cancelled"}[ev.Outcome]
 	switch {
-	case ev.Message == "unchanged" || ev.Message == "already down":
+	case ev.Message == "unchanged" || ev.Message == "already destroy":
 		kind = "unchanged"
 	case interruptedBefore(ev):
 		// Skipped after a unit that the interrupt stopped: the interrupt
@@ -666,7 +666,7 @@ func (r *renderer) summary(color bool) string {
 		stack = k
 	}
 	var b strings.Builder
-	for _, op := range []string{"up", "down"} {
+	for _, op := range []string{"up", "destroy"} {
 		counts := r.ended[op]
 		if len(counts) == 0 {
 			continue
@@ -677,7 +677,7 @@ func (r *renderer) summary(color bool) string {
 				parts = append(parts, paint(color, k.code, fmt.Sprintf("%d %s", n, k.kind)))
 			}
 		}
-		title := map[string]string{"up": "Up", "down": "Down"}[op] + " of stack " + text(stack, color) + ":"
+		title := map[string]string{"up": "Up", "destroy": "Destroy"}[op] + " of stack " + text(stack, color) + ":"
 		fmt.Fprintf(&b, "\n%s %s\n", paint(color, bold, title), strings.Join(parts, ", "))
 	}
 	r.ended = map[string]map[string]int{}
@@ -702,7 +702,7 @@ func (r *renderer) others(key string) bool {
 // an interrupt kept from starting: cancelled, or skipped after a unit it
 // needs that was.
 func interruptedBefore(ev engine.Event) bool {
-	return ev.Address != "" && (ev.Task == "up" || ev.Task == "down") &&
+	return ev.Address != "" && (ev.Task == "up" || ev.Task == "destroy") &&
 		(ev.Outcome == "cancelled" || ev.Outcome == "skipped" && strings.HasSuffix(ev.Message, " is cancelled"))
 }
 

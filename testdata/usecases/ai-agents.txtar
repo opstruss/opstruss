@@ -2,7 +2,7 @@
 # time, each in its own git worktree with only its own key, then tested,
 # judged, and proposed as a draft pull request behind approval. A local
 # model runs as a service that the daemon keeps, or that the run which
-# started it takes down again. The agents, gh, op, and ollama are fakes,
+# started it destroys again. The agents, gh, op, and ollama are fakes,
 # the origin is a bare repository in the project, the waits are short,
 # and the MCP server is left out.
 
@@ -57,11 +57,11 @@ exec git -C .origin.git branch --list ai/482-codex
 stdout 'ai/482-codex'
 
 # without the daemon, the run starts the local model itself and takes it
-# down again, so the run ends
+# destroy again, so the run ends
 exec opstruss stop
 ! exec opstruss solve --issue 483
-stdout '^default/model: forgotten without a down program$'
-stdout '^default/ollama: down: stopped$'
+stdout '^default/model: forgotten without a destroy program$'
+stdout '^default/ollama: destroy: stopped$'
 grep -count=2 '^ollama serve$' calls
 ! exists .worktrees/483-codex
 ! exec grep -r -e sk-ant-test-key -e sk-openai-test-key -e gemini-test-key -e gh-test-token .opstruss calls
@@ -226,7 +226,7 @@ x-agents: &agents                          # key menjadi nama percobaan dan nama
 units:
   ollama:                                  # backend model lokal; code tidak keluar mesin
     service: [ollama, serve]
-    approval: auto                         # helper lokal: up dan down tanpa ditanya
+    approval: auto                         # helper lokal: up dan destroy tanpa ditanya
     env:
       OLLAMA_HOST: 127.0.0.1:19301
     ready:
@@ -295,8 +295,8 @@ tasks:
             run: [./scripts/worktree.sh, prune, "${{ inputs.issue }}"]
           - name: Stop ollama if this run started it
             if: units.ollama.changed       # daemon yang sudah memegang ollama tidak terganggu
-            task: down
-            units: [ollama]                # down ikut unit yang bergantung padanya: model
+            task: destroy
+            units: [ollama]                # destroy ikut unit yang bergantung padanya: model
 
   attempt:
     description: Let one AI agent try the issue in its own worktree, then run the tests

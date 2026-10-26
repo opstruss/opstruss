@@ -32,7 +32,7 @@ func (e *engine) openKey() ([]byte, error) {
 		key, err := e.unwrapKey(m.Key)
 		if err == nil && !e.writes {
 			if diff := e.keysDiff(m.Key); diff != "" {
-				e.warn("", "encryption_keys differs from what wraps the data key in %s (%s); the next plan, up, down, or task run wraps it again",
+				e.warn("", "encryption_keys differs from what wraps the data key in %s (%s); the next plan, up, destroy, or task run wraps it again",
 					state.MetaKey(e.p.StackName), diff)
 			}
 		}
@@ -248,10 +248,10 @@ func (e *engine) unwrapKey(dk *state.DataKey) ([]byte, error) {
 	case kerr != nil:
 		return nil, fmt.Errorf("%s; this machine has no age key: %w", msg, kerr)
 	case slices.ContainsFunc(e.p.EncryptionKeys, func(k *model.EncryptionKey) bool { return k.Age == mine.Recipient() }):
-		return nil, fmt.Errorf("%s; encryption_keys has the age key of this machine, %s (in %s): a plan, up, or down on a machine that opens the data key wraps it again for it",
+		return nil, fmt.Errorf("%s; encryption_keys has the age key of this machine, %s (in %s): a plan, up, or destroy on a machine that opens the data key wraps it again for it",
 			msg, mine.Recipient(), mine.From)
 	}
-	return nil, fmt.Errorf("%s; the age key of this machine is %s (in %s%s): add it to encryption_keys, and run plan, up, or down on a machine that opens the data key, which wraps it again",
+	return nil, fmt.Errorf("%s; the age key of this machine is %s (in %s%s): add it to encryption_keys, and run plan, up, or destroy on a machine that opens the data key, which wraps it again",
 		msg, mine.Recipient(), mine.From, madeNow(made))
 }
 

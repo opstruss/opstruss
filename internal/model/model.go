@@ -203,7 +203,7 @@ type Unit struct {
 	Generates   []string           `json:"generates,omitempty"`
 	Revision    string             `json:"revision,omitempty"`
 	Outputs     map[string]*Output `json:"outputs,omitempty"`
-	Down        *Command           `json:"down,omitempty"`
+	Destroy     *Command           `json:"destroy,omitempty"`
 	Restart     string             `json:"restart,omitempty"`
 	Stop        *Stop              `json:"stop,omitempty"`
 	Ready       *Ready             `json:"ready,omitempty"`

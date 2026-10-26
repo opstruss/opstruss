@@ -1,7 +1,7 @@
 # A SaaS platform learns its tenants from its admin API while it runs.
 # One run lists them, checks each with a task whose for_each reads that
 # list, keeps the list in kv, and brings one unit per tenant in line with
-# task: up in the same run, so a tenant that leaves goes down as planned.
+# task: up in the same run, so a tenant that leaves is destroyed as planned.
 # The admin API is fakeapi; the script that makes a tenant's schema and
 # hostname only writes a log.
 
@@ -39,7 +39,7 @@ cp routes.2 admin/routes
 exec opstruss sync
 grep '^up acme enterprise$' tenants.log
 grep '^up initech free$' tenants.log
-grep '^down globex$' tenants.log
+grep '^destroy globex$' tenants.log
 grep '^POST /reports auth=Bearer admin-test-token \{"changed":\["tenant\[acme\]","tenant\[globex\]","tenant\[initech\]"\],"tenants":2,"unhealthy":\[\]\}$' admin/requests
 exec opstruss plan
 stdout '^default/tenant\[acme\]: unchanged$'
@@ -60,14 +60,14 @@ GET /tenants/initech/health 200 {"status": "ok"}
 POST /reports 201 {}
 -- scripts/tenant.sh --
 #!/bin/sh
-# tenant.sh up|down: the schema and hostname of one tenant. In this test
+# tenant.sh up|destroy: the schema and hostname of one tenant. In this test
 # it only writes what it would do to tenants.log.
 set -eu
 if [ "$1" = up ]; then
   echo "up $TENANT $PLAN" >> tenants.log
   echo "host=$TENANT.example.app" >> "$OPSTRUSS_OUTPUT"
 else
-  echo "down $TENANT" >> tenants.log
+  echo "destroy $TENANT" >> tenants.log
 fi
 -- opstruss.yaml --
 name: platform
@@ -88,7 +88,7 @@ units:
     description: The schema and hostname of one tenant
     for_each: ${{ kv('tenants', {}) }}     # written by sync from the admin API
     run: [./scripts/tenant.sh, up]
-    down: [./scripts/tenant.sh, down]
+    destroy: [./scripts/tenant.sh, destroy]
     env:
       TENANT: ${{ each.key }}
       PLAN: ${{ each.value.plan }}
@@ -136,7 +136,7 @@ tasks:
         id: up
         task: up
         units: [tenant]
-        yes: true                          # a tenant that left goes down
+        yes: true                          # a tenant that left is destroyed
       - name: Report
         admin:
           method: POST

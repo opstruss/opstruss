@@ -20,7 +20,7 @@ import (
 )
 
 // pluginUnit is what a unit that uses a plugin runs: the plugin's plan,
-// up, and down with the unit's inputs.
+// up, and destroy with the unit's inputs.
 type pluginUnit struct {
 	target *model.Target
 	dir    string         // the plugin's directory
@@ -95,12 +95,12 @@ func (e *engine) resolvePlugin(inst *instance, r *resolved, s *expr.Scope) error
 		return fmt.Errorf("up: %w", err)
 	}
 	r.shell = up.Shell
-	if d := pl.Tasks["down"]; d != nil {
+	if d := pl.Tasks["destroy"]; d != nil {
 		cmd, err := e.command(d.Run, ps)
 		if err != nil {
-			return fmt.Errorf("down: %w", err)
+			return fmt.Errorf("destroy: %w", err)
 		}
-		r.down = &cmd
+		r.destroy = &cmd
 	}
 	if p := pl.Tasks["plan"]; p != nil {
 		cmd, err := e.command(p.Run, ps)
@@ -415,7 +415,7 @@ func planDigest(trigger, plugin string) string {
 }
 
 // pluginOf is the plugin's directory relative to the project root, as a
-// down contract keeps it.
+// destroy contract keeps it.
 func (e *engine) pluginOf(r *resolved) string {
 	if r.plugin == nil {
 		return ""

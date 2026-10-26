@@ -1,4 +1,4 @@
-# opstruss runs rerun runs a task, up, or down again with what came from
+# opstruss runs rerun runs a task, up, or destroy again with what came from
 # outside the project as it ran, --input, flags, and its event, through
 # the project as it is now: with: of its trigger gives the inputs again,
 # if: is not asked, and approval is asked again. What came from outside is
@@ -89,7 +89,7 @@ exec opstruss exec web -- true
 exec sh lastrun.sh web/exec
 cp stdout id
 ! exec sh -c 'opstruss runs rerun $(cat id)'
-stderr 'runs rerun runs tasks, up, and down again; run .* is exec'
+stderr 'runs rerun runs tasks, up, and destroy again; run .* is exec'
 
 # another machine has another age key, which does not open what a run kept
 exec opstruss greet --name ana --input region=eu-west

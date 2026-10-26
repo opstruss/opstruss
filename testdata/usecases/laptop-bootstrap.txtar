@@ -1,7 +1,7 @@
 # A workstation set up from a dotfiles repository: run units that run
 # again only when their files change, units for one OS, a tool that an
 # earlier unit installs, a public key handed from one unit to the next, a
-# secret from gh, stacks as contexts, and down of what a unit made.
+# secret from gh, stacks as contexts, and destroy of what a unit made.
 
 env HOME=$WORK/home
 env USER=rina
@@ -13,7 +13,7 @@ cd dotfiles
 
 # a new machine: links needs stow, which brew or apt installs in the same
 # run, so plan only warns and links checks again at its turn; needs to the
-# unit of the other OS holds, and macos still asks. The token in the down
+# unit of the other OS holds, and macos still asks. The token in the destroy
 # of github-key makes the data key of the stack at its turn, for the age
 # key of this machine, which OpsTruss makes too.
 exec opstruss plan --stack work
@@ -77,16 +77,16 @@ stdout '^personal/git: up: done$'
 exec git config --global user.email
 stdout '^rina@example.net$'
 
-# the machine goes back: down removes the key from GitHub with the token
+# the machine goes back: destroy removes the key from GitHub with the token
 # kept in its record, then the symlinks
-exec opstruss down github-key --stack work --yes
-stdout '^work/github-key: down: done$'
+exec opstruss destroy github-key --stack work --yes
+stdout '^work/github-key: destroy: done$'
 exec jq length ../fakes/keys.json
 stdout '^0$'
 grep '^gh api -X token=gho_fake0123456789$' $WORK/calls
-exec opstruss down --stack work --yes
-stdout '^work/tools: forgotten without a down program$'
-stdout '^work/links: down: done$'
+exec opstruss destroy --stack work --yes
+stdout '^work/tools: forgotten without a destroy program$'
+stdout '^work/links: destroy: done$'
 grep '^stow --delete --target=.*/home zsh git nvim ssh mise$' $WORK/calls
 
 -- fakes/brew --
@@ -179,7 +179,7 @@ units:
     sources: [packages.txt]
   links:
     run: stow --restow --target="$HOME" zsh git nvim ssh mise   # shell: $HOME dari environment dasar
-    down: stow --delete --target="$HOME" zsh git nvim ssh mise
+    destroy: stow --delete --target="$HOME" zsh git nvim ssh mise
     requires: [stow]                       # dipasang brew atau apt di run ini: diperiksa di gilirannya
     needs: [brew, apt]                     # yang hilang karena if dianggap terpenuhi
     sources: [zsh/**, git/**, nvim/**, ssh/**, mise/**]
@@ -205,7 +205,7 @@ units:
       fingerprint: {type: string}
   github-key:
     run: [./scripts/github-key.sh]
-    down: [./scripts/github-key.sh, remove]
+    destroy: [./scripts/github-key.sh, remove]
     env:
       GH_TOKEN: ${{ secrets.github }}
       PUBLIC_KEY: ${{ units['ssh-key'].outputs.public_key }}
@@ -278,7 +278,7 @@ jq -n --arg pub "$(cat "$key.pub")" --arg fp "$(ssh-keygen -lf "$key.pub" | awk 
   '{public_key: $pub, fingerprint: $fp}' > "$OPSTRUSS_OUTPUT"
 -- dotfiles/scripts/github-key.sh --
 #!/usr/bin/env bash
-# github-key.sh [remove]: daftarkan public key mesin ini di GitHub, atau hapus saat down.
+# github-key.sh [remove]: daftarkan public key mesin ini di GitHub, atau hapus saat destroy.
 set -euo pipefail
 key=$(cut -d' ' -f1,2 <<<"$PUBLIC_KEY")
 id=$(gh api user/keys --jq ".[] | select(.key == \"$key\") | .id")

@@ -1,4 +1,4 @@
-// Package engine runs a stack: the plan, up, and down of its units in
+// Package engine runs a stack: the plan, up, and destroy of its units in
 // graph order, each under the lock of its address, with what each unit did
 // in its record.
 package engine
@@ -45,8 +45,8 @@ type Options struct {
 	Environ   []string // the operator's environment
 	Units     []string // names or patterns; none means every unit
 	Yes       bool     // approve the changes of this run
-	Force     bool     // up: run the units named although unchanged; down: although pass values differ
-	NoDeps    bool     // leave out the dependencies of up and the dependents of down
+	Force     bool     // up: run the units named although unchanged; destroy: although pass values differ
+	NoDeps    bool     // leave out the dependencies of up and the dependents of destroy
 	Follow    bool     // logs: go on with what services and plugins write
 	// Color says that the output of the run is shown in color, so its
 	// programs may print color; without it they get NO_COLOR.
@@ -76,7 +76,7 @@ type Options struct {
 
 // Question is a change that waits for approval.
 type Question struct {
-	Op      string `json:"op,omitempty"` // up, down, or task: what yes approves
+	Op      string `json:"op,omitempty"` // up, destroy, or task: what yes approves
 	Address string `json:"address,omitempty"`
 	Task    string `json:"task,omitempty"`
 	Summary string `json:"summary"`
@@ -657,7 +657,7 @@ func (e *engine) endTask(addr, task, step, outcome, format string, args ...any) 
 		Outcome: outcome, Message: fmt.Sprintf(format, args...)})
 }
 
-// ended reports how the operation op (plan, up, down) of the unit at addr
+// ended reports how the operation op (plan, up, destroy) of the unit at addr
 // ended, whether it started or not.
 func (e *engine) ended(addr, op, outcome, format string, args ...any) {
 	e.emit(Event{Type: "unit", Level: "info", Address: addr, Task: op, Status: record.Finished, Outcome: outcome,

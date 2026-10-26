@@ -303,7 +303,7 @@ func retryUntil(r *Retry) any {
 // unitValues are the keys of a unit whose expressions read other units.
 func unitValues(u *Unit) map[string]any {
 	v := map[string]any{"with": u.With, "env": envValues(u.Env), "run": argv(u.Run), "service": argv(u.Service),
-		"down": argv(u.Down), "dir": u.Dir, "revision": u.Revision, "requires": u.Requires.Value(),
+		"destroy": argv(u.Destroy), "dir": u.Dir, "revision": u.Revision, "requires": u.Requires.Value(),
 		"stdin.value": stdinValue(u.Stdin), "retry.until": retryUntil(u.Retry), "if": condition(u.If), "for_each": u.ForEach}
 	if r := u.Ready; r != nil {
 		v["ready.http"], v["ready.tcp"], v["ready.run"] = r.HTTP, r.TCP, argv(r.Run)
@@ -633,7 +633,7 @@ func (c *checker) usedByUnit(path []string) bool {
 	return false
 }
 
-// unitTaskCycle names a step that runs plan, up, or down of units in the
+// unitTaskCycle names a step that runs plan, up, or destroy of units in the
 // task name or a task it calls, which a unit that uses name cannot run
 // at its turn.
 func (c *checker) unitTaskCycle(name string, seen map[string]bool) string {
@@ -646,7 +646,7 @@ func (c *checker) unitTaskCycle(name string, seen map[string]bool) string {
 	walkSteps(t.Steps, func(s *Step) {
 		switch {
 		case found != "":
-		case slices.Contains([]string{"plan", "up", "down"}, s.Task):
+		case slices.Contains([]string{"plan", "up", "destroy"}, s.Task):
 			found = "task " + name + " runs task: " + s.Task
 		case s.Task != "":
 			found = c.unitTaskCycle(s.Task, seen)

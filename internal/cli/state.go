@@ -256,7 +256,7 @@ func (a *app) stateRm() *cobra.Command {
 	var ifMatch string
 	cmd := &cobra.Command{
 		Use:   "rm <address|_kv/<name>>",
-		Short: "Forget a record without taking anything down, leaving a tombstone; on a tombstone, remove it; or remove a key of kv",
+		Short: "Forget a record without destroying anything, leaving a tombstone; on a tombstone, remove it; or remove a key of kv",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) (err error) {
 			p, s, err := a.store()

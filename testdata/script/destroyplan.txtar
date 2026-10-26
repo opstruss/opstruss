@@ -1,33 +1,33 @@
-# task: plan shows what task: up with the same units takes down, with a
-# digest of its own, and yes: true approves that down only as task: plan
+# task: plan shows what task: up with the same units destroys, with a
+# digest of its own, and yes: true approves that destroy only as task: plan
 # saw it.
 
 env HOME=$WORK/home
 exec opstruss up --yes
 stdout '^default/site\[b\]: up: done$'
 
-# b left for_each before task: plan: its down is planned, then approved
+# b left for_each before task: plan: its destroy is planned, then approved
 exec opstruss only-a
 exec opstruss review
-stdout '^review: show \| \{"changed":false,"outcome":"success","outputs":\{\},"plan":\{"changes":\[\{"action":"delete"\}\],"digest":"sha256:v1:[0-9a-f]{64}","exact":true,"outputs":\[\],"reason":"gone","summary":"will go down: its instance is no longer in if or for_each"\}\}$'
-stdout '^default/site\[b\]: down: done$'
-grep '^down b$' downs
+stdout '^review: show \| \{"changed":false,"outcome":"success","outputs":\{\},"plan":\{"changes":\[\{"action":"delete"\}\],"digest":"sha256:v1:[0-9a-f]{64}","exact":true,"outputs":\[\],"reason":"gone","summary":"will be destroyed: its instance is no longer in if or for_each"\}\}$'
+stdout '^default/site\[b\]: destroy: done$'
+grep '^destroy b$' destroys
 
-# b's record changes after task: plan: the down that was seen is not the
+# b's record changes after task: plan: the destroy that was seen is not the
 # one there now, so it stops at plan
 exec opstruss a-and-b
 exec opstruss up --yes
 exec opstruss only-a
 ! exec opstruss review-edited
-stdout '^default/site\[b\]: will go down: its instance is no longer in if or for_each; the plan changed since this run read it, stopped at plan$'
+stdout '^default/site\[b\]: will be destroyed: its instance is no longer in if or for_each; the plan changed since this run read it, stopped at plan$'
 exec opstruss state list
 stdout '^default/site\[b\]\t'
 
 # b leaves for_each between task: plan and task: up: what was seen is its
-# up, so its down stops at plan too
+# up, so its destroy stops at plan too
 exec opstruss a-and-b
 ! exec opstruss review-late
-stdout '^default/site\[b\]: will go down: its instance is no longer in if or for_each; the plan changed since this run read it, stopped at plan$'
+stdout '^default/site\[b\]: will be destroyed: its instance is no longer in if or for_each; the plan changed since this run read it, stopped at plan$'
 
 -- opstruss.yaml --
 name: shop
@@ -35,7 +35,7 @@ units:
   site:
     for_each: ${{ kv('sites', ['a', 'b']) }}
     run: [echo, "site ${{ each.key }}"]
-    down: echo "down ${OPSTRUSS_ADDRESS#default/site}" | tr -d '[]' >> downs
+    destroy: echo "destroy ${OPSTRUSS_ADDRESS#default/site}" | tr -d '[]' >> destroys
 tasks:
   only-a:
     kv: {key: sites, value: [a]}

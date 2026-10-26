@@ -12,8 +12,8 @@ import (
 	"github.com/opstruss/opstruss/internal/state"
 )
 
-// pass is one plan, up, or down of units in a run: the command line gives
-// a run one, and every task: plan, up, or down step another.
+// pass is one plan, up, or destroy of units in a run: the command line gives
+// a run one, and every task: plan, up, or destroy step another.
 type pass struct {
 	units  []string
 	yes    bool
@@ -38,15 +38,15 @@ func (e *engine) unitPass(ctx context.Context, op string, p pass) (map[string]an
 	e.answers = nil
 	e.resetUnits()
 	marks := map[string]any{}
-	if op == "down" {
-		items, err := e.downPass(ctx)
+	if op == "destroy" {
+		items, err := e.destroyPass(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
 		out := map[string]any{}
 		for _, l := range items {
 			out[e.short(l.address)] = map[string]any{"outcome": l.outcome, "changed": l.outcome == success, "outputs": map[string]any{}}
-			e.touch(e.short(l.address), &record.Unit{Outcome: l.outcome, Changed: l.outcome == success, Plan: "down"})
+			e.touch(e.short(l.address), &record.Unit{Outcome: l.outcome, Changed: l.outcome == success, Plan: "destroy"})
 		}
 		return out, marks, nil
 	}
@@ -91,8 +91,8 @@ func (e *engine) unitPass(ctx context.Context, op string, p pass) (map[string]an
 				}
 			}
 		}
-		// What up with the same units takes down or forgets is planned too,
-		// so yes: true approves its down only as it was seen.
+		// What up with the same units destroys or forgets is planned too,
+		// so yes: true approves its destroy only as it was seen.
 		for _, l := range leftovers {
 			v := l.view()
 			e.read[l.address] = v["digest"].(string)
@@ -114,7 +114,7 @@ func (e *engine) unitPass(ctx context.Context, op string, p pass) (map[string]an
 			}
 		}
 	}
-	// What left if or for_each, or what removed: decides, went down or was
+	// What left if or for_each, or what removed: decides, was destroyed or was
 	// forgotten in the same pass.
 	for _, l := range leftovers {
 		out[e.short(l.address)] = map[string]any{"outcome": l.outcome, "changed": l.outcome == success, "outputs": map[string]any{}, "plan": l.view()}
@@ -205,7 +205,7 @@ func (e *engine) askFirst(ctx context.Context, insts []*instance, leftovers []*l
 		if l.forget || e.approvalOf(l.def) == "auto" {
 			continue
 		}
-		if !ask(Question{Op: "down", Address: l.address, Summary: l.summary()}, downDigest("delete", l.address, l.etag)) {
+		if !ask(Question{Op: "destroy", Address: l.address, Summary: l.summary()}, destroyDigest("delete", l.address, l.etag)) {
 			return
 		}
 	}

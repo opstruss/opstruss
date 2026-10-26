@@ -288,7 +288,7 @@ func (d *doctor) key() {
 		switch {
 		case errors.As(err, &closed):
 			d.add(&Check{Check: "key", Status: "error", Name: meta, Message: fmt.Sprintf(
-				"the data key of stack %s does not open on this machine: %v; add %s to encryption_keys, and run plan, up, or down on a machine that opens it",
+				"the data key of stack %s does not open on this machine: %v; add %s to encryption_keys, and run plan, up, or destroy on a machine that opens it",
 				e.p.StackName, closed, mine)})
 		case err != nil:
 			d.add(&Check{Check: "key", Status: "error", Name: meta, Message: fmt.Sprintf("the data key of stack %s does not open: %v", e.p.StackName, err)})
@@ -297,7 +297,7 @@ func (d *doctor) key() {
 		}
 		if diff := e.keysDiff(m.Key); diff != "" {
 			d.add(&Check{Check: "key", Status: "warn", Name: meta, Message: fmt.Sprintf(
-				"encryption_keys differs from what wraps the data key in %s (%s); the next plan, up, down, or task run here wraps it again", meta, diff)})
+				"encryption_keys differs from what wraps the data key in %s (%s); the next plan, up, destroy, or task run here wraps it again", meta, diff)})
 		}
 	case e.p.EncryptionKeys == nil:
 		d.add(&Check{Check: "key", Status: "ok", Name: meta, Message: fmt.Sprintf(

@@ -208,7 +208,7 @@ func (a *app) rerunCommand() *cobra.Command {
 	var yes, force bool
 	cmd := &cobra.Command{
 		Use:   "rerun <run>",
-		Short: "Run a task, up, or down again with the inputs and the event of a run, through the project as it is now; approval is asked again",
+		Short: "Run a task, up, or destroy again with the inputs and the event of a run, through the project as it is now; approval is asked again",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			req, err := a.request(nil)
@@ -216,7 +216,7 @@ func (a *app) rerunCommand() *cobra.Command {
 				return err
 			}
 			if len(req.Inputs) > 0 {
-				return errors.New("runs rerun gives the run the inputs it had; --input is for a new run of a task, up, or down")
+				return errors.New("runs rerun gives the run the inputs it had; --input is for a new run of a task, up, or destroy")
 			}
 			req.Run, req.Yes, req.Force = args[0], yes, force
 			in := a.interrupts()
@@ -229,7 +229,7 @@ func (a *app) rerunCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&yes, "yes", false, "approve the changes of this run, as in CI")
-	cmd.Flags().BoolVar(&force, "force", false, "for up, run the units named although unchanged; for down, although pass values differ")
+	cmd.Flags().BoolVar(&force, "force", false, "for up, run the units named although unchanged; for destroy, although pass values differ")
 	return cmd
 }
 

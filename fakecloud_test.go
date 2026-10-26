@@ -19,7 +19,7 @@ import (
 // copy to testplugins/:
 //
 //	fakecloud up <dir>       find or make the unit's resource; id= to $OPSTRUSS_OUTPUT
-//	fakecloud down <dir>     remove the unit's resource
+//	fakecloud destroy <dir>     remove the unit's resource
 //	fakecloud check <dir> <state>   every resource has a record, and no unit has two
 //	fakecloud serve <dir> <port-file> <break-file>   the same as an HTTP API
 //
@@ -34,7 +34,7 @@ func fakecloud(args []string) int {
 		return 1
 	}
 	if len(args) < 2 {
-		return fail("usage: fakecloud up|down|check|serve <dir> [...]")
+		return fail("usage: fakecloud up|destroy|check|serve <dir> [...]")
 	}
 	cloud := cloud(args[1])
 	if err := os.MkdirAll(cloud.dir(), 0o700); err != nil {
@@ -65,7 +65,7 @@ func fakecloud(args []string) int {
 		if err != nil {
 			return fail("%v", err)
 		}
-	case "down":
+	case "destroy":
 		for _, id := range cloud.find(key) {
 			if err := os.Remove(filepath.Join(cloud.dir(), id)); err != nil {
 				return fail("%v", err)
@@ -144,7 +144,7 @@ func (c cloud) make(key, stateDir string) (string, error) {
 }
 
 // check counts the resources and fails when one has no record to take it
-// down, or a unit has two.
+// destroy, or a unit has two.
 func (c cloud) check(state string) (int, error) {
 	keys := map[string]bool{}
 	err := filepath.WalkDir(state, func(p string, d os.DirEntry, err error) error {
@@ -179,7 +179,7 @@ func (c cloud) check(state string) (int, error) {
 		data, _ := os.ReadFile(filepath.Join(c.dir(), e.Name()))
 		k := string(data)
 		if !keys[k] {
-			return 0, fmt.Errorf("resource %s of %s has no record to take it down", e.Name(), k)
+			return 0, fmt.Errorf("resource %s of %s has no record to destroy it", e.Name(), k)
 		}
 		if other, dup := seen[k]; dup {
 			return 0, fmt.Errorf("%s has two resources, %s and %s", k, other, e.Name())

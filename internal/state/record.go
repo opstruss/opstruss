@@ -14,16 +14,16 @@ import (
 // reads every older version and migrates it when it writes, and it refuses
 // a newer one instead of guessing.
 const (
-	RecordVersion = 2
+	RecordVersion = 1
 	MetaVersion   = 1
 )
 
 // recordMigrations turns a record of version v into version v+1, one
 // function per version.
-var recordMigrations = map[int]func(map[string]any) error{1: func(map[string]any) error { return nil }}
+var recordMigrations = map[int]func(map[string]any) error{}
 
-// Record is the state of one unit at its address: enough to take the unit
-// down without its definition.
+// Record is the state of one unit at its address: enough to destroy the
+// unit without its definition.
 type Record struct {
 	Version   int                          `json:"version"`
 	ID        string                       `json:"id"`
@@ -32,7 +32,7 @@ type Record struct {
 	Kind      string                       `json:"kind,omitempty"`
 	Source    *Source                      `json:"source,omitempty"`
 	Inputs    map[string]any               `json:"inputs,omitempty"`
-	Down      *Down                        `json:"down,omitempty"`
+	Destroy   *Destroy                     `json:"destroy,omitempty"`
 	Needs     []string                     `json:"needs,omitempty"`
 	Outputs   map[string]any               `json:"outputs,omitempty"`
 	Sensitive map[string]map[string]string `json:"sensitive,omitempty"`
@@ -59,7 +59,7 @@ type Source struct {
 	Hash   string `json:"hash,omitempty"`
 }
 
-// Down is what down runs, resolved: the program of a run unit or the
+// Destroy is what destroy runs, resolved: the program of a run unit or the
 // plugin's task, with its context. Dir and Plugin are relative to their
 // explicit source, or to the project root for older/local contracts.
 // EnvFiles are env values that the program gets as files,
@@ -70,7 +70,7 @@ type SourceLocation struct {
 	Root   string           `json:"root"`
 }
 
-type Down struct {
+type Destroy struct {
 	Sources      []SourceLocation          `json:"sources,omitempty"`
 	DirSource    *sources.Identity         `json:"dir_source,omitempty"`
 	PluginSource *sources.Identity         `json:"plugin_source,omitempty"`
@@ -85,19 +85,19 @@ type Down struct {
 	EnvFiles map[string]string `json:"env_files,omitempty"`
 	Pass     map[string]string `json:"pass,omitempty"`
 	Timeout  string            `json:"timeout,omitempty"`
-	Stop     *DownStop         `json:"stop,omitempty"`
+	Stop     *DestroyStop      `json:"stop,omitempty"`
 }
 
-// DownStop is how the program of down stops, or, for a service, how the
+// DestroyStop is how the program of destroy stops, or, for a service, how the
 // service does: Run is its stop.run.
-type DownStop struct {
+type DestroyStop struct {
 	Signal string `json:"signal,omitempty"`
 	Grace  string `json:"grace,omitempty"`
 	Run    any    `json:"run,omitempty"`
 }
 
 // Attempt is an operation that started and has not finished: the pending
-// mark, or an abandoned attempt, which keeps its own down contract.
+// mark, or an abandoned attempt, which keeps its own destroy contract.
 type Attempt struct {
 	Op        string         `json:"op"`
 	Run       string         `json:"run"`
@@ -106,7 +106,7 @@ type Attempt struct {
 	Digest    string         `json:"digest,omitempty"`
 	Source    *Source        `json:"source,omitempty"`
 	Inputs    map[string]any `json:"inputs,omitempty"`
-	Down      *Down          `json:"down,omitempty"`
+	Destroy   *Destroy       `json:"destroy,omitempty"`
 	Needs     []string       `json:"needs,omitempty"`
 	Outputs   map[string]any `json:"outputs,omitempty"`
 	RawOutput string         `json:"raw_output,omitempty"`

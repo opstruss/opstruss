@@ -49,6 +49,19 @@ stdout '^Project tasks:$'
 ! exec opstruss tlod
 stderr '^opstruss: unknown command "tlod" for "opstruss"; did you mean told\?$'
 
+# the names of other tools are suggestions, not commands, so a task may
+# take one
+! exec opstruss apply
+stderr '^opstruss: unknown command "apply" for "opstruss"; did you mean up\?$'
+! exec opstruss down
+stderr '^opstruss: unknown command "down" for "opstruss"; did you mean destroy or stop\?$'
+! exec opstruss preview
+stderr '^opstruss: unknown command "preview" for "opstruss"; did you mean plan\?$'
+! exec opstruss ps
+stderr 'did you mean .*status'
+exec opstruss deploy
+stdout '^deploy \| deployed$'
+
 # a required input without a terminal names the flag that gives it
 ! exec opstruss greet
 stderr '^greet: input name: required; pass --name <string>$'
@@ -79,6 +92,8 @@ tasks:
 -- good.yaml --
 name: shop
 tasks:
+  deploy:
+    run: echo deployed
   told:
     description: Say what it does
     run: echo told

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -144,7 +145,7 @@ func TestStore(t *testing.T) {
 	if _, err := Open(b, "prod", "platform"); !errors.As(err, &ne) {
 		t.Fatalf("a newer _meta: %v", err)
 	}
-	if _, err := DecodeRecord([]byte(`{"version": 3, "id": "x"}`), "prod/web"); !errors.As(err, &ne) {
+	if _, err := DecodeRecord([]byte(`{"version": `+strconv.Itoa(RecordVersion+1)+`, "id": "x"}`), "prod/web"); !errors.As(err, &ne) {
 		t.Fatalf("a newer record: %v", err)
 	}
 }
@@ -203,8 +204,8 @@ func TestSchema(t *testing.T) {
 	h := NewHolder("20261020T101530Z-4b2e91d0", "4c1a2b3d")
 	r := &Record{ID: "7f3a9c1e", StateKey: "prod/web.7f3a9c1e", Kind: "run",
 		Inputs: map[string]any{"port": int64(8080)}, Outputs: map[string]any{"url": "https://x"},
-		Down:   &Down{Run: []string{"./clean.sh"}, Dir: ".", Pass: map[string]string{"AWS_PROFILE": "sha256:ab"}},
-		Digest: "sha256:v1:41d0", Parts: map[string]string{"run": "0123456789abcdef"}, Run: "20261020T101530Z-4b2e91d0", Updated: "2026-10-20T10:15:51Z",
+		Destroy: &Destroy{Run: []string{"./clean.sh"}, Dir: ".", Pass: map[string]string{"AWS_PROFILE": "sha256:ab"}},
+		Digest:  "sha256:v1:41d0", Parts: map[string]string{"run": "0123456789abcdef"}, Run: "20261020T101530Z-4b2e91d0", Updated: "2026-10-20T10:15:51Z",
 		Pending: &Attempt{Op: "up", Run: "20261020T101530Z-4b2e91d0", Holder: h, Inputs: map[string]any{"port": int64(9090)},
 			Outcome: "failure", Ended: "2026-10-20T10:15:40Z"},
 		Abandoned: []*Attempt{{Op: "up", Run: "20261020T091530Z-1b2e91d0", Holder: h}}}

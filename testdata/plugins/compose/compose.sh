@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# compose.sh plan|up|down: what docker compose would do with the file of
+# compose.sh plan|up|destroy: what docker compose would do with the file of
 # INPUT_FILE, for the use cases. An image resolves to its digest in
 # registry.json of the working directory, or stays its tag, and INPUT_PIN
 # (service → digest) wins; up writes the images it runs to
@@ -34,7 +34,7 @@ up)
   echo "up $project $(jq -r 'to_entries | map("\(.key)=\(.value)") | join(" ")' <<<"$want")$env" >> compose.log
   jq -n --argjson i "$want" '{images: $i}' > "$OPSTRUSS_OUTPUT"
   ;;
-down)
+destroy)
   echo "down $project" >> compose.log
   ;;
 esac
