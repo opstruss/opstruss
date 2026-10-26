@@ -548,7 +548,7 @@ func TestUses(t *testing.T) {
 		{files("  b:\n    source: ./plugins/a\n    with: {tag: v1, nope: 1}\n"), "uses.b.with.nope: b has no input nope"},
 		{files("", "plugins/a/components/build/opstruss.yaml", "name: build\n"), "a has a task and a component named build"},
 		{files("  infra: ./vendor/infra\nunits:\n  dns:\n    uses: infra.dns\n", "vendor/infra/components/dns/opstruss.yaml", "name: dns\n"), ""},
-		{files("  empty: ./vendor/empty\n", "vendor/empty/README.md", "x"), "vendor/empty has no opstruss.plugin.yaml, opstruss.yaml, or components/"},
+		{files("  empty: ./vendor/empty\n", "vendor/empty/README.md", "x"), "vendor/empty has no opstruss.plugin.yaml, opstruss.yaml, components/, or plugins/"},
 		// the rules of a plugin file
 		{files("  gh: ./plugins/gh\n", gh("  up:\n    steps:\n      - run: [x]\n")...), "tasks.up: up of a plugin runs one program, written as run"},
 		{files("  gh: ./plugins/gh\n", gh("  status:\n    run: [x]\n")...), "plugins/gh/opstruss.plugin.yaml:5:3: tasks.status: status runs only through a unit"},

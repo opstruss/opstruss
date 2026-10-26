@@ -201,7 +201,12 @@ func newerLevel(a, b string) bool {
 }
 
 func (c *checker) uses() {
-	for _, name := range slices.Sorted(maps.Keys(c.p.Uses)) {
+	// An alias reads the declaration it names, so aliases come last.
+	alias := func(name string) bool { return isAlias(c.p.Uses[name].Source) }
+	names := slices.Sorted(maps.Keys(c.p.Uses))
+	aliases := slices.DeleteFunc(slices.Clone(names), func(n string) bool { return !alias(n) })
+	names = append(slices.DeleteFunc(names, alias), aliases...)
+	for _, name := range names {
 		path := []string{"uses", name}
 		switch {
 		case slices.Contains(BuiltinTasks, name):
@@ -244,8 +249,18 @@ func (c *checker) uses() {
 				continue
 			}
 			c.packageNames(path, pkg)
+		case isAlias(src):
+			var err error
+			if pkg, err = c.alias(name, decl); err != nil {
+				if !errors.Is(err, errBroken) {
+					c.add(path, "%v", err)
+				}
+				broke()
+				continue
+			}
+			c.packageNames(path, pkg)
 		default:
-			c.add(path, "a source is ./<path>, ../<path>, github.com/opstruss/<repo>@<ref>, or opstruss.<task>")
+			c.add(path, "a source is ./<path>, ../<path>, github.com/opstruss/catalog[/<path>]@<ref>, opstruss.<task>, or <name>.<plugin or component>")
 			broke()
 			continue
 		}
@@ -430,6 +445,10 @@ func (c *checker) unitUses(path []string, name string, u *Unit) {
 		var pkg *Package
 		if pkg, err = c.pkg(u.Uses, nil, filepath.Join(c.p.DirOf("units."+name), u.Uses)); err == nil {
 			c.packageNames(at(path, "uses"), pkg)
+			t, err = unitTarget(u.Uses, pkg)
+		}
+	} else if pkg, merr := c.member(u.Uses); pkg != nil || merr != nil {
+		if err = merr; err == nil {
 			t, err = unitTarget(u.Uses, pkg)
 		}
 	} else {

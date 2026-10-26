@@ -1,0 +1,155 @@
+# One declaration of a catalog names its plugins and components: units use
+# cat.<plugin> and cat.<component>, and an alias names a plugin or
+# component of another declaration, with one pin for all of them.
+env HOME=$WORK/home
+env GREETING=from-env
+sourcerepo repo
+
+exec opstruss up --yes
+stdout 'default/app \| app from-env'
+stdout 'default/greeter \| app from-alias'
+stdout 'default/plain \| plain'
+stdout 'default/box/page \| box'
+stdout 'default/site/page \| site'
+stdout 'default/local \| local'
+exec opstruss run hello
+stdout 'said'
+exec sh -c 'test "$(grep -c github.com/opstruss/catalog opstruss.lock)" = 1'
+exec opstruss plugins
+stdout 'tool\tplugin\tcat.tool\t[0-9a-f]{40}\th1:\S+\tpresent'
+stdout 'cat\t\tgithub.com/opstruss/catalog@v1\t[0-9a-f]{40}\th1:\S+\tpresent'
+exec opstruss plugins update tool
+exec opstruss plan --locked
+! stdout 'will run'
+
+# The path of a package names the same package as the catalog does.
+cp path.yaml opstruss.yaml
+exec opstruss plan
+stdout '^default/plain: unchanged$'
+
+# What a catalog holds is named once, and in two parts.
+cp bad.yaml opstruss.yaml
+! exec opstruss validate
+stderr 'uses.say: toolp.say is a task; an alias names a plugin or component, and a task is called as toolp.say'
+stderr 'uses.twice: tool is an alias itself; name the declaration it names, as cat.tool'
+stderr 'uses.nope: cat has no plugin or component nope'
+stderr 'uses.same: same has a plugin and a component named x; give one another name'
+stderr 'units.three.uses: names of three parts or more are reserved; cat.tool.box has 3'
+stderr 'units.tasks.uses: plugin cat.tool has no up, so a unit uses one of its tasks: name it in uses:, as <name>: cat.tool, then uses: <name>.<task>'
+stderr 'cat.tool is a plugin, which units use; to call its tasks, name it in uses:, as <name>: cat.tool'
+
+# A remote directory is named by its source, not by the cache.
+cp opstruss.yaml.orig opstruss.yaml
+exec git -C repo rm -rq plugins components
+exec git -C repo commit -qm empty
+exec git -C repo tag -f v1
+! exec opstruss plugins update
+stderr 'github.com/opstruss/catalog@v1 has no opstruss.plugin.yaml, opstruss.yaml, components/, or plugins/'
+! stderr 'cache'
+
+-- opstruss.yaml --
+name: collection
+uses:
+  cat:
+    source: github.com/opstruss/catalog@v1
+    pass: [GREETING]
+  tool: cat.tool
+  greeter:
+    source: cat.app
+    env:
+      GREETING: from-alias
+  only: ./only
+units:
+  app:
+    uses: cat.app
+  greeter:
+    uses: greeter
+  plain:
+    uses: cat.plain
+  box:
+    uses: tool.box
+  site:
+    uses: cat.site
+  local:
+    uses: only.p
+tasks:
+  hello:
+    steps:
+      - tool.say: {}
+-- opstruss.yaml.orig --
+name: collection
+uses:
+  cat: github.com/opstruss/catalog@v1
+units:
+  plain:
+    uses: cat.plain
+-- path.yaml --
+name: collection
+uses:
+  cat:
+    source: github.com/opstruss/catalog@v1
+    pass: [GREETING]
+units:
+  plain:
+    uses: github.com/opstruss/catalog/plugins/plain@v1
+-- bad.yaml --
+name: collection
+uses:
+  cat: github.com/opstruss/catalog@v1
+  tool: cat.tool
+  toolp: github.com/opstruss/catalog/plugins/tool@v1
+  say: toolp.say
+  twice: tool.box
+  nope: cat.nope
+  same: ./same
+units:
+  three:
+    uses: cat.tool.box
+  tasks:
+    uses: cat.tool
+tasks:
+  call:
+    steps:
+      - cat.tool: {}
+-- only/plugins/p/opstruss.plugin.yaml --
+name: p
+tasks:
+  up:
+    run: [echo, local]
+-- same/plugins/x/opstruss.plugin.yaml --
+name: x
+tasks:
+  up:
+    run: [echo, x]
+-- same/components/x/opstruss.yaml --
+units:
+  page:
+    run: [echo, x]
+-- repo/opstruss.catalog.yaml --
+shared: [lib]
+-- repo/lib/opstruss.sh --
+version=v1
+-- repo/plugins/app/opstruss.plugin.yaml --
+name: app
+env: [GREETING]
+tasks:
+  up:
+    run: [sh, -c, 'echo "app $GREETING"']
+-- repo/plugins/plain/opstruss.plugin.yaml --
+name: plain
+tasks:
+  up:
+    run: [echo, plain]
+-- repo/plugins/tool/opstruss.plugin.yaml --
+name: tool
+tasks:
+  say:
+    run: [echo, said]
+-- repo/plugins/tool/components/box/opstruss.yaml --
+units:
+  page:
+    run: [echo, box]
+-- repo/components/site/opstruss.yaml --
+units:
+  page:
+    run: [echo, site]

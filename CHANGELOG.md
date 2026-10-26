@@ -74,6 +74,17 @@ minor release can change what a project, a component, or a plugin relies on.
   its repository. Remote sources read the marker at their root, local
   paths the nearest one above, and `opstruss doctor` warns about a program
   that a local plugin outside a catalog runs from outside its directory.
+- One declaration of a catalog, as `cat: github.com/opstruss/catalog@v1`,
+  names the plugins in its `plugins/` as well as the components in its
+  `components/`: a unit uses `cat.compose` or `cat.postgres-backup`, with
+  one pin for all of them. A declaration whose source is `<name>.<plugin
+  or component>`, as `tofu: cat.tofu`, is an alias of a package of
+  another declaration: it takes no ref, follows that pin, takes its
+  `env:` and `pass:` and goes over them key by key, and reaches the tasks
+  and components of a plugin in two parts, as `tofu.s3-bucket`. Names in
+  `plugins/` and `components/` are unique together, and `opstruss plugins`
+  shows an alias with the pin it follows. A message about a directory of
+  a remote source names the source, not its path in the cache.
 
 - `opstruss up -d` runs up in the daemon of the stack, which it starts in
   the background when none runs; a task takes `-d` as well. The daemon

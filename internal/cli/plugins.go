@@ -134,13 +134,24 @@ func (a *app) listSources(ctx context.Context) error {
 			rows[key] = sourceRow{Name: key, Source: key, Commit: pin.Commit, Hash: pin.Hash, Cache: status}
 		}
 	}
-	var out []sourceRow
-	for _, name := range slices.Sorted(maps.Keys(rows)) {
-		row := rows[name]
+	for name, row := range rows {
 		if id, err := sources.Parse(row.Source); err == nil && row.Commit == "" {
 			row.Source, row.Cache = id.Key(), "unlocked"
+			rows[name] = row
 		}
-		out = append(out, row)
+	}
+	// An alias shows the pin of the declaration it names.
+	for name, row := range rows {
+		if from, _, ok := model.Alias(row.Source); ok {
+			if r, ok := rows[from+"@"+row.Scope]; ok {
+				row.Commit, row.Hash, row.Cache = r.Commit, r.Hash, r.Cache
+				rows[name] = row
+			}
+		}
+	}
+	var out []sourceRow
+	for _, name := range slices.Sorted(maps.Keys(rows)) {
+		out = append(out, rows[name])
 	}
 	if a.json {
 		return a.printJSON(map[string]any{"sources": out})
@@ -173,6 +184,9 @@ func (a *app) fetchSources(cmd *cobra.Command, update string) error {
 			decl := p.Uses[update]
 			if decl == nil {
 				continue
+			}
+			if from, _, ok := model.Alias(decl.Source); ok && p.Uses[from] != nil {
+				decl = p.Uses[from]
 			}
 			id, err := sources.Parse(decl.Source)
 			if err != nil {

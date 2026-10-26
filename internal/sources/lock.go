@@ -250,6 +250,20 @@ func (s *Session) Owner(name string) (*Identity, string, error) {
 	return nil, "", nil
 }
 
+// Address names a path inside a fetched source, for messages: the address
+// of the source with the path in it, and its ref; "" outside them.
+func (s *Session) Address(name string) string {
+	for _, key := range slices.Sorted(maps.Keys(s.resolved)) {
+		id := s.resolved[key]
+		rel, err := filepath.Rel(s.Cache.Snapshot(id), name)
+		if err == nil && filepath.IsLocal(rel) {
+			id.Path = filepath.ToSlash(rel)
+			return id.Key()
+		}
+	}
+	return ""
+}
+
 func (s *Session) Finish() error {
 	if s.Options.Discovery {
 		return nil

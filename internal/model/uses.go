@@ -16,8 +16,8 @@ import (
 )
 
 // Package is what a name in uses: stands for, or a path that a unit uses
-// directly: a plugin, a component, a directory of components, or a
-// built-in task under another name.
+// directly: a plugin, a component, a directory of components and plugins,
+// or a built-in task under another name.
 type Package struct {
 	Source     *sources.Identity
 	SourceRoot string
@@ -25,14 +25,16 @@ type Package struct {
 	Catalog    *Catalog // the catalog that holds the directory; nil outside one
 
 	Name       string  // the name in uses:, or the path that a unit wrote
-	Decl       *Uses   // the declaration; nil for a path in a unit
+	Decl       *Uses   // the declaration, with what an alias takes from the one it names; nil for a path in a unit
 	Dir        string  // the directory of a plugin, component, or components
 	Plugin     *Plugin // opstruss.plugin.yaml, when the directory has one
 	Component  bool    // the directory is a component: it has opstruss.yaml and no plugin
 	Components []string
-	Builtin    string // the built-in task that the name stands for
+	Plugins    []string // the plugins in its plugins/, for a directory that is not a plugin
+	Builtin    string   // the built-in task that the name stands for
 
-	broken bool // its opstruss.plugin.yaml has problems, reported once
+	broken  bool                // its opstruss.plugin.yaml has problems, reported once
+	members map[string]*Package // the plugins of Plugins that units use as <name>.<plugin>, read
 }
 
 // errBroken is what a name resolves to in a plugin whose file has
@@ -64,6 +66,21 @@ type Target struct {
 }
 
 func localPath(s string) bool { return strings.HasPrefix(s, "./") || strings.HasPrefix(s, "../") }
+
+// Alias splits a source that names a plugin or component of another
+// declaration, as tofu: cat.tofu; ok is false for any other source.
+func Alias(source string) (name, pkg string, ok bool) {
+	if localPath(source) || strings.HasPrefix(source, "opstruss.") || strings.HasPrefix(source, "github.com/") {
+		return "", "", false
+	}
+	name, pkg, ok = strings.Cut(source, ".")
+	return name, pkg, ok && name != "" && pkg != "" && !strings.Contains(pkg, ".")
+}
+
+func isAlias(source string) bool {
+	_, _, ok := Alias(source)
+	return ok
+}
 
 // Resolve finds what a call of a task by name runs: the name in uses: when
 // there is one, otherwise a built-in task.
@@ -116,7 +133,8 @@ func (p *Project) resolve(name string, unit bool) (*Target, error) {
 }
 
 // item finds <package>.<item>: a task of the plugin, or for a unit a
-// component in its components/.
+// component in its components/. A unit that uses a plugin in its plugins/
+// is read by the checker first.
 func item(name string, pkg *Package, it string, unit bool) (*Target, error) {
 	if pkg.broken {
 		return nil, errBroken
@@ -143,6 +161,12 @@ func item(name string, pkg *Package, it string, unit bool) (*Target, error) {
 		}
 		return &Target{Name: name, Kind: TargetComponent, Package: pkg, Dir: filepath.Join(pkg.Dir, "components", it)}, nil
 	}
+	if slices.Contains(pkg.Plugins, it) {
+		return nil, fmt.Errorf("%s is a plugin, which units use; to call its tasks, name it in uses:, as <name>: %s", name, name)
+	}
+	if pkg.Plugin == nil {
+		return nil, fmt.Errorf("%s has no plugin or component %s", pkg.Name, it)
+	}
 	return nil, fmt.Errorf("%s has no task or component %s", pkg.Name, it)
 }
 
@@ -153,6 +177,8 @@ func unitTarget(name string, pkg *Package) (*Target, error) {
 		return nil, errBroken
 	case pkg.Builtin != "":
 		return &Target{Name: name, Kind: TargetBuiltin, Package: pkg, Task: pkg.Builtin}, nil
+	case pkg.Plugin != nil && pkg.Plugin.Tasks["up"] == nil && strings.Contains(name, "."):
+		return nil, fmt.Errorf("plugin %s has no up, so a unit uses one of its tasks: name it in uses:, as <name>: %s, then uses: <name>.<task>", name, name)
 	case pkg.Plugin != nil && pkg.Plugin.Tasks["up"] == nil:
 		return nil, fmt.Errorf("plugin %s has no up, so a unit uses one of its tasks, as uses: %s.<task>", name, name)
 	case pkg.Plugin != nil:
@@ -160,7 +186,7 @@ func unitTarget(name string, pkg *Package) (*Target, error) {
 	case pkg.Component:
 		return &Target{Name: name, Kind: TargetComponent, Package: pkg, Dir: pkg.Dir}, nil
 	}
-	return nil, fmt.Errorf("%s holds components; a unit uses one, as uses: %s.<component>", name, name)
+	return nil, fmt.Errorf("%s holds components and plugins; a unit uses one, as uses: %s.<name>", name, name)
 }
 
 // Inputs returns the inputs that t takes, and false when it takes any.
@@ -249,27 +275,35 @@ func (c *checker) readPackage(dir string) (*Package, error) {
 		}
 		return err == nil, err
 	}
-	entries, err := os.ReadDir(filepath.Join(dir, "components"))
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return nil, err
-	}
-	for _, e := range entries {
-		isDir := e.IsDir()
-		if !isDir && pkg.Source != nil && e.Type()&os.ModeSymlink != 0 {
-			info, err := os.Stat(filepath.Join(dir, "components", e.Name()))
-			if err != nil {
-				return nil, err
-			}
-			isDir = info.IsDir()
-		}
-		if !isDir {
-			continue
-		}
-		if ok, err := has(filepath.Join("components", e.Name(), FileName)); err != nil {
+	// holding lists the directories in sub that hold file.
+	holding := func(sub, file string) ([]string, error) {
+		entries, err := os.ReadDir(filepath.Join(dir, sub))
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return nil, err
-		} else if ok && isDir {
-			pkg.Components = append(pkg.Components, e.Name())
 		}
+		var names []string
+		for _, e := range entries {
+			isDir := e.IsDir()
+			if !isDir && pkg.Source != nil && e.Type()&os.ModeSymlink != 0 {
+				info, err := os.Stat(filepath.Join(dir, sub, e.Name()))
+				if err != nil {
+					return nil, err
+				}
+				isDir = info.IsDir()
+			}
+			if !isDir {
+				continue
+			}
+			if ok, err := has(filepath.Join(sub, e.Name(), file)); err != nil {
+				return nil, err
+			} else if ok {
+				names = append(names, e.Name())
+			}
+		}
+		return names, nil
+	}
+	if pkg.Components, err = holding("components", FileName); err != nil {
+		return nil, err
 	}
 	plugin, err := has(PluginFile)
 	if err != nil {
@@ -317,24 +351,121 @@ func (c *checker) readPackage(dir string) (*Package, error) {
 		if pkg.Component, err = has(FileName); err != nil {
 			return nil, err
 		}
-		if !pkg.Component && len(pkg.Components) == 0 {
-			return nil, fmt.Errorf("%s has no %s, %s, or components/", c.rel(dir), PluginFile, FileName)
+		if pkg.Plugins, err = holding("plugins", PluginFile); err != nil {
+			return nil, err
+		}
+		if !pkg.Component && len(pkg.Components) == 0 && len(pkg.Plugins) == 0 {
+			return nil, fmt.Errorf("%s has no %s, %s, components/, or plugins/", c.rel(dir), PluginFile, FileName)
 		}
 	}
 	return pkg, nil
 }
 
-// rel is dir as the project names it.
+// inner reads the plugin or component it in sub, plugins or components,
+// of the package parent, under name and decl; it comes from where parent
+// comes from.
+func (c *checker) inner(parent *Package, sub, it, name string, decl *Uses) (*Package, error) {
+	dir := filepath.Join(parent.Dir, sub, it)
+	if real, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = real
+	}
+	base, ok := c.pkgs[dir]
+	if !ok {
+		var err error
+		if base, err = c.readPackage(dir); err != nil {
+			return nil, err
+		}
+		c.pkgs[dir] = base
+	}
+	pkg := *base
+	pkg.Name, pkg.Decl, pkg.members = name, decl, nil
+	if parent.Source == nil {
+		pkg.Source, pkg.SourceRoot = nil, ""
+	}
+	return &pkg, nil
+}
+
+// member reads <name>.<plugin> for a unit, once for each name: a plugin in
+// plugins/ of the declaration, with the declaration's env: and pass:; nil
+// when name is no such plugin.
+func (c *checker) member(name string) (*Package, error) {
+	parent, it, _ := strings.Cut(name, ".")
+	pkg := c.p.Packages[parent]
+	if pkg == nil || !slices.Contains(pkg.Plugins, it) {
+		return nil, nil
+	}
+	if m := pkg.members[it]; m != nil {
+		return m, nil
+	}
+	m, err := c.inner(pkg, "plugins", it, name, pkg.Decl)
+	if err != nil {
+		return nil, err
+	}
+	if pkg.members == nil {
+		pkg.members = map[string]*Package{}
+	}
+	pkg.members[it] = m
+	return m, nil
+}
+
+// alias reads the declaration name, whose source names a plugin or
+// component of another declaration: env: and pass: of that declaration
+// come along, and those of the alias go over them, key by key.
+func (c *checker) alias(name string, decl *Uses) (*Package, error) {
+	from, it, _ := Alias(decl.Source)
+	parent, fromDecl := c.p.Packages[from], c.p.Uses[from]
+	switch {
+	case fromDecl == nil:
+		return nil, fmt.Errorf("uses: declares no %s", from)
+	case isAlias(fromDecl.Source):
+		return nil, fmt.Errorf("%s is an alias itself; name the declaration it names, as %s", from, fromDecl.Source)
+	case parent == nil || parent.broken:
+		return nil, errBroken
+	case parent.Builtin != "":
+		return nil, fmt.Errorf("%s is the built-in task %s, which has no %s", from, parent.Builtin, it)
+	}
+	var sub string
+	switch {
+	case slices.Contains(parent.Plugins, it):
+		sub = "plugins"
+	case slices.Contains(parent.Components, it):
+		sub = "components"
+	case parent.Plugin != nil && parent.Plugin.Tasks[it] != nil:
+		return nil, fmt.Errorf("%s is a task; an alias names a plugin or component, and a task is called as %s", decl.Source, decl.Source)
+	case parent.Plugin != nil:
+		return nil, fmt.Errorf("%s has no component %s", from, it)
+	default:
+		return nil, fmt.Errorf("%s has no plugin or component %s", from, it)
+	}
+	env := maps.Clone(fromDecl.Env)
+	if env == nil {
+		env = Env{}
+	}
+	maps.Copy(env, decl.Env)
+	if len(env) == 0 {
+		env = nil
+	}
+	d := &Uses{Source: decl.Source, With: decl.With, Env: env, Pass: slices.Concat(fromDecl.Pass, decl.Pass)}
+	return c.inner(parent, sub, it, name, d)
+}
+
+// rel is dir as the project names it: in a remote source by its address,
+// otherwise relative to the project.
 func (c *checker) rel(dir string) string {
+	if c.p.Sources != nil {
+		if a := c.p.Sources.Address(dir); a != "" {
+			return a
+		}
+	}
 	if r, err := filepath.Rel(c.p.base, dir); err == nil {
 		return filepath.ToSlash(r)
 	}
 	return dir
 }
 
-// packageNames checks a package: the tasks and components in it have
-// names of their own, and no component is named as a standard task or
-// hook, since <name>.<standard task> is never a call.
+// packageNames checks a package: the tasks, components, and plugins in it
+// have names of their own, and no component or plugin is named as a
+// standard task or hook, since <name>.<standard task> is never a call.
 func (c *checker) packageNames(path []string, pkg *Package) {
 	for _, comp := range pkg.Components {
 		switch {
@@ -342,6 +473,13 @@ func (c *checker) packageNames(path []string, pkg *Package) {
 			c.add(path, "%s has a component named %s, which is a standard task or hook; give the component another name", pkg.Name, comp)
 		case pkg.Plugin != nil && pkg.Plugin.Tasks[comp] != nil:
 			c.add(path, "%s has a task and a component named %s; give one another name", pkg.Name, comp)
+		case slices.Contains(pkg.Plugins, comp):
+			c.add(path, "%s has a plugin and a component named %s; give one another name", pkg.Name, comp)
+		}
+	}
+	for _, pl := range pkg.Plugins {
+		if slices.Contains(StandardTasks, pl) || slices.Contains(Hooks, pl) {
+			c.add(path, "%s has a plugin named %s, which is a standard task or hook; give the plugin another name", pkg.Name, pl)
 		}
 	}
 }
