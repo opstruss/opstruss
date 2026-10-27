@@ -61,8 +61,12 @@ jobs:
           if [ "$FOLDER" = "$latest" ]; then
             rm -rf schema
             cp -R "$FOLDER/schema" schema
-            printf '<!doctype html>\n<meta http-equiv="refresh" content="0; url=/%s/">\n<a href="/%s/">OpsTruss documentation</a>\n' "$latest" "$latest" > index.html
-            printf '<!doctype html>\n<title>Not found</title>\n<p>This page is not here. See <a href="/%s/">the latest documentation</a>.</p>\n' "$latest" > 404.html
+          fi
+          # / leads to the newest release, or to dev before the first one.
+          home=${latest:-dev}
+          if [ "$FOLDER" = "$home" ]; then
+            printf '<!doctype html>\n<meta http-equiv="refresh" content="0; url=/%s/">\n<a href="/%s/">OpsTruss documentation</a>\n' "$home" "$home" > index.html
+            printf '<!doctype html>\n<title>Not found</title>\n<p>This page is not here. See <a href="/%s/">the documentation</a>.</p>\n' "$home" > 404.html
           fi
           {
             find . -maxdepth 1 -type d -name 'v*' -printf '%f\n' | sort -rV | while read -r v; do
