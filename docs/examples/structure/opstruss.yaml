@@ -1,0 +1,20 @@
+opstruss: "0.1"
+name: shop
+inputs:
+  db_size:
+    type: string
+    default: small
+stacks:
+  dev: {}
+  prod:
+    with:
+      db_size: large
+uses:
+  db: ./components/db
+units:
+  db:
+    uses: db
+    with:
+      size: ${{ inputs.db_size }}
+  app:
+    run: [echo, "connecting to ${{ units.db.outputs.host }}"]

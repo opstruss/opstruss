@@ -1,0 +1,15 @@
+opstruss: "0.1"
+name: db
+inputs:
+  size:
+    type: string
+    enum: [small, large]
+outputs:
+  host: ${{ units.server.outputs.host }}
+units:
+  server:
+    run: echo "host=db-$SIZE.internal" >> "$OPSTRUSS_OUTPUT"
+    env:
+      SIZE: ${{ inputs.size }}
+    outputs:
+      host: {}

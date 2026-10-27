@@ -1,0 +1,4 @@
+exec opstruss up --stack prod --yes
+stdout '^prod/app \| connecting to db-large.internal$'
+exec opstruss up --stack dev --yes
+stdout '^dev/app \| connecting to db-small.internal$'
