@@ -69,9 +69,6 @@ func Open(b Backend, stack, project string) (*Store, error) {
 		return nil, err
 	}
 	m, err := DecodeMeta(data)
-	if errors.Is(err, errEarlierMeta) {
-		return nil, fmt.Errorf("stack %s: %w", stack, err)
-	}
 	if err != nil {
 		return nil, err
 	}

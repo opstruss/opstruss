@@ -3,7 +3,6 @@ package state
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math"
 
@@ -221,21 +220,11 @@ func EncodeRecord(r *Record) ([]byte, error) {
 	return encodeJSON(r)
 }
 
-// errEarlierMeta is a _meta whose data key an earlier build of OpsTruss
-// wrapped with sops.
-var errEarlierMeta = errors.New("_meta keeps the data key as earlier builds of OpsTruss did, wrapped by sops in key, and this one keeps it in key.age and key.sops; wrap it again as the upgrade notes of the changelog say")
-
 // EncodeMeta writes _meta, indented so it reads well from state pull.
 func EncodeMeta(m *Meta) ([]byte, error) { return encodeJSON(m) }
 
 // DecodeMeta reads _meta.
 func DecodeMeta(data []byte) (*Meta, error) {
-	var head struct {
-		Key json.RawMessage `json:"key"`
-	}
-	if err := json.Unmarshal(data, &head); err == nil && len(head.Key) > 0 && head.Key[0] == '"' {
-		return nil, errEarlierMeta
-	}
 	var m Meta
 	if err := json.Unmarshal(data, &m); err != nil {
 		return nil, fmt.Errorf("_meta: %w", err)

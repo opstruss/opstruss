@@ -2,8 +2,8 @@
 # machine without encryption_keys, which names that key to a second
 # machine; wrapped again for the list by the next run that writes state,
 # then opened on each machine in it; refused when the writer's own key is
-# not in the list; opened by sops for a key that is not an age recipient,
-# only where age cannot; and refused when an earlier build wrote it.
+# not in the list; and opened by sops for a key that is not an age
+# recipient, only where age cannot.
 
 env HOME=$WORK/home
 env TOKEN=s3cr3t-token-value
@@ -103,11 +103,6 @@ exec opstruss plan
 exec opstruss state pull _meta
 stdout '"sops": \{'
 
-# a _meta that an earlier build wrote, with the key wrapped by sops, is
-# refused
-! exec opstruss -C old up --yes
-stderr 'stack default: _meta keeps the data key as earlier builds of OpsTruss did, wrapped by sops in key, and this one keeps it in key.age and key.sops; wrap it again as the upgrade notes of the changelog say'
-
 -- opstruss.yaml --
 name: app
 secrets:
@@ -122,10 +117,3 @@ sed -n 's/^# public key: //p' "$1/opstruss/age/keys.txt"
 -- bin/sops --
 #!/bin/sh
 exec fakesops "$@"
--- old/opstruss.yaml --
-name: old
-units:
-  plain:
-    run: echo plain
--- old/.opstruss/state/default/_meta --
-{"version": 1, "project": "old", "key": "ENC[AES256_GCM,data:x,iv:y,tag:z,type:str]", "sops": {"age": [], "version": "3.13.3"}}
