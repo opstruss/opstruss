@@ -1,0 +1,80 @@
+name: docs
+
+# Each build writes one version of the documentation to the gh-pages branch
+# of opstruss/opstruss.github.io: main to /dev/, a release tag to
+# /v<major>.<minor>/, and the newest release also to / and /schema/. Other
+# folders stay as they were, and versions.json lists them all.
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+    paths: ['docs/**', 'internal/schema/**', 'internal/cli/**', 'internal/docgen/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency: docs
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: docs
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+      - id: version
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          # A release tag names its minor; a pre-release and main are dev.
+          if [[ "$REF" =~ ^refs/tags/v([0-9]+)\.([0-9]+)\.[0-9]+$ ]]; then
+            echo "folder=v${BASH_REMATCH[1]}.${BASH_REMATCH[2]}" >> "$GITHUB_OUTPUT"
+          elif [[ "$REF" == refs/tags/* ]]; then
+            echo "folder=" >> "$GITHUB_OUTPUT"
+          else
+            echo "folder=dev" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.version.outputs.folder != ''
+        env:
+          DOCS_BASE: /${{ steps.version.outputs.folder }}/
+        run: make docs
+      - if: steps.version.outputs.folder != ''
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: opstruss/opstruss.github.io
+          ref: gh-pages
+          path: site
+          ssh-key: ${{ secrets.DOCS_DEPLOY_KEY }}
+      - if: steps.version.outputs.folder != ''
+        env:
+          FOLDER: ${{ steps.version.outputs.folder }}
+        working-directory: site
+        run: |
+          rm -rf "$FOLDER"
+          cp -R ../docs/.vitepress/dist "$FOLDER"
+          mkdir -p "$FOLDER/schema"
+          cp ../internal/schema/project.json ../internal/schema/plugin.json ../internal/schema/catalog.json "$FOLDER/schema/"
+          latest=$(find . -maxdepth 1 -type d -name 'v*' -printf '%f\n' | sort -V | tail -n 1)
+          if [ "$FOLDER" = "$latest" ]; then
+            rm -rf schema
+            cp -R "$FOLDER/schema" schema
+            printf '<!doctype html>\n<meta http-equiv="refresh" content="0; url=/%s/">\n<a href="/%s/">OpsTruss documentation</a>\n' "$latest" "$latest" > index.html
+            printf '<!doctype html>\n<title>Not found</title>\n<p>This page is not here. See <a href="/%s/">the latest documentation</a>.</p>\n' "$latest" > 404.html
+          fi
+          {
+            find . -maxdepth 1 -type d -name 'v*' -printf '%f\n' | sort -rV | while read -r v; do
+              title=$v
+              [ "$v" = "$latest" ] && title="$v (latest)"
+              jq -n --arg v "$v" --arg t "$title" '{version: $v, title: $t, path: "/\($v)/"}'
+            done
+            [ -d dev ] && jq -n '{version: "dev", title: "dev", path: "/dev/"}'
+          } | jq -s . > versions.json
+          touch .nojekyll
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet || git commit -qm "docs: publish $FOLDER from ${GITHUB_SHA::7}"
+          git push origin gh-pages
