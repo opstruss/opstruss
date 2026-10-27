@@ -31,6 +31,7 @@ func TestRun(t *testing.T) {
 		{args: []string{"run", "nope"}, code: 1, stderr: `unknown command "nope" for "opstruss run"`},
 		{args: []string{"run"}, stdout: "Usage:"},
 		{args: []string{"--help"}, stdout: "Commands:\n"},
+		{args: []string{"--help"}, stdout: "a command.\n\nDocumentation: https://opstruss.github.io/dev/\n"},
 		{args: []string{"--completion", "zsh"}, stdout: "#compdef opstruss"},
 		{args: []string{"--completion", "csh"}, code: 1, stderr: "--completion takes bash, zsh, or fish"},
 		{args: []string{"-C"}, code: 1, stderr: "-C needs a directory"},

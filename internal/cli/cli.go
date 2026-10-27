@@ -276,26 +276,45 @@ func (a *app) root() *cobra.Command {
 	return root
 }
 
-// shortFlags are the flags that takeShort reads before cobra does: a flag
-// of cobra has a long name, and long names belong to the inputs of tasks.
-// Help prints them from this table.
-var shortFlags = []struct {
-	name, arg, usage string
-	global           bool // on every command; else on the detachable ones
-}{
+// ShortFlag is a flag that takeShort reads before cobra does: a flag of
+// cobra has a long name, and long names belong to the inputs of tasks.
+type ShortFlag struct {
+	Name, Arg string
+	Usage     string // with Arg in backquotes, as pflag reads it
+	Global    bool   // on every command; else on the detachable ones
+}
+
+// For reports whether f is a flag of cmd.
+func (f ShortFlag) For(cmd *cobra.Command) bool {
+	return f.Global || cmd.Annotations[detachable] != ""
+}
+
+// shortFlags are the short flags, which help and the reference print.
+var shortFlags = []ShortFlag{
 	{"C", "dir", "run as if OpsTruss started in `dir`, like git -C; a -C after another is relative to it", true},
 	{"d", "", "run in the daemon of the stack, which starts in the background when none runs", false},
 }
 
+// Reference is the command tree of opstruss without the tasks of a
+// project, and its short flags, for the reference of the documentation.
+func Reference() (*cobra.Command, []ShortFlag) {
+	// A built-in command as the command line reads no project.
+	a := &app{args: []string{"version"}, env: map[string]string{}}
+	return a.root(), shortFlags
+}
+
 func init() {
 	cobra.AddTemplateFunc("flagUsages", flagUsages)
+	cobra.AddTemplateFunc("docsURL", func() string { return docsURL(version(), "") })
 }
 
 // usageTemplate is cobra's usage template with the flags of each section
-// printed by flagUsages.
+// printed by flagUsages, and the help of opstruss itself ending with the
+// documentation of this version.
 func usageTemplate(t string) string {
 	t = strings.Replace(t, "{{.LocalFlags.FlagUsages", "{{flagUsages . .LocalFlags true", 1)
-	return strings.Replace(t, "{{.InheritedFlags.FlagUsages", "{{flagUsages . .InheritedFlags false", 1)
+	t = strings.Replace(t, "{{.InheritedFlags.FlagUsages", "{{flagUsages . .InheritedFlags false", 1)
+	return strings.TrimSuffix(t, "\n") + "{{if not .HasParent}}\n\nDocumentation: {{docsURL}}{{end}}\n"
 }
 
 // flagUsages is fs.FlagUsages with the short flags that belong in it: -C
@@ -308,15 +327,15 @@ func flagUsages(cmd *cobra.Command, fs *pflag.FlagSet, local bool) string {
 	show.AddFlagSet(fs)
 	long := map[string]string{}
 	for _, f := range shortFlags {
-		if f.global && fs.Lookup("stack") == nil || !f.global && (!local || cmd.Annotations[detachable] == "") {
+		if !f.For(cmd) || f.Global && fs.Lookup("stack") == nil || !f.Global && !local {
 			continue
 		}
-		name := "-" + f.name
-		if f.arg != "" {
-			show.String(f.name, "", f.usage)
-			name += " " + f.arg
+		name := "-" + f.Name
+		if f.Arg != "" {
+			show.String(f.Name, "", f.Usage)
+			name += " " + f.Arg
 		} else {
-			show.Bool(f.name, false, f.usage)
+			show.Bool(f.Name, false, f.Usage)
 		}
 		long["      -"+name+" "] = "  " + name + "      "
 	}

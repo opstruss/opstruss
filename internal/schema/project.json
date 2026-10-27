@@ -4,28 +4,77 @@
   "description": "An OpsTruss project, or a component when used through uses:.",
   "type": "object",
   "properties": {
-    "name": { "$ref": "#/$defs/name" },
-    "description": { "type": "string" },
-    "opstruss": { "$ref": "#/$defs/level" },
-    "include": { "$ref": "#/$defs/globs" },
-    "uses": { "$ref": "#/$defs/uses" },
-    "inputs": { "$ref": "#/$defs/inputs" },
-    "locals": { "$ref": "#/$defs/locals" },
-    "outputs": { "$ref": "#/$defs/projectOutputs" },
+    "name": {
+      "$ref": "#/$defs/name",
+      "description": "The name of the project: lowercase letters, digits, - and _, starting with a letter."
+    },
+    "description": { "description": "What the project is for.", "type": "string" },
+    "opstruss": {
+      "$ref": "#/$defs/level",
+      "description": "The oldest OpsTruss version that reads this file, as MAJOR.MINOR."
+    },
+    "include": {
+      "$ref": "#/$defs/globs",
+      "description": "Files merged into the project, as globs relative to this file."
+    },
+    "uses": {
+      "$ref": "#/$defs/uses",
+      "description": "Plugins, components, and catalogs that the project uses, by the name it calls them."
+    },
+    "inputs": {
+      "$ref": "#/$defs/inputs",
+      "description": "Inputs of the project, which stacks, --input, or a prompt give."
+    },
+    "locals": {
+      "$ref": "#/$defs/locals",
+      "description": "Named values computed from inputs and other locals, read as locals.<name>."
+    },
+    "outputs": {
+      "$ref": "#/$defs/projectOutputs",
+      "description": "Outputs of the project, which opstruss outputs prints and a project that uses it as a component reads."
+    },
     "stacks": {
+      "description": "The stacks of the project: copies of its units, each with its inputs and its own state.",
       "type": "object",
       "propertyNames": { "$ref": "#/$defs/name" },
       "additionalProperties": { "$ref": "#/$defs/stack" }
     },
-    "backend": { "$ref": "#/$defs/backend" },
-    "secrets": { "$ref": "#/$defs/secrets" },
-    "encryption_keys": { "$ref": "#/$defs/encryptionKeys" },
-    "runtime": { "$ref": "#/$defs/runtime" },
-    "mcp": { "$ref": "#/$defs/mcp" },
-    "units": { "$ref": "#/$defs/units" },
-    "tasks": { "$ref": "#/$defs/tasks" },
-    "moved": { "$ref": "#/$defs/moved" },
-    "removed": { "$ref": "#/$defs/removed" }
+    "backend": {
+      "$ref": "#/$defs/backend",
+      "description": "Where the state of the stacks is kept: local, in .opstruss/state/."
+    },
+    "secrets": {
+      "$ref": "#/$defs/secrets",
+      "description": "Secrets of the project, read as secrets.<name> and hidden in what OpsTruss writes."
+    },
+    "encryption_keys": {
+      "$ref": "#/$defs/encryptionKeys",
+      "description": "What opens the data key of each stack, which encrypts sensitive values in the state."
+    },
+    "runtime": {
+      "$ref": "#/$defs/runtime",
+      "description": "Settings of the daemon of each stack."
+    },
+    "mcp": {
+      "$ref": "#/$defs/mcp",
+      "description": "Reserved for opstruss mcp, which a later version brings: the tasks it offers to AI agents, or false for none."
+    },
+    "units": {
+      "$ref": "#/$defs/units",
+      "description": "The units of the project, which up brings up and destroy takes away."
+    },
+    "tasks": {
+      "$ref": "#/$defs/tasks",
+      "description": "The tasks of the project, each also a command of opstruss."
+    },
+    "moved": {
+      "$ref": "#/$defs/moved",
+      "description": "Units that changed address, so that their records move rather than being destroyed."
+    },
+    "removed": {
+      "$ref": "#/$defs/removed",
+      "description": "Units gone from the files, and whether destroy takes away what they made or their records are forgotten."
+    }
   },
   "patternProperties": { "^x-": true },
   "additionalProperties": false,
@@ -47,6 +96,7 @@
       "additionalProperties": false
     },
     "name": {
+      "description": "A name: lowercase letters, digits, - and _, starting with a letter.",
       "type": "string",
       "pattern": "^[a-z][a-z0-9_-]{0,62}$"
     },
@@ -56,25 +106,33 @@
       "pattern": "^[0-9]+\\.[0-9]+$"
     },
     "globs": {
+      "description": "Paths or globs, relative to this file.",
       "type": "array",
       "items": { "type": "string", "minLength": 1 }
     },
     "duration": {
+      "description": "A duration, such as 500ms, 30s, 5m, or 1h30m.",
       "type": "string",
       "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h))+$"
     },
-    "condition": { "type": ["string", "boolean"] },
+    "condition": {
+      "description": "A condition: an expression in ${{ }}, or true or false.",
+      "type": ["string", "boolean"]
+    },
     "command": {
+      "description": "A program: a list of arguments, run as written, or a string, a script for shell.",
       "oneOf": [
         { "type": "string", "minLength": 1 },
-        { "type": "array", "minItems": 1, "items": { "type": "string" } }
+        {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" }
+        }
       ]
     },
-    "envName": {
-      "type": "string",
-      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
-    },
+    "envName": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
     "env": {
+      "description": "Variables set for programs: a value, or {file: <value>} to write the value to a file and set the variable to its path.",
       "type": "object",
       "propertyNames": { "$ref": "#/$defs/envName" },
       "additionalProperties": {
@@ -82,7 +140,12 @@
           { "type": "string" },
           {
             "type": "object",
-            "properties": { "file": { "type": "string" } },
+            "properties": {
+              "file": {
+                "description": "The value, written to a file whose path the variable gets.",
+                "type": "string"
+              }
+            },
             "required": ["file"],
             "additionalProperties": false
           }
@@ -90,119 +153,211 @@
       }
     },
     "pass": {
+      "description": "Variables of the environment of OpsTruss that programs get, by name or by pattern such as AWS_*; never OPSTRUSS_ or INPUT_ ones.",
       "type": "array",
       "items": { "type": "string", "pattern": "^[A-Za-z_*][A-Za-z0-9_*]*$" }
     },
     "requires": {
+      "description": "Programs that must be in PATH, or an expression that gives the list.",
       "oneOf": [
         { "type": "string", "minLength": 1 },
-        { "type": "array", "items": { "type": "string", "minLength": 1 } }
+        {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
       ]
     },
-    "shell": { "enum": ["sh", "bash", "python", "node", "pwsh"] },
-    "approval": { "enum": ["ask", "auto"] },
-    "format": { "enum": ["text", "json", "yaml", "lines", "dotenv"] },
-    "valueType": { "enum": ["string", "number", "integer", "boolean", "object", "array"] },
+    "shell": {
+      "description": "The shell that runs a script: sh, bash, python, node, or pwsh; sh by default.",
+      "enum": ["sh", "bash", "python", "node", "pwsh"]
+    },
+    "approval": {
+      "description": "ask to wait for approval of changes, auto to apply them without asking.",
+      "enum": ["ask", "auto"]
+    },
+    "format": {
+      "description": "How a value is written as text: text, json, yaml, lines, or dotenv.",
+      "enum": ["text", "json", "yaml", "lines", "dotenv"]
+    },
+    "valueType": {
+      "description": "The type of a value.",
+      "enum": ["string", "number", "integer", "boolean", "object", "array"]
+    },
     "stdin": {
+      "description": "What a program reads on its standard input.",
       "type": "object",
       "properties": {
-        "value": true,
-        "format": { "$ref": "#/$defs/format" }
+        "value": { "description": "The value: text, or data that format writes." },
+        "format": {
+          "$ref": "#/$defs/format",
+          "description": "How the value is written; text by default."
+        }
       },
       "required": ["value"],
       "patternProperties": { "^x-": true },
       "additionalProperties": false
     },
     "paths": {
+      "description": "Paths and globs relative to this file, read as written, without shell variables; {exclude: <glob>} leaves files out of those before it.",
       "type": "array",
       "items": {
         "oneOf": [
           { "type": "string", "minLength": 1 },
           {
             "type": "object",
-            "properties": { "exclude": { "type": "string", "minLength": 1 } },
+            "properties": {
+              "exclude": {
+                "description": "A glob of files to leave out of the patterns before it.",
+                "type": "string",
+                "minLength": 1
+              }
+            },
             "required": ["exclude"],
             "additionalProperties": false
           }
         ]
       }
     },
-    "forEach": { "type": ["array", "object", "string"] },
+    "forEach": {
+      "description": "A list, a map, or an expression that gives one: one instance per item, read as each.key and each.value.",
+      "type": ["array", "object", "string"]
+    },
     "names": {
+      "description": "Names of units or tasks.",
       "type": "array",
       "items": { "$ref": "#/$defs/name" }
     },
     "retry": {
+      "description": "Running a program again when it fails.",
       "type": "object",
       "properties": {
-        "attempts": { "type": "integer", "minimum": 1 },
-        "delay": { "$ref": "#/$defs/duration" },
-        "backoff": { "type": "number", "minimum": 1 },
-        "until": { "$ref": "#/$defs/condition" }
+        "attempts": {
+          "description": "How many times the program runs at most, the first one included.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "delay": {
+          "$ref": "#/$defs/duration",
+          "description": "The wait before the second attempt."
+        },
+        "backoff": {
+          "description": "What each wait is multiplied by for the next one.",
+          "type": "number",
+          "minimum": 1
+        },
+        "until": {
+          "$ref": "#/$defs/condition",
+          "description": "A condition on the outputs that ends the attempts when true."
+        }
       },
       "patternProperties": { "^x-": true },
       "additionalProperties": false
     },
     "stop": {
+      "description": "How a program is stopped, at cancel, timeout, or the end of a service.",
       "type": "object",
       "properties": {
-        "signal": { "type": "string", "pattern": "^SIG[A-Z0-9]+$" },
-        "grace": { "$ref": "#/$defs/duration" },
-        "run": { "$ref": "#/$defs/command" }
+        "signal": {
+          "description": "The signal that asks the program to stop; SIGINT by default, SIGTERM for a service.",
+          "type": "string",
+          "pattern": "^SIG[A-Z0-9]+$"
+        },
+        "grace": {
+          "$ref": "#/$defs/duration",
+          "description": "How long the program has after the signal before it is killed; 1m by default, 10s for a service."
+        },
+        "run": {
+          "$ref": "#/$defs/command",
+          "description": "A program that stops a service, instead of the signal."
+        }
       },
       "patternProperties": { "^x-": true },
       "additionalProperties": false
     },
     "inputs": {
+      "description": "Inputs by name.",
       "type": "object",
       "propertyNames": { "$ref": "#/$defs/name" },
       "additionalProperties": { "$ref": "#/$defs/input" }
     },
     "input": {
+      "description": "An input: its type, its default, and the checks of its value.",
       "type": "object",
       "properties": {
-        "type": { "$ref": "#/$defs/valueType" },
-        "description": { "type": "string" },
-        "required": { "type": "boolean" },
-        "default": true,
-        "env": { "$ref": "#/$defs/envName" },
-        "enum": { "type": "array", "minItems": 1 },
-        "pattern": { "type": "string" },
-        "minimum": { "type": "number" },
-        "maximum": { "type": "number" },
-        "items": { "$ref": "#/$defs/input" },
+        "type": { "$ref": "#/$defs/valueType", "description": "The type of the value." },
+        "description": {
+          "description": "What the input is for, which help shows.",
+          "type": "string"
+        },
+        "required": { "description": "Whether the input must be given.", "type": "boolean" },
+        "default": { "description": "The value when none is given." },
+        "env": {
+          "$ref": "#/$defs/envName",
+          "description": "A variable of the environment that gives the value; only in the files of a project."
+        },
+        "enum": { "description": "The values allowed.", "type": "array", "minItems": 1 },
+        "pattern": {
+          "description": "A regular expression that a string must match.",
+          "type": "string"
+        },
+        "minimum": { "description": "The smallest number allowed.", "type": "number" },
+        "maximum": { "description": "The largest number allowed.", "type": "number" },
+        "items": { "$ref": "#/$defs/input", "description": "What each item of an array is." },
         "properties": {
+          "description": "The keys of an object, each one an input; other keys are refused.",
           "type": "object",
           "propertyNames": { "$ref": "#/$defs/name" },
           "additionalProperties": { "$ref": "#/$defs/input" }
         },
-        "sensitive": { "type": "boolean" },
-        "literal": { "type": "boolean" },
-        "args": { "type": "boolean" }
+        "sensitive": {
+          "description": "Hide the value in what OpsTruss writes, and keep it encrypted in the state.",
+          "type": "boolean"
+        },
+        "literal": { "description": "Refuse ${{ }} in the value.", "type": "boolean" },
+        "args": {
+          "description": "Fill the array with the arguments after -- on the command line.",
+          "type": "boolean"
+        }
       },
       "patternProperties": { "^x-": true },
       "additionalProperties": false
     },
     "outputs": {
+      "description": "Outputs by name.",
       "type": "object",
       "propertyNames": { "$ref": "#/$defs/name" },
       "additionalProperties": { "$ref": "#/$defs/output" }
     },
     "output": {
+      "description": "An output of a program or a task, and where its value comes from.",
       "type": "object",
       "properties": {
-        "type": { "$ref": "#/$defs/valueType" },
-        "description": { "type": "string" },
-        "sensitive": { "type": "boolean" },
-        "from": { "enum": ["stdout", "stderr", "file", "output"] },
-        "path": { "type": "string", "minLength": 1 },
-        "format": { "$ref": "#/$defs/format" },
-        "value": true
+        "type": { "$ref": "#/$defs/valueType", "description": "The type of the value." },
+        "description": { "description": "What the output is.", "type": "string" },
+        "sensitive": {
+          "description": "Hide the value in what OpsTruss writes, and keep it encrypted in the state.",
+          "type": "boolean"
+        },
+        "from": {
+          "description": "Where the value comes from: stdout, stderr, the file at path, or output, the lines name=value written to $OPSTRUSS_OUTPUT; output by default.",
+          "enum": ["stdout", "stderr", "file", "output"]
+        },
+        "path": {
+          "description": "The file that from: file reads, relative to the directory of the program.",
+          "type": "string",
+          "minLength": 1
+        },
+        "format": {
+          "$ref": "#/$defs/format",
+          "description": "How the text is read: text, json, yaml, lines, or dotenv."
+        },
+        "value": { "description": "The value, as an expression of the steps of the task." }
       },
       "patternProperties": { "^x-": true },
       "additionalProperties": false
     },
     "projectOutputs": {
+      "description": "Outputs of a project by name: an expression, or an object with value.",
       "type": "object",
       "propertyNames": { "$ref": "#/$defs/name" },
       "additionalProperties": {
@@ -211,9 +366,12 @@
           {
             "type": "object",
             "properties": {
-              "value": true,
-              "description": { "type": "string" },
-              "sensitive": { "type": "boolean" }
+              "value": { "description": "The value, as an expression of the outputs of units." },
+              "description": { "description": "What the output is.", "type": "string" },
+              "sensitive": {
+                "description": "Hide the value in what OpsTruss writes.",
+                "type": "boolean"
+              }
             },
             "required": ["value"],
             "patternProperties": { "^x-": true },
@@ -223,10 +381,12 @@
       }
     },
     "locals": {
+      "description": "Named values, each an expression, read as locals.<name>.",
       "type": "object",
       "propertyNames": { "$ref": "#/$defs/name" }
     },
     "uses": {
+      "description": "What a project uses, by name: a source, or an object with source and what every use of it gets.",
       "type": "object",
       "propertyNames": { "$ref": "#/$defs/name" },
       "additionalProperties": {
@@ -235,10 +395,23 @@
           {
             "type": "object",
             "properties": {
-              "source": { "type": "string", "minLength": 1 },
-              "with": { "type": "object" },
-              "env": { "$ref": "#/$defs/env" },
-              "pass": { "$ref": "#/$defs/pass" }
+              "source": {
+                "description": "Where it comes from: a path, github.com/<owner>/<repo>[/<path>]@<ref>, <catalog>.<name>, or opstruss.<task> for a built-in task.",
+                "type": "string",
+                "minLength": 1
+              },
+              "with": {
+                "description": "Inputs given to every use of it, under those of the use.",
+                "type": "object"
+              },
+              "env": {
+                "$ref": "#/$defs/env",
+                "description": "Variables set for its programs, under those of the use."
+              },
+              "pass": {
+                "$ref": "#/$defs/pass",
+                "description": "Variables of the environment that its programs get when it asks for them, by name or pattern."
+              }
             },
             "required": ["source"],
             "patternProperties": { "^x-": true },
@@ -248,30 +421,63 @@
       }
     },
     "stack": {
+      "description": "A stack: a copy of the units of the project with its own inputs and state.",
       "type": "object",
       "properties": {
-        "description": { "type": "string" },
-        "with": { "type": "object" },
-        "secrets": { "$ref": "#/$defs/secrets" },
-        "encryption_keys": { "$ref": "#/$defs/encryptionKeys" },
-        "runtime": { "$ref": "#/$defs/runtime" },
-        "mcp": { "$ref": "#/$defs/mcp" },
-        "backend": { "$ref": "#/$defs/backend" },
-        "approval": { "$ref": "#/$defs/approval" },
-        "include": { "$ref": "#/$defs/globs" }
+        "description": { "description": "What the stack is for.", "type": "string" },
+        "with": {
+          "description": "Values of the inputs of the project in this stack.",
+          "type": "object"
+        },
+        "secrets": {
+          "$ref": "#/$defs/secrets",
+          "description": "Secrets of this stack, over those of the project."
+        },
+        "encryption_keys": {
+          "$ref": "#/$defs/encryptionKeys",
+          "description": "What opens the data key of this stack, instead of those of the project."
+        },
+        "runtime": {
+          "$ref": "#/$defs/runtime",
+          "description": "Settings of the daemon of this stack."
+        },
+        "mcp": {
+          "$ref": "#/$defs/mcp",
+          "description": "Reserved for opstruss mcp: what it offers in this stack."
+        },
+        "backend": {
+          "$ref": "#/$defs/backend",
+          "description": "Where the state of this stack is kept."
+        },
+        "approval": {
+          "$ref": "#/$defs/approval",
+          "description": "ask to wait for approval of changes in this stack, auto to apply them without asking."
+        },
+        "include": {
+          "$ref": "#/$defs/globs",
+          "description": "Files merged into the project in this stack only."
+        }
       },
       "patternProperties": { "^x-": true },
       "additionalProperties": false
     },
     "backend": {
+      "description": "Where the state of a stack is kept.",
       "oneOf": [
         { "const": "local" },
         {
           "type": "object",
           "properties": {
-            "uses": { "type": "string", "minLength": 1 },
-            "with": { "type": "object" },
-            "pass": { "$ref": "#/$defs/pass" }
+            "uses": {
+              "description": "The plugin of the backend.",
+              "type": "string",
+              "minLength": 1
+            },
+            "with": { "description": "Inputs of the backend plugin.", "type": "object" },
+            "pass": {
+              "$ref": "#/$defs/pass",
+              "description": "Variables of the environment that the backend plugin gets."
+            }
           },
           "required": ["uses"],
           "patternProperties": { "^x-": true },
@@ -280,6 +486,7 @@
       ]
     },
     "secrets": {
+      "description": "Secrets by name.",
       "type": "object",
       "propertyNames": { "$ref": "#/$defs/name" },
       "additionalProperties": { "$ref": "#/$defs/secret" }
@@ -288,18 +495,39 @@
       "description": "One source: sops, env, run, or a call of a plugin task whose output is value.",
       "type": "object",
       "properties": {
-        "sops": { "type": "string", "minLength": 1 },
-        "field": { "type": "string", "minLength": 1 },
+        "sops": {
+          "description": "A file encrypted with sops, relative to this file; a dotenv, JSON, or YAML file is a map.",
+          "type": "string",
+          "minLength": 1
+        },
+        "field": {
+          "description": "One field of the decrypted file, as a dotted path.",
+          "type": "string",
+          "minLength": 1
+        },
         "env": {
+          "description": "The variable of the environment that holds the secret, or, with run:, variables for its program.",
           "oneOf": [
             { "$ref": "#/$defs/envName" },
             { "$ref": "#/$defs/env" }
           ]
         },
-        "run": { "$ref": "#/$defs/command" },
-        "pass": { "$ref": "#/$defs/pass" },
-        "dir": { "type": "string" },
-        "shell": { "$ref": "#/$defs/shell" }
+        "run": {
+          "$ref": "#/$defs/command",
+          "description": "A program whose standard output is the secret, such as op read."
+        },
+        "pass": {
+          "$ref": "#/$defs/pass",
+          "description": "Variables of the environment that the program of run: gets."
+        },
+        "dir": {
+          "description": "The directory the program of run: starts in, relative to this file.",
+          "type": "string"
+        },
+        "shell": {
+          "$ref": "#/$defs/shell",
+          "description": "The shell that runs run: when it is a script."
+        }
       },
       "patternProperties": { "^x-": true },
       "additionalProperties": { "$ref": "#/$defs/call" }
@@ -314,11 +542,23 @@
           {
             "type": "object",
             "properties": {
-              "kms": { "type": "string", "minLength": 1 },
-              "gcp_kms": { "type": "string", "minLength": 1 },
-              "azure_keyvault": { "type": "string", "minLength": 1 },
-              "hc_vault_transit_uri": { "type": "string", "minLength": 1 },
-              "pgp": { "type": "string", "minLength": 1 }
+              "kms": { "description": "An AWS KMS key ARN.", "type": "string", "minLength": 1 },
+              "gcp_kms": {
+                "description": "A Google Cloud KMS key resource ID.",
+                "type": "string",
+                "minLength": 1
+              },
+              "azure_keyvault": {
+                "description": "An Azure Key Vault key URL.",
+                "type": "string",
+                "minLength": 1
+              },
+              "hc_vault_transit_uri": {
+                "description": "A HashiCorp Vault transit key URI.",
+                "type": "string",
+                "minLength": 1
+              },
+              "pgp": { "description": "A PGP key fingerprint.", "type": "string", "minLength": 1 }
             },
             "minProperties": 1,
             "maxProperties": 1,
@@ -328,20 +568,29 @@
       }
     },
     "runtime": {
+      "description": "Settings of the daemon of a stack.",
       "type": "object",
       "properties": {
-        "listen": { "type": "string", "minLength": 1 }
+        "listen": {
+          "description": "The address where the daemon serves webhooks, as host:port; on: webhook needs it.",
+          "type": "string",
+          "minLength": 1
+        }
       },
       "patternProperties": { "^x-": true },
       "additionalProperties": false
     },
     "mcp": {
+      "description": "What opstruss mcp offers, or false for nothing.",
       "oneOf": [
         { "const": false },
         {
           "type": "object",
           "properties": {
-            "tasks": { "$ref": "#/$defs/names" }
+            "tasks": {
+              "$ref": "#/$defs/names",
+              "description": "The tasks that opstruss mcp offers as tools."
+            }
           },
           "patternProperties": { "^x-": true },
           "additionalProperties": false
@@ -349,93 +598,220 @@
       ]
     },
     "units": {
+      "description": "Units by name.",
       "type": "object",
       "propertyNames": { "$ref": "#/$defs/name" },
       "additionalProperties": { "$ref": "#/$defs/unit" }
     },
     "unit": {
+      "description": "A unit: something that up brings up and destroy takes away, with exactly one of run, service, or uses.",
       "type": "object",
       "properties": {
-        "description": { "type": "string" },
-        "run": { "$ref": "#/$defs/command" },
-        "service": { "$ref": "#/$defs/command" },
-        "uses": { "type": "string", "minLength": 1 },
-        "with": { "type": "object" },
-        "tasks": { "$ref": "#/$defs/tasks" },
-        "requires": { "$ref": "#/$defs/requires" },
-        "shell": { "$ref": "#/$defs/shell" },
-        "dir": { "type": "string" },
-        "env": { "$ref": "#/$defs/env" },
-        "pass": { "$ref": "#/$defs/pass" },
-        "stdin": { "$ref": "#/$defs/stdin" },
-        "sources": { "$ref": "#/$defs/paths" },
-        "generates": { "$ref": "#/$defs/globs" },
-        "revision": { "type": "string" },
-        "outputs": { "$ref": "#/$defs/outputs" },
-        "destroy": { "$ref": "#/$defs/command" },
-        "restart": { "enum": ["no", "on-failure", "always"] },
-        "stop": { "$ref": "#/$defs/stop" },
+        "description": { "description": "What the unit is.", "type": "string" },
+        "run": { "$ref": "#/$defs/command", "description": "The program that brings the unit up." },
+        "service": {
+          "$ref": "#/$defs/command",
+          "description": "A program that keeps running, which the daemon of the stack supervises."
+        },
+        "uses": {
+          "description": "The plugin, task, or component that the unit uses.",
+          "type": "string",
+          "minLength": 1
+        },
+        "with": { "description": "Inputs of what the unit uses.", "type": "object" },
+        "tasks": {
+          "$ref": "#/$defs/tasks",
+          "description": "Tasks of the unit, run as opstruss <task> [unit]..."
+        },
+        "requires": {
+          "$ref": "#/$defs/requires",
+          "description": "Programs that must be in PATH before the unit runs."
+        },
+        "shell": {
+          "$ref": "#/$defs/shell",
+          "description": "The shell that runs a script; sh by default."
+        },
+        "dir": {
+          "description": "The directory that the programs start in, relative to this file.",
+          "type": "string"
+        },
+        "env": {
+          "$ref": "#/$defs/env",
+          "description": "Variables set for the programs of the unit."
+        },
+        "pass": {
+          "$ref": "#/$defs/pass",
+          "description": "Variables of the environment that the programs of the unit get."
+        },
+        "stdin": {
+          "$ref": "#/$defs/stdin",
+          "description": "What the program reads on its standard input."
+        },
+        "sources": {
+          "$ref": "#/$defs/paths",
+          "description": "Files whose content is part of the definition, so a change to one runs the unit again."
+        },
+        "generates": {
+          "$ref": "#/$defs/globs",
+          "description": "Files that the unit makes, relative to this file and read as written; a missing one runs the unit again."
+        },
+        "revision": {
+          "description": "A value whose change runs the unit again.",
+          "type": "string"
+        },
+        "outputs": {
+          "$ref": "#/$defs/outputs",
+          "description": "Outputs of the program, which other units read as units.<name>.outputs.<output>."
+        },
+        "destroy": {
+          "$ref": "#/$defs/command",
+          "description": "The program that takes the unit away, which its record keeps."
+        },
+        "restart": {
+          "description": "When the daemon starts the service again after it exits: no, on-failure, or always; on-failure by default.",
+          "enum": ["no", "on-failure", "always"]
+        },
+        "stop": { "$ref": "#/$defs/stop", "description": "How the program is stopped." },
         "ready": {
+          "description": "When the service counts as started: a URL, a port, or a program; up waits for it.",
           "type": "object",
           "properties": {
-            "http": { "type": "string", "minLength": 1 },
-            "tcp": { "type": "string", "minLength": 1 },
-            "run": { "$ref": "#/$defs/command" },
-            "interval": { "$ref": "#/$defs/duration" },
-            "timeout": { "$ref": "#/$defs/duration" }
+            "http": {
+              "description": "A URL that answers with a 2xx status once the service is ready.",
+              "type": "string",
+              "minLength": 1
+            },
+            "tcp": {
+              "description": "A host:port that accepts a connection once the service is ready.",
+              "type": "string",
+              "minLength": 1
+            },
+            "run": {
+              "$ref": "#/$defs/command",
+              "description": "A program that exits with 0 once the service is ready."
+            },
+            "interval": { "$ref": "#/$defs/duration", "description": "How often the check runs." },
+            "timeout": {
+              "$ref": "#/$defs/duration",
+              "description": "How long up waits for the service to be ready."
+            }
           },
           "patternProperties": { "^x-": true },
           "additionalProperties": false
         },
-        "needs": { "$ref": "#/$defs/names" },
-        "if": { "$ref": "#/$defs/condition" },
-        "for_each": { "$ref": "#/$defs/forEach" },
-        "approval": { "$ref": "#/$defs/approval" },
-        "timeout": { "$ref": "#/$defs/duration" },
-        "protect": { "type": "boolean" },
-        "retry": { "$ref": "#/$defs/retry" }
+        "needs": {
+          "$ref": "#/$defs/names",
+          "description": "Units that come before this one, besides those its expressions read."
+        },
+        "if": {
+          "$ref": "#/$defs/condition",
+          "description": "A condition that decides whether the unit is in the stack; one that leaves it is destroyed."
+        },
+        "for_each": {
+          "$ref": "#/$defs/forEach",
+          "description": "A list or a map: one instance of the unit per item, read as each.key and each.value."
+        },
+        "approval": {
+          "$ref": "#/$defs/approval",
+          "description": "ask to wait for approval of changes to this unit, auto to apply them without asking."
+        },
+        "timeout": {
+          "$ref": "#/$defs/duration",
+          "description": "How long a program of the unit may run."
+        },
+        "protect": { "description": "Refuse to destroy the unit.", "type": "boolean" },
+        "retry": {
+          "$ref": "#/$defs/retry",
+          "description": "Running the program again when it fails."
+        }
       },
       "patternProperties": { "^x-": true },
       "additionalProperties": false
     },
     "tasks": {
+      "description": "Tasks by name.",
       "type": "object",
       "propertyNames": { "$ref": "#/$defs/name" },
       "additionalProperties": { "$ref": "#/$defs/task" }
     },
-    "call": {
-      "description": "A call of a task by name, with its inputs.",
-      "type": "object"
-    },
+    "call": { "description": "A call of a task by name, with its inputs.", "type": "object" },
     "task": {
       "description": "Exactly one of run, steps, or one call of a task.",
       "type": "object",
       "properties": {
-        "description": { "type": "string" },
-        "inputs": { "$ref": "#/$defs/inputs" },
-        "outputs": { "$ref": "#/$defs/outputs" },
-        "run": { "$ref": "#/$defs/command" },
-        "steps": { "$ref": "#/$defs/steps" },
-        "shell": { "$ref": "#/$defs/shell" },
-        "dir": { "type": "string" },
-        "env": { "$ref": "#/$defs/env" },
-        "pass": { "$ref": "#/$defs/pass" },
-        "stdin": { "$ref": "#/$defs/stdin" },
-        "requires": { "$ref": "#/$defs/requires" },
-        "needs": { "$ref": "#/$defs/names" },
-        "if": { "$ref": "#/$defs/condition" },
-        "for_each": { "$ref": "#/$defs/forEach" },
-        "max_parallel": { "type": "integer", "minimum": 1 },
-        "on": { "$ref": "#/$defs/triggers" },
-        "approval": { "$ref": "#/$defs/approval" },
+        "description": {
+          "description": "What the task does, which help and list show.",
+          "type": "string"
+        },
+        "inputs": {
+          "$ref": "#/$defs/inputs",
+          "description": "Inputs of the task, each also a flag of its command."
+        },
+        "outputs": { "$ref": "#/$defs/outputs", "description": "Outputs of the task." },
+        "run": { "$ref": "#/$defs/command", "description": "The program of the task." },
+        "steps": { "$ref": "#/$defs/steps", "description": "The steps of the task." },
+        "shell": {
+          "$ref": "#/$defs/shell",
+          "description": "The shell that runs a script, also for each step; sh by default."
+        },
+        "dir": {
+          "description": "The directory that the programs start in, relative to this file, also for each step.",
+          "type": "string"
+        },
+        "env": {
+          "$ref": "#/$defs/env",
+          "description": "Variables set for the programs of the task and its steps."
+        },
+        "pass": {
+          "$ref": "#/$defs/pass",
+          "description": "Variables of the environment that the programs of the task and its steps get."
+        },
+        "stdin": {
+          "$ref": "#/$defs/stdin",
+          "description": "What the program reads on its standard input."
+        },
+        "requires": {
+          "$ref": "#/$defs/requires",
+          "description": "Programs that must be in PATH before the task runs."
+        },
+        "needs": { "$ref": "#/$defs/names", "description": "Tasks that run before this one." },
+        "if": {
+          "$ref": "#/$defs/condition",
+          "description": "A condition that skips the task when false."
+        },
+        "for_each": {
+          "$ref": "#/$defs/forEach",
+          "description": "A list or a map: the task runs once per item, read as each.key and each.value."
+        },
+        "max_parallel": {
+          "description": "How many items of for_each run at once; OPSTRUSS_PARALLEL by default.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "on": {
+          "$ref": "#/$defs/triggers",
+          "description": "Triggers that run the task from the daemon of the stack."
+        },
+        "approval": {
+          "$ref": "#/$defs/approval",
+          "description": "ask to wait for approval of the changes that the task makes, auto to apply them without asking."
+        },
         "concurrency": {
+          "description": "What a new run of the task does while another goes on, also across the tasks of one group.",
           "oneOf": [
             { "$ref": "#/$defs/concurrencyMode" },
             {
               "type": "object",
               "properties": {
-                "group": { "type": "string", "minLength": 1 },
-                "mode": { "$ref": "#/$defs/concurrencyMode" }
+                "group": {
+                  "description": "A name that the tasks whose runs wait for one another share.",
+                  "type": "string",
+                  "minLength": 1
+                },
+                "mode": {
+                  "$ref": "#/$defs/concurrencyMode",
+                  "description": "What a new run does: queue, cancel, skip, or parallel; queue by default."
+                }
               },
               "required": ["group"],
               "patternProperties": { "^x-": true },
@@ -443,19 +819,35 @@
             }
           ]
         },
-        "timeout": { "$ref": "#/$defs/duration" },
-        "stop": { "$ref": "#/$defs/stop" },
-        "retry": { "$ref": "#/$defs/retry" },
-        "failed_when": { "$ref": "#/$defs/condition" },
-        "changed_when": { "$ref": "#/$defs/condition" },
-        "continue_on_error": { "type": "boolean" },
-        "internal": { "type": "boolean" }
+        "timeout": { "$ref": "#/$defs/duration", "description": "How long the task may run." },
+        "stop": { "$ref": "#/$defs/stop", "description": "How its program is stopped." },
+        "retry": {
+          "$ref": "#/$defs/retry",
+          "description": "Running the task again when it fails."
+        },
+        "failed_when": {
+          "$ref": "#/$defs/condition",
+          "description": "A condition on the outputs that marks the task failed."
+        },
+        "changed_when": {
+          "$ref": "#/$defs/condition",
+          "description": "A condition on the outputs that says whether the task changed something."
+        },
+        "continue_on_error": { "description": "Record a failure and go on.", "type": "boolean" },
+        "internal": {
+          "description": "Leave the task out of the commands and the MCP tools; other tasks and its own on: still run it.",
+          "type": "boolean"
+        }
       },
       "patternProperties": { "^x-": true },
       "additionalProperties": { "$ref": "#/$defs/call" }
     },
-    "concurrencyMode": { "enum": ["queue", "cancel", "skip", "parallel"] },
+    "concurrencyMode": {
+      "description": "What a new run does while another run of the task goes on: queue, cancel the other, skip, or run in parallel.",
+      "enum": ["queue", "cancel", "skip", "parallel"]
+    },
     "steps": {
+      "description": "Steps that run one after another.",
       "type": "array",
       "items": { "$ref": "#/$defs/step" }
     },
@@ -463,65 +855,144 @@
       "description": "Exactly one of run, task, block, or one call of a task.",
       "type": "object",
       "properties": {
-        "name": { "type": "string" },
-        "id": { "$ref": "#/$defs/name" },
-        "if": { "$ref": "#/$defs/condition" },
-        "run": { "$ref": "#/$defs/command" },
-        "task": { "type": "string", "minLength": 1 },
-        "block": { "$ref": "#/$defs/steps" },
-        "rescue": { "$ref": "#/$defs/steps" },
-        "always": { "$ref": "#/$defs/steps" },
-        "with": { "type": "object" },
-        "units": { "type": "array", "items": { "type": "string", "minLength": 1 } },
-        "yes": { "type": "boolean" },
-        "force": { "type": "boolean" },
-        "env": { "$ref": "#/$defs/env" },
-        "pass": { "$ref": "#/$defs/pass" },
-        "shell": { "$ref": "#/$defs/shell" },
-        "dir": { "type": "string" },
-        "stdin": { "$ref": "#/$defs/stdin" },
-        "timeout": { "$ref": "#/$defs/duration" },
-        "for_each": { "$ref": "#/$defs/forEach" },
-        "retry": { "$ref": "#/$defs/retry" },
-        "failed_when": { "$ref": "#/$defs/condition" },
-        "changed_when": { "$ref": "#/$defs/condition" },
-        "continue_on_error": { "type": "boolean" },
-        "outputs": { "$ref": "#/$defs/outputs" }
+        "name": { "description": "The name that the output shows for the step.", "type": "string" },
+        "id": {
+          "$ref": "#/$defs/name",
+          "description": "The id that later steps read as steps.<id>."
+        },
+        "if": {
+          "$ref": "#/$defs/condition",
+          "description": "A condition that skips the step when false."
+        },
+        "run": { "$ref": "#/$defs/command", "description": "A program." },
+        "task": {
+          "description": "A task of the project, or a standard task such as up, to run.",
+          "type": "string",
+          "minLength": 1
+        },
+        "block": {
+          "$ref": "#/$defs/steps",
+          "description": "Steps that rescue and always go with."
+        },
+        "rescue": {
+          "$ref": "#/$defs/steps",
+          "description": "Steps that run when a step of block fails, which then counts as handled."
+        },
+        "always": {
+          "$ref": "#/$defs/steps",
+          "description": "Steps that run after block and rescue, whether they failed or not."
+        },
+        "with": { "description": "Inputs of the task of task:.", "type": "object" },
+        "units": {
+          "description": "The units that task: up, destroy, status, or logs acts on.",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "yes": {
+          "description": "Approve the changes of task: up or destroy, as --yes does.",
+          "type": "boolean"
+        },
+        "force": { "description": "As --force for task: up or destroy.", "type": "boolean" },
+        "env": { "$ref": "#/$defs/env", "description": "Variables set for the program." },
+        "pass": {
+          "$ref": "#/$defs/pass",
+          "description": "Variables of the environment that the program gets."
+        },
+        "shell": { "$ref": "#/$defs/shell", "description": "The shell that runs a script." },
+        "dir": {
+          "description": "The directory that the program starts in, relative to this file.",
+          "type": "string"
+        },
+        "stdin": {
+          "$ref": "#/$defs/stdin",
+          "description": "What the program reads on its standard input."
+        },
+        "timeout": { "$ref": "#/$defs/duration", "description": "How long the step may run." },
+        "for_each": {
+          "$ref": "#/$defs/forEach",
+          "description": "A list or a map: the step runs once per item, read as each.key and each.value."
+        },
+        "retry": {
+          "$ref": "#/$defs/retry",
+          "description": "Running the step again when it fails."
+        },
+        "failed_when": {
+          "$ref": "#/$defs/condition",
+          "description": "A condition on the outputs that marks the step failed."
+        },
+        "changed_when": {
+          "$ref": "#/$defs/condition",
+          "description": "A condition on the outputs that says whether the step changed something."
+        },
+        "continue_on_error": {
+          "description": "Record a failure and go on with the next step.",
+          "type": "boolean"
+        },
+        "outputs": {
+          "$ref": "#/$defs/outputs",
+          "description": "Outputs of the program of the step."
+        }
       },
       "patternProperties": { "^x-": true },
       "additionalProperties": { "$ref": "#/$defs/call" }
     },
     "triggers": {
+      "description": "What runs a task from the daemon of the stack.",
       "type": "object",
       "properties": {
         "schedule": {
+          "description": "Cron schedules, in the time zone of the machine unless timezone names another.",
           "oneOf": [
             { "$ref": "#/$defs/schedule" },
-            { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/schedule" } }
+            {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/$defs/schedule" }
+            }
           ]
         },
         "every": {
+          "description": "Intervals, such as 5m, from when the daemon starts.",
           "oneOf": [
             { "$ref": "#/$defs/duration" },
-            { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/duration" } }
+            {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/$defs/duration" }
+            }
           ]
         },
         "webhook": {
+          "description": "HTTP requests to the daemon that run the task.",
           "oneOf": [
             { "$ref": "#/$defs/webhook" },
-            { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/webhook" } }
+            {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/$defs/webhook" }
+            }
           ]
         },
         "watch": {
+          "description": "Events from files, the output of a service, or a program that writes a line per event.",
           "oneOf": [
             { "$ref": "#/$defs/watch" },
-            { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/watch" } }
+            {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/$defs/watch" }
+            }
           ]
         },
         "after": {
+          "description": "Runs of other tasks or commands that this task follows.",
           "oneOf": [
             { "$ref": "#/$defs/after" },
-            { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/after" } }
+            {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/$defs/after" }
+            }
           ]
         }
       },
@@ -529,16 +1000,34 @@
       "additionalProperties": false
     },
     "schedule": {
+      "description": "A cron schedule, as a string or with its options.",
       "oneOf": [
         { "type": "string", "minLength": 1 },
         {
           "type": "object",
           "properties": {
-            "cron": { "type": "string", "minLength": 1 },
-            "timezone": { "type": "string", "minLength": 1 },
-            "persistent": { "type": "boolean" },
-            "if": { "$ref": "#/$defs/condition" },
-            "with": { "type": "object" }
+            "cron": {
+              "description": "A cron expression of five fields, or a shorthand such as @daily.",
+              "type": "string",
+              "minLength": 1
+            },
+            "timezone": {
+              "description": "An IANA time zone, such as Asia/Jakarta; the time zone of the machine by default.",
+              "type": "string",
+              "minLength": 1
+            },
+            "persistent": {
+              "description": "Run once what was missed while the daemon was not running or the machine slept.",
+              "type": "boolean"
+            },
+            "if": {
+              "$ref": "#/$defs/condition",
+              "description": "A condition on the event that skips the run when false."
+            },
+            "with": {
+              "description": "Inputs of the task for runs of this trigger.",
+              "type": "object"
+            }
           },
           "required": ["cron"],
           "patternProperties": { "^x-": true },
@@ -547,30 +1036,62 @@
       ]
     },
     "webhook": {
+      "description": "An HTTP request to the daemon that runs the task, checked by its signature.",
       "type": "object",
       "properties": {
-        "path": { "type": "string", "pattern": "^/" },
-        "method": { "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"] },
-        "secret": { "type": "string", "minLength": 1 },
+        "path": {
+          "description": "The path that the daemon serves the webhook at.",
+          "type": "string",
+          "pattern": "^/"
+        },
+        "method": {
+          "description": "The HTTP method; POST by default.",
+          "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+        },
+        "secret": {
+          "description": "The secret that signs the requests, as ${{ secrets.<name> }}.",
+          "type": "string",
+          "minLength": 1
+        },
         "signature": {
+          "description": "How a request is checked: the scheme of github, gitlab, slack, stripe, standard webhooks, or bearer, or a header of your own.",
           "oneOf": [
             { "enum": ["github", "gitlab", "slack", "stripe", "standard", "bearer"] },
             {
               "type": "object",
               "properties": {
-                "header": { "type": "string", "minLength": 1 },
-                "algorithm": { "enum": ["sha256", "sha512"] },
-                "encoding": { "enum": ["hex", "base64"] },
-                "prefix": { "type": "string" }
+                "header": {
+                  "description": "The header that holds the signature.",
+                  "type": "string",
+                  "minLength": 1
+                },
+                "algorithm": {
+                  "description": "The hash of the HMAC.",
+                  "enum": ["sha256", "sha512"]
+                },
+                "encoding": {
+                  "description": "How the signature is written.",
+                  "enum": ["hex", "base64"]
+                },
+                "prefix": {
+                  "description": "Text before the signature in the header, such as sha256=.",
+                  "type": "string"
+                }
               },
               "required": ["header"],
               "additionalProperties": false
             }
           ]
         },
-        "respond": { "enum": ["accepted", "wait"] },
-        "if": { "$ref": "#/$defs/condition" },
-        "with": { "type": "object" }
+        "respond": {
+          "description": "accepted to answer 202 with the id of the run at once, or wait to answer with the outputs of the task.",
+          "enum": ["accepted", "wait"]
+        },
+        "if": {
+          "$ref": "#/$defs/condition",
+          "description": "A condition on the event that skips the run when false."
+        },
+        "with": { "description": "Inputs of the task for runs of this trigger.", "type": "object" }
       },
       "required": ["path", "secret", "signature"],
       "patternProperties": { "^x-": true },
@@ -580,37 +1101,72 @@
       "description": "Exactly one source: unit, paths, or one call of a task.",
       "type": "object",
       "properties": {
-        "unit": { "type": "string", "minLength": 1 },
-        "paths": { "$ref": "#/$defs/paths" },
-        "stream": { "enum": ["stdout", "stderr", "both"] },
-        "if": { "$ref": "#/$defs/condition" },
-        "batch": { "$ref": "#/$defs/duration" },
-        "debounce": { "$ref": "#/$defs/duration" },
-        "with": { "type": "object" }
+        "unit": {
+          "description": "A service whose output lines are the events.",
+          "type": "string",
+          "minLength": 1
+        },
+        "paths": {
+          "$ref": "#/$defs/paths",
+          "description": "Files to watch, relative to this file."
+        },
+        "stream": {
+          "description": "Which output of the service: stdout, stderr, or both; both by default.",
+          "enum": ["stdout", "stderr", "both"]
+        },
+        "if": {
+          "$ref": "#/$defs/condition",
+          "description": "A condition on the event that skips the run when false."
+        },
+        "batch": {
+          "$ref": "#/$defs/duration",
+          "description": "Gather the events of this long into one run."
+        },
+        "debounce": {
+          "$ref": "#/$defs/duration",
+          "description": "Run once no event has come for this long."
+        },
+        "with": { "description": "Inputs of the task for runs of this trigger.", "type": "object" }
       },
       "patternProperties": { "^x-": true },
       "additionalProperties": { "$ref": "#/$defs/call" }
     },
     "after": {
+      "description": "Running after a run of another task or command ends.",
       "type": "object",
       "properties": {
-        "task": { "type": "string", "minLength": 1 },
-        "unit": { "type": "string", "minLength": 1 },
-        "outcome": { "enum": ["success", "failure", "any"] },
-        "if": { "$ref": "#/$defs/condition" },
-        "with": { "type": "object" }
+        "task": {
+          "description": "The task, or the command such as up, whose runs this task follows.",
+          "type": "string",
+          "minLength": 1
+        },
+        "unit": {
+          "description": "Only runs that touched this unit.",
+          "type": "string",
+          "minLength": 1
+        },
+        "outcome": {
+          "description": "Which runs: success, failure, or any; success by default.",
+          "enum": ["success", "failure", "any"]
+        },
+        "if": {
+          "$ref": "#/$defs/condition",
+          "description": "A condition on the event that skips the run when false."
+        },
+        "with": { "description": "Inputs of the task for runs of this trigger.", "type": "object" }
       },
       "required": ["task"],
       "patternProperties": { "^x-": true },
       "additionalProperties": false
     },
     "moved": {
+      "description": "Addresses that changed, from the old to the new.",
       "type": "array",
       "items": {
         "type": "object",
         "properties": {
-          "from": { "type": "string", "minLength": 1 },
-          "to": { "type": "string", "minLength": 1 }
+          "from": { "description": "The old address.", "type": "string", "minLength": 1 },
+          "to": { "description": "The new address.", "type": "string", "minLength": 1 }
         },
         "required": ["from", "to"],
         "patternProperties": { "^x-": true },
@@ -618,12 +1174,20 @@
       }
     },
     "removed": {
+      "description": "Units gone from the files.",
       "type": "array",
       "items": {
         "type": "object",
         "properties": {
-          "from": { "type": "string", "minLength": 1 },
-          "destroy": { "type": "boolean" }
+          "from": {
+            "description": "The address of the unit that left the files.",
+            "type": "string",
+            "minLength": 1
+          },
+          "destroy": {
+            "description": "true to destroy what the unit made, false to forget its record and leave it.",
+            "type": "boolean"
+          }
         },
         "required": ["from", "destroy"],
         "patternProperties": { "^x-": true },

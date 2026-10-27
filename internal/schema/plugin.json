@@ -4,10 +4,17 @@
   "description": "An OpsTruss plugin.",
   "type": "object",
   "properties": {
-    "name": { "$ref": "project.json#/$defs/name" },
-    "description": { "type": "string" },
-    "opstruss": { "$ref": "project.json#/$defs/level" },
+    "name": {
+      "$ref": "project.json#/$defs/name",
+      "description": "The name of the plugin: lowercase letters, digits, - and _, starting with a letter."
+    },
+    "description": { "description": "What the plugin does.", "type": "string" },
+    "opstruss": {
+      "$ref": "project.json#/$defs/level",
+      "description": "The oldest OpsTruss version that reads this file, as MAJOR.MINOR."
+    },
     "requires": {
+      "description": "Programs that must be in PATH for every task of the plugin.",
       "type": "array",
       "items": { "type": "string", "minLength": 1 }
     },
@@ -16,16 +23,27 @@
       "type": "array",
       "items": { "$ref": "project.json#/$defs/pass/items" }
     },
-    "state": { "enum": ["opstruss", "tool"] },
-    "inputs": { "$ref": "project.json#/$defs/inputs" },
+    "state": {
+      "description": "Where the state of a unit is: opstruss, the outputs of up in its record, or tool, the files of the tool in the tool directory of the unit; opstruss by default.",
+      "enum": ["opstruss", "tool"]
+    },
+    "inputs": {
+      "$ref": "project.json#/$defs/inputs",
+      "description": "Inputs of the units that use the plugin, which their with: gives, read by every task."
+    },
     "outputs": {
+      "description": "Outputs that up writes, or tool when the code of the user in the tool names them.",
       "oneOf": [
         { "const": "tool" },
         { "$ref": "project.json#/$defs/outputs" }
       ]
     },
-    "tasks": { "$ref": "project.json#/$defs/tasks" },
+    "tasks": {
+      "$ref": "project.json#/$defs/tasks",
+      "description": "The tasks of the plugin: the standard tasks plan, up, destroy, status, and logs, hooks such as exec, and tasks of its own."
+    },
     "bin": {
+      "description": "Binaries that OpsTruss downloads for the plugin, by name and platform, which its programs find in PATH.",
       "type": "object",
       "propertyNames": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
       "additionalProperties": {
@@ -34,8 +52,16 @@
         "additionalProperties": {
           "type": "object",
           "properties": {
-            "url": { "type": "string", "pattern": "^https://" },
-            "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+            "url": {
+              "description": "The https URL of the binary, or of a .tar.gz archive that holds it at its root.",
+              "type": "string",
+              "pattern": "^https://"
+            },
+            "sha256": {
+              "description": "The SHA-256 of the file at url.",
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
           },
           "required": ["url", "sha256"],
           "additionalProperties": false
@@ -43,9 +69,13 @@
       }
     },
     "backend": {
+      "description": "A backend that keeps the state of stacks; not supported yet.",
       "type": "object",
       "properties": {
-        "run": { "$ref": "project.json#/$defs/command" }
+        "run": {
+          "$ref": "project.json#/$defs/command",
+          "description": "The program of the backend."
+        }
       },
       "required": ["run"],
       "patternProperties": { "^x-": true },

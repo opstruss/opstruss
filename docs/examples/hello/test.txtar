@@ -1,0 +1,6 @@
+exec opstruss up --yes
+stdout '^default/deploy \| deploying 1.2.3$'
+exec opstruss greet --who Ana
+stdout '^greet \| hello Ana$'
+exec opstruss up --yes
+stdout '^default/deploy: unchanged$'

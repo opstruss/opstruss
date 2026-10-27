@@ -1,0 +1,14 @@
+name: hello
+units:
+  build:
+    run: echo "version=1.2.3" >> "$OPSTRUSS_OUTPUT"
+    outputs:
+      version: {}
+  deploy:
+    run: [echo, "deploying ${{ units.build.outputs.version }}"]
+tasks:
+  greet:
+    description: Say hello
+    inputs:
+      who: {type: string, default: world}
+    run: echo "hello $INPUT_WHO"
