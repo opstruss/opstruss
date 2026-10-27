@@ -364,6 +364,8 @@ func TestRules(t *testing.T) {
 		{"name: app\nunits:\n  a:\n    run: [x]\n    env: {OPSTRUSS_STACK: dev}\n", "opstruss.yaml:5:11: units.a.env.OPSTRUSS_STACK: OPSTRUSS_ and INPUT_ variables come from OpsTruss; env: cannot set them"},
 		{"name: app\ntasks:\n  t:\n    steps:\n      - run: [x]\n        pass: [AWS_*, INPUT_TOKEN]\n", "pass: never passes them"},
 		{"name: app\ntasks:\n  t:\n    run: [x]\n    pass: ['*']\n", ""},
+		{"name: app\nunits:\n  a:\n    run: [x]\n    pass: [AWS_*, '*']\n", "opstruss.yaml:5:19: units.a.pass[1]: '*' makes every variable of the shell part of the digest and destroy context of the unit; name what the tool reads, such as AWS_* or TF_VAR_*"},
+		{"name: app\nuses:\n  p:\n    source: ./p\n    pass: ['**']\n", "uses.p.pass[0]: '**' makes every variable of the shell part of the digest and destroy context of the units that use it"},
 		{"name: app\ntasks:\n  t:\n    run: [x]\n    inputs:\n      log-level: {type: string}\n      log_level: {type: string}\n", "inputs log-level and log_level are both INPUT_LOG_LEVEL"},
 		{"name: app\nunits:\n  a:\n    run: [x]\n    stop: {signal: SIGFOO}\n", "unknown signal SIGFOO"},
 		{"name: app\nunits:\n  tool:\n    run: [x]\n", "tool is the directory where a plugin with state: tool keeps"},

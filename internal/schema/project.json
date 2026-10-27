@@ -410,7 +410,7 @@
               },
               "pass": {
                 "$ref": "#/$defs/pass",
-                "description": "Variables of the environment that its programs get when it asks for them, by name or pattern."
+                "description": "Variables of the environment that its programs get when it asks for them, by name or pattern; not * alone, since the units that use it keep their values in their digest."
               }
             },
             "required": ["source"],
@@ -641,7 +641,7 @@
         },
         "pass": {
           "$ref": "#/$defs/pass",
-          "description": "Variables of the environment that the programs of the unit get."
+          "description": "Variables of the environment that the programs of the unit get; not * alone, since the unit keeps their values in its digest and destroy context."
         },
         "stdin": {
           "$ref": "#/$defs/stdin",

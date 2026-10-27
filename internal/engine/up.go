@@ -319,7 +319,11 @@ func (e *engine) decide(ctx context.Context, inst *instance, r *resolved, rec *s
 		changed := changedPass(rec, r)
 		names := strings.Join(changed, ", ")
 		if !e.forced(inst) {
-			return plan{err: fmt.Errorf("context changed: %s differs from the record, whose destroy reaches the old target; up --force moves the unit and forgets that target%s", names, credentialHint(changed))}
+			verb := "differs"
+			if len(changed) > 1 {
+				verb = "differ"
+			}
+			return plan{err: fmt.Errorf("context changed: %s %s from the record, whose destroy reaches the old target; up --force moves the unit and forgets that target%s", names, verb, credentialHint(changed))}
 		}
 		p.cause, p.reason = "context", "context changed: "+names+"; forced, the old target is forgotten"
 	case e.forced(inst):

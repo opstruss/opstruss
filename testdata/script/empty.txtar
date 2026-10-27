@@ -46,7 +46,21 @@ stderr '^stack default has no units to destroy$'
 exec opstruss plan
 ! stderr 'declares no units'
 
+# up says who runs the triggers of tasks when there are no units: up -d,
+# or the daemon of the stack once it runs
+cp withtrigger.yaml opstruss.yaml
+exec opstruss up
+stderr '^the project declares no units; up -d runs the triggers of 1 task$'
+exec opstruss up -d
+stderr '^the project declares no units; the daemon of stack default runs the triggers of 1 task$'
+exec opstruss up
+stderr '^the project declares no units; the daemon of stack default runs the triggers of 1 task$'
+exec opstruss plan
+stderr '^the project declares no units$'
+exec opstruss stop
+
 # the record of a unit that is gone is an orphan to destroy, not nothing
+cp withunit.yaml opstruss.yaml
 exec opstruss up --yes
 cp withtask.yaml opstruss.yaml
 exec opstruss plan
@@ -65,4 +79,11 @@ tasks:
 name: empty
 units:
   site:
+    run: [echo, hi]
+-- withtrigger.yaml --
+name: empty
+tasks:
+  tick:
+    on:
+      every: 1h
     run: [echo, hi]

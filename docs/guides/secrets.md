@@ -75,7 +75,8 @@ The `tofu` and `compose` plugins run your own modules and Compose files,
 which read variables of their own, such as `AWS_PROFILE` or `TF_VAR_zone`.
 They ask for every variable, and `pass:` of the project says which reach
 them; without `pass:`, none does. One pattern in the declaration covers
-every unit that uses it:
+every unit that uses it. `*` alone is refused there and in a unit, since
+the digest of a unit would then change with each shell, as `PWD` does:
 
 <<< @/examples/tool-variables/opstruss.yaml
 

@@ -12,8 +12,8 @@ env OTHER=o1
 env INPUT_SNEAK=i1
 env OPSTRUSS_SNEAK=s1
 
-# a unit, a task unit, and a step get what both ask for and pass: allows;
-# without pass: nothing reaches the plugin
+# a unit, a task unit, and a step get what both ask for and pass: allows,
+# by name or by pattern; without pass: nothing reaches the plugin
 exec opstruss plan
 stderr '^default/narrow: pass: AWS_PROFILE does not reach plugin narrow, which does not ask for it$'
 ! stderr 'default/(wide|all|bare): pass:'
@@ -35,6 +35,9 @@ stdout '^warn   default/narrow: pass: AWS_PROFILE does not reach plugin narrow, 
 env AWS_SESSION_TOKEN=session-two
 ! exec opstruss plan wide
 stdout '^default/wide: error: context changed: AWS_SESSION_TOKEN differs from the record, whose destroy reaches the old target; up --force moves the unit and forgets that target; if AWS_SESSION_TOKEN is a credential that changes, give it with secrets: \(env: AWS_SESSION_TOKEN\) and env:, not pass:$'
+env AWS_REGION=us
+! exec opstruss plan wide
+stdout '^default/wide: error: context changed: AWS_REGION, AWS_SESSION_TOKEN differ from the record, '
 
 -- opstruss.yaml --
 name: app
@@ -51,7 +54,7 @@ units:
     uses: wide
   all:
     uses: plain.show
-    pass: ['*']
+    pass: [A*, I*, O*]
   bare:
     uses: plain
   narrow:

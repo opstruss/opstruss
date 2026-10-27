@@ -220,6 +220,7 @@ func (c *checker) uses() {
 		}
 		decl := c.p.Uses[name]
 		c.environment(path, decl.Env, decl.Pass)
+		c.wholeShell(path, decl.Pass, "of the units that use it")
 		src := decl.Source
 		var pkg *Package
 		// A declaration that fails is reported once; what uses its name
@@ -340,6 +341,22 @@ func (c *checker) environment(path []string, env Env, pass []string) {
 	}
 }
 
+// wholeShell rejects a pass: item that matches every name where pass:
+// grants a unit: its digest and destroy context would hold the whole
+// shell, PWD and SHLVL among it, and change with every shell. A remote
+// component only asks, so its user's pass: decides; a task keeps no
+// digest and may pass every variable.
+func (c *checker) wholeShell(path, pass []string, of string) {
+	if c.p.Source != nil {
+		return
+	}
+	for i, p := range pass {
+		if strings.Trim(p, "*") == "" {
+			c.add(at(path, "pass", strconv.Itoa(i)), "'%s' makes every variable of the shell part of the digest and destroy context %s; name what the tool reads, such as AWS_* or TF_VAR_*", p, of)
+		}
+	}
+}
+
 // unitCommands are the programs of a unit, by their keys.
 func unitCommands(u *Unit) map[string]*Command {
 	cmds := map[string]*Command{"run": u.Run, "service": u.Service, "destroy": u.Destroy}
@@ -450,6 +467,7 @@ func (c *checker) units() {
 			}
 		}
 		c.environment(path, u.Env, u.Pass)
+		c.wholeShell(path, u.Pass, "of the unit")
 		c.stop(path, u.Stop)
 		c.paths(at(path, "sources"), u.Sources, "unit", "write the path relative to that file, or the absolute path")
 		for i, g := range u.Generates {

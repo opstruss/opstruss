@@ -63,7 +63,7 @@ func (e *engine) unitPass(ctx context.Context, op string, p pass) (map[string]an
 		// Records of units no longer in the files are orphans, which the
 		// plan names.
 		if addrs, err := e.store.Inventory(); err == nil && len(addrs) == 0 {
-			e.say("run", "", "the project declares no units")
+			e.say("run", "", "the project declares no units%s", e.triggerHint(op))
 		}
 	}
 	// Data that a newer OpsTruss wrote stops the run before any turn, as
@@ -304,6 +304,28 @@ func (o *askOrder) before(place int) bool {
 
 // setCollect says whether the instances of components that the pass finds
 // preview their moves.
+// triggerHint says, at an up of a project without units, who runs the
+// triggers of its tasks: the daemon of the stack, or up -d.
+func (e *engine) triggerHint(op string) string {
+	n := 0
+	for _, t := range e.p.Tasks {
+		if t.On != nil {
+			n++
+		}
+	}
+	if op != "up" || n == 0 {
+		return ""
+	}
+	tasks := fmt.Sprintf("%d tasks", n)
+	if n == 1 {
+		tasks = "1 task"
+	}
+	if e.opts.Daemon {
+		return fmt.Sprintf("; the daemon of stack %s runs the triggers of %s", e.p.StackName, tasks)
+	}
+	return "; up -d runs the triggers of " + tasks
+}
+
 func (e *engine) setCollect(v bool) {
 	e.mu.Lock()
 	e.collect = v

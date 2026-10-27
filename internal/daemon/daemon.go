@@ -232,7 +232,7 @@ func (d *Daemon) Serve(ctx context.Context) error {
 			d.active.Add(1)
 			defer d.active.Add(-1)
 			x := api.New(h)
-			x.Supervisor = d.sup
+			x.Supervisor, x.Daemon = d.sup, true
 			res, err := x.Call(ctx, method, r)
 			if res != nil && res.Record != nil {
 				// A run forwarded here starts a chain of after triggers.

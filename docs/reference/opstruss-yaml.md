@@ -148,7 +148,7 @@ What a project uses, by name: a source, or an object with source and what every 
 | `source` (required) | string | Where it comes from: a path, github.com/&lt;owner&gt;/&lt;repo&gt;[/&lt;path&gt;]@&lt;ref&gt;, &lt;catalog&gt;.&lt;name&gt;, or opstruss.&lt;task&gt; for a built-in task. |
 | `with` | object | Inputs given to every use of it, under those of the use. |
 | `env` | map of string or [Env](#env) | Variables set for its programs, under those of the use. |
-| `pass` | list of string | Variables of the environment that its programs get when it asks for them, by name or pattern. |
+| `pass` | list of string | Variables of the environment that its programs get when it asks for them, by name or pattern; not \* alone, since the units that use it keep their values in their digest. |
 
 ## Stack {#stack}
 
@@ -236,7 +236,7 @@ A unit: something that up brings up and destroy takes away, with exactly one of 
 | `shell` | one of `sh`, `bash`, `python`, `node`, `pwsh` | The shell that runs a script; sh by default. |
 | `dir` | string | The directory that the programs start in, relative to this file. |
 | `env` | map of string or [Env](#env) | Variables set for the programs of the unit. |
-| `pass` | list of string | Variables of the environment that the programs of the unit get. |
+| `pass` | list of string | Variables of the environment that the programs of the unit get; not \* alone, since the unit keeps their values in its digest and destroy context. |
 | `stdin` | [Stdin](#stdin) | What the program reads on its standard input. |
 | `sources` | list of string or [Paths](#paths) | Files whose content is part of the definition, so a change to one runs the unit again. |
 | `generates` | list of string | Files that the unit makes, relative to this file and read as written; a missing one runs the unit again. |

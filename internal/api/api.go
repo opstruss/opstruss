@@ -70,6 +70,7 @@ type Handlers struct {
 type API struct {
 	h          Handlers
 	Supervisor engine.Supervisor
+	Daemon     bool // this process is the daemon of the stack
 }
 
 // New returns the API of this process with h for the callbacks of calls.
@@ -85,7 +86,7 @@ func (a *API) options(r Request) engine.Options {
 	return engine.Options{Locked: r.Locked, Dir: r.Dir, Cwd: r.Cwd, Stack: r.Stack, Inputs: r.Inputs, Flags: r.Flags, Environ: r.Environ,
 		LookupEnv: func(k string) (string, bool) { v, ok := env[k]; return v, ok },
 		Units:     r.Units, Yes: r.Yes, Color: r.Color, Force: r.Force, NoDeps: r.NoDeps, Follow: r.Follow, Debug: r.Debug, ShowSensitive: r.ShowSensitive,
-		Emit: a.h.Event, Approve: a.h.Approve, Ask: a.h.Ask, Supervisor: a.Supervisor}
+		Emit: a.h.Event, Approve: a.h.Approve, Ask: a.h.Ask, Supervisor: a.Supervisor, Daemon: a.Daemon}
 }
 
 func result(res *engine.Result, err error) (*Result, error) {

@@ -64,6 +64,9 @@ type Options struct {
 	// Supervisor keeps the services of the stack; without one, a service
 	// cannot start.
 	Supervisor Supervisor
+	// Daemon says that the run is in the daemon of its stack, which runs
+	// the triggers of the tasks.
+	Daemon bool
 	// Model is the project as a daemon read it when it installed its
 	// triggers, for the runs they make; without it, the files are read.
 	Model *model.Project
