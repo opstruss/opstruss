@@ -55,9 +55,20 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # The examples that use the catalog run with its main branch, and with
+      # the tofu and jq that it pins.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: opstruss/catalog
+          path: catalog
+          persist-credentials: false
       - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+      - run: mise trust catalog/mise.toml && mise -C catalog install opentofu jq
       # The reference pages are what docgen writes, new ones included.
       - run: make docs-gen && git add --intent-to-add docs && git diff --exit-code docs
+      - run: |
+          PATH="$(mise -C catalog where opentofu):$(mise -C catalog where jq):$PATH" \
+            OPSTRUSS_DOCS_CATALOG="$PWD/catalog" go test -run 'TestDocsExamples' .
       - run: make docs
 
   build:

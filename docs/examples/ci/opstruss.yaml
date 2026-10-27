@@ -1,0 +1,8 @@
+name: shop
+stacks:
+  prod: {}
+units:
+  site:
+    run: echo "page=index.html" >> "$OPSTRUSS_OUTPUT"
+    outputs:
+      page: {}

@@ -1,0 +1,5 @@
+exec opstruss report
+stdout 'run 1$'
+exec opstruss report
+stdout 'run 2$'
+grep '^\{"runs":2\}$' report.json

@@ -1,0 +1,31 @@
+name: opstruss
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # mise installs opstruss and the tools that mise.toml pins.
+      - uses: jdx/mise-action@v5
+      - run: opstruss validate --locked
+
+  up:
+    if: github.event_name == 'push'
+    needs: validate
+    # The machine that holds the state of the stacks, with the project
+    # checked out in /srv/shop.
+    runs-on: [self-hosted, shop]
+    concurrency: shop-prod
+    steps:
+      - run: git -C /srv/shop pull --ff-only
+      - run: mise -C /srv/shop x -- opstruss up --stack prod --yes --locked

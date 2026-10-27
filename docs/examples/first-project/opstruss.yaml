@@ -1,0 +1,39 @@
+opstruss: "0.1"
+name: shop
+stacks:
+  dev: {}
+  prod: {}
+uses:
+  cat: github.com/opstruss/catalog@v1
+units:
+  #region site
+  site:
+    run: |
+      mkdir -p dist
+      cp site/index.html dist/index.html
+      echo "page=dist/index.html" >> "$OPSTRUSS_OUTPUT"
+    sources: [site/**]
+    generates: [dist/index.html]
+    outputs:
+      page: {}
+  #endregion site
+  #region infra
+  infra:
+    uses: cat.tofu
+    with:
+      dir: ./infra
+      vars:
+        name: shop-${{ stack }}
+  #endregion infra
+  #region publish
+  publish:
+    run: [echo, "publishing ${{ units.site.outputs.page }} to ${{ units.infra.outputs.url }}"]
+  #endregion publish
+#region tasks
+tasks:
+  smoke:
+    description: Check the site of a stack
+    inputs:
+      path: {type: string, default: /}
+    run: [echo, "GET ${{ units.infra.outputs.url }}${{ inputs.path }}"]
+#endregion tasks

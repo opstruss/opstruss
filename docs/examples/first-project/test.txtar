@@ -1,0 +1,24 @@
+[!exec:tofu] skip 'needs tofu'
+exec opstruss plan --stack dev
+stdout '^dev/infra: will run: new; plan: create terraform_data.site, create output.url$'
+stdout '^dev/site: will run: new$'
+stdout '^dev/publish: will run: new; plan after dev/site \(run\)$'
+exec opstruss up --stack dev --yes
+stdout '^dev/publish \| publishing dist/index.html to https://shop-dev.example.com$'
+exists dist/index.html
+exec opstruss smoke --stack dev --path /health
+stdout '^smoke \| GET https://shop-dev.example.com/health$'
+exec opstruss up --stack dev --yes
+stdout '^dev/site: unchanged$'
+stdout '^dev/infra: unchanged$'
+cp new.html site/index.html
+exec opstruss plan --stack dev
+stdout '^dev/site: will run: definition changed: sources$'
+exec opstruss up --stack prod --yes
+stdout '^prod/publish \| publishing dist/index.html to https://shop-prod.example.com$'
+exec opstruss destroy --stack dev --yes
+stdout '^dev/infra: destroy: done$'
+exec opstruss status --stack prod
+stdout 'terraform_data.site'
+-- new.html --
+<h1>shop, now open</h1>

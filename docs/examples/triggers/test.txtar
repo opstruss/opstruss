@@ -1,0 +1,10 @@
+env GITHUB_WEBHOOK_SECRET=hook-secret-value
+exec opstruss up -d
+stderr '^the project declares no units$'
+exec sh -c 'for i in $(seq 1 100); do test -s beats.log && exit 0; sleep 0.1; done; exit 1'
+exec sh -c 'echo "<h1>ops, again</h1>" > site/index.html'
+exec sh -c 'for i in $(seq 1 100); do test -s rebuilds.log && exit 0; sleep 0.1; done; exit 1'
+grep '^changed site/index.html$' rebuilds.log
+exec opstruss list
+stdout '^  backup +Back up the database every night +never run; on schedule 0 3 \* \* \* \(Europe/Berlin\); next '
+exec opstruss stop

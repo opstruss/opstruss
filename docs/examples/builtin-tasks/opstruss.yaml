@@ -1,0 +1,22 @@
+name: report
+tasks:
+  report:
+    description: Count the runs and write a report
+    steps:
+      - id: count
+        kv:
+          key: runs
+          value: ${{ kv('runs', 0) + 1 }}
+          expect: ${{ kv('runs') }}
+        retry: {attempts: 3}
+      - write:
+          path: report.json
+          content: {runs: "${{ steps.count.outputs.value }}"}
+          format: json
+      - id: report
+        read: {path: report.json, format: json}
+      - assert:
+          that: steps.report.outputs.content.runs == steps.count.outputs.value
+          msg: the report holds the count
+      - log:
+          msg: run ${{ steps.count.outputs.value }}

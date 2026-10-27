@@ -1,0 +1,22 @@
+name: infra
+secrets:
+  aws_key:
+    env: AWS_ACCESS_KEY_ID
+  aws_secret:
+    env: AWS_SECRET_ACCESS_KEY
+  aws_session:
+    env: AWS_SESSION_TOKEN
+uses:
+  cat: github.com/opstruss/catalog@v1
+  tofu:
+    source: cat.tofu
+    pass: [AWS_REGION]
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.aws_key }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.aws_secret }}
+      AWS_SESSION_TOKEN: ${{ secrets.aws_session }}
+units:
+  dns:
+    uses: tofu
+    with:
+      dir: ./dns

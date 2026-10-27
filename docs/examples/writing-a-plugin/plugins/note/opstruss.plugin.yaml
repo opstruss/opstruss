@@ -1,0 +1,21 @@
+name: note
+description: A text file as a unit
+inputs:
+  path:
+    type: string
+    required: true
+    description: The file, relative to the file of the unit
+  text:
+    type: string
+    required: true
+    description: What the file holds
+outputs:
+  path:
+    type: string
+tasks:
+  plan:
+    run: [./note.sh, plan]
+  up:
+    run: [./note.sh, up]
+  destroy:
+    run: [./note.sh, destroy]

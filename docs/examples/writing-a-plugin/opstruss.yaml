@@ -1,0 +1,9 @@
+name: notes
+uses:
+  note: ./plugins/note
+units:
+  readme:
+    uses: note
+    with:
+      path: notes/readme.txt
+      text: hello

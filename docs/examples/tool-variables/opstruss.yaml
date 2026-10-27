@@ -1,0 +1,14 @@
+name: infra
+uses:
+  cat: github.com/opstruss/catalog@v1
+  tofu:
+    source: cat.tofu
+    pass: [AWS_PROFILE, AWS_REGION, CLOUDFLARE_*, TF_VAR_*]
+units:
+  dns:
+    uses: tofu
+    with:
+      dir: ./dns
+  migrate:
+    run: ./migrate.sh
+    pass: [DATABASE_URL, APP_*]

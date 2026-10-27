@@ -8,6 +8,15 @@ export default defineConfig({
   base: process.env.DOCS_BASE ?? '/dev/',
   cleanUrls: true,
   srcExclude: ['examples/**'],
+  markdown: {
+    config(md) {
+      // ${{ }} in inline code is an expression of OpsTruss, not of Vue, as
+      // it already is in code blocks.
+      const code = md.renderer.rules.code_inline!
+      md.renderer.rules.code_inline = (tokens, idx, options, env, self) =>
+        code(tokens, idx, options, env, self).replace(/^<code/, '<code v-pre')
+    },
+  },
   themeConfig: {
     nav: [
       { text: 'Getting started', link: '/getting-started/' },
