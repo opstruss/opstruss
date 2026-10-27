@@ -1,3 +1,4 @@
+opstruss: "0.1"
 name: shop
 stacks:
   prod: {}

@@ -1,0 +1,10 @@
+[!exec:python3] skip 'needs python3'
+[!exec:curl] skip 'needs curl'
+exec opstruss up -d --yes
+stdout '^default/web: running, pid [0-9]+$'
+stdout '^default/smoke \| web answers$'
+exec opstruss status
+stdout '^default/web: running, pid [0-9]+ since '
+exec opstruss logs web
+stdout 'GET / HTTP/1.1" 200'
+exec opstruss stop

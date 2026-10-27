@@ -1,0 +1,12 @@
+! exec opstruss release
+stderr 'input version: required; pass --version <string>'
+exec opstruss release --version 1.2.0 --yes
+stdout '^test \| tests pass$'
+stdout '^release: tag \| tagged v1.2.0$'
+stdout '^release: notify \| release 1.2.0 ended$'
+exists dist/index.html
+rm dist/index.html
+! exec opstruss release --version 1.2.1
+stdout 'needs approval, stopped at plan'
+stderr 'release 1.2.1 failed; the site is as up left it'
+stdout '^release: notify \| release 1.2.1 ended$'

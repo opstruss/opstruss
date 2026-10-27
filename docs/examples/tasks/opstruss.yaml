@@ -1,0 +1,35 @@
+opstruss: "0.1"
+name: shop
+units:
+  site:
+    run: mkdir -p dist && echo "<h1>shop</h1>" > dist/index.html
+    generates: [dist/index.html]
+tasks:
+  test:
+    description: Run the tests
+    run: echo "tests pass"
+  release:
+    description: Test, bring the site up, and tag it
+    inputs:
+      version:
+        type: string
+        required: true
+        description: The version to release
+    needs: [test]
+    steps:
+      - block:
+          - name: up
+            task: up
+            units: [site]
+          - name: tag
+            run: [echo, "tagged v${{ inputs.version }}"]
+        rescue:
+          - log:
+              msg: release ${{ inputs.version }} failed; the site is as up left it
+              level: error
+          - assert:
+              that: "false"
+              msg: the release failed
+        always:
+          - name: notify
+            run: [echo, "release ${{ inputs.version }} ended"]

@@ -3,8 +3,32 @@
 Event-driven workflow orchestration that runs any tool and hands its typed
 results to the next.
 
+- **One file** for the units that a project brings up, such as OpenTofu
+  modules, Docker Compose projects, services, or any program, and the
+  tasks that operate it.
+- **Plan, then apply**: `up` shows what would change and asks once; in
+  CI, `--yes` approves.
+- **Only what changed runs**, in the order of what each unit reads, and
+  the outputs of one tool reach the next as typed values.
+- **Triggers** run tasks on a schedule, a webhook, or a change of files,
+  and secrets stay hidden in every log.
+- **One binary**, with the state of each stack kept on the machine that
+  runs it.
+
+## Quick start
+
+Install OpsTruss (below), then:
+
+```sh
+mkdir hello && cd hello
+opstruss init
+```
+
+Replace `opstruss.yaml` with:
+
 ```yaml
 # opstruss.yaml
+opstruss: "0.1"
 name: hello
 units:
   build:
@@ -36,16 +60,18 @@ Apply build, deploy? [y/N] y
 
 Up of stack default: 2 done
 $ opstruss greet --who Ana
+made the age key age1… of this machine in ~/.config/opstruss/age/keys.txt; back it up with .opstruss/state/ of each project, …
 ▸ greet
 │ hello Ana
 ✓ greet  0.0s
 ```
 
 `up` runs each unit once its definition changes, in the order of what it
-reads, and a task is a command with its inputs as flags. The units can be
-OpenTofu modules, Docker Compose projects, services that the daemon of the
-stack keeps running, or any program, and tasks run on a schedule, a
-webhook, or a change of files.
+reads, and a task is a command with its inputs as flags. The first run
+that keeps a value encrypted, here the input of `greet` for `runs rerun`,
+makes the age key of this machine. The
+[documentation](https://opstruss.github.io) goes on with an OpenTofu
+module and two stacks.
 
 ## Install
 
@@ -61,8 +87,6 @@ for Linux or macOS, on amd64 or arm64, or build it with Go:
 ```sh
 go install github.com/opstruss/opstruss@latest
 ```
-
-The first release is coming; until then, `@main` builds the latest code.
 
 ## Documentation
 

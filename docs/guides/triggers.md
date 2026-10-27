@@ -21,7 +21,11 @@ run.
 
 ## The daemon
 
+The webhook of `deploy` checks its requests with a secret from the
+environment, so set it first:
+
 ```sh
+export GITHUB_WEBHOOK_SECRET=…
 opstruss up -d     # start the daemon of the stack, with its triggers
 opstruss list      # each task, its triggers, and when it runs next
 opstruss runs      # the runs of the stack
@@ -31,6 +35,10 @@ opstruss stop      # stop the daemon, its runs, and its services
 - `up -d` starts the daemon in the background when none runs, and
   installs the triggers. Each later `up` goes to that daemon and installs
   them again from the files.
+- When a trigger cannot be installed, such as a webhook whose secret is
+  not set, `up` says why and exits with 1, and the daemon keeps the
+  triggers it had: none, for a daemon that just started. `list` says so
+  too, and says when no daemon runs the triggers at all.
 - The triggers run with the environment of the last `up` that installed
   them. An `up` from a shell without the `.env` of the project would make
   the next scheduled run go without those variables, so load it the same

@@ -1,3 +1,4 @@
+opstruss: "0.1"
 name: ops
 runtime:
   listen: 127.0.0.1:7878

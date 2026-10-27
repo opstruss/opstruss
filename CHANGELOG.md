@@ -17,30 +17,27 @@ on one machine.
 
 ### Added
 
-- Projects in `opstruss.yaml`, with include files and stacks: units that
-  run once (`run`), keep running (`service`), or use a plugin, a task, or
-  a component (`uses`), and tasks with steps, typed inputs and outputs,
+- Projects in `opstruss.yaml` with include files and stacks, each stack
+  with its inputs, its state, and `approval: ask` or `auto`.
+- Units that run once (`run`), keep running (`service`, with `ready`), or
+  use a plugin, a task, or a component; `for_each`, `protect`, `moved:`.
+- Tasks with typed inputs as flags, steps, `rescue`/`always`, `retry`,
   `${{ }}` expressions in CEL, and built-in tasks such as `http` and `kv`.
-- `plan`, `up`, and `destroy` in the order of the graph, each unit under
-  the lock of its address; a unit runs again only when its definition or
-  its `sources` change, and asks for approval at a terminal, once for the
-  run, or takes `--yes` in CI.
-- Plugins and components from a local path or from
-  `github.com/opstruss/catalog`, pinned in `opstruss.lock`, and the
-  program contract that plugins are written to.
+- `plan`, `up`, and `destroy` in graph order under a lock per unit: a
+  unit runs again only when it changed, after one approval per run.
+- Plugins and components from a path or `github.com/opstruss/catalog`,
+  pinned in `opstruss.lock`, and the program contract for plugins.
 - Triggers that the daemon of a stack runs: `schedule`, `every`, `watch`,
-  `webhook`, and `after`; `up -d` starts the daemon.
-- Secrets from sops, the environment, a program, or a plugin, hidden as
-  `***` in everything a run writes, and a data key per stack that keeps
-  sensitive state encrypted.
-- State in `.opstruss/`, with a record and the events of every run, read
-  by `runs`, `logs`, and `status`, and changed by `runs cancel`,
-  `runs rerun`, `moved:`, and `state`.
+  `webhook`, and `after`; `up -d` starts it and `stop` stops it.
+- Secrets from sops, the environment, a program, or a plugin, hidden in
+  every output, and sensitive state encrypted with a data key per stack.
+- Runs recorded in `.opstruss/` and read by `runs`, `logs`, and
+  `status`; `runs cancel`, `runs rerun`, and `state` repair them.
 - `validate`, `explain`, `doctor`, `list`, `outputs`, `exec`, `init`,
-  `plugins`, and shell completion.
-- Output as blocks at a terminal, groups in GitHub Actions, and one JSON
-  event per line with `--json`.
+  `plugins`, and shell completion; a schema for editors.
+- Output as blocks at a terminal, groups in GitHub Actions, and JSON
+  events with `--json`.
 - Release builds for Linux and macOS on amd64 and arm64, with checksums,
-  SBOMs, and build provenance attestations.
+  SBOMs, and build provenance; documentation at opstruss.github.io.
 
 [Unreleased]: https://github.com/opstruss/opstruss/commits/main

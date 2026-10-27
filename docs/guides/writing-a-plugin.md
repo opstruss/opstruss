@@ -19,13 +19,16 @@ plugins/note/
 
 <<< @/examples/writing-a-plugin/plugins/note/opstruss.plugin.yaml
 
+A first line `# yaml-language-server: $schema=https://opstruss.github.io/v0.1/schema/plugin.json`
+gives completion and checks in editors, as for `opstruss.yaml`.
+
 - `inputs` are what a unit gives through `with:`, checked against their
   types before any program runs.
 - `outputs` are what `up` writes, which other units read as
   `units.<name>.outputs.<key>`.
 - `tasks` holds the programs. A relative program, as `./note.sh`, is read
-  from the directory of the plugin; make it executable, with
-  `chmod +x note.sh`.
+  from the directory of the plugin, and must be executable:
+  `chmod +x plugins/note/note.sh`.
 
 The [reference of opstruss.plugin.yaml](../reference/plugin-yaml) has
 every key.

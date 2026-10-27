@@ -14,17 +14,9 @@ terminal, logs, records, and events.
 | `<plugin>.<task>: {…}` | A task of a plugin with an output `value` |
 
 A project with one encrypted file per stack and a token from the
-environment:
+environment, which the next section encrypts and runs:
 
 <<< @/examples/secrets/opstruss.yaml
-
-```console
-$ opstruss up
-…
-│ zone token ***
-…
-│ deploy token ***
-```
 
 - A secret reaches a program through `env:`, never inside a script: the
   script reads `$CLOUDFLARE_API_TOKEN`.
@@ -39,15 +31,23 @@ $ opstruss up
 
 ## Encrypt a file with sops
 
-sops encrypts for keys such as age, AWS KMS, or GCP KMS. With age:
+sops encrypts for keys such as age, AWS KMS, or GCP KMS. This needs `sops`
+and `age` in `PATH`, for example with `mise use sops age`. Make an age key,
+and tell sops where it is:
 
 ```sh
+mkdir -p ~/.config/sops/age
 age-keygen -o ~/.config/sops/age/keys.txt
+export SOPS_AGE_KEY_FILE=~/.config/sops/age/keys.txt
 ```
 
-On macOS, sops looks in `~/Library/Application Support/sops/age/keys.txt`
-unless `SOPS_AGE_KEY_FILE` names another file. A `.sops.yaml` at the root
-of the project says which keys encrypt which files:
+`age-keygen` prints the public key, `Public key: age1…`. Without
+`SOPS_AGE_KEY_FILE`, sops looks for the key in
+`~/.config/sops/age/keys.txt` on Linux but in
+`~/Library/Application Support/sops/age/keys.txt` on macOS, so set it in
+the profile of the shell, or in the `[env]` of `mise.toml`, for every
+command. A `.sops.yaml` at the root of the project says which keys
+encrypt which files; write the public key in it:
 
 ```yaml
 creation_rules:
@@ -55,14 +55,26 @@ creation_rules:
     age: age1…
 ```
 
-Then write the values and encrypt them in place:
+Then write the values of the stack `dev` and encrypt them in place:
 
 ```sh
+mkdir -p secrets
 cat > secrets/dev.env <<'EOF'
 CLOUDFLARE_API_TOKEN=…
 HCLOUD_TOKEN=…
 EOF
 sops encrypt -i secrets/dev.env
+```
+
+The other secret comes from the environment, so set it, and run:
+
+```console
+$ export DEPLOY_TOKEN=…
+$ opstruss up
+…
+│ zone token ***
+…
+│ deploy token ***
 ```
 
 OpsTruss runs `sops` from the root of the project with the environment

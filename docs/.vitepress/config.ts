@@ -36,6 +36,8 @@ export default defineConfig({
         text: 'Guides',
         items: [
           { text: 'Structure a project', link: '/guides/structure-a-project' },
+          { text: 'Tasks and steps', link: '/guides/tasks' },
+          { text: 'Services', link: '/guides/services' },
           { text: 'Secrets with sops', link: '/guides/secrets' },
           { text: 'Triggers and the daemon', link: '/guides/triggers' },
           { text: 'CI with GitHub Actions', link: '/guides/ci' },
@@ -59,6 +61,7 @@ export default defineConfig({
         text: 'Concepts',
         items: [{ text: 'How OpsTruss works', link: '/concepts/how-opstruss-works' }],
       },
+      { text: 'Troubleshooting', link: '/troubleshooting' },
     ],
     search: { provider: 'local' },
     socialLinks: [{ icon: 'github', link: 'https://github.com/opstruss/opstruss' }],

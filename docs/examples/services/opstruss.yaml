@@ -1,0 +1,14 @@
+opstruss: "0.1"
+name: shop
+units:
+  web:
+    service: [python3, -m, http.server, "8417", --bind, 127.0.0.1, --directory, site]
+    ready:
+      http: http://127.0.0.1:8417/
+      timeout: 10s
+    sources: [site/**]
+  smoke:
+    run: [sh, -c, 'curl -fsS "$URL" | grep -q shop && echo "web answers"']
+    env:
+      URL: http://127.0.0.1:8417/
+    needs: [web]

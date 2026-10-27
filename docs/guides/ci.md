@@ -14,6 +14,16 @@ later version.
 
 <<< @/examples/ci/.github/workflows/opstruss.yml
 
+`jdx/mise-action` installs what the `mise.toml` of the project pins,
+OpsTruss among them, as [Structure a project](./structure-a-project#versions-in-mise-toml)
+shows:
+
+```toml
+[tools]
+"github:opstruss/opstruss" = "0.1.0"
+opentofu = "1.13.2"
+```
+
 - `validate` checks every file and every stack without running
   anything, and with `--locked` fails when `opstruss.lock` would have to
   change, as `npm ci` does.
@@ -30,7 +40,9 @@ At a terminal, `up` asks before it changes anything. In CI nothing
 answers:
 
 - Without `--yes`, `up` stops at the plan of a unit that would change,
-  and exits with 2, which a workflow can treat as "needs approval".
+  says `changes need approval: run up at a terminal, or with --yes` on
+  stderr, and exits with 2, which a workflow can treat as "needs
+  approval".
 - With `--yes`, it applies the changes of that run, as `terraform apply
   -auto-approve` does.
 - 1 means that something failed; [Exit codes and JSON](../reference/exit-codes-and-json)

@@ -17,7 +17,7 @@
   signal; `runs cancel` itself exits with 0 once that run ends as
   `cancelled`.
 - `logs -f` and `runs <id> -f` stopped by Ctrl-C exit with 0, since they
-  only read, and so does `opstruss daemon` stopped by a signal.
+  only read, and so does a daemon stopped by a signal.
 
 ## JSON
 
@@ -58,6 +58,12 @@ An event:
   last event.
 - Secrets and sensitive values are hidden in every event, as they are at
   the terminal.
+- What fails before a run starts, such as a file that is not valid or a
+  stack that the project does not have, is JSON too: a command that
+  prints events prints a `diagnostic` event for each problem, with its
+  file and line in `message`, and a last `run` event with `exit_code`; a
+  command that prints a document prints `{"error": "<message>"}`. stderr
+  has the same as text.
 
 The record of each run keeps the same events, which
 `opstruss runs <id> --json` prints again.

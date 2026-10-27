@@ -4,9 +4,10 @@ In about fifteen minutes, this page builds a small project: a unit that
 builds a page, an OpenTofu module, a unit that reads what both give, a
 task, and two stacks. Along the way it shows `plan`, `up`, and `destroy`.
 
-You need `opstruss` ([Install](./install)) and `tofu`, the
-[OpenTofu](https://opentofu.org) command, in `PATH`, for example with
-`mise use opentofu`.
+You need `opstruss` ([Install](./install)) and `git`, and in `PATH` two
+programs that the OpenTofu plugin runs: `tofu`, the
+[OpenTofu](https://opentofu.org) command, and `jq`, for example with
+`mise use opentofu jq`.
 
 ## Start a project
 
@@ -22,9 +23,12 @@ next: add units or tasks to opstruss.yaml, then run opstruss plan
 ```
 
 `opstruss.yaml` names the project and the version of OpsTruss it is
-written for:
+written for. Its first line names the schema of the file, so an editor
+with the YAML language server completes and checks it
+([Editor support](./install#editor-support)):
 
 ```yaml
+# yaml-language-server: $schema=https://opstruss.github.io/v0.1/schema/project.json
 opstruss: "0.1"
 name: shop
 ```
@@ -35,10 +39,34 @@ the project on this machine.
 ## A unit that builds a page
 
 A unit is something that `up` brings up and `destroy` takes away. The
-simplest one runs a program. Write a page in `site/index.html`, such as
-`<h1>shop</h1>`, and add the unit under `units:`:
+simplest one runs a program. Write a page:
+
+```sh
+mkdir site
+echo '<h1>shop</h1>' > site/index.html
+```
+
+and add the unit under a new key `units:` of `opstruss.yaml`:
 
 <<< @/examples/first-project/opstruss.yaml#site
+
+::: details opstruss.yaml so far
+```yaml
+# yaml-language-server: $schema=https://opstruss.github.io/v0.1/schema/project.json
+opstruss: "0.1"
+name: shop
+units:
+  site:
+    run: |
+      mkdir -p dist
+      cp site/index.html dist/index.html
+      echo "page=dist/index.html" >> "$OPSTRUSS_OUTPUT"
+    sources: [site/**]
+    generates: [dist/index.html]
+    outputs:
+      page: {}
+```
+:::
 
 - `run` is the program. A string is a script for `sh`; a list, such as
   `[echo, hi]`, runs as written, without a shell.
@@ -92,11 +120,11 @@ uses:
   cat: github.com/opstruss/catalog@v1
 ```
 
-Write a module in `infra/main.tf`:
+Write a module in `infra/main.tf`, after `mkdir infra`:
 
 <<< @/examples/first-project/infra/main.tf
 
-and the unit that applies it:
+and the unit that applies it, under `units:` next to `site`:
 
 <<< @/examples/first-project/opstruss.yaml#infra
 
@@ -110,6 +138,34 @@ module, here `url`, become the outputs of the unit.
 Add a unit that reads the outputs of the other two:
 
 <<< @/examples/first-project/opstruss.yaml#publish
+
+::: details opstruss.yaml so far
+```yaml
+# yaml-language-server: $schema=https://opstruss.github.io/v0.1/schema/project.json
+opstruss: "0.1"
+name: shop
+uses:
+  cat: github.com/opstruss/catalog@v1
+units:
+  site:
+    run: |
+      mkdir -p dist
+      cp site/index.html dist/index.html
+      echo "page=dist/index.html" >> "$OPSTRUSS_OUTPUT"
+    sources: [site/**]
+    generates: [dist/index.html]
+    outputs:
+      page: {}
+  infra:
+    uses: cat.tofu
+    with:
+      dir: ./infra
+      vars:
+        name: shop-${{ stack }}
+  publish:
+    run: [echo, "publishing ${{ units.site.outputs.page }} to ${{ units.infra.outputs.url }}"]
+```
+:::
 
 `${{ units.site.outputs.page }}` makes `publish` come after `site`, and
 `${{ units.infra.outputs.url }}` after `infra`, so `up` runs them in that
@@ -142,6 +198,11 @@ Apply infra, site, publish? [y/N] y
 
 Up of stack default: 3 done
 ```
+
+The first command that read `uses:` fetched the catalog and wrote the
+commit that `v1` names to `opstruss.lock`. Commit that file with the
+project, so that every machine and CI run the same plugins until
+`opstruss plugins update` moves the pin.
 
 ## A task
 
@@ -183,7 +244,10 @@ Destroy of stack default: 3 done
 ```
 
 A unit without a `destroy` program has nothing to take away, so its
-record is forgotten; `infra` runs `tofu destroy`. Now declare the stacks:
+record is forgotten; `infra` runs `tofu destroy`. A stack that the
+project no longer declares keeps its records, and `plan` warns about
+them until `opstruss destroy --stack default` takes them down. Now
+declare the stacks:
 
 ```yaml
 stacks:
