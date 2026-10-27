@@ -21,7 +21,7 @@ import (
 const FileName = "opstruss.yaml"
 
 // Level is the newest level of opstruss: this OpsTruss reads.
-const Level = "0.1"
+const Level = "1.0"
 
 // DefaultStack is the one stack of a project without stacks:.
 const DefaultStack = "default"

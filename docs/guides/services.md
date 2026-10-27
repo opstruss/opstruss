@@ -40,8 +40,7 @@ Up of stack default: 2 done
 `up -d` starts the daemon of the stack in the background, which keeps
 the services and runs the triggers until `opstruss stop`. Without `-d`,
 an `up` that starts a service becomes the daemon itself, in the
-foreground: it shows the output of the services, and Ctrl-C stops them,
-as `docker compose up` does.
+foreground: it shows the output of the services, and Ctrl-C stops them.
 
 ## Looking at a service
 

@@ -19,7 +19,7 @@ plugins/note/
 
 <<< @/examples/writing-a-plugin/plugins/note/opstruss.plugin.yaml
 
-A first line `# yaml-language-server: $schema=https://opstruss.github.io/v0.1/schema/plugin.json`
+A first line `# yaml-language-server: $schema=https://opstruss.github.io/v1.0/schema/plugin.json`
 gives completion and checks in editors, as for `opstruss.yaml`.
 
 - `inputs` are what a unit gives through `with:`, checked against their

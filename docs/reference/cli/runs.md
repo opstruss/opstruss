@@ -34,7 +34,7 @@ opstruss runs 4b2e91d0 -f  # follow a run that goes on
 
 | Flag | Description |
 |---|---|
-| `-C dir` | run as if OpsTruss started in dir, like git -C; a -C after another is relative to it |
+| `-C dir` | run as if OpsTruss started in dir; a -C after another is relative to it |
 | `--input stringArray` | set a project input, as name=value |
 | `--json` | print JSON |
 | `--locked` | require existing dependency pins without changing opstruss.lock |

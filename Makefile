@@ -26,7 +26,7 @@ snapshot:
 	goreleaser release --snapshot --clean
 
 # docs builds the documentation as /dev/ into docs/.vitepress/dist;
-# DOCS_BASE=/v0.1/ builds it as a release.
+# DOCS_BASE=/v1.0/ builds it as a release.
 docs:
 	cd docs && npm ci && npx vitepress build
 

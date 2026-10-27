@@ -54,6 +54,7 @@ export default defineConfig({
           { text: 'Built-in tasks', link: '/reference/builtin-tasks' },
           { text: 'Program contract', link: '/reference/program-contract' },
           { text: 'Exit codes and JSON', link: '/reference/exit-codes-and-json' },
+          { text: 'Compatibility', link: '/reference/compatibility' },
         ],
       },
       { text: 'Plugins', link: '/plugins' },

@@ -22,8 +22,7 @@
 ## JSON
 
 With `--json`, a command that runs something, such as `plan`, `up`,
-`destroy`, or a task, prints one event per line, as `terraform apply
--json` does. A command that reads, such as `outputs`, `list`, `explain`,
+`destroy`, or a task, prints one event per line. A command that reads, such as `outputs`, `list`, `explain`,
 `doctor`, `runs`, and `state list`, prints one JSON document.
 
 An event:

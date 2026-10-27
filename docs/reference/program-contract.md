@@ -59,8 +59,7 @@ A plugin's `plan` writes `$OPSTRUSS_PLAN`:
   digest of the definition of the unit.
 - `exact: true` is a promise: `up` applies exactly the changes whose
   digest is `$OPSTRUSS_DIGEST`, from a plan it kept in `OPSTRUSS_WORKDIR`
-  or `OPSTRUSS_TEMP`, or fails when a new plan differs, as a saved plan of
-  Terraform. A plugin that cannot promise it writes `exact: false`, and
+  or `OPSTRUSS_TEMP`, or fails when a new plan differs. A plugin that cannot promise it writes `exact: false`, and
   an approval holds only for an exact plan.
 - A plan that writes nothing means that the unit runs.
 

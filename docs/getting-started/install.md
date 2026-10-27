@@ -17,7 +17,7 @@ and `jq` for `compose`. `opstruss doctor` checks them for a project.
 project runs, such as `tofu`:
 
 ```sh
-mise use github:opstruss/opstruss@0.1.0
+mise use github:opstruss/opstruss@1.0.0
 ```
 
 `mise use -g` installs it for every directory.
@@ -29,7 +29,7 @@ archive per platform, `checksums.txt`, and a build attestation of each
 archive. With the [GitHub CLI](https://cli.github.com):
 
 ```sh
-version=0.1.0
+version=1.0.0
 archive=opstruss_${version}_linux_amd64.tar.gz
 gh release download "v$version" --repo opstruss/opstruss --pattern "$archive" --pattern checksums.txt
 sha256sum --ignore-missing -c checksums.txt
@@ -66,10 +66,11 @@ the key of this machine is.
 ## Upgrade
 
 Install the new version the same way, as
-`mise use github:opstruss/opstruss@<version>`. Before 1.0, a minor release
-can ask something of a project: the
+`mise use github:opstruss/opstruss@<version>`. A minor or patch release
+keeps every project, component, and plugin working, as
+[Compatibility](../reference/compatibility) says; the
 [changelog](https://github.com/opstruss/opstruss/blob/main/CHANGELOG.md)
-says so first, under "Upgrade notes". A daemon keeps running the binary
+says what each release brings. A daemon keeps running the binary
 that started it: run `opstruss stop`, then `opstruss up -d`, in each
 project whose daemon runs.
 
@@ -96,7 +97,7 @@ extension. `opstruss init` writes the line that names it at the top of
 the file, with the schema of its version:
 
 ```yaml
-# yaml-language-server: $schema=https://opstruss.github.io/v0.1/schema/project.json
+# yaml-language-server: $schema=https://opstruss.github.io/v1.0/schema/project.json
 ```
 
 The schema of `opstruss.plugin.yaml` is `plugin.json` in the same place.

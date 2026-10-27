@@ -285,7 +285,7 @@ stacks:
 func TestRules(t *testing.T) {
 	tests := []struct{ yaml, want string }{
 		{"units:\n  a:\n    run: [x]\n", "name: a project needs a name"},
-		{"name: app\nopstruss: \"0.2\"\n", "this file is for OpsTruss 0.2 or newer"},
+		{"name: app\nopstruss: \"1.1\"\n", "this file is for OpsTruss 1.1 or newer"},
 		{"name: app\nunits:\n  a:\n    run: [x]\n    service: [y]\n", "a unit has exactly one of run, service, or uses"},
 		{"name: app\nunits:\n  a:\n    run: [x]\n    restart: always\n", "restart is for service units"},
 		{"name: app\nunits:\n  a:\n    run: echo ${{ inputs.x }}\n", "${{ }} is not allowed in a script"},

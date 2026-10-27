@@ -44,7 +44,7 @@ stdout '^  long +run: echo a{39}…$'
 stdout '^  told +Say what it does$'
 
 # -C is on every command, and -d on those that can run in the daemon
-stdout '^  -C dir +run as if OpsTruss started in dir, like git -C'
+stdout '^  -C dir +run as if OpsTruss started in dir; a -C after another'
 exec opstruss up --help
 stdout '^  -d +run in the daemon of the stack'
 stdout '^  -C dir +run as if'

@@ -20,7 +20,7 @@ opstruss [flags]
 
 | Flag | Description |
 |---|---|
-| `-C dir` | run as if OpsTruss started in dir, like git -C; a -C after another is relative to it |
+| `-C dir` | run as if OpsTruss started in dir; a -C after another is relative to it |
 | `--completion string` | print a completion script for bash, zsh, or fish |
 | `--input stringArray` | set a project input, as name=value |
 | `--json` | print JSON |

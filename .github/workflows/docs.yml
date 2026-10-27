@@ -69,10 +69,11 @@ jobs:
             printf '<!doctype html>\n<title>Not found</title>\n<p>This page is not here. See <a href="/%s/">the documentation</a>.</p>\n' "$home" > 404.html
           fi
           {
+            # A folder holds a minor and the patches that fix it: v1.0.x.
             find . -maxdepth 1 -type d -name 'v*' -printf '%f\n' | sort -rV | while read -r v; do
-              title=$v
-              [ "$v" = "$latest" ] && title="$v (latest)"
-              jq -n --arg v "$v" --arg t "$title" '{version: $v, title: $t, path: "/\($v)/"}'
+              title=$v.x
+              [ "$v" = "$latest" ] && title="$v.x (latest)"
+              jq -n --arg v "$v.x" --arg t "$title" --arg p "$v" '{version: $v, title: $t, path: "/\($p)/"}'
             done
             [ -d dev ] && jq -n '{version: "dev", title: "dev", path: "/dev/"}'
           } | jq -s . > versions.json

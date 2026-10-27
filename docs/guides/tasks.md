@@ -64,7 +64,7 @@ a task of its own that the step calls.
 ## When a step fails
 
 `block` groups steps; `rescue` runs when one of them fails, and `always`
-runs after both, whatever happened, as in Ansible.
+runs after both, whatever happened.
 
 - A `rescue` that succeeds handles the failure, and the task succeeds.
   To report a failure and still fail, end the rescue with a step that

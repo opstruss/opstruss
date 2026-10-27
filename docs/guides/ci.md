@@ -20,13 +20,13 @@ shows:
 
 ```toml
 [tools]
-"github:opstruss/opstruss" = "0.1.0"
+"github:opstruss/opstruss" = "1.0.0"
 opentofu = "1.13.2"
 ```
 
 - `validate` checks every file and every stack without running
   anything, and with `--locked` fails when `opstruss.lock` would have to
-  change, as `npm ci` does.
+  change.
 - `up` runs on the machine of the state, in a checkout of the project at
   a fixed path that the runner does not clean. A checkout made by
   `actions/checkout` would be cleaned with `git clean -ffdx`, which
@@ -43,8 +43,7 @@ answers:
   says `changes need approval: run up at a terminal, or with --yes` on
   stderr, and exits with 2, which a workflow can treat as "needs
   approval".
-- With `--yes`, it applies the changes of that run, as `terraform apply
-  -auto-approve` does.
+- With `--yes`, it applies the changes of that run without asking.
 - 1 means that something failed; [Exit codes and JSON](../reference/exit-codes-and-json)
   has the rest.
 
@@ -65,7 +64,7 @@ On a GitHub-hosted runner, the release archive and its checksums install
 it:
 
 ```sh
-version=0.1.0
+version=1.0.0
 gh release download "v$version" --repo opstruss/opstruss \
   --pattern "opstruss_${version}_linux_amd64.tar.gz" --pattern checksums.txt
 sha256sum --ignore-missing -c checksums.txt

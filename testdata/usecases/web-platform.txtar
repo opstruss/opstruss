@@ -160,7 +160,7 @@ exec tail -f errors.in >&2
 # opstruss.yaml
 name: platform
 description: Web platform for example.com
-opstruss: "0.1"
+opstruss: "1.0"
 include:
   - tasks/guard.yaml
 

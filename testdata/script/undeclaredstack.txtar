@@ -32,7 +32,7 @@ exec opstruss destroy --stack default
 stderr '^stack default has no units to destroy$'
 
 -- opstruss.yaml --
-opstruss: "0.1"
+opstruss: "1.0"
 name: undeclared
 units:
   site:
@@ -41,7 +41,7 @@ units:
   page:
     run: echo page
 -- stacks.yaml --
-opstruss: "0.1"
+opstruss: "1.0"
 name: undeclared
 stacks:
   dev: {}

@@ -1,4 +1,4 @@
-opstruss: "0.1"
+opstruss: "1.0"
 name: infra
 uses:
   cat: github.com/opstruss/catalog@v1

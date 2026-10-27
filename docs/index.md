@@ -15,7 +15,7 @@ features:
   - title: Plan, then apply
     details: up shows what would change and asks once before it changes anything; in CI, --yes approves and exit code 2 means a change waits for approval.
   - title: Only what changed runs
-    details: A unit runs again when its program, inputs, or source files change, in the order of what it reads, as make and Taskfile skip what is up to date.
+    details: A unit runs again only when its program, inputs, or source files change, in the order of what it reads.
   - title: Typed results between tools
     details: The outputs of an OpenTofu module, a Compose project, or any program reach the next unit as numbers, lists, and objects, never as text to parse.
   - title: Triggers and services
@@ -26,7 +26,7 @@ features:
 
 ```yaml
 # opstruss.yaml
-opstruss: "0.1"
+opstruss: "1.0"
 name: shop
 uses:
   cat: github.com/opstruss/catalog@v1

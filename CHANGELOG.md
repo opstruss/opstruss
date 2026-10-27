@@ -6,8 +6,10 @@ a plugin, can notice is written down here, newest first.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 with one addition: a release that asks something of a project, a component,
 or a plugin says so first, under "Upgrade notes". OpsTruss follows
-[Semantic Versioning](https://semver.org/spec/v2.0.0.html). Until 1.0.0 a
-minor release can change what a project, a component, or a plugin relies on.
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html): a minor or
+patch release keeps every project, component, and plugin working, as
+[Compatibility](docs/reference/compatibility.md) says, and a change that
+cannot keep them working comes only in a new major version.
 
 ## [Unreleased]
 

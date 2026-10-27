@@ -345,7 +345,7 @@ func (f ShortFlag) For(cmd *cobra.Command) bool {
 
 // shortFlags are the short flags, which help and the reference print.
 var shortFlags = []ShortFlag{
-	{"C", "dir", "run as if OpsTruss started in `dir`, like git -C; a -C after another is relative to it", true},
+	{"C", "dir", "run as if OpsTruss started in `dir`; a -C after another is relative to it", true},
 	{"d", "", "run in the daemon of the stack, which starts in the background when none runs", false},
 }
 

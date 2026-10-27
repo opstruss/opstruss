@@ -35,7 +35,7 @@ stdout 'on every 1s; next '
 exec opstruss stop
 
 -- opstruss.yaml --
-opstruss: "0.1"
+opstruss: "1.0"
 name: trig
 runtime:
   listen: 127.0.0.1:0

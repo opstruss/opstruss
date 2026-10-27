@@ -28,7 +28,7 @@ Replace `opstruss.yaml` with:
 
 ```yaml
 # opstruss.yaml
-opstruss: "0.1"
+opstruss: "1.0"
 name: hello
 units:
   build:

@@ -1,8 +1,7 @@
 # Expressions
 
 A value in `${{ }}` is an expression in [CEL](https://cel.dev), the
-language of Kubernetes validation rules and of Google Cloud IAM
-conditions. It reads inputs, the outputs of units, tasks, and steps,
+Common Expression Language. It reads inputs, the outputs of units, tasks, and steps,
 secrets, and facts of the run.
 
 ```yaml
@@ -43,7 +42,7 @@ There is no `env` namespace: a value from the environment comes in as an
 input with `env:`, or a secret with `env:`.
 
 A unit, task, or step with `for_each` is a map from key to the result of
-each instance, as a resource with `for_each` in Terraform. A macro
+each instance. A macro
 combines them, such as
 `steps.attempts.exists(k, v, v.outcome == 'success')`.
 

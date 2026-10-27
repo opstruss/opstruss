@@ -24,7 +24,7 @@ per tool, and let other units read only its outputs:
 
 `app` reads `units.db.outputs.host`, never the units inside `db`, so
 `db` can move from one tool to another inside the component without a
-change to `app`, as a Terraform module keeps its outputs. When an address
+change to `app`. When an address
 changes, `moved:` moves its record instead of destroying it:
 
 ```yaml
@@ -46,7 +46,7 @@ The versions of OpsTruss and of the tools are in `mise.toml`, and
 
 ```toml
 [tools]
-"github:opstruss/opstruss" = "0.1.0"
+"github:opstruss/opstruss" = "1.0.0"
 opentofu = "1.13.2"
 jq = "1.8.2"
 
@@ -88,6 +88,6 @@ env:
 
 ## Every file says its version
 
-Each `opstruss.yaml`, also of a component, starts with `opstruss: "0.1"`,
+Each `opstruss.yaml`, also of a component, starts with `opstruss: "1.0"`,
 the version it is written for, so a newer OpsTruss reads it as this one
 did, and an older one says that it is too old.

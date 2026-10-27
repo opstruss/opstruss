@@ -68,7 +68,7 @@ stderr '^default/site: orphan: '
 ! stderr 'declares no units'
 
 -- opstruss.yaml --
-opstruss: "0.1"
+opstruss: "1.0"
 name: empty
 -- withtask.yaml --
 name: empty
