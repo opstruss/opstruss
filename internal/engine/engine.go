@@ -896,11 +896,16 @@ func (e *engine) waitForPrograms(ctx context.Context, addr string, a *state.Atte
 	if a.Holder.Host != e.host {
 		return nil
 	}
-	return plugin.Marker(a.Run, e.tempOf(a.Run)).WaitGone(ctx, func(ps []proc.Process, held bool) {
+	err := plugin.Marker(a.Run, e.tempOf(a.Run)).WaitGone(ctx, func(ps []proc.Process, held bool) {
 		what := "programs"
 		if len(ps) > 0 {
 			what = fmt.Sprint(ps)
 		}
 		e.say("unit", addr, "waiting for %s of interrupted run %s", what, a.Run)
 	})
+	if errors.Is(err, proc.ErrList) {
+		// Without the list nothing proves that those programs stopped.
+		return fmt.Errorf("cannot wait for the programs of interrupted run %s: %w; a run waits for them before it runs or destroys the unit again, so run opstruss where it can list processes", a.Run, err)
+	}
+	return err
 }

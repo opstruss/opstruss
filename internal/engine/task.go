@@ -226,7 +226,7 @@ func (e *engine) unitTasks(ctx context.Context, name string, patterns []string, 
 	}
 	if len(results) == 0 {
 		if len(e.p.Units) == 0 {
-			e.say("run", "", "no units")
+			e.say("run", "", "the project declares no units")
 			return &taskResult{outcome: success, outputs: map[string]any{}}, nil
 		}
 		return nil, fmt.Errorf("there is no task %s in the project or in a unit", name)

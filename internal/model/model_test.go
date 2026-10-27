@@ -368,6 +368,12 @@ func TestRules(t *testing.T) {
 		{"name: app\nunits:\n  a:\n    run: [x]\n    stop: {signal: SIGFOO}\n", "unknown signal SIGFOO"},
 		{"name: app\nunits:\n  tool:\n    run: [x]\n", "tool is the directory where a plugin with state: tool keeps"},
 		{"name: app\ntasks:\n  t:\n    run: [x]\n    stop: {signal: SIGTERM, grace: 5s}\n", ""},
+		{"name: app\nunits:\n  a:\n    run: [x]\n    generates: [$OPSTRUSS_ARTIFACTS/hello.txt]\n",
+			"opstruss.yaml:5:17: units.a.generates[0]: $OPSTRUSS_ARTIFACTS/hello.txt: paths are read as written, relative to the file of the unit, so $OPSTRUSS_ARTIFACTS is not expanded; write the result to a path of the project, such as dist/hello.txt"},
+		{"name: app\nunits:\n  a:\n    run: [x]\n    sources: [src/**, '${HOME}/x']\n", "units.a.sources[1]: ${HOME}/x: paths are read as written, relative to the file of the unit, so ${HOME} is not expanded"},
+		{"name: app\nunits:\n  a:\n    run: [x]\n    sources: [src/**, {exclude: '$x/**'}]\n", "units.a.sources[1].exclude: $x/**: "},
+		{"name: app\ntasks:\n  t:\n    run: [x]\n    on: {watch: {paths: ['$VAULT/*.md']}}\n", "tasks.t.on.watch.paths[0]: $VAULT/*.md: paths are read as written, relative to the file of the task, so $VAULT is not expanded"},
+		{"name: app\ninputs:\n  d: {type: string, default: x}\nunits:\n  a:\n    run: [x]\n    sources: [price$5.txt, a$, $$, b$/c]\n    generates: [dist/a$]\ntasks:\n  t:\n    run: [x]\n    on: {watch: {paths: ['${{ inputs.d }}/**']}}\n", ""},
 	}
 	for _, tt := range tests {
 		dir := write(t, map[string]string{"opstruss.yaml": tt.yaml})
@@ -574,6 +580,8 @@ func TestUses(t *testing.T) {
 		{files("  gh: ./plugins/gh\n", gh("  c:\n    steps:\n      - http: {url: \"${{ inputs.repo }}\"}\n        failed_when: outputs.status == 404\n")...), ""},
 		{files("  gh: ./plugins/gh\n", "plugins/gh/opstruss.plugin.yaml", "name: gh\ninputs:\n  token: {type: string, env: GH_TOKEN}\n"), "env: of an input is for the files of the project"},
 		{files("  gh: ./plugins/gh\n", "plugins/gh/opstruss.plugin.yaml", "name: gh\ninputs:\n  force: {type: boolean}\ntasks:\n  up:\n    run: [x]\n"), "force is an argument of the tasks of a unit"},
+		{files("  gh: ./plugins/gh\n", "plugins/gh/opstruss.plugin.yaml", "name: gh\nenv: ['*', AWS_*, GH_TOKEN]\n"), ""},
+		{files("  gh: ./plugins/gh\n", "plugins/gh/opstruss.plugin.yaml", "name: gh\nenv: [OPSTRUSS_*]\n"), "env[0]: OPSTRUSS_ and INPUT_ variables come from OpsTruss; a plugin cannot ask for them"},
 	}
 	for _, tt := range tests {
 		got := problems(t, write(t, tt.files), "")

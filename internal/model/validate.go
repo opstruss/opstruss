@@ -451,6 +451,10 @@ func (c *checker) units() {
 		}
 		c.environment(path, u.Env, u.Pass)
 		c.stop(path, u.Stop)
+		c.paths(at(path, "sources"), u.Sources, "unit", "write the path relative to that file, or the absolute path")
+		for i, g := range u.Generates {
+			c.literalPath(at(path, "generates", strconv.Itoa(i)), g, "unit", "write the result to a path of the project, such as "+filepath.ToSlash(filepath.Join("dist", filepath.Base(g))))
+		}
 		for _, tn := range slices.Sorted(maps.Keys(u.Tasks)) {
 			tp := at(path, "tasks", tn)
 			if slices.Contains(StandardTasks, tn) || slices.Contains(Hooks, tn) {
@@ -635,6 +639,7 @@ func (c *checker) watches(path []string, on *Triggers) {
 		if w.Batch != "" && w.Debounce != "" {
 			c.add(wp, "a watch has batch or debounce, not both")
 		}
+		c.paths(at(wp, "paths"), w.Paths, "task", "write the path relative to that file, or the absolute path")
 		for name := range w.Calls {
 			if slices.Contains(StandardTasks, name) || slices.Contains(BuiltinTasks, name) && name != "command" {
 				c.add(at(wp, name), "a watch source is a program that writes a line per event: command, or a task of a plugin")
@@ -652,6 +657,43 @@ func (c *checker) watches(path []string, on *Triggers) {
 		if c.p.Tasks[a.Task] == nil && !slices.Contains(StandardTasks, a.Task) && !c.unitTask(a.Task) {
 			c.add(at(ap, "task"), "there is no task %s", a.Task)
 		}
+	}
+}
+
+var shellName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*`)
+
+// paths checks a list of sources or watch paths with literalPath.
+func (c *checker) paths(path []string, items []PathItem, owner, fix string) {
+	for i, it := range items {
+		p := at(path, strconv.Itoa(i))
+		if it.Exclude {
+			p = at(p, "exclude")
+		}
+		c.literalPath(p, it.Pattern, owner, fix)
+	}
+}
+
+// literalPath rejects a shell variable in a path pattern, which is read as
+// written: $NAME and ${NAME}, but not ${{ }} or a $ before anything else.
+func (c *checker) literalPath(path []string, pattern, owner, fix string) {
+	for i := 0; i+1 < len(pattern); i++ {
+		if pattern[i] != '$' {
+			continue
+		}
+		rest, n := pattern[i+1:], 0
+		switch {
+		case rest[0] == '{' && !strings.HasPrefix(rest, "{{"):
+			n = strings.IndexByte(rest, '}') + 1
+		case shellName.MatchString(rest):
+			n = len(shellName.FindString(rest))
+		default:
+			continue
+		}
+		if n == 0 {
+			n = len(rest)
+		}
+		c.add(path, "%s: paths are read as written, relative to the file of the %s, so %s is not expanded; %s", pattern, owner, pattern[i:i+1+n], fix)
+		return
 	}
 }
 

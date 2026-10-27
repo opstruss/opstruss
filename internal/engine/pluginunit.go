@@ -157,7 +157,7 @@ func (e *engine) resolvePlugin(inst *instance, r *resolved, s *expr.Scope) error
 	r.pass = map[string]string{}
 	for _, kv := range e.opts.Environ {
 		k, v, _ := strings.Cut(kv, "=")
-		if inst.node.Grants(k) && slices.Contains(pl.Env, k) && slices.ContainsFunc(allowed, func(p string) bool { ok, _ := path.Match(p, k); return ok }) {
+		if inst.node.Grants(k) && pl.Asks(k) && !model.ReservedEnv(k) && slices.ContainsFunc(allowed, func(p string) bool { ok, _ := path.Match(p, k); return ok }) {
 			r.pass[k] = v
 		}
 	}
@@ -258,8 +258,8 @@ func (e *engine) statusPass(ctx context.Context, patterns []string) (map[string]
 	if err != nil {
 		return nil, nil, err
 	}
-	if len(insts) == 0 {
-		e.say("run", "", "no units")
+	if len(e.p.Units) == 0 {
+		e.say("run", "", "the project declares no units")
 	}
 	out, marks := map[string]any{}, map[string]any{}
 	for _, inst := range insts {
@@ -343,6 +343,22 @@ func (e *engine) toolMoved(inst *instance, r *resolved) error {
 	}
 	short := e.short(inst.address)
 	return fmt.Errorf("the tool's state is still in tool/ while input backend names another place; move it with opstruss exec %s -- <the tool's command that moves state>, then opstruss state rm %s --tool", short, short)
+}
+
+// unreachedPass are the items of pass: of u, and of the declaration it
+// uses, that match no variable its plugin asks for, so they let nothing
+// through to it. They are warnings, not errors, since a new version of a
+// plugin may stop asking for a variable.
+func unreachedPass(u *model.Unit) []string {
+	t := u.Target
+	if t == nil || t.Package == nil || t.Package.Plugin == nil {
+		return nil
+	}
+	passes := slices.Clone(u.Pass)
+	if d := t.Package.Decl; d != nil {
+		passes = append(slices.Clone(d.Pass), passes...)
+	}
+	return slices.DeleteFunc(passes, t.Package.Plugin.Reaches)
 }
 
 // pluginPlan is what a plugin's plan wrote to $OPSTRUSS_PLAN.

@@ -1,0 +1,68 @@
+# A project without units or tasks says so for each command that reads
+# them, on stderr and with exit 0, as outputs says it has no outputs; with
+# --json the run says it in its event.
+
+env HOME=$WORK/home
+
+exec opstruss plan
+! stdout .
+stderr '^the project declares no units$'
+exec opstruss up
+! stdout .
+stderr '^the project declares no units$'
+exec opstruss destroy
+! stdout .
+stderr '^stack default has no units to destroy$'
+exec opstruss status
+stderr '^the project declares no units$'
+exec opstruss list
+! stdout .
+stderr '^the project declares no tasks or units$'
+exec opstruss logs
+stderr '^the project declares no units or tasks$'
+exec opstruss outputs
+stderr '^the project declares no outputs$'
+
+exec opstruss plan --json
+stdout '"type":"run","level":"info","message":"the project declares no units"'
+! stderr .
+exec opstruss list --json
+stdout '"tasks": \[\]'
+! stderr .
+
+# with a task, the commands of units still say there are none, and list
+# shows the task; a unit without a record has nothing to destroy
+cp withtask.yaml opstruss.yaml
+exec opstruss plan
+stderr '^the project declares no units$'
+exec opstruss list
+stdout '^  hello +never run$'
+! stderr .
+exec opstruss logs
+stderr '^the project declares no units$'
+cp withunit.yaml opstruss.yaml
+exec opstruss destroy
+stderr '^stack default has no units to destroy$'
+exec opstruss plan
+! stderr 'declares no units'
+
+# the record of a unit that is gone is an orphan to destroy, not nothing
+exec opstruss up --yes
+cp withtask.yaml opstruss.yaml
+exec opstruss plan
+stderr '^default/site: orphan: '
+! stderr 'declares no units'
+
+-- opstruss.yaml --
+opstruss: "0.1"
+name: empty
+-- withtask.yaml --
+name: empty
+tasks:
+  hello:
+    run: [echo, hi]
+-- withunit.yaml --
+name: empty
+units:
+  site:
+    run: [echo, hi]

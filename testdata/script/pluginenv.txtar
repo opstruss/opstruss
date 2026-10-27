@@ -1,0 +1,78 @@
+# A plugin asks for variables by name or by pattern, as pass: lets them
+# through; one that runs the user's own files asks for *, and pass: alone
+# says what reaches it, never an OPSTRUSS_ or INPUT_ variable. A pass:
+# item that reaches nothing the plugin asks for is a warning in plan and
+# doctor, and a credential that changes is said to be a secret.
+
+env HOME=$WORK/home
+env AWS_PROFILE=dev
+env AWS_REGION=eu
+env AWS_SESSION_TOKEN=session-one
+env OTHER=o1
+env INPUT_SNEAK=i1
+env OPSTRUSS_SNEAK=s1
+
+# a unit, a task unit, and a step get what both ask for and pass: allows;
+# without pass: nothing reaches the plugin
+exec opstruss plan
+stderr '^default/narrow: pass: AWS_PROFILE does not reach plugin narrow, which does not ask for it$'
+! stderr 'default/(wide|all|bare): pass:'
+exec opstruss up --yes
+stdout '^default/wide \| aws=dev region=eu other=none input=none opstruss=none$'
+stdout '^default/all \| aws=dev region=eu other=o1 input=none opstruss=none$'
+stdout '^default/bare \| aws=none region=none other=none input=none opstruss=none$'
+exec opstruss call
+stdout 'aws=dev region=eu other=none input=none opstruss=none'
+
+# doctor shows a pattern as it is, and warns only about names
+exec opstruss doctor
+stdout '^ok     plugin wide asks for the variables that match \*, so pass: says which of them reach it$'
+stdout '^warn   default/narrow: pass: AWS_PROFILE does not reach plugin narrow, which does not ask for it$'
+! stdout 'plugin wide asks for .*no pass:'
+
+# a credential that pass: lets through and that changes stops the plan,
+# with how to give it instead
+env AWS_SESSION_TOKEN=session-two
+! exec opstruss plan wide
+stdout '^default/wide: error: context changed: AWS_SESSION_TOKEN differs from the record, whose destroy reaches the old target; up --force moves the unit and forgets that target; if AWS_SESSION_TOKEN is a credential that changes, give it with secrets: \(env: AWS_SESSION_TOKEN\) and env:, not pass:$'
+
+-- opstruss.yaml --
+name: app
+uses:
+  wide:
+    source: ./plugins/wide
+    pass: [AWS_*]
+  plain:
+    source: ./plugins/wide
+  narrow:
+    source: ./plugins/narrow
+units:
+  wide:
+    uses: wide
+  all:
+    uses: plain.show
+    pass: ['*']
+  bare:
+    uses: plain
+  narrow:
+    uses: narrow
+    pass: [AWS_PROFILE]
+tasks:
+  call:
+    wide.show: {}
+-- plugins/wide/opstruss.plugin.yaml --
+name: wide
+env: ['*']
+tasks:
+  up:
+    run: [sh, -c, 'echo "aws=${AWS_PROFILE:-none} region=${AWS_REGION:-none} other=${OTHER:-none} input=${INPUT_SNEAK:-none} opstruss=${OPSTRUSS_SNEAK:-none}"']
+  destroy:
+    run: ["true"]
+  show:
+    run: [sh, -c, 'echo "aws=${AWS_PROFILE:-none} region=${AWS_REGION:-none} other=${OTHER:-none} input=${INPUT_SNEAK:-none} opstruss=${OPSTRUSS_SNEAK:-none}"']
+-- plugins/narrow/opstruss.plugin.yaml --
+name: narrow
+env: [NARROW_TOKEN]
+tasks:
+  up:
+    run: ["true"]

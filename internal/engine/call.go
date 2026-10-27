@@ -64,7 +64,7 @@ func (e *engine) callByName(ctx context.Context, p progSpec, name string, args m
 			dir = filepath.Join(p.base, dir)
 		}
 		if t.Kind == model.TargetTask {
-			r := e.callTask(ctx, name, t.Package.Plugin.Tasks[t.Task], dir, in, call{frame: p.frame, unit: p.unit, plugin: pluginRunOf(t, p), unitRun: p.unitRun, marks: marks})
+			r := e.callTask(ctx, name, t.Package.Plugin.Tasks[t.Task], dir, in, call{frame: p.frame, unit: p.unit, plugin: e.pluginRunOf(t, p), unitRun: p.unitRun, marks: marks})
 			return r, r.outputs, nil
 		}
 		var res *builtin.Result
@@ -124,16 +124,17 @@ type unitRun struct {
 	stateDir string
 }
 
-func pluginRunOf(t *model.Target, p progSpec) *pluginRun {
+// pluginRunOf is the run of the task t of a plugin with the env and pass of
+// p. What reaches it are the variables of the operator that it asks for and
+// p lets through, by name, since both may be patterns.
+func (e *engine) pluginRunOf(t *model.Target, p progSpec) *pluginRun {
 	pl := t.Package.Plugin
 	inputs, _ := t.Inputs()
 	run := &pluginRun{name: t.Package.Name, dir: t.Package.Dir, env: p.env, requires: pl.Requires, inputs: inputs, secret: p.secret}
-	for _, n := range pl.Env {
-		for _, pat := range p.pass {
-			if ok, _ := path.Match(pat, n); ok {
-				run.pass = append(run.pass, n)
-				break
-			}
+	for _, kv := range e.opts.Environ {
+		k, _, _ := strings.Cut(kv, "=")
+		if pl.Asks(k) && slices.ContainsFunc(p.pass, func(pat string) bool { ok, _ := path.Match(pat, k); return ok }) {
+			run.pass = append(run.pass, k)
 		}
 	}
 	return run

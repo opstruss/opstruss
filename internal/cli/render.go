@@ -201,6 +201,9 @@ func (r *renderer) line(ev engine.Event) []piece {
 		for _, l := range lines(ev.Message) {
 			fmt.Fprintf(&b, "%s | %s\n", who(ev), l)
 		}
+	case ev.Type == "run" && ev.Status == "":
+		w, color = r.err, r.colorErr
+		fmt.Fprintln(&b, ev.Message)
 	case ev.Type == "run":
 		delete(r.planned, ev.Run)
 		for _, k := range slices.Sorted(maps.Keys(ev.Outputs)) {
@@ -353,6 +356,10 @@ func (r *renderer) blockEvent(ev engine.Event) []piece {
 			out = append(out, r.program(ev, key, w, color)...)
 		}
 		return out
+	case ev.Type == "run" && ev.Status == "":
+		// What a run says of itself, as that the project declares no
+		// units, goes to stderr, as outputs says that it has none.
+		return []piece{{r.err, text(ev.Message, r.colorErr) + "\n"}}
 	case ev.Type == "run":
 		delete(r.planned, ev.Run)
 		r.last = ""

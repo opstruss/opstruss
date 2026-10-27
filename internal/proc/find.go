@@ -9,10 +9,16 @@ import (
 	"os"
 	"syscall"
 	"time"
+
+	"github.com/opstruss/opstruss/internal/failpoint"
 )
 
 // PollInterval is how often WaitGone looks for the processes again.
 const PollInterval = 500 * time.Millisecond
+
+// ErrList is the error of a list of this user's processes that cannot be
+// read, as a sandbox of macOS or a container can forbid.
+var ErrList = errors.New("list the processes of this user")
 
 // Process is a process found by a marker in its environment.
 type Process struct {
@@ -30,7 +36,15 @@ func (p Process) String() string { return fmt.Sprintf("pid %d (%s)", p.PID, p.Co
 // or writes over it is not found, and neither is a system binary of macOS,
 // whose environment macOS does not show.
 func Find(name, value string) ([]Process, error) {
-	return find([]byte(name + "=" + value))
+	err := failpoint.Fail("proc-list")
+	var ps []Process
+	if err == nil {
+		ps, err = find([]byte(name + "=" + value))
+	}
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrList, err)
+	}
+	return ps, nil
 }
 
 // Tracker holds the lock that marks the programs of one run: every program

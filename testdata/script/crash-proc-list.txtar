@@ -1,0 +1,30 @@
+# A unit that an interrupted run left pending fails while the processes of
+# this user cannot be listed, since nothing then proves that the programs
+# of that run stopped; the error says which run and what to do, and doctor
+# warns. Run with go test -tags failpoints.
+
+[!failpoints] skip 'needs a build with -tags failpoints'
+env HOME=$WORK/home
+
+env OPSTRUSS_FAILPOINT=program-started=kill
+! exec opstruss up slow --yes
+env OPSTRUSS_FAILPOINT=proc-list=fail
+! exec opstruss up slow --yes
+stderr '^default/slow: cannot wait for the programs of interrupted run \d{8}T\d{6}Z-[0-9a-f]{8}: list the processes of this user: failpoint proc-list; a run waits for them before it runs or destroys the unit again, so run opstruss where it can list processes$'
+! exec opstruss destroy slow --yes
+stderr '^default/slow: cannot wait for the programs of interrupted run '
+exec opstruss doctor
+stdout '^warn   cannot list the processes of this user: failpoint proc-list; a run cannot wait'
+
+# where they can be listed, the next up waits and finishes
+env OPSTRUSS_FAILPOINT=
+exec opstruss doctor
+! stdout 'list the processes'
+exec opstruss up slow --yes
+stdout '^default/slow: up: done$'
+
+-- opstruss.yaml --
+name: shop
+units:
+  slow:
+    run: sleep 1

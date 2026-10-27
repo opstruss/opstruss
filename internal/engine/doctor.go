@@ -14,6 +14,7 @@ import (
 	"github.com/opstruss/opstruss/internal/expr"
 	"github.com/opstruss/opstruss/internal/model"
 	"github.com/opstruss/opstruss/internal/plugin"
+	"github.com/opstruss/opstruss/internal/proc"
 	"github.com/opstruss/opstruss/internal/secret"
 	"github.com/opstruss/opstruss/internal/sources"
 	"github.com/opstruss/opstruss/internal/state"
@@ -30,7 +31,7 @@ type Report struct {
 // Check is one finding: ok; skip when only a run can check it; warn for
 // what may matter; error for what fails a run.
 type Check struct {
-	Check   string   `json:"check"` // program, sops, key, env, or state
+	Check   string   `json:"check"` // program, sops, key, env, state, or processes
 	Status  string   `json:"status"`
 	Message string   `json:"message"`
 	Name    string   `json:"name,omitempty"` // the program or the variable
@@ -45,7 +46,7 @@ func (r *Report) Failed() bool {
 
 // Doctor checks what a run of the stack needs on this machine: the
 // programs of requires:, the data key and sops, the variables that
-// plugins ask for, and where .opstruss is.
+// plugins ask for, where .opstruss is, and the list of processes.
 func Doctor(opts Options) (*Report, error) {
 	e, err := e0(opts)
 	if err != nil {
@@ -61,6 +62,7 @@ func Doctor(opts Options) (*Report, error) {
 	d.environment()
 	d.pluginPaths()
 	d.state()
+	d.processes()
 	return d.r, nil
 }
 
@@ -143,6 +145,10 @@ func (d *doctor) units() {
 			d.search = d.e.pluginPath(t.Package)
 			d.note(what, t.Package.Plugin.Requires...)
 			d.passes[t.Package] = append(d.passes[t.Package], inst.def.Pass...)
+			for _, p := range unreachedPass(inst.def) {
+				d.add(&Check{Check: "env", Status: "warn", Name: p, For: []string{what}, Message: fmt.Sprintf(
+					"%s: pass: %s does not reach plugin %s, which does not ask for it", inst.address, p, t.Package.Name)})
+			}
 		}
 		if task == nil || task.Requires == nil {
 			continue
@@ -352,11 +358,12 @@ func (d *doctor) sops() bool {
 	return false
 }
 
-// environment warns about the variables that a plugin asks for, that the
-// operator set to a value, and that no pass: of what uses it lets
-// through, so its programs never get them; one that is not set misses
-// nothing, and an official plugin asks for many that are optional, such
-// as TF_LOG.
+// environment warns about the variables that a plugin asks for by name,
+// that the operator set to a value, and that no pass: of what uses it
+// lets through, so its programs never get them; one that is not set
+// misses nothing, and an official plugin asks for many that are optional,
+// such as TF_LOG. A pattern that a plugin asks for, such as *, is shown
+// as it is, since pass: alone then says what reaches it.
 func (d *doctor) environment() {
 	pkgs := slices.SortedFunc(maps.Keys(d.passes), func(a, b *model.Package) int {
 		return cmp.Or(strings.Compare(a.Name, b.Name), strings.Compare(a.Dir, b.Dir))
@@ -367,6 +374,11 @@ func (d *doctor) environment() {
 			passes = append(passes, pkg.Decl.Pass...)
 		}
 		for _, v := range pkg.Plugin.Env {
+			if strings.ContainsAny(v, "*?[") {
+				d.add(&Check{Check: "env", Status: "ok", Name: v, For: []string{"plugin " + pkg.Name}, Message: fmt.Sprintf(
+					"plugin %s asks for the variables that match %s, so pass: says which of them reach it", pkg.Name, v)})
+				continue
+			}
 			if slices.ContainsFunc(passes, func(p string) bool { ok, _ := path.Match(p, v); return ok }) {
 				continue
 			}
@@ -427,5 +439,15 @@ func (d *doctor) state() {
 		d.add(&Check{Check: "state", Status: "ok", Name: fs, Message: fmt.Sprintf("%s is on a local filesystem (%s)", name, fs)})
 	default:
 		d.add(&Check{Check: "state", Status: "ok", Message: name + " is on a local filesystem"})
+	}
+}
+
+// processes warns when the processes of this user cannot be listed, as in
+// a sandbox of macOS: a run then cannot wait for the programs of an
+// interrupted run, so a unit that one left pending fails.
+func (d *doctor) processes() {
+	if _, err := proc.Find("OPSTRUSS_RUN", ""); err != nil {
+		d.add(&Check{Check: "processes", Status: "warn", Message: fmt.Sprintf(
+			"cannot %v; a run cannot wait for the programs of an interrupted run, so a unit that one left pending fails until opstruss runs where it can list processes", err)})
 	}
 }

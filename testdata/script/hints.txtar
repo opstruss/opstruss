@@ -2,7 +2,8 @@
 # exist, a function read as a key, $NAME in an expression, a name with -
 # read as a field, rescue: on a task, a key that a map lacks at run time, a
 # shell builtin as a program, a command written wrong, and a required input
-# without a terminal; help shows what a task without a description runs.
+# without a terminal; help shows what a task without a description runs,
+# and the short flags that OpsTruss reads before the flags of tasks.
 
 env HOME=$WORK/home
 
@@ -41,6 +42,18 @@ stdout '^  builtin +run: export X=1$'
 stdout '^  deep +steps: s, read$'
 stdout '^  long +run: echo a{39}…$'
 stdout '^  told +Say what it does$'
+
+# -C is on every command, and -d on those that can run in the daemon
+stdout '^  -C dir +run as if OpsTruss started in dir, like git -C'
+exec opstruss up --help
+stdout '^  -d +run in the daemon of the stack'
+stdout '^  -C dir +run as if'
+exec opstruss told --help
+stdout '^  -d +run in the daemon of the stack'
+exec opstruss plan --help
+stdout '^  -C dir +run as if'
+! stdout '^  -d '
+exec opstruss --help
 
 # help keeps the tasks apart from the commands, and an unknown command,
 # also a task written wrong, gets a suggestion

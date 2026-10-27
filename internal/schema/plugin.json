@@ -12,9 +12,9 @@
       "items": { "type": "string", "minLength": 1 }
     },
     "env": {
-      "description": "Variables the plugin asks for; the project grants them with pass:.",
+      "description": "Variables the plugin asks for, by name or by pattern as in pass:; the project grants them with pass:.",
       "type": "array",
-      "items": { "$ref": "project.json#/$defs/envName" }
+      "items": { "$ref": "project.json#/$defs/pass/items" }
     },
     "state": { "enum": ["opstruss", "tool"] },
     "inputs": { "$ref": "project.json#/$defs/inputs" },

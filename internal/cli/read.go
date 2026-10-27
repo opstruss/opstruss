@@ -47,6 +47,10 @@ func (a *app) listCommand() *cobra.Command {
 			if a.json {
 				return a.printJSON(st)
 			}
+			if len(st.Tasks) == 0 && len(st.Units) == 0 {
+				fmt.Fprintln(a.stderr, "the project declares no tasks or units")
+				return nil
+			}
 			// Columns are as wide as what they hold, so a long description
 			// does not run into the last run.
 			tw := tabwriter.NewWriter(a.stdout, 0, 0, 2, ' ', 0)

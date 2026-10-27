@@ -129,8 +129,8 @@ func (e *engine) destroyPass(ctx context.Context) ([]*leftover, error) {
 			l.sayPlan(e)
 		}
 	}
-	if len(e.p.Units) == 0 && len(records) == 0 {
-		e.say("run", "", "no units")
+	if len(records) == 0 {
+		e.say("run", "", "stack %s has no units to destroy", e.p.StackName)
 	}
 	// As Terraform and Pulumi refuse a destroy that reaches a protected
 	// resource, nothing is destroyed while one of the units is protected,

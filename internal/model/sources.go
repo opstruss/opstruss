@@ -35,6 +35,20 @@ func matchesPass(patterns []string, name string) bool {
 	return slices.ContainsFunc(patterns, func(p string) bool { ok, _ := path.Match(p, name); return ok })
 }
 
+// Asks reports whether the plugin asks for the variable name: env: holds
+// names and patterns, as pass: does.
+func (pl *Plugin) Asks(name string) bool { return matchesPass(pl.Env, name) }
+
+// Reaches reports whether the pass: item p can let through a variable that
+// the plugin asks for.
+func (pl *Plugin) Reaches(p string) bool {
+	return slices.ContainsFunc(pl.Env, func(asked string) bool {
+		a, _ := path.Match(p, asked)
+		b, _ := path.Match(asked, p)
+		return a || b
+	})
+}
+
 // Grants reports whether each remote boundary is authorized by its caller.
 // Local declarations remain grants; a remote declaration is only a request.
 func (n *Node) Grants(name string) bool {

@@ -224,7 +224,7 @@ func WatchSource(opts Options, t *Trigger, dir string) (*plugin.Program, error) 
 		if d := target.Package.Decl; d != nil {
 			env, pass = d.Env, d.Pass
 		}
-		prog := pluginRunOf(target, progSpec{env: env, pass: pass})
+		prog := e.pluginRunOf(target, progSpec{env: env, pass: pass})
 		values := map[string]model.EnvValue{}
 		for k, v := range env {
 			values[k] = v

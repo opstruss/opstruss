@@ -66,7 +66,7 @@ func (e *engine) resolveTask(inst *instance, r *resolved, s *expr.Scope) error {
 		k, v, _ := strings.Cut(kv, "=")
 		ok := slices.ContainsFunc(allowed, func(p string) bool { m, _ := path.Match(p, k); return m }) && !model.ReservedEnv(k)
 		// A plugin gets only the variables it asks for.
-		if t.Kind == model.TargetTask && !slices.Contains(t.Package.Plugin.Env, k) {
+		if t.Kind == model.TargetTask && !t.Package.Plugin.Asks(k) {
 			ok = false
 		}
 		if ok && inst.node.Grants(k) {

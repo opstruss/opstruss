@@ -51,6 +51,11 @@ stderr '^opstruss.yaml:6:7: tasks.build.inputs.event: input event makes the flag
 stderr '^opstruss.yaml:7:7: tasks.build.inputs.no_cache: input no_cache makes the flag --no-cache, which is the flag of input cache; rename the input$'
 stderr '^opstruss.yaml:8:7: tasks.build.inputs.yes: input yes makes the flag --yes, which is a flag of OpsTruss; rename the input$'
 
+# paths are read as written, so a shell variable in them is a problem
+cp shellpath.yaml opstruss.yaml
+! exec opstruss validate
+stderr '^opstruss.yaml:5:17: units.site.generates\[0\]: \$OPSTRUSS_ARTIFACTS/hello.txt: paths are read as written, relative to the file of the unit, so \$OPSTRUSS_ARTIFACTS is not expanded; write the result to a path of the project, such as dist/hello.txt$'
+
 -- opstruss.yaml --
 name: app
 include: [tasks/*.yaml]
@@ -73,6 +78,12 @@ units:
   site:
     run: [npm, run, build]
     service: [npm, start]
+-- shellpath.yaml --
+name: app
+units:
+  site:
+    run: [npm, run, build]
+    generates: [$OPSTRUSS_ARTIFACTS/hello.txt]
 -- missingref.yaml --
 name: app
 units:

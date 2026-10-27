@@ -60,7 +60,11 @@ func (e *engine) unitPass(ctx context.Context, op string, p pass) (map[string]an
 	e.setCollect(false)
 	leftovers := e.previewLeftovers()
 	if len(e.p.Units) == 0 {
-		e.say("run", "", "no units")
+		// Records of units no longer in the files are orphans, which the
+		// plan names.
+		if addrs, err := e.store.Inventory(); err == nil && len(addrs) == 0 {
+			e.say("run", "", "the project declares no units")
+		}
 	}
 	// Data that a newer OpsTruss wrote stops the run before any turn, as
 	// a newer _meta does, rather than leaving that unit out.

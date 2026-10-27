@@ -178,8 +178,12 @@ func (e *engine) logsPass(ctx context.Context, patterns []string, follow bool) (
 	if err != nil {
 		return nil, nil, err
 	}
-	if len(insts) == 0 {
-		e.say("run", "", "no units")
+	if len(e.p.Units) == 0 {
+		what := "units"
+		if len(e.p.Tasks) == 0 {
+			what = "units or tasks"
+		}
+		e.say("run", "", "the project declares no %s", what)
 	}
 	var mu sync.Mutex
 	var wg sync.WaitGroup

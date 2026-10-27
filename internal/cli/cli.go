@@ -25,6 +25,7 @@ import (
 	"github.com/opstruss/opstruss/internal/secret"
 	"github.com/opstruss/opstruss/internal/sources"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"go.yaml.in/yaml/v3"
 	"golang.org/x/term"
 )
@@ -261,6 +262,7 @@ func (a *app) root() *cobra.Command {
 	root.AddCommand(a.listCommand(), a.outputsCommand(), a.runsCommand(), a.execCommand(), a.doctorCommand(),
 		a.stopCommand(), a.unlockCommand(), a.daemonCommand(), a.pluginsCommand())
 	a.completions(root)
+	root.SetUsageTemplate(usageTemplate(root.UsageTemplate()))
 	// Help shows the commands of OpsTruss apart from the tasks of the
 	// project, as npm run and just --list show scripts on their own.
 	root.AddGroup(&cobra.Group{ID: groupCommands, Title: "Commands:"})
@@ -272,6 +274,61 @@ func (a *app) root() *cobra.Command {
 		}
 	}
 	return root
+}
+
+// shortFlags are the flags that takeShort reads before cobra does: a flag
+// of cobra has a long name, and long names belong to the inputs of tasks.
+// Help prints them from this table.
+var shortFlags = []struct {
+	name, arg, usage string
+	global           bool // on every command; else on the detachable ones
+}{
+	{"C", "dir", "run as if OpsTruss started in `dir`, like git -C; a -C after another is relative to it", true},
+	{"d", "", "run in the daemon of the stack, which starts in the background when none runs", false},
+}
+
+func init() {
+	cobra.AddTemplateFunc("flagUsages", flagUsages)
+}
+
+// usageTemplate is cobra's usage template with the flags of each section
+// printed by flagUsages.
+func usageTemplate(t string) string {
+	t = strings.Replace(t, "{{.LocalFlags.FlagUsages", "{{flagUsages . .LocalFlags true", 1)
+	return strings.Replace(t, "{{.InheritedFlags.FlagUsages", "{{flagUsages . .InheritedFlags false", 1)
+}
+
+// flagUsages is fs.FlagUsages with the short flags that belong in it: -C
+// where --stack is, and -d in the flags of a detachable command. pflag
+// prints a flag only with its long name, so a short flag is printed as a
+// long one and its name rewritten at the same width, which keeps the
+// columns.
+func flagUsages(cmd *cobra.Command, fs *pflag.FlagSet, local bool) string {
+	show := pflag.NewFlagSet(cmd.Name(), pflag.ContinueOnError)
+	show.AddFlagSet(fs)
+	long := map[string]string{}
+	for _, f := range shortFlags {
+		if f.global && fs.Lookup("stack") == nil || !f.global && (!local || cmd.Annotations[detachable] == "") {
+			continue
+		}
+		name := "-" + f.name
+		if f.arg != "" {
+			show.String(f.name, "", f.usage)
+			name += " " + f.arg
+		} else {
+			show.Bool(f.name, false, f.usage)
+		}
+		long["      -"+name+" "] = "  " + name + "      "
+	}
+	lines := strings.SplitAfter(show.FlagUsages(), "\n")
+	for i, l := range lines {
+		for from, to := range long {
+			if rest, ok := strings.CutPrefix(l, from); ok {
+				lines[i] = to + rest
+			}
+		}
+	}
+	return strings.Join(lines, "")
 }
 
 // The groups of commands in help.

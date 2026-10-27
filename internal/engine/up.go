@@ -19,6 +19,7 @@ import (
 	"github.com/opstruss/opstruss/internal/model"
 	"github.com/opstruss/opstruss/internal/plugin"
 	"github.com/opstruss/opstruss/internal/record"
+	"github.com/opstruss/opstruss/internal/secret"
 	"github.com/opstruss/opstruss/internal/state"
 )
 
@@ -139,6 +140,9 @@ func (e *engine) preview(ctx context.Context, inst *instance) {
 	if !e.sel.has(inst) {
 		return
 	}
+	for _, p := range unreachedPass(inst.def) {
+		e.warn(inst.address, "pass: %s does not reach plugin %s, which does not ask for it", p, inst.def.Target.Package.Name)
+	}
 	if err := tombstoned(rec, e.short(inst.address)); err != nil {
 		inst.plan.err = err
 		return
@@ -220,6 +224,20 @@ func (e *engine) preview(ctx context.Context, inst *instance) {
 	}
 }
 
+// credentialHint says how to give a variable of names that redaction takes
+// for a credential, such as AWS_SESSION_TOKEN, which changes each session:
+// pass: is for what names the target, which a record keeps.
+func credentialHint(names []string) string {
+	creds := slices.DeleteFunc(slices.Clone(names), func(n string) bool { return !secret.HiddenName(n) })
+	switch len(creds) {
+	case 0:
+		return ""
+	case 1:
+		return fmt.Sprintf("; if %s is a credential that changes, give it with secrets: (env: %s) and env:, not pass:", creds[0], creds[0])
+	}
+	return fmt.Sprintf("; if %s are credentials that change, give each with secrets: (env: <name>) and env:, not pass:", strings.Join(creds, " and "))
+}
+
 // missing says which program of requires: is not in PATH.
 func (e *engine) missing(inst *instance, r *resolved) error {
 	for _, name := range r.requires {
@@ -298,9 +316,10 @@ func (e *engine) decide(ctx context.Context, inst *instance, r *resolved, rec *s
 	case len(changedPass(rec, r)) > 0:
 		// The destroy of the record reaches the target of the values it
 		// recorded; up with others would leave that target without one.
-		names := strings.Join(changedPass(rec, r), ", ")
+		changed := changedPass(rec, r)
+		names := strings.Join(changed, ", ")
 		if !e.forced(inst) {
-			return plan{err: fmt.Errorf("context changed: %s differs from the record, whose destroy reaches the old target; up --force moves the unit and forgets that target", names)}
+			return plan{err: fmt.Errorf("context changed: %s differs from the record, whose destroy reaches the old target; up --force moves the unit and forgets that target%s", names, credentialHint(changed))}
 		}
 		p.cause, p.reason = "context", "context changed: "+names+"; forced, the old target is forgotten"
 	case e.forced(inst):
