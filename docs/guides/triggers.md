@@ -103,6 +103,10 @@ With launchd on macOS, in `~/Library/LaunchAgents/dev.shop.opstruss.plist`:
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.shop.opstruss.plist
 ```
 
+`AbandonProcessGroup` keeps the daemon when mise exits, so `launchctl
+bootout gui/$(id -u)/dev.shop.opstruss` only keeps it from starting at the
+next login; `opstruss stop` stops it.
+
 `mise x -C <project>` brings the versions of `mise.toml` and its `[env]`,
 `OPSTRUSS_STACK` among them. Without mise, give the absolute path of
 `opstruss` and the project with `-C`, as in `ExecStart=/usr/local/bin/opstruss
