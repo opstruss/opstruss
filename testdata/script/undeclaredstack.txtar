@@ -1,0 +1,53 @@
+# A stack that the project no longer declares keeps its records: plan, up,
+# and doctor warn about them, destroy takes them down from the records, and
+# the other commands refuse the stack.
+
+env HOME=$WORK/home
+
+exec opstruss up --yes
+stdout '^default/site \| up site$'
+
+cp stacks.yaml opstruss.yaml
+exec opstruss plan --stack dev
+stderr '^stack default has 2 records, but the project does not declare it; opstruss destroy --stack default takes them down$'
+exec opstruss doctor --stack dev
+stdout 'stack default has 2 records'
+# without a secret, doctor still says where the age key of this machine is
+stdout '^ok     this machine has no age key yet; the first run that needs one makes it in '
+
+! exec opstruss up --stack default
+stderr '^opstruss: the project has no stack default; it has dev. The records of default stay: opstruss destroy --stack default takes them down$'
+! exec opstruss status --stack default
+stderr 'opstruss destroy --stack default takes them down'
+exec opstruss state list --stack default
+stdout 'site'
+
+exec opstruss destroy --stack default --yes
+stdout '^default/site: destroy: done$'
+stdout '^default/page: forgotten without a destroy program$'
+! exists site.txt
+exec opstruss plan --stack dev
+! stderr 'stack default'
+exec opstruss destroy --stack default
+stderr '^stack default has no units to destroy$'
+
+-- opstruss.yaml --
+opstruss: "0.1"
+name: undeclared
+units:
+  site:
+    run: echo up site && touch site.txt
+    destroy: rm -f site.txt
+  page:
+    run: echo page
+-- stacks.yaml --
+opstruss: "0.1"
+name: undeclared
+stacks:
+  dev: {}
+units:
+  site:
+    run: echo up site && touch site.txt
+    destroy: rm -f site.txt
+  page:
+    run: echo page

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -68,6 +69,11 @@ func (c *Cache) ResolveRef(ctx context.Context, id Identity) (string, error) {
 		return "", err
 	}
 	b, err := gitOutput(workCtx, filepath.Join(tmp, "repo.git"), "ls-remote", "--exit-code", "https://"+id.Repository+".git", "refs/heads/"+id.Ref, "refs/tags/"+id.Ref, "refs/tags/"+id.Ref+"^{}")
+	// --exit-code makes git exit with 2 when the repository has no such
+	// ref, as for a ref written wrong.
+	if exit := (*exec.ExitError)(nil); errors.As(err, &exit) && exit.ExitCode() == 2 {
+		return "", fmt.Errorf("%s has no branch or tag %s", id.Repository, id.Ref)
+	}
 	if err != nil {
 		return "", fmt.Errorf("%s: cannot resolve ref: %w", id.Key(), err)
 	}

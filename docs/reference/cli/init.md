@@ -8,12 +8,19 @@ title: opstruss init
 
 # opstruss init
 
-Set up the project in this directory, adding only what is missing: opstruss.yaml, and .opstruss/ in .gitignore. With --stack, also make that stack's \_meta. The age key of this machine and the data key of a stack are made by the first command that needs them.
+Set up the project in this directory, adding only what is missing: opstruss.yaml, whose first line names its schema for editors, and .opstruss/ in .gitignore. With --stack, also make the state of that stack. The age key of this machine and the data key of a stack are made by the first command that needs them.
 
 ## Usage
 
 ```text
 opstruss init [flags]
+```
+
+## Examples
+
+```sh
+mkdir shop && cd shop && opstruss init
+opstruss init --name shop
 ```
 
 ## Flags

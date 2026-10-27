@@ -225,7 +225,7 @@ func (e *engine) encryptionKeys() ([]string, []map[string]string, error) {
 func (e *engine) machineKey() (secret.Identity, bool, error) {
 	mine, made, err := secret.EnsureMachineKey(e.opts.LookupEnv, time.Now())
 	if made {
-		e.say("diagnostic", "", "made the age key %s of this machine in %s; back it up: with the _meta of each stack, it is the only way to open their sensitive values",
+		e.say("diagnostic", "", "made the age key %s of this machine in %s; back it up with .opstruss/state/ of each project, since together they are the only way to open its sensitive values",
 			mine.Recipient(), mine.From)
 	}
 	return mine, made, err

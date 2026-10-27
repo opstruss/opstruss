@@ -18,7 +18,8 @@ import (
 func (a *app) stateCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "state",
-		Short: "Read and repair the state of a stack without touching its storage",
+		Short: "Read and repair the records of a stack",
+		Long:  "Read and repair the state of a stack without touching its storage.",
 		Args:  cobra.NoArgs,
 	}
 	cmd.AddCommand(a.stateList(), a.statePull(), a.statePush(), a.stateRm())
@@ -86,7 +87,8 @@ func (e listEntry) status() string {
 func (a *app) stateList() *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
-		Short: "List the addresses that have a record: orphans, pending and abandoned attempts, and tombstones too; then the keys of kv",
+		Short: "List the records and kv keys of the stack",
+		Long:  "List the addresses that have a record: orphans, pending and abandoned attempts, and tombstones too; then the keys of kv.",
 		Args:  cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error {
 			p, s, err := a.store()
@@ -149,7 +151,8 @@ func kvStatus(k state.KVInfo, now time.Time) string {
 func (a *app) statePull() *cobra.Command {
 	return &cobra.Command{
 		Use:   "pull <key>",
-		Short: "Print a key as stored, and its etag on stderr; key is an address without the stack, _meta, or _kv/<name>",
+		Short: "Print one record or key as stored",
+		Long:  "Print a key as stored, and its etag on stderr; key is an address without the stack, _meta, or _kv/<name>.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			p, s, err := a.store()
@@ -179,7 +182,8 @@ func (a *app) statePush() *cobra.Command {
 	var force bool
 	cmd := &cobra.Command{
 		Use:   "push <key>",
-		Short: "Replace a key with stdin, under its lock, when it still has the etag of the pull",
+		Short: "Replace one record or key from stdin",
+		Long:  "Replace a key with stdin, under its lock, when it still has the etag of the pull.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) (err error) {
 			if ifMatch == "" && !force {
@@ -256,8 +260,11 @@ func (a *app) stateRm() *cobra.Command {
 	var ifMatch string
 	cmd := &cobra.Command{
 		Use:   "rm <address|_kv/<name>>",
-		Short: "Forget a record without destroying anything, leaving a tombstone; on a tombstone, remove it; or remove a key of kv",
-		Args:  cobra.ExactArgs(1),
+		Short: "Forget a record without destroying anything",
+		Example: `  opstruss state rm web      # forget web; up makes it again
+  opstruss state rm _kv/runs # remove the kv key runs`,
+		Long: "Forget a record without destroying anything, leaving a tombstone; on a tombstone, remove it; or remove a key of kv.",
+		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) (err error) {
 			p, s, err := a.store()
 			if err != nil {

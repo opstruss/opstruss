@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/opstruss/opstruss/internal/model"
 	"github.com/opstruss/opstruss/internal/sources"
@@ -25,32 +27,39 @@ type sourceRow struct {
 }
 
 func (a *app) pluginsCommand() *cobra.Command {
-	cmd := &cobra.Command{Use: "plugins", Short: "List project sources and their pins without fetching", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return a.listSources(cmd.Context()) }}
-	cmd.AddCommand(&cobra.Command{Use: "fetch", Short: "Prepare all project sources and binaries; repair pinned cache entries", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return a.fetchSources(cmd, "") }})
-	cmd.AddCommand(&cobra.Command{Use: "update [name]", Short: "Update all sources, or a root uses declaration and its repository/ref group", Args: cobra.MaximumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		name := "*"
-		if len(args) > 0 {
-			name = args[0]
-		}
-		return a.fetchSources(cmd, name)
-	}})
-	cmd.AddCommand(&cobra.Command{Use: "prune", Short: "Remove shared cache entries unused for 30 days, skipping active entries", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
-		cache, err := sources.UserCache()
-		if err != nil {
-			return err
-		}
-		removed, err := cache.Prune(cmd.Context())
-		if err != nil {
-			return err
-		}
-		if a.json {
-			return a.printJSON(map[string]any{"removed": removed})
-		}
-		for _, key := range removed {
-			fmt.Fprintln(a.stdout, "removed", key)
-		}
-		return nil
-	}})
+	cmd := &cobra.Command{Use: "plugins", Short: "List the sources of the project and their pins",
+		Long: "List project sources and their pins without fetching.", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return a.listSources(cmd.Context()) }}
+	cmd.AddCommand(&cobra.Command{Use: "fetch", Short: "Fetch the pinned sources and binaries",
+		Long: "Prepare all project sources and binaries; repair pinned cache entries.", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return a.fetchSources(cmd, "") }})
+	cmd.AddCommand(&cobra.Command{Use: "update [name]", Short: "Update the pins of all sources, or of one",
+		Long: "Update all sources, or a root uses declaration and its repository/ref group.", Args: cobra.MaximumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+			name := "*"
+			if len(args) > 0 {
+				name = args[0]
+			}
+			return a.fetchSources(cmd, name)
+		}})
+	cmd.AddCommand(&cobra.Command{Use: "prune", Short: "Remove cache entries unused for 30 days",
+		Long: "Remove shared cache entries unused for 30 days, skipping active entries.", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+			cache, err := sources.UserCache()
+			if err != nil {
+				return err
+			}
+			removed, err := cache.Prune(cmd.Context())
+			if err != nil {
+				return err
+			}
+			if a.json {
+				return a.printJSON(map[string]any{"removed": removed})
+			}
+			for _, key := range removed {
+				fmt.Fprintln(a.stdout, "removed", key)
+			}
+			if len(removed) == 0 {
+				fmt.Fprintln(a.stderr, "nothing to remove: every cache entry was used in the last 30 days")
+			}
+			return nil
+		}})
 	return cmd
 }
 
@@ -156,10 +165,54 @@ func (a *app) listSources(ctx context.Context) error {
 	if a.json {
 		return a.printJSON(map[string]any{"sources": out})
 	}
-	for _, row := range out {
-		fmt.Fprintf(a.stdout, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", row.Scope, row.Name, row.Kind, row.Source, row.Commit, row.Hash, row.Cache)
+	// A declaration that every stack makes alike is one line; the stacks
+	// show only where they differ. The hash and the whole commit are in
+	// --json and opstruss.lock.
+	type line struct {
+		row    sourceRow
+		stacks []string
 	}
-	return nil
+	var lines []*line
+	byKey := map[sourceRow]*line{}
+	for _, row := range out {
+		key := row
+		key.Scope = ""
+		if l := byKey[key]; l != nil {
+			l.stacks = append(l.stacks, row.Scope)
+			continue
+		}
+		l := &line{row: key, stacks: []string{row.Scope}}
+		byKey[key] = l
+		lines = append(lines, l)
+	}
+	some := false
+	for _, l := range lines {
+		some = some || len(l.stacks) != len(stacks) && l.stacks[0] != ""
+	}
+	tw := tabwriter.NewWriter(a.stdout, 0, 0, 2, ' ', 0)
+	header := "NAME\tKIND\tSOURCE\tCOMMIT\tSTATUS"
+	if some {
+		header += "\tSTACKS"
+	}
+	fmt.Fprintln(tw, header)
+	for _, l := range lines {
+		r := l.row
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s", r.Name, cmp.Or(r.Kind, "-"), r.Source, cmp.Or(shortCommit(r.Commit), "-"), r.Cache)
+		if some {
+			fmt.Fprintf(tw, "\t%s", strings.Join(l.stacks, ", "))
+		}
+		fmt.Fprintln(tw)
+	}
+	return tw.Flush()
+}
+
+// shortCommit is the first seven characters of a commit, as git log
+// --oneline shows it.
+func shortCommit(c string) string {
+	if len(c) > 7 {
+		return c[:7]
+	}
+	return c
 }
 
 func (a *app) fetchSources(cmd *cobra.Command, update string) error {
@@ -222,18 +275,28 @@ func (a *app) fetchSources(cmd *cobra.Command, update string) error {
 		return err
 	}
 	var rows []sourceRow
+	tw := tabwriter.NewWriter(a.stdout, 0, 0, 2, ' ', 0)
 	for _, key := range slices.Sorted(maps.Keys(session.Pins())) {
-		pin := session.Pins()[key]
-		if update != "" && before.Sources[key] == pin {
+		pin, old := session.Pins()[key], before.Sources[key]
+		if update != "" && old == pin {
+			// Update says what it left, as go get -u does.
+			if id, err := sources.Parse(key); err == nil && (update == "*" || slices.Contains(opts.UpdateGroups, id.Group())) {
+				fmt.Fprintf(tw, "%s\t%s\t(unchanged)\n", key, shortCommit(pin.Commit))
+			}
 			continue
 		}
 		rows = append(rows, sourceRow{Name: key, Source: key, Commit: pin.Commit, Hash: pin.Hash, Cache: "ready"})
+		switch {
+		case update == "":
+			fmt.Fprintf(tw, "%s\t%s\tready\n", key, shortCommit(pin.Commit))
+		case old.Commit == "":
+			fmt.Fprintf(tw, "%s\t%s\t(new)\n", key, shortCommit(pin.Commit))
+		default:
+			fmt.Fprintf(tw, "%s\t%s → %s\n", key, shortCommit(old.Commit), shortCommit(pin.Commit))
+		}
 	}
 	if a.json {
 		return a.printJSON(map[string]any{"sources": rows})
 	}
-	for _, row := range rows {
-		fmt.Fprintf(a.stdout, "%s\t%s\t%s\t%s\n", row.Source, row.Commit, row.Hash, row.Cache)
-	}
-	return nil
+	return tw.Flush()
 }

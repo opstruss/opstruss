@@ -22,6 +22,15 @@ and stays while they run; Ctrl-C stops them.
 opstruss up [unit]... [flags]
 ```
 
+## Examples
+
+```sh
+opstruss up                 # plan, ask, and apply the stack
+opstruss up --stack prod -y # apply without asking, as in CI
+opstruss up web             # web and the units it reads
+opstruss up -d              # in the daemon, with its triggers and services
+```
+
 ## Flags
 
 | Flag | Description |

@@ -117,15 +117,28 @@ func sourceIDs(list []*engine.Trigger) map[*engine.Trigger]string {
 // stopped and started again, one that is gone stops, and the rest takes
 // the new snapshot. What it cannot read or prepare keeps the triggers
 // installed before. It returns once each watch that it started is armed,
-// and each that it kept took the new snapshot.
-func (t *triggers) install(opts engine.Options) {
+// and each that it kept took the new snapshot, with what failed, which the
+// file of the daemon keeps for list until an install succeeds.
+func (t *triggers) install(opts engine.Options) (err error) {
 	t.refresh.Lock()
 	defer t.refresh.Unlock()
 	t.mu.Lock()
 	closed, prev, old := t.closed, t.snap, t.sources
 	t.mu.Unlock()
 	if closed {
-		return
+		return nil
+	}
+	defer func() {
+		msg := ""
+		if err != nil {
+			msg = err.Error()
+		}
+		_ = t.d.reg.update(func(f *File) { f.TriggerError = msg })
+	}()
+	// What cannot be prepared changes nothing.
+	kept := "no trigger is installed"
+	if len(old) > 0 {
+		kept = "the triggers installed before stay"
 	}
 	p, err := model.LoadWith(t.d.runs, opts.Dir, opts.Stack, sources.Options{Locked: opts.Locked})
 	installed := false
@@ -141,8 +154,9 @@ func (t *triggers) install(opts engine.Options) {
 		list, listen, err = engine.Triggers(opts)
 	}
 	if err != nil {
-		t.d.event("trigger", "warn", "", "the triggers installed before stay: %v", err)
-		return
+		err = fmt.Errorf("triggers: %v; %s", err, kept)
+		t.d.event("trigger", "warn", "", "%v", err)
+		return err
 	}
 	snap := &snapshot{opts: opts}
 	for _, tr := range list {
@@ -169,8 +183,9 @@ func (t *triggers) install(opts engine.Options) {
 		var spec *watchSpec
 		if tr.Kind == "watch" {
 			if spec, err = t.prepareWatch(id, b); err != nil {
-				t.d.event("trigger", "warn", tr.Task, "the triggers installed before stay: %s: %v", tr, err)
-				return
+				err = fmt.Errorf("triggers: task %s: %s: %v; %s", tr.Task, tr, err, kept)
+				t.d.event("trigger", "warn", tr.Task, "%v", err)
+				return err
 			}
 		}
 		if spec != nil && spec.prog != nil {
@@ -231,6 +246,8 @@ func (t *triggers) install(opts engine.Options) {
 	// event: each watch is armed before it returns.
 	var armed sync.WaitGroup
 	var failed atomic.Int64
+	var mu sync.Mutex
+	var errs []error
 	for _, st := range starts {
 		var ready func(error)
 		if st.b.tr.Kind == "watch" {
@@ -241,6 +258,9 @@ func (t *triggers) install(opts engine.Options) {
 					if err != nil {
 						failed.Add(1)
 						t.d.event("trigger", "error", st.b.tr.Task, "%s: %v", st.b.tr, err)
+						mu.Lock()
+						errs = append(errs, fmt.Errorf("triggers: task %s: %s: %v", st.b.tr.Task, st.b.tr, err))
+						mu.Unlock()
 					}
 					armed.Done()
 				})
@@ -257,6 +277,7 @@ func (t *triggers) install(opts engine.Options) {
 	}
 	if err := t.hooks.set(listen, routes); err != nil {
 		t.d.event("trigger", "error", "", "%v", err)
+		errs = append(errs, fmt.Errorf("triggers: %v", err))
 	}
 	if prev != nil && prev.opts.Model != nil {
 		prev.opts.Model.Close()
@@ -265,6 +286,7 @@ func (t *triggers) install(opts engine.Options) {
 		t.d.event("trigger", "info", "", "installed %d triggers: %d sources started, %d kept, %d stopped, %d failed",
 			len(list), len(starts)-int(failed.Load()), len(keeps), len(stops), failed.Load())
 	}
+	return errors.Join(errs...)
 }
 
 // start starts the source id of b, with the watch that spec prepared; a
@@ -538,6 +560,18 @@ func (t *triggers) setSchedule(tr *engine.Trigger, fn func(*Schedule)) {
 			}
 		}
 	})
+}
+
+// Triggers says whether the daemon of stack runs, and why its last install
+// of the triggers failed, as list shows it.
+func Triggers(root, stack string) (alive bool, failed string) {
+	if !Alive(root, stack) {
+		return false, ""
+	}
+	if f, err := Read(root, stack); err == nil {
+		failed = f.TriggerError
+	}
+	return true, failed
 }
 
 // Next returns when each task of stack comes next by its schedule and

@@ -56,6 +56,14 @@ func commandPage(c *cobra.Command, short []cli.ShortFlag) string {
 	if c.Runnable() {
 		fmt.Fprintf(&b, "## Usage\n\n```text\n%s\n```\n\n", c.UseLine())
 	}
+	if c.Example != "" {
+		// Help indents examples by two spaces, as cobra does.
+		lines := strings.Split(c.Example, "\n")
+		for i, l := range lines {
+			lines[i] = strings.TrimPrefix(l, "  ")
+		}
+		fmt.Fprintf(&b, "## Examples\n\n```sh\n%s\n```\n\n", strings.Join(lines, "\n"))
+	}
 	var local, global []cli.ShortFlag
 	for _, f := range short {
 		switch {

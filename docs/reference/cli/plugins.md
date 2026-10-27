@@ -30,8 +30,8 @@ opstruss plugins
 
 | Command | Description |
 |---|---|
-| [`opstruss plugins fetch`](./plugins-fetch) | Prepare all project sources and binaries; repair pinned cache entries |
-| [`opstruss plugins prune`](./plugins-prune) | Remove shared cache entries unused for 30 days, skipping active entries |
-| [`opstruss plugins update`](./plugins-update) | Update all sources, or a root uses declaration and its repository/ref group |
+| [`opstruss plugins fetch`](./plugins-fetch) | Fetch the pinned sources and binaries |
+| [`opstruss plugins update`](./plugins-update) | Update the pins of all sources, or of one |
+| [`opstruss plugins prune`](./plugins-prune) | Remove cache entries unused for 30 days |
 
 :::

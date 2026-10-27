@@ -24,9 +24,9 @@ Read and repair the state of a stack without touching its storage.
 
 | Command | Description |
 |---|---|
-| [`opstruss state list`](./state-list) | List the addresses that have a record: orphans, pending and abandoned attempts, and tombstones too; then the keys of kv |
-| [`opstruss state pull`](./state-pull) | Print a key as stored, and its etag on stderr; key is an address without the stack, \_meta, or \_kv/&lt;name&gt; |
-| [`opstruss state push`](./state-push) | Replace a key with stdin, under its lock, when it still has the etag of the pull |
-| [`opstruss state rm`](./state-rm) | Forget a record without destroying anything, leaving a tombstone; on a tombstone, remove it; or remove a key of kv |
+| [`opstruss state list`](./state-list) | List the records and kv keys of the stack |
+| [`opstruss state pull`](./state-pull) | Print one record or key as stored |
+| [`opstruss state push`](./state-push) | Replace one record or key from stdin |
+| [`opstruss state rm`](./state-rm) | Forget a record without destroying anything |
 
 :::

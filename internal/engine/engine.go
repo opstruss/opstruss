@@ -67,6 +67,10 @@ type Options struct {
 	// Daemon says that the run is in the daemon of its stack, which runs
 	// the triggers of the tasks.
 	Daemon bool
+	// Install, in the daemon, installs the triggers of the tasks again from
+	// the files, with the inputs of the run; an up calls it once its units
+	// are done, and fails when the triggers could not be installed.
+	Install func(inputs map[string]string) error
 	// Model is the project as a daemon read it when it installed its
 	// triggers, for the runs they make; without it, the files are read.
 	Model *model.Project
@@ -121,6 +125,10 @@ const DefaultParallel = 10
 const DefaultTimeout = 6 * time.Hour
 
 type engine struct {
+	// unitsHint is the note of an up without units that the daemon gives
+	// once it installed the triggers that it names.
+	unitsHint string
+
 	releaseSources func()
 
 	ctx      context.Context // the run's, for the programs of secrets, which an expression starts without one of its own
@@ -206,6 +214,10 @@ func open(ctx context.Context, opts Options, command, task string) (*engine, err
 	e, err := loadContext(ctx, opts)
 	if err != nil {
 		return nil, err
+	}
+	if e.p.Undeclared && !slices.Contains(undeclaredReaches, command) {
+		e.releaseSources()
+		return nil, undeclaredError(e.p)
 	}
 	e.ctx = ctx
 	if err := e.start(command, task, nil, nil); err != nil {

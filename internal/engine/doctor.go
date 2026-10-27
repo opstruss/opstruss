@@ -62,6 +62,9 @@ func Doctor(opts Options) (*Report, error) {
 	d.environment()
 	d.pluginPaths()
 	d.state()
+	for _, msg := range e.undeclaredStacks() {
+		d.add(&Check{Check: "state", Status: "warn", Message: msg})
+	}
 	d.processes()
 	return d.r, nil
 }
@@ -272,12 +275,16 @@ func (d *doctor) key() {
 	if fromFiles || needKey && forSops {
 		d.sops()
 	}
+	// The age key of this machine is shown also where the project needs
+	// none yet, since a task given an input makes it, and it is what to
+	// back up with the state.
+	status := "error"
 	if !needKey {
-		return
+		status = "warn"
 	}
 	ids, err := secret.Identities(e.opts.LookupEnv)
 	if err != nil {
-		d.add(&Check{Check: "key", Status: "error", Message: fmt.Sprintf("the age keys of this machine: %v", err)})
+		d.add(&Check{Check: "key", Status: status, Message: fmt.Sprintf("the age keys of this machine: %v", err)})
 		return
 	}
 	mine := "the age key of this machine"
@@ -288,7 +295,10 @@ func (d *doctor) key() {
 		d.add(&Check{Check: "key", Status: "ok", Path: file, Message: fmt.Sprintf(
 			"this machine has no age key yet; the first run that needs one makes it in %s", file)})
 	} else {
-		d.add(&Check{Check: "key", Status: "error", Message: fmt.Sprintf("this machine has no age key, and no file to make one in: %v", err)})
+		d.add(&Check{Check: "key", Status: status, Message: fmt.Sprintf("this machine has no age key, and no file to make one in: %v", err)})
+	}
+	if !needKey {
+		return
 	}
 	switch {
 	case hasKey:

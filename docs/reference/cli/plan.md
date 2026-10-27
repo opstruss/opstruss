@@ -16,6 +16,13 @@ Show what up would do and why, without changing anything.
 opstruss plan [unit]... [flags]
 ```
 
+## Examples
+
+```sh
+opstruss plan
+opstruss plan --stack prod --json
+```
+
 ## Flags
 
 | Flag | Description |

@@ -52,10 +52,24 @@ func runCommand(ctx context.Context, opts Options, op string) (*Result, error) {
 	}
 	defer e.releaseSources()
 	ctx = e.ctx
+	if op != "destroy" {
+		for _, msg := range e.undeclaredStacks() {
+			e.warn("", "%s", msg)
+		}
+	}
 	if err := e.syncKey(); err != nil {
 		e.fail("", err)
 	} else if _, _, err := e.unitPass(ctx, op, pass{units: opts.Units, yes: opts.Yes, force: opts.Force, noDeps: opts.NoDeps, source: "--yes"}); err != nil {
 		e.fail("", err)
+	}
+	// An up in the daemon installs the triggers again, also when a unit
+	// waits for approval, and says so when it cannot.
+	if op == "up" && opts.Install != nil {
+		if err := opts.Install(opts.Inputs); err != nil {
+			e.failWith(Event{Type: "trigger", Level: "error", Message: err.Error()})
+		} else if e.unitsHint != "" {
+			e.say("run", "", "%s", e.unitsHint)
+		}
 	}
 	outcome := map[int]string{0: success, 1: failure, 2: skipped}[e.exit]
 	e.close(outcome, nil, nil)

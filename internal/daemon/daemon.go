@@ -44,6 +44,9 @@ type File struct {
 	Processes []*Process  `json:"processes,omitempty"`
 	Schedules []*Schedule `json:"schedules,omitempty"`
 	Listen    string      `json:"listen,omitempty"` // where the webhooks listen, also the port of :0
+	// TriggerError is why the last install of the triggers failed, until
+	// one succeeds.
+	TriggerError string `json:"trigger_error,omitempty"`
 }
 
 // maxSocket is the longest path of a Unix socket: 104 bytes with its NUL
@@ -181,7 +184,9 @@ func Start(opts Options) (_ *Daemon, err error) {
 	d.runs, d.cancelRuns = context.WithCancel(runs)
 	d.trig = &triggers{d: d, sources: map[string]*source{}, pending: map[string]int{}}
 	d.trig.hooks = &webhooks{t: d.trig}
-	d.trig.install(runOptions(opts.Dir, opts.Stack, opts.Inputs, opts.Environ, opts.Locked))
+	// What fails here is in the log; the up that started the daemon
+	// installs the triggers again and says so.
+	_ = d.trig.install(runOptions(opts.Dir, opts.Stack, opts.Inputs, opts.Environ, opts.Locked))
 	return d, nil
 }
 
@@ -233,20 +238,16 @@ func (d *Daemon) Serve(ctx context.Context) error {
 			defer d.active.Add(-1)
 			x := api.New(h)
 			x.Supervisor, x.Daemon = d.sup, true
+			// An up, also one run again, installs the triggers again from
+			// the files as they are now, with what its caller brings and the
+			// inputs of that up.
+			x.Install = func(r api.Request, inputs map[string]string) error {
+				return d.trig.install(runOptions(r.Dir, r.Stack, inputs, r.Environ, r.Locked))
+			}
 			res, err := x.Call(ctx, method, r)
 			if res != nil && res.Record != nil {
 				// A run forwarded here starts a chain of after triggers.
 				d.trig.ended(res.Record, 0)
-			}
-			switch {
-			case err != nil:
-			case method == "up":
-				// up installs the triggers again from the files as they are
-				// now, with what its caller brings.
-				d.trig.install(runOptions(r.Dir, r.Stack, r.Inputs, r.Environ, r.Locked))
-			case method == "rerun" && res.Record != nil && res.Record.Command == "up":
-				// An up again brings the --input of the up it ran again.
-				d.trig.install(runOptions(r.Dir, r.Stack, res.Inputs, r.Environ, r.Locked))
 			}
 			return res, err
 		}}

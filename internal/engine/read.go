@@ -123,6 +123,16 @@ type Status struct {
 	Stack string        `json:"stack"`
 	Tasks []*TaskStatus `json:"tasks"`
 	Units []*UnitStatus `json:"units"`
+	// Triggers says, when a task has triggers, whether the daemon runs
+	// them.
+	Triggers *TriggerStatus `json:"triggers,omitempty"`
+}
+
+// TriggerStatus is whether the daemon of the stack runs, and why its last
+// install of the triggers failed.
+type TriggerStatus struct {
+	Daemon bool   `json:"daemon"`
+	Error  string `json:"error,omitempty"`
 }
 
 // List reads the tasks of the project with their last runs, and the units

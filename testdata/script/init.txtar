@@ -63,6 +63,7 @@ stdout 'nothing to do'
 stderr 'qa'
 
 -- want/opstruss.yaml --
+# yaml-language-server: $schema=https://opstruss.github.io/dev/schema/project.json
 opstruss: "0.1"
 name: my_app-2
 -- want/gitignore --

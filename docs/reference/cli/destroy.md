@@ -8,12 +8,19 @@ title: opstruss destroy
 
 # opstruss destroy
 
-Destroy the units with the destroy contract of their records.
+Take the units of the stack down, each with the destroy program and inputs that its record keeps.
 
 ## Usage
 
 ```text
 opstruss destroy [unit]... [flags]
+```
+
+## Examples
+
+```sh
+opstruss destroy --stack dev
+opstruss destroy web        # web and the units that read it
 ```
 
 ## Flags

@@ -16,6 +16,13 @@ Run a program with what the programs of one unit get, under its lock, on this te
 opstruss exec <unit> -- <program> [arg]...
 ```
 
+## Examples
+
+```sh
+opstruss exec infra -- tofu state list
+opstruss exec web -- docker compose ps
+```
+
 ## Global flags
 
 | Flag | Description |

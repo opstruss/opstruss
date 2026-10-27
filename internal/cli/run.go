@@ -43,6 +43,11 @@ func (a *app) unitCommands() []*cobra.Command {
 				if err != nil {
 					return err
 				}
+				// Without a terminal nothing could answer, so say what would,
+				// as pulumi up does without --yes.
+				if res.ExitCode == 2 && !req.Yes && !a.answers() {
+					fmt.Fprintf(a.stderr, "changes need approval: run %s at a terminal, or with --yes\n", use)
+				}
 				return in.exit(res.ExitCode)
 			},
 		}
@@ -63,12 +68,25 @@ of the command line go to it. Without one, an up that starts a service makes
 this process the daemon of the stack, which shows the output of its services
 and stays while they run; Ctrl-C stops them.`
 	up.Annotations = map[string]string{detachable: "true"}
+	up.Example = `  opstruss up                 # plan, ask, and apply the stack
+  opstruss up --stack prod -y # apply without asking, as in CI
+  opstruss up web             # web and the units it reads
+  opstruss up -d              # in the daemon, with its triggers and services`
+	destroy := command("destroy", "Take the units of the stack down",
+		"run destroy although pass values differ from those recorded", "down", "delete", "remove", "rm")
+	destroy.Long = "Take the units of the stack down, each with the destroy program and inputs that its record keeps."
+	destroy.Example = `  opstruss destroy --stack dev
+  opstruss destroy web        # web and the units that read it`
+	status := command("status", "Show the state of the units", "", "ps")
+	status.Long = "Show the state of the units: the status task of their plugin, or what their record says."
+	plan := command("plan", "Show what up would do and why, without changing anything", "", "preview", "diff")
+	plan.Example = `  opstruss plan
+  opstruss plan --stack prod --json`
 	return []*cobra.Command{
-		command("plan", "Show what up would do and why, without changing anything", "", "preview", "diff"),
+		plan,
 		up,
-		command("destroy", "Destroy the units with the destroy contract of their records",
-			"run destroy although pass values differ from those recorded", "down", "delete", "remove", "rm"),
-		command("status", "Show the state of the units: the status task of their plugin, or what their record says", "", "ps"),
+		destroy,
+		status,
 		a.logsCommand(),
 	}
 }
@@ -80,7 +98,11 @@ func (a *app) logsCommand() *cobra.Command {
 	var follow bool
 	cmd := &cobra.Command{
 		Use:   "logs [unit|task]...",
-		Short: "Show the output of the units: the log of a service, the logs task of their plugin, or the last run that touched them; and of tasks, from their last run",
+		Short: "Show the output of units and tasks",
+		Example: `  opstruss logs              # every unit and task
+  opstruss logs web -f       # follow the log of the service web
+  opstruss logs backup       # the last run of the task backup`,
+		Long: "Show the output of the units: the log of a service, the logs task of their plugin, or the last run that touched them; and of tasks, from their last run.",
 		RunE: func(_ *cobra.Command, units []string) error {
 			req, err := a.request(units)
 			if err != nil {
@@ -335,7 +357,10 @@ func (a *app) readLine(ctx context.Context) (string, error) {
 func (a *app) execCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "exec <unit> -- <program> [arg]...",
-		Short: "Run a program with what the programs of one unit get, under its lock, on this terminal",
+		Short: "Run a program with the environment of a unit",
+		Example: `  opstruss exec infra -- tofu state list
+  opstruss exec web -- docker compose ps`,
+		Long: "Run a program with what the programs of one unit get, under its lock, on this terminal.",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if cmd.ArgsLenAtDash() != 1 || len(args) < 2 {
 				return errors.New("write opstruss exec <unit> -- <program>, with the arguments of the program after it")

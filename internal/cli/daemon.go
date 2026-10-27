@@ -182,7 +182,8 @@ func (a *app) daemonCommand() *cobra.Command {
 func (a *app) stopCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:        "stop",
-		Short:      "Stop the daemon of the stack, which cancels the runs in it and stops its services",
+		Short:      "Stop the daemon of the stack and its services",
+		Long:       "Stop the daemon of the stack, which cancels the runs in it and stops its services.",
 		SuggestFor: []string{"down"},
 		Args:       cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error {
@@ -238,7 +239,8 @@ func (a *app) stopCommand() *cobra.Command {
 func (a *app) unlockCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "unlock <unit>",
-		Short: "Forget what is left of a service that cannot be proven its own, so up starts it again",
+		Short: "Forget a leftover service so up can start it again",
+		Long:  "Forget what is left of a service that cannot be proven its own, so up starts it again.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, units []string) error {
 			req, err := a.request(units)

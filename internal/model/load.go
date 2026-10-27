@@ -40,6 +40,10 @@ type Project struct {
 	Dir       string
 	StackName string
 	Stack     *Stack
+	// Undeclared says that the project no longer declares the stack, which
+	// still has state in .opstruss/state/: its units and tasks are left
+	// out, so each record is an orphan that destroy takes down.
+	Undeclared bool
 
 	// Order is the paths of the units that run, through the components
 	// that units use, in an order where each comes after the units it
@@ -86,7 +90,7 @@ func Find(dir string) (string, error) {
 		}
 		parent := filepath.Dir(d)
 		if parent == d {
-			return "", fmt.Errorf("no %s in %s or a directory above it", FileName, dir)
+			return "", fmt.Errorf("no %s in %s or a directory above it; opstruss init makes one", FileName, dir)
 		}
 		d = parent
 	}
@@ -108,6 +112,13 @@ func stackNames(doc map[string]any) []string {
 		return []string{DefaultStack}
 	}
 	return slices.Sorted(maps.Keys(stacks))
+}
+
+// HasState says whether stack has state in the local backend of the
+// project in dir.
+func HasState(dir, stack string) bool {
+	entries, err := os.ReadDir(filepath.Join(dir, ".opstruss", "state", stack))
+	return err == nil && len(entries) > 0
 }
 
 // StackOf returns the name of the stack of the project in dir that a
@@ -175,10 +186,14 @@ func readProject(dir, stack string, session *sources.Session, check bool) (*Proj
 	if err != nil {
 		return nil, err
 	}
-	if stack, err = chooseStack(stackNames(root.value), stack); err != nil {
-		return nil, err
+	names := stackNames(root.value)
+	undeclared := stack != "" && !slices.Contains(names, stack) && HasState(dir, stack)
+	if !undeclared {
+		if stack, err = chooseStack(names, stack); err != nil {
+			return nil, err
+		}
 	}
-	p := &Project{Sources: session, Dir: dir, StackName: stack, doc: map[string]any{}, root: root, origins: map[string]origin{}, base: dir}
+	p := &Project{Sources: session, Dir: dir, StackName: stack, Undeclared: undeclared, doc: map[string]any{}, root: root, origins: map[string]origin{}, base: dir}
 	for k, v := range root.value {
 		if k == "include" || k == "stacks" || strings.HasPrefix(k, "x-") {
 			continue
@@ -192,6 +207,11 @@ func readProject(dir, stack string, session *sources.Session, check bool) (*Proj
 	p.overlay(root, stack, stackDoc)
 	if len(probs) > 0 {
 		return nil, probs
+	}
+	if undeclared {
+		for _, k := range []string{"units", "tasks", "outputs"} {
+			delete(p.doc, k)
+		}
 	}
 	if err := decodeValue(p.doc, &p.File); err != nil {
 		return nil, err

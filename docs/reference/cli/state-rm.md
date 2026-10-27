@@ -16,6 +16,13 @@ Forget a record without destroying anything, leaving a tombstone; on a tombstone
 opstruss state rm <address|_kv/<name>> [flags]
 ```
 
+## Examples
+
+```sh
+opstruss state rm web      # forget web; up makes it again
+opstruss state rm _kv/runs # remove the kv key runs
+```
+
 ## Flags
 
 | Flag | Description |

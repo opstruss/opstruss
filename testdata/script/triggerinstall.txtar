@@ -1,0 +1,56 @@
+# An up that cannot install the triggers of the daemon says why and exits
+# with 1, and list says whether a daemon runs the triggers and why the last
+# install failed.
+
+env HOME=$WORK/home
+
+# without a daemon, list says that nothing runs the triggers
+exec opstruss list
+stdout '^  beat '
+stderr '^no daemon runs the triggers of stack default; opstruss up -d starts it$'
+
+# a secret that is not set keeps every trigger out of a new daemon
+! exec opstruss up -d
+stderr '^triggers: task hook: webhook secret: .*HOOK_SECRET is not set; no trigger is installed$'
+! stderr 'runs the triggers'
+exec opstruss list
+stderr 'HOOK_SECRET is not set; no trigger is installed$'
+! exists beats.log
+
+# once it is set, the triggers run, and list says nothing more
+env HOOK_SECRET=s3cret
+exec opstruss up -d
+stderr '^the project declares no units; the daemon of stack default runs the triggers of 2 tasks$'
+exec opstruss list
+! stderr .
+stdout 'on every 1s; next '
+
+# a later up that fails keeps them
+exec sh -c 'sed s/HOOK_SECRET/OTHER_SECRET/ opstruss.yaml > other.yaml && mv other.yaml opstruss.yaml'
+! exec opstruss up
+stderr 'OTHER_SECRET is not set; the triggers installed before stay$'
+exec opstruss list
+stderr 'the triggers installed before stay$'
+stdout 'on every 1s; next '
+exec opstruss stop
+
+-- opstruss.yaml --
+opstruss: "0.1"
+name: trig
+runtime:
+  listen: 127.0.0.1:0
+secrets:
+  hook:
+    env: HOOK_SECRET
+tasks:
+  beat:
+    on:
+      every: 1s
+    run: date >> beats.log
+  hook:
+    on:
+      webhook:
+        path: /hook
+        secret: ${{ secrets.hook }}
+        signature: bearer
+    run: echo hooked

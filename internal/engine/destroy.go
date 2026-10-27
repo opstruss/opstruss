@@ -116,6 +116,14 @@ func (e *engine) destroyPass(ctx context.Context) ([]*leftover, error) {
 	for _, l := range records {
 		switch {
 		case l.record.Kind == "component":
+		case l.def == nil && e.p.Undeclared:
+			// A stack gone from stacks: goes down whole, from its records.
+			if err := e.checkDestroySources(ctx, l.record); err != nil {
+				return nil, err
+			}
+			l.reason, l.cause = "its stack is no longer in stacks:", "requested"
+			items = append(items, l)
+			l.sayPlan(e)
 		case l.def == nil:
 			if e.sel.all {
 				e.warnOrphan(l)
@@ -137,7 +145,7 @@ func (e *engine) destroyPass(ctx context.Context) ([]*leftover, error) {
 	// rather than the units that depend on it going first.
 	protected := false
 	for _, l := range items {
-		if l.def.Protect {
+		if l.def != nil && l.def.Protect {
 			e.fail(l.address, errors.New("protect: true refuses destroy; remove it from the unit first, or leave the unit out; nothing was destroyed"))
 			protected = true
 		}

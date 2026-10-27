@@ -26,7 +26,8 @@ import (
 // internal, and of every task of its units, also under opstruss run, which
 // still reaches a task that a later built-in command shadows.
 func (a *app) taskCommands(root *cobra.Command) {
-	run := &cobra.Command{Use: "run <task>", Short: "Run a task of the project, also one that a built-in command shadows",
+	run := &cobra.Command{Use: "run <task>", Short: "Run a task of the project by name",
+		Long: "Run a task of the project, also one that a built-in command shadows.",
 		// A name that is no task is an error, as at the root, rather than
 		// the help with exit code 0.
 		Args: unknownCommand, SuggestionsMinimumDistance: 2,

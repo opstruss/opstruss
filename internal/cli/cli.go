@@ -16,12 +16,14 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"context"
 
 	"github.com/opstruss/opstruss/internal/ansi"
 	"github.com/opstruss/opstruss/internal/expr"
 	"github.com/opstruss/opstruss/internal/model"
+	"github.com/opstruss/opstruss/internal/record"
 	"github.com/opstruss/opstruss/internal/secret"
 	"github.com/opstruss/opstruss/internal/sources"
 	"github.com/spf13/cobra"
@@ -117,6 +119,7 @@ func start(args []string, stdin io.Reader, terminal bool, stdout, stderr io.Writ
 	}
 	args, err := a.takeShort(args)
 	a.args = args
+	var ran *cobra.Command
 	if err == nil {
 		root := a.root()
 		defer func() {
@@ -127,7 +130,7 @@ func start(args []string, stdin io.Reader, terminal bool, stdout, stderr io.Writ
 		root.SetArgs(args)
 		root.SetOut(stdout)
 		root.SetErr(stderr)
-		err = root.Execute()
+		ran, err = root.ExecuteC()
 		a.endOutput()
 	}
 	var exit *exitError
@@ -135,6 +138,9 @@ func start(args []string, stdin io.Reader, terminal bool, stdout, stderr io.Writ
 	// An unknown command may be a task of a project that does not load.
 	if err != nil && strings.HasPrefix(err.Error(), "unknown command") && a.loadErr != nil {
 		err = a.loadErr
+	}
+	if err != nil && a.json && !errors.As(err, &exit) {
+		a.jsonError(ran, err)
 	}
 	switch {
 	case err == nil:
@@ -149,6 +155,44 @@ func start(args []string, stdin io.Reader, terminal bool, stdout, stderr io.Writ
 		fmt.Fprintf(stderr, "opstruss: %v\n", err)
 	}
 	return 1
+}
+
+// eventCommands print the events of a run with --json; the other commands
+// print one document.
+var eventCommands = []string{"plan", "up", "destroy", "status", "logs", "rerun"}
+
+// jsonError prints, with --json, what failed before cmd printed anything:
+// for a command that prints events, a diagnostic event for each problem of
+// the files and a last run event with its exit code, as terraform plan
+// -json prints the diagnostics of its configuration; for the others, a
+// document with the error. stderr still has the text.
+func (a *app) jsonError(cmd *cobra.Command, err error) {
+	events := cmd != nil && (slices.Contains(eventCommands, cmd.Name()) || cmd.GroupID == groupTasks ||
+		cmd.HasParent() && cmd.Parent().Name() == "run")
+	if !events {
+		_ = a.printJSON(map[string]string{"error": err.Error()})
+		return
+	}
+	var msgs []string
+	var probs model.Problems
+	if errors.As(err, &probs) {
+		for _, p := range probs {
+			msgs = append(msgs, p.String())
+		}
+	} else {
+		msgs = append(msgs, err.Error())
+	}
+	now := time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
+	enc := json.NewEncoder(a.stdout)
+	enc.SetEscapeHTML(false)
+	seq := int64(0)
+	for _, m := range msgs {
+		seq++
+		_ = enc.Encode(record.Event{V: 1, Seq: seq, Time: now, Type: "diagnostic", Level: "error", Message: m})
+	}
+	code := 1
+	_ = enc.Encode(record.Event{V: 1, Seq: seq + 1, Time: now, Type: "run", Level: "error", Message: "failed before it started",
+		Status: record.Finished, Outcome: "failure", ExitCode: &code})
 }
 
 // takeShort removes from args the short flags that are OpsTruss's on every
@@ -257,20 +301,30 @@ func (a *app) root() *cobra.Command {
 	pf.BoolVar(&a.locked, "locked", false, "require existing dependency pins without changing opstruss.lock")
 	pf.BoolVar(&a.json, "json", false, "print JSON")
 	root.Flags().StringVar(&a.completion, "completion", "", "print a completion script for bash, zsh, or fish")
-	root.AddCommand(a.versionCommand(), a.initCommand(), a.validateCommand(), a.explainCommand(), a.stateCommand())
-	root.AddCommand(a.unitCommands()...)
-	root.AddCommand(a.listCommand(), a.outputsCommand(), a.runsCommand(), a.execCommand(), a.doctorCommand(),
-		a.stopCommand(), a.unlockCommand(), a.daemonCommand(), a.pluginsCommand())
+	root.Flags().BoolP("version", "v", false, "print the version, as opstruss version does")
+	// Help lists the commands in the order that a project meets them.
+	units := a.unitCommands()
+	root.AddCommand(a.initCommand(), a.validateCommand())
+	root.AddCommand(units...)
+	root.AddCommand(a.listCommand(), a.outputsCommand(), a.runsCommand(), a.explainCommand(), a.doctorCommand(),
+		a.execCommand(), a.pluginsCommand(), a.stateCommand(), a.stopCommand(), a.unlockCommand(), a.versionCommand(),
+		a.daemonCommand())
 	a.completions(root)
 	root.SetUsageTemplate(usageTemplate(root.UsageTemplate()))
-	// Help shows the commands of OpsTruss apart from the tasks of the
-	// project, as npm run and just --list show scripts on their own.
-	root.AddGroup(&cobra.Group{ID: groupCommands, Title: "Commands:"})
+	root.Version = version()
+	root.SetVersionTemplate(`opstruss {{.Version}} ` + runtime.GOOS + "/" + runtime.GOARCH + "\n")
+	// Help shows the commands that a project starts with first, as
+	// terraform -help shows its main commands, and the commands of
+	// OpsTruss apart from the tasks of the project, as npm run and just
+	// --list show scripts on their own.
+	root.AddGroup(&cobra.Group{ID: groupMain, Title: "Main commands:"},
+		&cobra.Group{ID: groupInspect, Title: "Inspect:"},
+		&cobra.Group{ID: groupCommands, Title: "Other commands:"})
 	root.SetHelpCommandGroupID(groupCommands)
 	a.taskCommands(root)
 	for _, c := range root.Commands() {
 		if c.GroupID == "" {
-			c.GroupID = groupCommands
+			c.GroupID = cmp.Or(commandGroups[c.Name()], groupCommands)
 		}
 	}
 	return root
@@ -304,17 +358,27 @@ func Reference() (*cobra.Command, []ShortFlag) {
 }
 
 func init() {
+	cobra.EnableCommandSorting = false
 	cobra.AddTemplateFunc("flagUsages", flagUsages)
-	cobra.AddTemplateFunc("docsURL", func() string { return docsURL(version(), "") })
+	cobra.AddTemplateFunc("docsURL", func(cmd *cobra.Command) string { return docsURL(version(), docsPath(cmd)) })
 }
 
 // usageTemplate is cobra's usage template with the flags of each section
-// printed by flagUsages, and the help of opstruss itself ending with the
-// documentation of this version.
+// printed by flagUsages, and each help ending with its page in the
+// documentation of this version, as gh ends each help with its manual.
 func usageTemplate(t string) string {
 	t = strings.Replace(t, "{{.LocalFlags.FlagUsages", "{{flagUsages . .LocalFlags true", 1)
 	t = strings.Replace(t, "{{.InheritedFlags.FlagUsages", "{{flagUsages . .InheritedFlags false", 1)
-	return strings.TrimSuffix(t, "\n") + "{{if not .HasParent}}\n\nDocumentation: {{docsURL}}{{end}}\n"
+	return strings.TrimSuffix(t, "\n") + "\n\nDocumentation: {{docsURL .}}\n"
+}
+
+// docsPath is the page of cmd in the documentation: its reference, or the
+// start for opstruss itself and the tasks of a project.
+func docsPath(cmd *cobra.Command) string {
+	if !cmd.HasParent() || cmd.GroupID == groupTasks {
+		return ""
+	}
+	return "reference/cli/" + strings.ReplaceAll(strings.TrimPrefix(cmd.CommandPath(), cmd.Root().Name()+" "), " ", "-")
 }
 
 // flagUsages is fs.FlagUsages with the short flags that belong in it: -C
@@ -352,9 +416,18 @@ func flagUsages(cmd *cobra.Command, fs *pflag.FlagSet, local bool) string {
 
 // The groups of commands in help.
 const (
+	groupMain     = "main"
+	groupInspect  = "inspect"
 	groupCommands = "commands"
 	groupTasks    = "tasks"
 )
+
+// commandGroups are the groups of help other than the other commands.
+var commandGroups = map[string]string{
+	"init": groupMain, "validate": groupMain, "plan": groupMain, "up": groupMain, "destroy": groupMain,
+	"status": groupInspect, "list": groupInspect, "outputs": groupInspect, "logs": groupInspect,
+	"runs": groupInspect, "explain": groupInspect, "doctor": groupInspect,
+}
 
 func (a *app) printCompletion(root *cobra.Command) error {
 	switch a.completion {
@@ -501,7 +574,8 @@ func (a *app) validateCommand() *cobra.Command {
 func (a *app) explainCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "explain [unit|task]...",
-		Short: "Print the project of one stack as read and resolved, without state",
+		Short: "Print the project of a stack as resolved",
+		Long:  "Print the project of one stack as read and resolved, without state.",
 		RunE: func(_ *cobra.Command, names []string) error {
 			dir, err := a.projectDir()
 			if err != nil {

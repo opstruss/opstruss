@@ -16,6 +16,14 @@ Show the output of the units: the log of a service, the logs task of their plugi
 opstruss logs [unit|task]... [flags]
 ```
 
+## Examples
+
+```sh
+opstruss logs              # every unit and task
+opstruss logs web -f       # follow the log of the service web
+opstruss logs backup       # the last run of the task backup
+```
+
 ## Flags
 
 | Flag | Description |

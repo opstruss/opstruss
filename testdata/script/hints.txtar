@@ -57,7 +57,8 @@ exec opstruss --help
 
 # help keeps the tasks apart from the commands, and an unknown command,
 # also a task written wrong, gets a suggestion
-stdout '^Commands:$'
+stdout '^Main commands:$'
+stdout '^Other commands:$'
 stdout '^Project tasks:$'
 ! exec opstruss tlod
 stderr '^opstruss: unknown command "tlod" for "opstruss"; did you mean told\?$'

@@ -20,7 +20,7 @@ func reinstall(t *testing.T, d *Daemon, dir, yaml string, environ ...string) {
 	if err := os.WriteFile(filepath.Join(dir, "opstruss.yaml"), []byte(yaml), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	d.trig.install(runOptions(dir, "default", nil, append([]string{"PATH=" + os.Getenv("PATH")}, environ...), false))
+	_ = d.trig.install(runOptions(dir, "default", nil, append([]string{"PATH=" + os.Getenv("PATH")}, environ...), false))
 }
 
 func sourcesOf(d *Daemon) map[string]*source {
@@ -339,7 +339,7 @@ tasks:
 		t.Fatalf("sources %v, were %v", slices.Sorted(maps.Keys(after)), slices.Sorted(maps.Keys(before)))
 	}
 	log, _ := os.ReadFile(LogPath(filepath.Join(dir, ".opstruss"), "default"))
-	if !strings.Contains(string(log), "the triggers installed before stay: watch") {
+	if !strings.Contains(string(log), "triggers: task other: watch") || !strings.Contains(string(log), "; the triggers installed before stay") {
 		t.Fatalf("the log of the daemon:\n%s", log)
 	}
 }

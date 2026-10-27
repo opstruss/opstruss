@@ -148,6 +148,11 @@ func TestGitCacheIntegrityOfflineAndRepair(t *testing.T) {
 	if err != nil || resolved != commit {
 		t.Fatalf("resolve: %s %v", resolved, err)
 	}
+	// A ref that the repository does not have says so.
+	missing, _ := Parse(Repository + "/demo@v9")
+	if _, err := cache.ResolveRef(ctx, missing); err == nil || err.Error() != Repository+" has no branch or tag v9" {
+		t.Fatalf("resolve a missing ref: %v", err)
+	}
 	id.Commit = resolved
 	id, root, lease, err := cache.Git(ctx, id, false, false)
 	if err != nil {

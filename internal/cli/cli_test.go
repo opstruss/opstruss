@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/opstruss/opstruss/internal/engine"
+	"github.com/spf13/cobra"
 )
 
 func TestRun(t *testing.T) {
@@ -30,13 +31,18 @@ func TestRun(t *testing.T) {
 		{args: []string{"pln"}, code: 1, stderr: `unknown command "pln" for "opstruss"; did you mean plan or run?`},
 		{args: []string{"run", "nope"}, code: 1, stderr: `unknown command "nope" for "opstruss run"`},
 		{args: []string{"run"}, stdout: "Usage:"},
-		{args: []string{"--help"}, stdout: "Commands:\n"},
+		{args: []string{"--help"}, stdout: "Main commands:\n  init  "},
+		{args: []string{"--version"}, stdout: "opstruss (devel) " + runtime.GOOS + "/" + runtime.GOARCH + "\n"},
+		{args: []string{"up", "--help"}, stdout: "Examples:\n"},
+		{args: []string{"up", "--help"}, stdout: "\n\nDocumentation: https://opstruss.github.io/dev/reference/cli/up\n"},
+		{args: []string{"state", "rm", "--help"}, stdout: "Documentation: https://opstruss.github.io/dev/reference/cli/state-rm\n"},
 		{args: []string{"--help"}, stdout: "a command.\n\nDocumentation: https://opstruss.github.io/dev/\n"},
 		{args: []string{"--completion", "zsh"}, stdout: "#compdef opstruss"},
 		{args: []string{"--completion", "csh"}, code: 1, stderr: "--completion takes bash, zsh, or fish"},
 		{args: []string{"-C"}, code: 1, stderr: "-C needs a directory"},
 		{args: []string{"version", "-d"}, code: 1, stderr: "-d is for up and tasks"},
 		{args: []string{"-C", t.TempDir(), "validate"}, code: 1, stderr: "no opstruss.yaml in"},
+		{args: []string{"-C", t.TempDir(), "plan", "--json"}, code: 1, stdout: `"type":"diagnostic","level":"error","message":"no opstruss.yaml in `},
 	}
 	for _, tt := range tests {
 		t.Run(strings.Join(tt.args, " "), func(t *testing.T) {
@@ -170,5 +176,26 @@ func TestTakeShort(t *testing.T) {
 	}
 	if a.dir != "/srv/ops" || !a.detach || strings.Join(args, " ") != "up web -- -C x -d" {
 		t.Fatalf("dir %q, detach %v, args %q", a.dir, a.detach, args)
+	}
+}
+
+// TestShortHelp: the summary of each command fits a line of help, and the
+// commands that a project starts with show examples.
+func TestShortHelp(t *testing.T) {
+	root, _ := Reference()
+	var walk func(*cobra.Command)
+	walk = func(c *cobra.Command) {
+		if c.HasParent() && len(c.Short) > 60 {
+			t.Errorf("%s: summary of %d characters: %q", c.CommandPath(), len(c.Short), c.Short)
+		}
+		for _, sub := range c.Commands() {
+			walk(sub)
+		}
+	}
+	walk(root)
+	for _, name := range []string{"init", "plan", "up", "destroy", "logs", "runs", "exec"} {
+		if c, _, err := root.Find([]string{name}); err != nil || c.Example == "" {
+			t.Errorf("%s has no examples", name)
+		}
 	}
 }

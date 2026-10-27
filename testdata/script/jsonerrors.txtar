@@ -1,0 +1,18 @@
+# With --json, what fails before a run is JSON too: a command that prints
+# events prints a diagnostic for each problem and a last run event with
+# its exit code, and the others print a document with the error; stderr
+# keeps the text.
+
+env HOME=$WORK/home
+
+! exec opstruss up --json
+stdout '^\{"v":1,"seq":1,.*"type":"diagnostic","level":"error","message":"opstruss.yaml:2:1: unit: unknown key; did you mean units\?"\}$'
+stdout '"type":"run","level":"error",.*"outcome":"failure","exit_code":1\}$'
+stderr '^opstruss.yaml:2:1: unit: unknown key; did you mean units\?$'
+! exec opstruss list --json
+stdout '"error": "opstruss.yaml:2:1: unit: unknown key; did you mean units\?"'
+
+-- opstruss.yaml --
+name: broken
+unit:
+  a: {}

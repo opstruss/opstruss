@@ -26,10 +26,12 @@ func (a *app) initCommand() *cobra.Command {
 	var name string
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Set up the project in this directory: opstruss.yaml and .gitignore",
-		Long: "Set up the project in this directory, adding only what is missing: opstruss.yaml, and .opstruss/ in .gitignore. " +
-			"With --stack, also make that stack's _meta. The age key of this machine and the data key of a stack " +
-			"are made by the first command that needs them.",
+		Short: "Set up a project in this directory",
+		Long: "Set up the project in this directory, adding only what is missing: opstruss.yaml, whose first line names " +
+			"its schema for editors, and .opstruss/ in .gitignore. With --stack, also make the state of that stack. " +
+			"The age key of this machine and the data key of a stack are made by the first command that needs them.",
+		Example: `  mkdir shop && cd shop && opstruss init
+  opstruss init --name shop`,
 		Args: cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error {
 			dir, err := filepath.Abs(cmp.Or(a.dir, "."))
@@ -69,7 +71,8 @@ func (a *app) initCommand() *cobra.Command {
 }
 
 // initProject writes a minimal opstruss.yaml, at the level of this
-// OpsTruss, when dir has none.
+// OpsTruss, when dir has none. Its first line names the schema of this
+// version for editors that use the YAML language server.
 func initProject(dir, name string, res *initResult) error {
 	p := filepath.Join(dir, model.FileName)
 	_, err := os.Stat(p)
@@ -98,7 +101,8 @@ func initProject(dir, name string, res *initResult) error {
 	if err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(f, "opstruss: %q\nname: %s\n", model.Level, name); err != nil {
+	modeline := "# yaml-language-server: $schema=" + docsURL(version(), "schema/project.json")
+	if _, err := fmt.Fprintf(f, "%s\nopstruss: %q\nname: %s\n", modeline, model.Level, name); err != nil {
 		_ = f.Close()
 		return err
 	}

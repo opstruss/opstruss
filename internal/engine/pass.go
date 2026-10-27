@@ -63,7 +63,12 @@ func (e *engine) unitPass(ctx context.Context, op string, p pass) (map[string]an
 		// Records of units no longer in the files are orphans, which the
 		// plan names.
 		if addrs, err := e.store.Inventory(); err == nil && len(addrs) == 0 {
-			e.say("run", "", "the project declares no units%s", e.triggerHint(op))
+			if hint := e.triggerHint(op); hint != "" && e.opts.Install != nil {
+				// The daemon names who runs the triggers once they are installed.
+				e.unitsHint = "the project declares no units" + hint
+			} else {
+				e.say("run", "", "the project declares no units%s", hint)
+			}
 		}
 	}
 	// Data that a newer OpsTruss wrote stops the run before any turn, as

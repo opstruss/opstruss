@@ -71,6 +71,9 @@ type API struct {
 	h          Handlers
 	Supervisor engine.Supervisor
 	Daemon     bool // this process is the daemon of the stack
+	// Install, in the daemon, installs the triggers of the stack again for
+	// an up of r with inputs.
+	Install func(r Request, inputs map[string]string) error
 }
 
 // New returns the API of this process with h for the callbacks of calls.
@@ -83,10 +86,14 @@ func (a *API) options(r Request) engine.Options {
 			env[k] = v
 		}
 	}
-	return engine.Options{Locked: r.Locked, Dir: r.Dir, Cwd: r.Cwd, Stack: r.Stack, Inputs: r.Inputs, Flags: r.Flags, Environ: r.Environ,
+	o := engine.Options{Locked: r.Locked, Dir: r.Dir, Cwd: r.Cwd, Stack: r.Stack, Inputs: r.Inputs, Flags: r.Flags, Environ: r.Environ,
 		LookupEnv: func(k string) (string, bool) { v, ok := env[k]; return v, ok },
 		Units:     r.Units, Yes: r.Yes, Color: r.Color, Force: r.Force, NoDeps: r.NoDeps, Follow: r.Follow, Debug: r.Debug, ShowSensitive: r.ShowSensitive,
 		Emit: a.h.Event, Approve: a.h.Approve, Ask: a.h.Ask, Supervisor: a.Supervisor, Daemon: a.Daemon}
+	if a.Install != nil {
+		o.Install = func(inputs map[string]string) error { return a.Install(r, inputs) }
+	}
+	return o
 }
 
 func result(res *engine.Result, err error) (*Result, error) {

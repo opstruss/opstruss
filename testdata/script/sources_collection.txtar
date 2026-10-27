@@ -16,9 +16,11 @@ exec opstruss run hello
 stdout 'said'
 exec sh -c 'test "$(grep -c github.com/opstruss/catalog opstruss.lock)" = 1'
 exec opstruss plugins
-stdout 'tool\tplugin\tcat.tool\t[0-9a-f]{40}\th1:\S+\tpresent'
-stdout 'cat\t\tgithub.com/opstruss/catalog@v1\t[0-9a-f]{40}\th1:\S+\tpresent'
+stdout '^NAME +KIND +SOURCE +COMMIT +STATUS$'
+stdout '^tool +plugin +cat.tool +[0-9a-f]{7} +present$'
+stdout '^cat +- +github.com/opstruss/catalog@v1 +[0-9a-f]{7} +present$'
 exec opstruss plugins update tool
+stdout '^github.com/opstruss/catalog@v1 +[0-9a-f]{7} +\(unchanged\)$'
 exec opstruss plan --locked
 ! stdout 'will run'
 

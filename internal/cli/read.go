@@ -16,6 +16,7 @@ import (
 
 	"github.com/opstruss/opstruss/internal/api"
 	"github.com/opstruss/opstruss/internal/daemon"
+	"github.com/opstruss/opstruss/internal/engine"
 	"github.com/opstruss/opstruss/internal/expr"
 	"github.com/opstruss/opstruss/internal/record"
 	"github.com/spf13/cobra"
@@ -24,7 +25,8 @@ import (
 func (a *app) listCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
-		Short: "List the tasks of the project with their last run, and the units with their state",
+		Short: "List the tasks and units of the project",
+		Long:  "List the tasks of the project with their last run, and the units with their state.",
 		Args:  cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error {
 			req, err := a.request(nil)
@@ -37,11 +39,17 @@ func (a *app) listCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			// When a task comes next is what its daemon knows.
-			next := daemon.Next(filepath.Join(req.Dir, ".opstruss"), st.Stack)
+			// When a task comes next, and whether its triggers run at all,
+			// is what its daemon knows.
+			root := filepath.Join(req.Dir, ".opstruss")
+			next := daemon.Next(root, st.Stack)
 			for _, t := range st.Tasks {
 				if at, ok := next[t.Name]; ok {
 					t.Next = at.Format(time.RFC3339)
+				}
+				if len(t.Triggers) > 0 && st.Triggers == nil {
+					alive, failed := daemon.Triggers(root, st.Stack)
+					st.Triggers = &engine.TriggerStatus{Daemon: alive, Error: failed}
 				}
 			}
 			if a.json {
@@ -79,6 +87,13 @@ func (a *app) listCommand() *cobra.Command {
 				if err := tw.Flush(); err != nil {
 					return err
 				}
+				switch tr := st.Triggers; {
+				case tr == nil:
+				case !tr.Daemon:
+					fmt.Fprintf(a.stderr, "no daemon runs the triggers of stack %s; opstruss up -d starts it\n", st.Stack)
+				case tr.Error != "":
+					fmt.Fprintln(a.stderr, tr.Error)
+				}
 			}
 			if len(st.Units) > 0 {
 				fmt.Fprintln(tw, "Units")
@@ -94,7 +109,8 @@ func (a *app) listCommand() *cobra.Command {
 func (a *app) doctorCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "doctor",
-		Short: "Check that this machine has what a run of the stack needs, without running it",
+		Short: "Check what runs of the stack need on this machine",
+		Long:  "Check that this machine has what a run of the stack needs, without running it.",
 		Args:  cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error {
 			req, err := a.request(nil)
@@ -124,7 +140,8 @@ func (a *app) outputsCommand() *cobra.Command {
 	var show bool
 	cmd := &cobra.Command{
 		Use:   "outputs",
-		Short: "Print the outputs of the project from the stored outputs of its units",
+		Short: "Print the outputs of the project",
+		Long:  "Print the outputs of the project from the stored outputs of its units.",
 		Args:  cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error {
 			req, err := a.request(nil)
@@ -159,8 +176,12 @@ func (a *app) runsCommand() *cobra.Command {
 	var follow bool
 	cmd := &cobra.Command{
 		Use:   "runs [run]",
-		Short: "List the runs of the stack, or show the events of one as it ran",
-		Args:  cobra.MaximumNArgs(1),
+		Short: "List the runs of the stack, or show one",
+		Example: `  opstruss runs
+  opstruss runs 4b2e91d0     # the events of one run, by the end of its id
+  opstruss runs 4b2e91d0 -f  # follow a run that goes on`,
+		Long: "List the runs of the stack, or show the events of one as it ran.",
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			req, err := a.request(nil)
 			if err != nil {
@@ -212,7 +233,8 @@ func (a *app) rerunCommand() *cobra.Command {
 	var yes, force bool
 	cmd := &cobra.Command{
 		Use:   "rerun <run>",
-		Short: "Run a task, up, or destroy again with the inputs and the event of a run, through the project as it is now; approval is asked again",
+		Short: "Run a task, up, or destroy again as a run did",
+		Long:  "Run a task, up, or destroy again with the inputs and the event of a run, through the project as it is now; approval is asked again.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			req, err := a.request(nil)
@@ -244,7 +266,8 @@ func (a *app) cancelCommand() *cobra.Command {
 	var force bool
 	cmd := &cobra.Command{
 		Use:   "cancel <run>",
-		Short: "Cancel a run of the stack, as Ctrl-C at its terminal does, and wait until it ends",
+		Short: "Cancel a run of the stack",
+		Long:  "Cancel a run of the stack, as Ctrl-C at its terminal does, and wait until it ends.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			req, err := a.request(nil)
