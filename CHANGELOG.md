@@ -13,6 +13,22 @@ minor release can change what a project, a component, or a plugin relies on.
 
 ### Added
 
+- `validate` suggests what a typo meant, within two edits: a key, a value
+  of an enum, and an input in the `with:` of a unit, a declaration, a call,
+  or a stack (`unknown key; did you mean sources?`). It checks the `with:`
+  of every stack against the types of the inputs, and for a `${{ }}` in a
+  script it shows the `env:` that passes the value instead, or
+  `$OPSTRUSS_STACK` for `${{ stack }}`.
+- An input of type `object` with `properties` takes only those keys, as
+  `additionalProperties: false` does in JSON Schema; an object without
+  `properties` stays a free map.
+- A program whose `#!` interpreter is not there, such as one installed
+  into a deleted virtualenv, fails to start with that interpreter named,
+  and `doctor` reports it, rather than as if the program were missing.
+- `-y` is short for `--yes`.
+- A block whose `rescue:` handled a failure of `block:` ends `success`
+  with the message `rescued`.
+
 - Runs, unit operations (the `plan` of a plugin, `up`, `destroy`), tasks, and
   steps start with an event whose `status` is `running` and end with one
   whose `status` is `finished`, with the `outcome`. Both carry the address,
@@ -453,7 +469,8 @@ minor release can change what a project, a component, or a plugin relies on.
   call gives none, before the default.
 - `opstruss init` sets up the project in its directory, adding only what
   is missing: `opstruss.yaml` with `opstruss:` and a `name` made from the
-  directory's name (or `--name`), and `.opstruss/` in `.gitignore`. With
+  directory's name (or `--name`), and `.opstruss/` in `.gitignore`, and
+  says what to do next once it writes `opstruss.yaml`. With
   `--stack`, it also makes that stack's `_meta`; `--json` prints what it
   wrote. It makes no key: the first command that needs one does.
 - `plan` exits 1 when a unit cannot be planned, and the units after it
@@ -489,8 +506,8 @@ minor release can change what a project, a component, or a plugin relies on.
 - `opstruss explain` prints the project of one stack as read: include files
   and stack overrides merged, each project input with where its value came
   from (`--input`, the stack, `env`, or `default`), the value of each local,
-  and the order of the units; names pick units and tasks with what they
-  depend on.
+  the sops file each secret is read from, and the order of the units;
+  names pick units and tasks with what they depend on.
 - `${{ }}` is CEL with the cel-go extensions for strings, lists, math, sets,
   two-variable comprehensions, bindings, encoders, and optional values, plus
   `toJSON()`, `fromJSON()`, `toYAML()`, `fromYAML()`, `sha256()`, `file()`,
@@ -617,10 +634,15 @@ minor release can change what a project, a component, or a plugin relies on.
   which the lock of the unit's address holds, take no lock.
 - The exit code of a task follows the outcome of the task called: 0, 1
   when it failed, and 2 when it stopped at plan for approval.
-- At a terminal, `up`, `destroy`, and a task with `approval: ask` ask before
-  each change, one question at a time, naming what yes does (`Apply`,
-  `Destroy`, `Run`), and only `y` or `yes` applies it; the time an
-  answer takes does not count toward `timeout`. The units that are ready
+- At a terminal, `up`, `destroy`, and a task with `approval: ask` ask once
+  before the changes whose plan is known, as `terraform apply` does, in one
+  question that names what yes does to each (`Apply infra, web, destroy
+  old-cache? [y/N]`), and only `y` or `yes` applies them; the time an
+  answer takes does not count toward `timeout`. A unit with no program
+  that plans it, which waits for the outputs of another unit, is in that
+  question too, since its plan can only say that it runs; a unit whose
+  plugin plans it once those outputs are there asks at its turn, as does
+  a unit whose plan changed since the question. The units that are ready
   start their turns in the order of the plan, so their questions come in
   that order, and while a question waits the output of the run waits for
   the answer, past 1 MiB in the record only. The end of a unit shows again
@@ -636,7 +658,8 @@ minor release can change what a project, a component, or a plugin relies on.
   `opstruss runs` lists the runs of the stack, newest first, and
   `opstruss runs <run>` shows the events of one again, and with `-f` goes
   on with a run that still runs until it ends; neither needs the inputs
-  of the project. With `--json`, each prints
+  of the project. A run is also named by the start of its id or of the
+  random part after its `-`, as a short commit is in git. With `--json`, each prints
   one document, and `runs <run>` the events as they are stored.
   `opstruss runs cancel <run>` cancels one run wherever it runs, at
   another terminal, in the daemon, or waiting for a lock, and nothing else
@@ -709,8 +732,9 @@ minor release can change what a project, a component, or a plugin relies on.
   and `sensitive` to `$OPSTRUSS_RESULT`. An output can also come from
   stdout, stderr, or a file, read as `text`, `json`, `yaml`, `lines`, or
   `dotenv`, the formats of `stdin:` too. A stream that an output reads
-  goes to the log once the program ends, with the sensitive values of the
-  run hidden, and not at all when that output is sensitive. The outputs of
+  goes to the log once the program ends, as one line that says what it
+  became and the whole of it at debug level, with the sensitive values of
+  the run hidden, and not at all when that output is sensitive. The outputs of
   a unit or task take at most 1 MiB.
 - Scripts run through `sh -e`, `bash --noprofile --norc -eo pipefail`,
   `python3 -c`, `node -e`, or `pwsh -NoProfile -NonInteractive -Command`,
@@ -734,7 +758,8 @@ minor release can change what a project, a component, or a plugin relies on.
   variable, and an unknown `stop.signal`.
 - `-C <dir>`, `--stack` (or `OPSTRUSS_STACK`), `--input name=value`, and
   `--json`.
-- `opstruss --completion bash|zsh|fish` prints a completion script.
+- `opstruss --completion bash|zsh|fish` prints a completion script, which
+  completes tasks, units, stacks, the newest runs, and the flags of tasks.
 - `opstruss version` prints the version and the platform.
 - Release builds for Linux and macOS on amd64 and arm64, with checksums,
   SBOMs, and build provenance attestations.

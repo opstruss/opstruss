@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
 	"strconv"
@@ -151,6 +152,15 @@ func (in *Input) Conform(v any) (any, error) {
 			return nil, typeError(in.Type, v)
 		}
 		if len(in.Properties) > 0 {
+			// properties close the object, as additionalProperties: false
+			// does in JSON Schema: a typo is an error, not a key no one
+			// reads.
+			keys := slices.Sorted(maps.Keys(in.Properties))
+			for _, k := range slices.Sorted(maps.Keys(obj)) {
+				if in.Properties[k] == nil {
+					return nil, fmt.Errorf("unknown key %s%s", k, didYouMean(k, keys))
+				}
+			}
 			out := make(map[string]any, len(obj))
 			for k, e := range obj {
 				out[k] = e

@@ -1,0 +1,36 @@
+# Completion suggests the units of the project to the commands that take
+# units, its stacks to --stack, and the newest runs of the stack to runs;
+# a project that cannot be read suggests nothing.
+
+exec opstruss __complete up ''
+stdout '^web$'
+stdout '^db$'
+exec opstruss __complete exec ''
+stdout '^web$'
+exec opstruss __complete --stack ''
+stdout '^dev$'
+stdout '^prod$'
+
+env HOME=$WORK/home
+env OPSTRUSS_STACK=dev
+exec opstruss up db
+exec opstruss __complete runs ''
+stdout '^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$'
+
+exec opstruss -C broken __complete up ''
+! stdout web
+! stdout '^db$'
+
+-- opstruss.yaml --
+name: app
+stacks:
+  dev:
+    approval: auto
+  prod: {}
+units:
+  web:
+    run: [echo, web]
+  db:
+    run: [echo, db]
+-- broken/opstruss.yaml --
+name: [broken

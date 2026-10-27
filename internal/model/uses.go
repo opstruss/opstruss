@@ -497,9 +497,22 @@ func (c *checker) declaredWith(path []string, pkg *Package) {
 	}
 	for _, k := range slices.Sorted(maps.Keys(with)) {
 		if !takes(pkg, k) {
-			c.add(at(path, "with", k), "%s has no input %s", pkg.Name, k)
+			c.add(at(path, "with", k), "%s has no input %s%s", pkg.Name, k, didYouMean(k, inputNames(pkg)))
 		}
 	}
+}
+
+// inputNames are the inputs of the plugin and its tasks, or of the
+// built-in task.
+func inputNames(pkg *Package) []string {
+	if pkg.Builtin != "" {
+		return slices.Collect(maps.Keys(Builtin(pkg.Builtin).Inputs))
+	}
+	names := slices.Collect(maps.Keys(pkg.Plugin.Inputs))
+	for _, t := range pkg.Plugin.Tasks {
+		names = append(names, slices.Collect(maps.Keys(t.Inputs))...)
+	}
+	return names
 }
 
 // takes says whether the plugin or one of its tasks, or the built-in task,
@@ -548,7 +561,7 @@ func (c *checker) with(path, missing []string, t *Target, with map[string]any) {
 		v, text := with[k].(string)
 		switch {
 		case inputs[k] == nil:
-			c.add(at(path, k), "%s has no input %s", t.Name, k)
+			c.add(at(path, k), "%s has no input %s%s", t.Name, k, didYouMean(k, slices.Collect(maps.Keys(inputs))))
 		case inputs[k].Literal && text && expr.HasExpr(v):
 			c.add(at(path, k), "%s is taken as written; ${{ }} is not allowed in it (write $${{ for ${{)", k)
 		case holdsExpr(with[k]):

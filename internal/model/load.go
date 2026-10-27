@@ -328,6 +328,13 @@ func readDocument(dir, rel string, k schema.Kind) (*document, Problems, error) {
 		}
 		if hint, ok := schemaHint(f.Path, f.Message, doc.value); ok {
 			msg = hint
+		} else if msg == f.Message && len(f.Known) > 0 {
+			// A typo of a key, or of a value of an enum.
+			word, _ := valueAt(doc.value, f.Path).(string)
+			if f.Message == "unknown key" {
+				word = f.Path[len(f.Path)-1]
+			}
+			msg += didYouMean(word, f.Known)
 		}
 		probs = append(probs, doc.problem(f.Path, "%s", msg))
 	}

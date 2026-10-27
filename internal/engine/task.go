@@ -891,8 +891,13 @@ func (tc *taskCtx) stepGroup(ctx context.Context, s *model.Step, label string, d
 	tc.e.startTask(tc.c.address(), tc.label, label)
 	res := tc.stepOnce(ctx, s, label, d, scope)
 	msg := res.outcome
-	if res.outcome == failure {
+	switch {
+	case res.outcome == failure:
 		msg = "failed"
+	case res.outcome == success && res.part == failure:
+		// rescue: handled what failed in block:, as Ansible counts it
+		// rescued; steps.<id>.outcome still says failure.
+		msg = "rescued"
 	}
 	tc.e.endTask(tc.c.address(), tc.label, label, res.outcome, "%s", msg)
 	return res

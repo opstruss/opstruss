@@ -48,7 +48,7 @@ func (a *app) unitCommands() []*cobra.Command {
 		}
 		cmd.Flags().BoolVar(&f.noDeps, "no-deps", false, "leave out the units that the ones named depend on, or for destroy those that depend on them")
 		if force != "" {
-			cmd.Flags().BoolVar(&f.yes, "yes", false, "approve the changes of this run, as in CI")
+			cmd.Flags().BoolVarP(&f.yes, "yes", "y", false, "approve the changes of this run, as in CI")
 			cmd.Flags().BoolVar(&f.force, "force", false, force)
 		}
 		return cmd
@@ -140,23 +140,6 @@ func (a *app) approve(ctx context.Context, q engine.Question) (bool, error) {
 		// An interrupted run asks nothing more.
 		return false, err
 	}
-	who := q.Address
-	if who == "" {
-		who = q.Task
-	}
-	// The question names what yes does, as terraform destroy asks about
-	// destroying; a daemon older than op asks to apply.
-	ask := "Apply " + who
-	switch {
-	case q.Op == "destroy" && strings.HasPrefix(q.Summary, "will be forgotten"):
-		// Only its record goes.
-		ask = "Forget " + who
-	case q.Op == "destroy":
-		ask = "Destroy " + who
-	case q.Op == "task":
-		ask = "Run " + who
-	}
-	question := fmt.Sprintf("%s: %s\n%s? [y/N] ", who, q.Summary, ask)
 	a.renderMu.Lock()
 	r := a.renderers[a.stdout]
 	shown := false
@@ -166,12 +149,38 @@ func (a *app) approve(ctx context.Context, q engine.Question) (bool, error) {
 		}
 	}
 	a.renderMu.Unlock()
+	items := q.Items
+	if len(items) == 0 {
+		items = []engine.Question{q}
+	}
+	// One answer approves every item, as terraform apply asks once: the
+	// question names what yes does to each, in the order of the plan.
+	var asks, plans []string
+	verb := ""
+	for _, it := range items {
+		who := cmp.Or(it.Address, it.Task)
+		plans = append(plans, who+": "+it.Summary+"\n")
+		if r != nil && r.terminal {
+			who = unitName(who)
+		}
+		v := askVerb(it)
+		switch {
+		case v == verb:
+			asks = append(asks, who)
+		case verb == "":
+			asks = append(asks, v+" "+who)
+		default:
+			asks = append(asks, strings.ToLower(v)+" "+who)
+		}
+		verb = v
+	}
+	question := strings.Join(plans, "") + strings.Join(asks, ", ") + "? [y/N] "
 	if r != nil && r.terminal {
-		// The question names the unit as the plan table does, in one line,
-		// and says the plan only when it is not the one the table showed.
-		ask = strings.Replace(ask, who, unitName(who), 1)
-		question = ask + "? "
-		if why := planText(engine.Event{Address: q.Address, Message: q.Summary}); !shown && q.Op != "task" && why != "destroy" {
+		// The question names the units as the plan table does, in one
+		// line, and says the plan of one only when it is not the one the
+		// table showed.
+		question = strings.Join(asks, ", ") + "? "
+		if why := planText(engine.Event{Address: q.Address, Message: q.Summary}); len(q.Items) == 0 && !shown && q.Op != "task" && why != "destroy" {
 			question += paint(a.colorFor(a.stderr), dim, "("+why+")") + " "
 		}
 		question += "[y/N] "
@@ -187,6 +196,21 @@ func (a *app) approve(ctx context.Context, q engine.Question) (bool, error) {
 		return true, nil
 	}
 	return false, nil
+}
+
+// askVerb names what yes does to the change of q, as terraform destroy
+// asks about destroying; a daemon older than op asks to apply.
+func askVerb(q engine.Question) string {
+	switch {
+	case q.Op == "destroy" && strings.HasPrefix(q.Summary, "will be forgotten"):
+		// Only its record goes.
+		return "Forget"
+	case q.Op == "destroy":
+		return "Destroy"
+	case q.Op == "task":
+		return "Run"
+	}
+	return "Apply"
 }
 
 // ask asks at the terminal for a required input that has no value.

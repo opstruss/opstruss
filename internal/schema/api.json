@@ -72,7 +72,12 @@
         "op": { "description": "What yes approves: up, destroy, or task.", "type": "string" },
         "address": { "type": "string" },
         "task": { "type": "string" },
-        "summary": { "type": "string" }
+        "summary": { "type": "string" },
+        "items": {
+          "description": "Changes that one answer approves together, in the order of the plan.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/question" }
+        }
       },
       "required": ["summary"],
       "additionalProperties": false

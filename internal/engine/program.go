@@ -268,14 +268,40 @@ func logRead(res *plugin.Result, outputs map[string]*model.Output, marks map[str
 	for _, w := range []*lineWriter{out, errw} {
 		name := w.stream
 		data, ok := res.Read[name]
+		var read []string
 		for k, o := range outputs {
 			ok = ok && (o.From != name || marks[k] == nil)
+			if o.From == name {
+				read = append(read, k)
+			}
 		}
-		if ok {
-			_, _ = w.Write(data)
-			w.flush()
+		if !ok {
+			continue
 		}
+		// The stream is data: the log says what it became, and keeps it
+		// whole at debug level, so a manifest does not fill the terminal.
+		slices.Sort(read)
+		what := byteSize(len(data))
+		if len(read) == 1 && outputs[read[0]].Format != "" {
+			what += ", " + outputs[read[0]].Format
+		}
+		_, _ = fmt.Fprintf(w, "captured %s as outputs.%s (%s)\n", name, strings.Join(read, ", outputs."), what)
+		w.flush()
+		debug := &lineWriter{e: w.e, addr: w.addr, task: w.task, step: w.step, stream: w.stream, held: w.held, level: "debug"}
+		_, _ = debug.Write(data)
+		debug.flush()
 	}
+}
+
+// byteSize is n bytes for a person to read.
+func byteSize(n int) string {
+	switch {
+	case n < 1<<10:
+		return fmt.Sprintf("%d B", n)
+	case n < 1<<20:
+		return fmt.Sprintf("%.1f KiB", float64(n)/(1<<10))
+	}
+	return fmt.Sprintf("%.1f MiB", float64(n)/(1<<20))
 }
 
 func (p progSpec) granted(name string) bool {

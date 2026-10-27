@@ -455,3 +455,40 @@ func TestStopOf(t *testing.T) {
 		t.Fatalf("%v %v", s, err)
 	}
 }
+
+// TestMissingInterpreter: a program whose #! interpreter is not there
+// fails to start with the interpreter named, not as if it were missing.
+func TestMissingInterpreter(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, text string, mode fs.FileMode) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(text), mode); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	gone := write("gone", "#!/nonexistent/python\nprint(1)\n", 0o755)
+	envGone := write("env-gone", "#!/usr/bin/env -S nonexistent-prog --flag\n", 0o755)
+	fine := write("fine", "#!/bin/sh\nexit 0\n", 0o755)
+	plain := write("plain", "#!/bin/sh\n", 0o644)
+	tests := []struct{ path, why string }{
+		{gone, "its interpreter /nonexistent/python does not exist (from its #! line)"},
+		{envGone, "its interpreter nonexistent-prog is not in PATH (from its #! line)"},
+		{fine, ""},
+	}
+	for _, tt := range tests {
+		if got := MissingInterpreter(tt.path, "/usr/bin:/bin"); got != tt.why {
+			t.Errorf("MissingInterpreter(%s) = %q, want %q", filepath.Base(tt.path), got, tt.why)
+		}
+	}
+	for _, tt := range []struct{ path, want string }{
+		{gone, "gone cannot start: its interpreter /nonexistent/python does not exist (from its #! line)"},
+		{plain, "plain cannot start: permission denied"},
+	} {
+		r := newRun(t)
+		_, err := r.Exec(context.Background(), &Call{Command: model.Command{Argv: []string{tt.path}}, Base: dir})
+		if err == nil || err.Error() != tt.want {
+			t.Errorf("Exec(%s) = %v, want %s", filepath.Base(tt.path), err, tt.want)
+		}
+	}
+}

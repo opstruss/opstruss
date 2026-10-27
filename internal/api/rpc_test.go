@@ -218,7 +218,7 @@ func TestSchemas(t *testing.T) {
 			Units: []string{"u"}, Yes: true, Force: true, NoDeps: true, Task: "t", With: map[string]any{"x": 1}, Run: "r",
 			Debug: true, ShowSensitive: true},
 		schema.APIResult:   Result{Run: "r", ExitCode: 1},
-		schema.APIQuestion: engine.Question{Address: "s/u", Task: "t", Summary: "will run"},
+		schema.APIQuestion: engine.Question{Op: "up", Items: []engine.Question{{Op: "up", Address: "s/u", Task: "t", Summary: "will run"}}},
 		schema.APIApproval: approval{Approved: true},
 		schema.APIAsk:      askParams{Name: "n", Description: "d", Sensitive: true},
 		schema.APIAnswer:   answer{Value: "v"},

@@ -78,6 +78,14 @@ func TestApprove(t *testing.T) {
 			"default/job: will be forgotten: it has no destroy program\nForget default/job? [y/N] "},
 		{engine.Question{Op: "task", Task: "deploy", Summary: "run task deploy"}, "deploy: run task deploy\nRun deploy? [y/N] "},
 		{engine.Question{Address: "default/web", Summary: "will run: new"}, "default/web: will run: new\nApply default/web? [y/N] "},
+		{engine.Question{Op: "up", Items: []engine.Question{
+			{Op: "up", Address: "default/infra", Summary: "will run: new"},
+			{Op: "up", Address: "default/config", Summary: "will run: new; plan after default/infra (env.DB)"},
+			{Op: "destroy", Address: "default/old", Summary: "will be destroyed"},
+			{Op: "destroy", Address: "default/job", Summary: "will be forgotten: it has no destroy program"},
+		}}, "default/infra: will run: new\ndefault/config: will run: new; plan after default/infra (env.DB)\n" +
+			"default/old: will be destroyed\ndefault/job: will be forgotten: it has no destroy program\n" +
+			"Apply default/infra, default/config, destroy default/old, forget default/job? [y/N] "},
 	}
 	for _, tt := range tests {
 		var stderr strings.Builder

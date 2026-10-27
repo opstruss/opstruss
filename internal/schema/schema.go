@@ -7,6 +7,7 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -52,10 +53,21 @@ const base = "https://schema.opstruss.invalid/"
 type Problem struct {
 	Path    []string
 	Message string
+	// Known are the keys that the schema knows where a key is unknown, or
+	// the values of an enum that a value is not one of, for a hint.
+	Known []string
 }
+
+// compiler holds the compiled schemas, which known reads again by their
+// location; mu guards it.
+var (
+	compiler *jsonschema.Compiler
+	mu       sync.Mutex
+)
 
 var compiled = sync.OnceValues(func() (map[Kind]*jsonschema.Schema, error) {
 	c := jsonschema.NewCompiler()
+	compiler = c
 	entries, err := files.ReadDir(".")
 	if err != nil {
 		return nil, err
@@ -199,15 +211,35 @@ func alternatives(e *jsonschema.ValidationError) string {
 
 const namePattern = "^[a-z][a-z0-9_-]{0,62}$"
 
+// known returns the keys of the properties of the schema at url, which
+// the compiler has compiled already.
+func known(url string) []string {
+	mu.Lock()
+	defer mu.Unlock()
+	s, err := compiler.Compile(url)
+	if err != nil {
+		return nil
+	}
+	return slices.Sorted(maps.Keys(s.Properties))
+}
+
 func leaf(e *jsonschema.ValidationError) []Problem {
 	at := e.InstanceLocation
 	switch k := e.ErrorKind.(type) {
 	case *kind.AdditionalProperties:
 		var out []Problem
 		for _, p := range k.Properties {
-			out = append(out, Problem{Path: append(slices.Clone(at), p), Message: "unknown key"})
+			out = append(out, Problem{Path: append(slices.Clone(at), p), Message: "unknown key", Known: known(e.SchemaURL)})
 		}
 		return out
+	case *kind.Enum:
+		var want []string
+		for _, w := range k.Want {
+			if s, ok := w.(string); ok {
+				want = append(want, s)
+			}
+		}
+		return []Problem{{Path: at, Message: e.ErrorKind.LocalizedString(printer), Known: want}}
 	case *kind.Required:
 		var out []Problem
 		for _, m := range k.Missing {

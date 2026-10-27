@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/opstruss/opstruss/internal/expr"
@@ -232,6 +233,36 @@ func runRecords(root, stack string) ([]*record.Record, error) {
 	return out, nil
 }
 
+// runDir is the directory of the run id of the stack of p. An id that is
+// not a whole one names the run whose id, or the random part after its
+// "-", starts with it, as a short commit names one in git; at least four
+// characters, and only one run.
+func runDir(p *model.Project, id string) (string, error) {
+	base := filepath.Join(p.Dir, ".opstruss", "runs", p.StackName)
+	dir := filepath.Join(base, filepath.Base(id))
+	if _, err := os.Stat(dir); err == nil || len(id) < 4 {
+		return dir, nil
+	}
+	ents, err := os.ReadDir(base)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return "", err
+	}
+	var found []string
+	for _, ent := range ents {
+		_, random, _ := strings.Cut(ent.Name(), "-")
+		if ent.IsDir() && (strings.HasPrefix(ent.Name(), id) || strings.HasPrefix(random, id)) {
+			found = append(found, ent.Name())
+		}
+	}
+	switch len(found) {
+	case 0:
+		return dir, nil
+	case 1:
+		return filepath.Join(base, found[0]), nil
+	}
+	return "", fmt.Errorf("run %s matches %s; give more of its id", id, strings.Join(found, ", "))
+}
+
 // Events hands the stored events of the run id to emit, in order; with
 // opts.Follow, also what a run that still runs writes, until it ends or
 // ctx does.
@@ -243,7 +274,11 @@ func Events(ctx context.Context, opts Options, id string, emit func(Event)) erro
 	if opts.Model == nil {
 		defer p.Close()
 	}
-	err = record.ReadRun(ctx, filepath.Join(p.Dir, ".opstruss", "runs", p.StackName, filepath.Base(id)), opts.Follow, emit)
+	dir, err := runDir(p, id)
+	if err != nil {
+		return err
+	}
+	err = record.ReadRun(ctx, dir, opts.Follow, emit)
 	if errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("stack %s has no run %s", p.StackName, id)
 	}

@@ -228,7 +228,7 @@ func (a *app) rerunCommand() *cobra.Command {
 			return in.exit(res.ExitCode)
 		},
 	}
-	cmd.Flags().BoolVar(&yes, "yes", false, "approve the changes of this run, as in CI")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "approve the changes of this run, as in CI")
 	cmd.Flags().BoolVar(&force, "force", false, "for up, run the units named although unchanged; for destroy, although pass values differ")
 	return cmd
 }

@@ -27,6 +27,15 @@ exec opstruss keep
 exec sh -c 'ls .opstruss/runs/default/*/artifacts'
 stdout '^report.txt$'
 
+# a run is named by the start of its random part or of its id, as a short
+# commit is in git; a start that two runs share names neither
+exec sh -c 'r=$(grep -l "\"task\": \"keep\"" .opstruss/runs/default/*/record.json); r=${r%/record.json}; r=${r##*/}; opstruss runs ${r#*-} && opstruss runs $(printf %.20s $r)'
+stdout '"task": "keep"|keep'
+! exec opstruss runs 2026
+stderr '^opstruss: run 2026 matches [0-9TZ]+-[0-9a-f]+, [0-9TZ]+-[0-9a-f]+; give more of its id$'
+! exec opstruss runs abc
+stderr 'stack default has no run abc'
+
 # runs <run> -f shows a line of a run that runs before its program ends,
 # and ends with the run
 exec opstruss slow &slow&

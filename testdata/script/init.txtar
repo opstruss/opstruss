@@ -10,6 +10,7 @@ mkdir 'My_App 2'
 exec opstruss -C 'My_App 2' init
 stdout '^wrote opstruss.yaml$'
 stdout '^wrote .gitignore$'
+stdout '^next: add units or tasks to opstruss.yaml, then run opstruss plan$'
 ! stdout 'age|sops'
 cmp 'My_App 2/opstruss.yaml' want/opstruss.yaml
 cmp 'My_App 2/.gitignore' want/gitignore

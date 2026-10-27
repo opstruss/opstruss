@@ -4,6 +4,7 @@
 package engine
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -74,12 +75,14 @@ type Options struct {
 	RerunOf string
 }
 
-// Question is a change that waits for approval.
+// Question is a change that waits for approval, or with Items, several
+// that one answer approves together.
 type Question struct {
-	Op      string `json:"op,omitempty"` // up, destroy, or task: what yes approves
-	Address string `json:"address,omitempty"`
-	Task    string `json:"task,omitempty"`
-	Summary string `json:"summary"`
+	Op      string     `json:"op,omitempty"` // up, destroy, or task: what yes approves
+	Address string     `json:"address,omitempty"`
+	Task    string     `json:"task,omitempty"`
+	Summary string     `json:"summary"`
+	Items   []Question `json:"items,omitempty"`
 }
 
 // Event is one thing that happened in a run; the last one, of type run,
@@ -775,12 +778,13 @@ type lineWriter struct {
 	stream string
 	lines  *secret.Lines
 	held   *heldLogs // nil, or where the lines wait
+	level  string    // of the lines; info when empty
 }
 
 func (w *lineWriter) Write(p []byte) (int, error) {
 	if w.lines == nil {
 		w.lines = secret.NewLines(w.e.redact.Stream(), func(text string) {
-			ev := Event{Type: "log", Level: "info", Address: w.addr, Task: w.task, Step: w.step, Stream: w.stream, Message: text}
+			ev := Event{Type: "log", Level: cmp.Or(w.level, "info"), Address: w.addr, Task: w.task, Step: w.step, Stream: w.stream, Message: text}
 			if !w.held.hold(w.e, ev) {
 				w.e.send(ev)
 			}

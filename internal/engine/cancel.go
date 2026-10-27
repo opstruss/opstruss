@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/opstruss/opstruss/internal/model"
 	"github.com/opstruss/opstruss/internal/proc"
@@ -97,7 +96,10 @@ func runOf(opts Options, id string) (*record.Record, string, error) {
 	if opts.Model == nil {
 		defer p.Close()
 	}
-	dir := filepath.Join(p.Dir, ".opstruss", "runs", p.StackName, filepath.Base(id))
+	dir, err := runDir(p, id)
+	if err != nil {
+		return nil, "", err
+	}
 	rec, err := record.Read(dir)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, "", fmt.Errorf("stack %s has no run %s", p.StackName, id)

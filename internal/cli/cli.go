@@ -20,6 +20,7 @@ import (
 	"context"
 
 	"github.com/opstruss/opstruss/internal/ansi"
+	"github.com/opstruss/opstruss/internal/expr"
 	"github.com/opstruss/opstruss/internal/model"
 	"github.com/opstruss/opstruss/internal/secret"
 	"github.com/opstruss/opstruss/internal/sources"
@@ -259,6 +260,7 @@ func (a *app) root() *cobra.Command {
 	root.AddCommand(a.unitCommands()...)
 	root.AddCommand(a.listCommand(), a.outputsCommand(), a.runsCommand(), a.execCommand(), a.doctorCommand(),
 		a.stopCommand(), a.unlockCommand(), a.daemonCommand(), a.pluginsCommand())
+	a.completions(root)
 	// Help shows the commands of OpsTruss apart from the tasks of the
 	// project, as npm run and just --list show scripts on their own.
 	root.AddGroup(&cobra.Group{ID: groupCommands, Title: "Commands:"})
@@ -328,6 +330,51 @@ func (a *app) projectDir() (string, error) {
 
 // stackName is --stack, or $OPSTRUSS_STACK outside a run, because a run
 // started by a program of another run chooses its stack itself.
+// completions suggests the units of the project to the commands that take
+// units, its stacks to --stack, and its newest runs to the commands that
+// take a run; the project as the task commands read it, so a project that
+// cannot be read suggests nothing.
+func (a *app) completions(root *cobra.Command) {
+	none := cobra.ShellCompDirectiveNoFileComp
+	units := func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+		if a.discovery == nil {
+			return nil, none
+		}
+		return a.discovery.Order, none
+	}
+	for _, path := range [][]string{{"plan"}, {"up"}, {"destroy"}, {"status"}, {"logs"}, {"exec"}} {
+		if c, _, err := root.Find(path); err == nil && c != root {
+			c.ValidArgsFunction = units
+		}
+	}
+	_ = root.RegisterFlagCompletionFunc("stack", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+		dir, err := a.projectDir()
+		if err != nil {
+			return nil, none
+		}
+		stacks, _ := model.Stacks(dir)
+		return stacks, none
+	})
+	runs := func(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
+		if a.discovery == nil || len(args) > 0 {
+			return nil, none
+		}
+		ents, _ := os.ReadDir(filepath.Join(a.discovery.Dir, ".opstruss", "runs", a.discovery.StackName))
+		var ids []string
+		for i := len(ents) - 1; i >= 0 && len(ids) < 20; i-- {
+			if ents[i].IsDir() {
+				ids = append(ids, ents[i].Name())
+			}
+		}
+		return ids, none
+	}
+	for _, path := range [][]string{{"runs"}, {"runs", "cancel"}, {"runs", "rerun"}} {
+		if c, _, err := root.Find(path); err == nil && c != root {
+			c.ValidArgsFunction = runs
+		}
+	}
+}
+
 func (a *app) stackName() string {
 	if a.stack != "" {
 		return a.stack
@@ -445,6 +492,28 @@ func explain(p *model.Project, inputs map[string]model.InputValue, locals map[st
 	}
 	if len(locals) > 0 {
 		out["locals"] = locals
+	}
+	// A sops file is named as a run reads it, from what a plan knows,
+	// without reading the secret.
+	if secrets, ok := out["secrets"].(map[string]any); ok {
+		secrets = maps.Clone(secrets)
+		values := map[string]any{}
+		for k, v := range inputs {
+			values[k] = v.Value
+		}
+		vars := map[string]any{"stack": p.StackName, "inputs": values, "locals": locals}
+		for name, src := range p.Secrets {
+			doc, ok := secrets[name].(map[string]any)
+			if !ok || !expr.HasExpr(src.Sops) {
+				continue
+			}
+			if file, err := expr.EvalText(src.Sops, &expr.Scope{Dir: p.DirOf("secrets." + name), Vars: vars}); err == nil {
+				doc = maps.Clone(doc)
+				doc["sops"] = file
+				secrets[name] = doc
+			}
+		}
+		out["secrets"] = secrets
 	}
 	if len(names) == 0 {
 		return out, nil

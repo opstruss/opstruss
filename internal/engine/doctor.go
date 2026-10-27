@@ -234,6 +234,9 @@ func (d *doctor) programs() {
 		c := &Check{Check: "program", Name: name, For: what}
 		if p, err := plugin.LookPath(name, search); err == nil {
 			c.Status, c.Path, c.Message = "ok", p, fmt.Sprintf("%s at %s, for %s", name, p, strings.Join(what, ", "))
+			if why := plugin.MissingInterpreter(p, search); why != "" {
+				c.Status, c.Message = "error", fmt.Sprintf("%s at %s cannot start: %s, for %s", name, p, why, strings.Join(what, ", "))
+			}
 		} else {
 			c.Status, c.Message = "error", fmt.Sprintf("%s is not in PATH, for %s", name, strings.Join(what, ", "))
 		}

@@ -275,8 +275,16 @@ func (c *checker) stacks() {
 	}
 	for _, s := range slices.Sorted(maps.Keys(c.p.Stacks)) {
 		for _, k := range slices.Sorted(maps.Keys(c.p.Stacks[s].With)) {
-			if c.p.Inputs[k] == nil {
-				c.add([]string{"stacks", s, "with", k}, "the project has no input %s", k)
+			in, v := c.p.Inputs[k], c.p.Stacks[s].With[k]
+			switch {
+			case in == nil:
+				c.add([]string{"stacks", s, "with", k}, "the project has no input %s%s", k, didYouMean(k, slices.Collect(maps.Keys(c.p.Inputs))))
+			case !holdsExpr(v):
+				// Every stack, not only the one chosen, as the with: of a
+				// unit is checked before a run.
+				if _, err := in.Conform(v); err != nil {
+					c.add([]string{"stacks", s, "with", k}, "%v", err)
+				}
 			}
 		}
 	}
@@ -291,7 +299,28 @@ func hasExpr(cmd *Command) bool {
 	return strings.Contains(strings.ReplaceAll(cmd.Script, "$${{", ""), "${{")
 }
 
-const scriptExpr = "${{ }} is not allowed in a script; pass values through env:, or write the program as a list"
+var identifier = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+// scriptExpr says that a script holds ${{ }}, and how to pass the first one
+// through env: instead, named by its last part.
+func scriptExpr(cmd *Command) string {
+	const msg = "${{ }} is not allowed in a script"
+	script := strings.ReplaceAll(cmd.Script, "$${{", "")
+	i := strings.Index(script, "${{")
+	j := strings.Index(script[i:], "}}")
+	if j < 0 {
+		return msg + "; pass values through env:, or write the program as a list"
+	}
+	e := strings.TrimSpace(script[i+3 : i+j])
+	name := strings.ToUpper(e[strings.LastIndex(e, ".")+1:])
+	switch {
+	case e == "stack":
+		return msg + "; write $OPSTRUSS_STACK for ${{ stack }}"
+	case !identifier.MatchString(name) || ReservedEnv(name):
+		return msg + "; pass values through env:, or write the program as a list"
+	}
+	return fmt.Sprintf("%s; pass it through env: {%s: \"${{ %s }}\"}, then write $%s in the script", msg, name, e, name)
+}
 
 // environment rejects env: and pass: on the variables of the program
 // contract.
@@ -417,7 +446,7 @@ func (c *checker) units() {
 		}
 		for k, cmd := range unitCommands(u) {
 			if hasExpr(cmd) {
-				c.add(at(path, strings.Split(k, ".")...), scriptExpr)
+				c.add(at(path, strings.Split(k, ".")...), "%s", scriptExpr(cmd))
 			}
 		}
 		c.environment(path, u.Env, u.Pass)
@@ -656,7 +685,7 @@ func (c *checker) task(path []string, t *Task, project bool) {
 		c.add(at(path, "outputs"), "a task that calls one task passes its outputs on; write steps to shape them")
 	}
 	if hasExpr(t.Run) {
-		c.add(at(path, "run"), scriptExpr)
+		c.add(at(path, "run"), "%s", scriptExpr(t.Run))
 	}
 	c.environment(path, t.Env, t.Pass)
 	c.stop(path, t.Stop)
@@ -834,6 +863,15 @@ func nearest(s string, words []string) string {
 	return best
 }
 
+// didYouMean is "; did you mean <word>?" for the word of words that s is a
+// typo of, or "".
+func didYouMean(s string, words []string) string {
+	if near := nearest(s, words); near != "" {
+		return "; did you mean " + near + "?"
+	}
+	return ""
+}
+
 // distance is the Levenshtein distance between a and b.
 func distance(a, b string) int {
 	prev := make([]int, len(b)+1)
@@ -907,7 +945,7 @@ func (c *checker) steps(path []string, steps []*Step, ids map[string]bool) {
 			ids[s.ID] = true
 		}
 		if hasExpr(s.Run) {
-			c.add(at(sp, "run"), scriptExpr)
+			c.add(at(sp, "run"), "%s", scriptExpr(s.Run))
 		}
 		c.environment(sp, s.Env, s.Pass)
 		c.steps(at(sp, "block"), s.Block, ids)
@@ -951,7 +989,7 @@ func (c *checker) secrets() {
 			c.add(path, "dir: and shell: are for run")
 		}
 		if hasExpr(s.Run) {
-			c.add(at(path, "run"), scriptExpr)
+			c.add(at(path, "run"), "%s", scriptExpr(s.Run))
 		}
 		c.environment(path, s.Env, s.Pass)
 		for _, callee := range slices.Sorted(maps.Keys(s.Calls)) {

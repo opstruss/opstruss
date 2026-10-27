@@ -23,17 +23,19 @@ exec sh -c 'grep -l greet .opstruss/runs/default/*/record.json | xargs cat'
 stdout '"task": "greet"'
 stdout '"msg": "hi"'
 
-# a stream that an output reads goes to the log once it is parsed, and not
-# at all when that output is sensitive
+# a stream that an output reads goes to the log once it is parsed: one
+# line says what it became, and the record keeps it whole at debug level;
+# nothing of it when that output is sensitive
 cd parse
 exec opstruss up --yes
-stdout '^default/meta \| \{"name":"shop"\}$'
+stdout '^default/meta \| captured stdout as outputs.all \(16 B, json\)$'
+! stdout '"name":"shop"'
 exec opstruss read
-stdout '^read: info \| \{"name":"shop"\}$'
+stdout '^read: info \| captured stdout as outputs.info \(16 B, json\)$'
 stdout '^read: info \| loaded$'
 ! stdout 'key-from-stdout'
 exec sh -c 'cat .opstruss/runs/default/*/events.jsonl'
-stdout -count=2 'name.*shop'
+stdout -count=2 '"level":"debug".*name.*shop'
 ! stdout 'key-from-stdout'
 
 -- opstruss.yaml --

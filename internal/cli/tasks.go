@@ -228,7 +228,7 @@ func (a *app) taskCommand(name string, tasks []*model.Task, ofUnits bool) *cobra
 			cmd.Flags().Var(&textFlag{texts[in], typ}, flag, help)
 		}
 	}
-	cmd.Flags().BoolVar(&yes, "yes", false, "approve the changes of this run, as in CI")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "approve the changes of this run, as in CI")
 	var event string
 	if !ofUnits {
 		cmd.Flags().StringVar(&event, "event", "", "run as a trigger of the task runs for this event: @<file>, @- for stdin, or JSON")

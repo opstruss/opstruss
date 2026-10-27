@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/opstruss/opstruss/internal/model"
 	"github.com/opstruss/opstruss/internal/record"
 	"github.com/opstruss/opstruss/internal/state"
 )
@@ -151,7 +152,7 @@ func (e *engine) approves(ctx context.Context, q Question, digest string, place 
 		switch d {
 		case "":
 			return "", "the answer was no", 0
-		case digest:
+		case digest, afterUpstream:
 			return "terminal", "", 0
 		}
 	}
@@ -169,46 +170,72 @@ func (e *engine) approves(ctx context.Context, q Question, digest string, place 
 	return "terminal", "", waited
 }
 
-// askFirst asks at the terminal about each change of the pass whose plan
-// is known, in the order of the plan, before anything moves or runs, as
-// terraform apply asks before it applies: an interrupt or a no at a
-// question then leaves everything as it was, also the units with
-// approval: auto. Each answer holds for the plan it saw; a unit whose plan
-// changes by its turn, or waits for the outputs of another unit, asks at
-// its turn.
+// afterUpstream is the answer, in place of a digest, for a unit that has
+// no program that plans it and waits for the outputs of another: its plan
+// can only say that it runs, before its turn and at it.
+const afterUpstream = "after upstream"
+
+// askFirst asks at the terminal once about the changes of the pass whose
+// plan is known, in the order of the plan, before anything moves or runs,
+// as terraform apply asks before it applies: an interrupt or a no then
+// leaves everything as it was, also the units with approval: auto. The
+// answer holds for the plans it saw. A unit with no program that plans it
+// is in the question also when it waits for the outputs of another, as
+// (known after apply) in Terraform, and the answer holds at its turn; a
+// unit whose plan changes by its turn, or whose plugin plans it once
+// those outputs are there, asks at its turn.
 func (e *engine) askFirst(ctx context.Context, insts []*instance, leftovers []*leftover) {
 	if e.opts.Approve == nil || e.pass.yes {
 		return
 	}
 	e.answers = map[string]string{}
-	ask := func(q Question, digest string) bool {
-		ok, err := e.opts.Approve(ctx, q)
-		if err != nil {
-			// Interrupted, or no terminal answers any more: the turns ask
-			// again, or stop.
-			return false
-		}
-		e.answers[q.Address] = map[bool]string{true: digest, false: ""}[ok]
-		return true
-	}
+	var items []Question
+	var digests []string
 	for _, inst := range insts {
 		p := inst.plan
-		if !e.sel.has(inst) || p.err != nil || p.locked != "" || p.blocked != "" || p.waitFor != "" ||
-			!p.run && len(p.teardown) == 0 || e.approvalOf(inst.def) == "auto" {
+		after := p.waitFor != "" && planless(inst.def)
+		if !e.sel.has(inst) || p.err != nil || p.locked != "" || p.blocked != "" || p.waitFor != "" && !after ||
+			!after && !p.run && len(p.teardown) == 0 || e.approvalOf(inst.def) == "auto" {
 			continue
 		}
-		if !ask(Question{Op: "up", Address: inst.address, Summary: p.summary()}, p.approval()) {
-			return
+		digest := p.approval()
+		if after {
+			digest = afterUpstream
 		}
+		items = append(items, Question{Op: "up", Address: inst.address, Summary: p.summary()})
+		digests = append(digests, digest)
 	}
 	for _, l := range leftovers {
 		if l.forget || e.approvalOf(l.def) == "auto" {
 			continue
 		}
-		if !ask(Question{Op: "destroy", Address: l.address, Summary: l.summary()}, destroyDigest("delete", l.address, l.etag)) {
-			return
-		}
+		items = append(items, Question{Op: "destroy", Address: l.address, Summary: l.summary()})
+		digests = append(digests, destroyDigest("delete", l.address, l.etag))
 	}
+	if len(items) == 0 {
+		return
+	}
+	q := items[0]
+	if len(items) > 1 {
+		q = Question{Op: "up", Items: items}
+	}
+	ok, err := e.opts.Approve(ctx, q)
+	if err != nil {
+		// Interrupted, or no terminal answers any more: the turns ask
+		// again, or stop.
+		return
+	}
+	for i, it := range items {
+		e.answers[it.Address] = map[bool]string{true: digests[i], false: ""}[ok]
+	}
+}
+
+// planless says whether u has no program that plans it: a run or service
+// unit, a unit that uses a task, or a plugin without a plan task.
+func planless(u *model.Unit) bool {
+	t := u.Target
+	return t == nil || t.Kind != model.TargetPlugin || t.Package == nil || t.Package.Plugin == nil ||
+		t.Package.Plugin.Tasks["plan"] == nil
 }
 
 // askOrder puts the questions of a run at the terminal one at a time, in

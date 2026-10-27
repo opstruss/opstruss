@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"maps"
 	"os"
 	"os/exec"
@@ -137,6 +138,64 @@ func LookPath(name, path string) (string, error) {
 	return "", fmt.Errorf("%s is not in PATH", name)
 }
 
+// MissingInterpreter says why the program at path cannot start when the
+// interpreter of its #! line is not there, or "": exec then fails as if the
+// program itself were missing. search is the PATH that #!/usr/bin/env
+// looks in.
+func MissingInterpreter(path, search string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = f.Close() }()
+	head := make([]byte, 256)
+	n, _ := io.ReadFull(f, head)
+	line, _, _ := strings.Cut(string(head[:n]), "\n")
+	fields := strings.Fields(strings.TrimPrefix(line, "#!"))
+	if !strings.HasPrefix(line, "#!") || len(fields) == 0 {
+		return ""
+	}
+	if _, err := os.Stat(fields[0]); err != nil {
+		return "its interpreter " + fields[0] + " does not exist (from its #! line)"
+	}
+	args := fields[1:]
+	if filepath.Base(fields[0]) != "env" || len(args) == 0 {
+		return ""
+	}
+	if args[0] == "-S" && len(args) > 1 {
+		args = args[1:]
+	}
+	if strings.HasPrefix(args[0], "-") || strings.Contains(args[0], "=") {
+		return ""
+	}
+	if _, err := LookPath(args[0], search); err != nil {
+		return "its interpreter " + args[0] + " is not in PATH (from its #! line)"
+	}
+	return ""
+}
+
+// startError says why cmd cannot start, in place of the fork/exec error of
+// Go, and names the interpreter of a #! line that is not there.
+func startError(cmd *exec.Cmd, err error) error {
+	var pe *fs.PathError
+	if !errors.As(err, &pe) {
+		return err
+	}
+	name := filepath.Base(cmd.Path)
+	if errors.Is(pe.Err, fs.ErrNotExist) {
+		search := os.Getenv("PATH")
+		for _, kv := range cmd.Env {
+			if v, ok := strings.CutPrefix(kv, "PATH="); ok {
+				search = v
+			}
+		}
+		if why := MissingInterpreter(cmd.Path, search); why != "" {
+			return fmt.Errorf("%s cannot start: %s", name, why)
+		}
+	}
+	return fmt.Errorf("%s cannot start: %w", name, pe.Err)
+}
+
 // stream reads one output stream of a program: into the live log and a
 // tail, or, when an output reads it, into a buffer of at most MaxOutputs
 // and one byte more, which tells that it was too long.
@@ -262,7 +321,7 @@ func (r *Run) Exec(ctx context.Context, c *Call) (*Result, error) {
 	closeAll(theirs)
 	if err != nil {
 		closeAll(ours)
-		return nil, err
+		return nil, startError(cmd, err)
 	}
 	failpoint.Hit("program-started")
 	for _, s := range streams {

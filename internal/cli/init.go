@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/opstruss/opstruss/internal/model"
@@ -53,6 +54,9 @@ func (a *app) initCommand() *cobra.Command {
 			}
 			for _, w := range res.Wrote {
 				fmt.Fprintf(a.stdout, "wrote %s\n", w)
+			}
+			if slices.Contains(res.Wrote, model.FileName) {
+				fmt.Fprintf(a.stdout, "next: add units or tasks to %s, then run opstruss plan\n", model.FileName)
 			}
 			if len(res.Wrote) == 0 {
 				fmt.Fprintln(a.stdout, "nothing to do: the project is set up")
