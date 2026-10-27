@@ -65,7 +65,7 @@ WantedBy=default.target
 
 ```sh
 systemctl --user enable --now shop
-loginctl enable-linger "$USER"   # start without a login
+sudo loginctl enable-linger "$USER"   # start without a login
 ```
 
 `SuccessExitStatus=2` keeps the daemon when `up` stops at a change that
@@ -105,7 +105,8 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.shop.opstruss.plist
 
 `mise x -C <project>` brings the versions of `mise.toml` and its `[env]`,
 `OPSTRUSS_STACK` among them. Without mise, give the absolute path of
-`opstruss` and `--stack`, and load `.env` with `EnvironmentFile=` in
-systemd, or with
+`opstruss` and the project with `-C`, as in `ExecStart=/usr/local/bin/opstruss
+-C /srv/shop up -d`, and the stack with `--stack` or in `.env`. Load
+`.env` with `EnvironmentFile=` in systemd, or with
 `sh -c 'set -a; . ./.env; set +a; exec opstruss up -d'` and a
 `WorkingDirectory` in launchd.
