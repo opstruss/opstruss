@@ -342,11 +342,12 @@ func readEvents(f *os.File, rest *[]byte, fn func(Event)) error {
 			continue
 		}
 		if err == nil {
+			line := bytes.TrimSpace(*rest)
 			var ev Event
-			if json.Unmarshal(bytes.TrimSpace(*rest), &ev) == nil {
-				if ev.V > EventVersion {
-					return &state.NewerError{What: fmt.Sprintf("event %d of %s", ev.Seq, f.Name()), Version: ev.V, Known: EventVersion}
-				}
+			var newer *state.NewerError
+			if err := state.CheckVersion(line, "v", "an event of "+f.Name(), EventVersion); errors.As(err, &newer) {
+				return err
+			} else if err == nil && json.Unmarshal(line, &ev) == nil {
 				fn(ev)
 			}
 			*rest = (*rest)[:0]
@@ -359,5 +360,9 @@ func readEvents(f *os.File, rest *[]byte, fn func(Event)) error {
 	}
 }
 
-// now is the time of an event: UTC, to the millisecond.
-func now() string { return time.Now().UTC().Format("2006-01-02T15:04:05.000Z") }
+// Stamp writes t as the times of runs and their events are written: UTC,
+// to the millisecond, so that one run reads its start before its end.
+func Stamp(t time.Time) string { return t.UTC().Format("2006-01-02T15:04:05.000Z") }
+
+// now is the time of an event.
+func now() string { return Stamp(time.Now()) }

@@ -25,6 +25,7 @@ import (
 	"github.com/opstruss/opstruss/internal/model"
 	"github.com/opstruss/opstruss/internal/proc"
 	"github.com/opstruss/opstruss/internal/record"
+	"github.com/opstruss/opstruss/internal/state"
 )
 
 // Version is the version of <stack>.json.
@@ -386,12 +387,12 @@ func Read(root, stack string) (*File, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := state.CheckVersion(data, "version", p, Version); err != nil {
+		return nil, err
+	}
 	var f File
 	if err := json.Unmarshal(data, &f); err != nil {
 		return nil, fmt.Errorf("%s: %w", p, err)
-	}
-	if f.Version > Version {
-		return nil, fmt.Errorf("%s has version %d, from a newer opstruss; this one reads up to %d", p, f.Version, Version)
 	}
 	return &f, nil
 }

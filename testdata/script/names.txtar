@@ -1,0 +1,49 @@
+# A name in uses: that is an Ansible keyword is a call, image is reserved,
+# and a project task that hides a task of units warns: validate prints it on
+# stderr and in warnings, and a run gives it as an event.
+
+env HOME=$WORK/home
+
+exec opstruss validate
+stdout '^valid$'
+stderr '^warning: opstruss.yaml:11:3: tasks.greet: task greet of the project hides the task greet of its units at the command line; give one of them another name$'
+exec opstruss validate --json
+stdout '"valid": true'
+stdout '"warnings": \['
+stdout '"path": "tasks.greet"'
+exec opstruss greet --json
+stdout '"type":"diagnostic","level":"warn","message":"opstruss.yaml:11:3: tasks.greet: task greet of the project hides'
+stdout '"message":"hi"'
+
+cp image.yaml opstruss.yaml
+! exec opstruss validate
+stderr '^opstruss.yaml:3:3: uses.image: image is reserved for a key of a later OpsTruss; give the declaration another name$'
+
+cp plain.yaml opstruss.yaml
+exec opstruss validate --json
+stdout '"warnings": \[\]'
+! stderr .
+
+-- opstruss.yaml --
+name: names
+uses:
+  notify: opstruss.log
+units:
+  x:
+    run: [echo, x]
+    tasks:
+      greet:
+        run: [echo, unit]
+tasks:
+  greet:
+    steps:
+      - notify: {msg: hi}
+-- image.yaml --
+name: names
+uses:
+  image: opstruss.log
+-- plain.yaml --
+name: names
+tasks:
+  t:
+    run: [echo, hi]

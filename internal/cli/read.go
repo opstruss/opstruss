@@ -19,6 +19,7 @@ import (
 	"github.com/opstruss/opstruss/internal/engine"
 	"github.com/opstruss/opstruss/internal/expr"
 	"github.com/opstruss/opstruss/internal/record"
+	"github.com/opstruss/opstruss/internal/secret"
 	"github.com/spf13/cobra"
 )
 
@@ -156,14 +157,18 @@ func (a *app) outputsCommand() *cobra.Command {
 			if a.json {
 				return a.printJSON(out)
 			}
-			if len(out) == 0 {
+			if len(out.Outputs) == 0 {
 				// Every output the project declares is here, with a value or
 				// as an error, so none is not an output still to come.
 				fmt.Fprintln(a.stderr, "the project declares no outputs")
 				return nil
 			}
-			for _, k := range slices.Sorted(maps.Keys(out)) {
-				fmt.Fprintf(a.stdout, "%s: %s\n", k, expr.Text(out[k]))
+			for _, k := range slices.Sorted(maps.Keys(out.Outputs)) {
+				text := secret.Mask
+				if v := out.Outputs[k].Value; v != nil {
+					text = expr.Text(*v)
+				}
+				fmt.Fprintf(a.stdout, "%s: %s\n", k, text)
 			}
 			return nil
 		},
@@ -208,7 +213,7 @@ func (a *app) runsCommand() *cobra.Command {
 				return a.printJSON(runs)
 			}
 			tw := tabwriter.NewWriter(a.stdout, 0, 0, 2, ' ', 0)
-			for _, r := range runs {
+			for _, r := range runs.Runs {
 				what := r.Command
 				if r.Task != "" {
 					what = r.Task

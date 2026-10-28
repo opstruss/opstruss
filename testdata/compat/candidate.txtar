@@ -1,0 +1,360 @@
+# What opstruss v0.0.0-20261027154240-3fb0821d2fc2+dirty darwin/arm64 wrote reads with this version: no unit runs again, and
+# its runs, records, kv, and sensitive values read. generate.sh wrote this
+# file; it never changes.
+
+env HOME=$WORK/home
+env OPSTRUSS_AGE_KEY_FILE=$WORK/key.txt
+
+exec opstruss plan
+stdout 'default/build: unchanged'
+stdout 'default/token: unchanged'
+stdout 'default/ratio: unchanged'
+! stdout 'will run'
+exec opstruss runs
+stdout 'remember +success'
+stdout 'recall +success'
+exec opstruss state list
+stdout 'default/build'
+stdout 'token'
+exec opstruss recall
+stdout 'count=2 ratio=0.5 size=6'
+exec opstruss logs build
+stdout 'built'
+
+-- .opstruss/runs/default/20261028T021403Z-15b488c1/events.jsonl --
+{"v":1,"seq":1,"time":"2026-10-28T02:14:03.231Z","run":"20261028T021403Z-15b488c1","type":"run","level":"info","message":"started","status":"running"}
+{"v":1,"seq":2,"time":"2026-10-28T02:14:03.233Z","run":"20261028T021403Z-15b488c1","type":"plan","level":"info","address":"default/build","task":"plan","message":"will run: new","status":"finished","outcome":"success","plan":{"changes":[{"action":"run"}],"digest":"sha256:v1:00d9a0b4bfc25691b7da664952db141e905c3d21da7ed3a8c1090206fbcb239b","exact":true,"outputs":[],"reason":"new","summary":"will run: new"}}
+{"v":1,"seq":3,"time":"2026-10-28T02:14:03.233Z","run":"20261028T021403Z-15b488c1","type":"plan","level":"info","address":"default/ratio","task":"plan","message":"will run: new","status":"finished","outcome":"success","plan":{"changes":[{"action":"run"}],"digest":"sha256:v1:4d21bba43240d7ef93fc11b244089068198dda8dfd781ac29042013aef96bd1a","exact":true,"outputs":[],"reason":"new","summary":"will run: new"}}
+{"v":1,"seq":4,"time":"2026-10-28T02:14:03.238Z","run":"20261028T021403Z-15b488c1","type":"plan","level":"info","address":"default/token","task":"plan","message":"will run: new","status":"finished","outcome":"success","plan":{"changes":[{"action":"run"}],"digest":"sha256:v1:4bfdc6efeee7013cd8071564ca95b9bfca660df08584d5ed72182a78f56bf1d3","exact":true,"outputs":[],"reason":"new","summary":"will run: new"}}
+{"v":1,"seq":5,"time":"2026-10-28T02:14:03.239Z","run":"20261028T021403Z-15b488c1","type":"unit","level":"info","address":"default/token","task":"up","message":"up: started","status":"running"}
+{"v":1,"seq":6,"time":"2026-10-28T02:14:03.239Z","run":"20261028T021403Z-15b488c1","type":"unit","level":"info","address":"default/ratio","task":"up","message":"up: started","status":"running"}
+{"v":1,"seq":7,"time":"2026-10-28T02:14:03.239Z","run":"20261028T021403Z-15b488c1","type":"unit","level":"info","address":"default/build","task":"up","message":"up: started","status":"running"}
+{"v":1,"seq":8,"time":"2026-10-28T02:14:03.279Z","run":"20261028T021403Z-15b488c1","type":"diagnostic","level":"info","message":"made the age key age1d62m9mh5dz8dmhqtal80c0s6ud7yke5nyuvrfcxu5r6h9nat74ksurxu9d of this machine in ./key.txt; back it up with .opstruss/state/ of each project, since together they are the only way to open its sensitive values"}
+{"v":1,"seq":9,"time":"2026-10-28T02:14:03.296Z","run":"20261028T021403Z-15b488c1","type":"log","level":"info","address":"default/build","task":"up","stream":"stdout","message":"built"}
+{"v":1,"seq":10,"time":"2026-10-28T02:14:03.309Z","run":"20261028T021403Z-15b488c1","type":"diagnostic","level":"debug","message":"made the data key of stack default in default/_meta, with age for age1d62m9mh5dz8dmhqtal80c0s6ud7yke5nyuvrfcxu5r6h9nat74ksurxu9d"}
+{"v":1,"seq":11,"time":"2026-10-28T02:14:03.349Z","run":"20261028T021403Z-15b488c1","type":"unit","level":"info","address":"default/ratio","task":"up","message":"up: done","status":"finished","outcome":"success"}
+{"v":1,"seq":12,"time":"2026-10-28T02:14:03.381Z","run":"20261028T021403Z-15b488c1","type":"unit","level":"info","address":"default/build","task":"up","message":"up: done","status":"finished","outcome":"success"}
+{"v":1,"seq":13,"time":"2026-10-28T02:14:03.386Z","run":"20261028T021403Z-15b488c1","type":"unit","level":"info","address":"default/token","task":"up","message":"up: done","status":"finished","outcome":"success"}
+{"v":1,"seq":14,"time":"2026-10-28T02:14:03.391Z","run":"20261028T021403Z-15b488c1","type":"run","level":"info","message":"success","status":"finished","outcome":"success","exit_code":0}
+-- .opstruss/runs/default/20261028T021403Z-15b488c1/record.json --
+{
+  "version": 1,
+  "opstruss": "v0.0.0-20261027154240-3fb0821d2fc2+dirty",
+  "run": "20261028T021403Z-15b488c1",
+  "project": "compat",
+  "stack": "default",
+  "command": "up",
+  "trigger": "cli",
+  "user": "fixture",
+  "host": "755494ce50a026f92f8c059bc8aee9b3",
+  "hostname": "fixture",
+  "pid": 13572,
+  "started": "2026-10-28T02:14:03.218Z",
+  "ended": "2026-10-28T02:14:03.389Z",
+  "status": "finished",
+  "outcome": "success",
+  "exit_code": 0,
+  "units": {
+    "build": {
+      "outcome": "success",
+      "changed": true,
+      "plan": "will run: new",
+      "approval": "--yes"
+    },
+    "ratio": {
+      "outcome": "success",
+      "changed": true,
+      "plan": "will run: new",
+      "approval": "--yes"
+    },
+    "token": {
+      "outcome": "success",
+      "changed": true,
+      "plan": "will run: new",
+      "approval": "--yes"
+    }
+  },
+  "replay": {}
+}
+-- .opstruss/runs/default/20261028T021403Z-ca0a1c57/events.jsonl --
+{"v":1,"seq":1,"time":"2026-10-28T02:14:03.495Z","run":"20261028T021403Z-ca0a1c57","type":"run","level":"info","task":"recall","message":"started","status":"running"}
+{"v":1,"seq":2,"time":"2026-10-28T02:14:03.497Z","run":"20261028T021403Z-ca0a1c57","type":"task","level":"info","task":"recall","message":"started","status":"running"}
+{"v":1,"seq":3,"time":"2026-10-28T02:14:03.498Z","run":"20261028T021403Z-ca0a1c57","type":"step","level":"info","task":"recall","step":"recall step 1","message":"started","status":"running"}
+{"v":1,"seq":4,"time":"2026-10-28T02:14:03.498Z","run":"20261028T021403Z-ca0a1c57","type":"log","level":"info","task":"recall","step":"recall step 1","message":"count=2 ratio=0.5 size=6"}
+{"v":1,"seq":5,"time":"2026-10-28T02:14:03.498Z","run":"20261028T021403Z-ca0a1c57","type":"step","level":"info","task":"recall","step":"recall step 1","message":"success","status":"finished","outcome":"success"}
+{"v":1,"seq":6,"time":"2026-10-28T02:14:03.499Z","run":"20261028T021403Z-ca0a1c57","type":"task","level":"info","task":"recall","message":"success","status":"finished","outcome":"success"}
+{"v":1,"seq":7,"time":"2026-10-28T02:14:03.500Z","run":"20261028T021403Z-ca0a1c57","type":"run","level":"info","task":"recall","message":"success","status":"finished","outcome":"success","exit_code":0}
+-- .opstruss/runs/default/20261028T021403Z-ca0a1c57/record.json --
+{
+  "version": 1,
+  "opstruss": "v0.0.0-20261027154240-3fb0821d2fc2+dirty",
+  "run": "20261028T021403Z-ca0a1c57",
+  "project": "compat",
+  "stack": "default",
+  "command": "task",
+  "task": "recall",
+  "trigger": "cli",
+  "user": "fixture",
+  "host": "755494ce50a026f92f8c059bc8aee9b3",
+  "hostname": "fixture",
+  "pid": 13773,
+  "started": "2026-10-28T02:14:03.490Z",
+  "ended": "2026-10-28T02:14:03.499Z",
+  "status": "finished",
+  "outcome": "success",
+  "exit_code": 0,
+  "replay": {}
+}
+-- .opstruss/runs/default/20261028T021403Z-f8540206/events.jsonl --
+{"v":1,"seq":1,"time":"2026-10-28T02:14:03.434Z","run":"20261028T021403Z-f8540206","type":"run","level":"info","task":"remember","message":"started","status":"running"}
+{"v":1,"seq":2,"time":"2026-10-28T02:14:03.435Z","run":"20261028T021403Z-f8540206","type":"task","level":"info","task":"remember","message":"started","status":"running"}
+{"v":1,"seq":3,"time":"2026-10-28T02:14:03.436Z","run":"20261028T021403Z-f8540206","type":"step","level":"info","task":"remember","step":"remember step 1","message":"started","status":"running"}
+{"v":1,"seq":4,"time":"2026-10-28T02:14:03.447Z","run":"20261028T021403Z-f8540206","type":"step","level":"info","task":"remember","step":"remember step 1","message":"success","status":"finished","outcome":"success"}
+{"v":1,"seq":5,"time":"2026-10-28T02:14:03.447Z","run":"20261028T021403Z-f8540206","type":"step","level":"info","task":"remember","step":"remember step 2","message":"started","status":"running"}
+{"v":1,"seq":6,"time":"2026-10-28T02:14:03.462Z","run":"20261028T021403Z-f8540206","type":"step","level":"info","task":"remember","step":"remember step 2","message":"success","status":"finished","outcome":"success"}
+{"v":1,"seq":7,"time":"2026-10-28T02:14:03.463Z","run":"20261028T021403Z-f8540206","type":"task","level":"info","task":"remember","message":"success","status":"finished","outcome":"success"}
+{"v":1,"seq":8,"time":"2026-10-28T02:14:03.464Z","run":"20261028T021403Z-f8540206","type":"run","level":"info","task":"remember","message":"success","status":"finished","outcome":"success","exit_code":0}
+-- .opstruss/runs/default/20261028T021403Z-f8540206/record.json --
+{
+  "version": 1,
+  "opstruss": "v0.0.0-20261027154240-3fb0821d2fc2+dirty",
+  "run": "20261028T021403Z-f8540206",
+  "project": "compat",
+  "stack": "default",
+  "command": "task",
+  "task": "remember",
+  "trigger": "cli",
+  "user": "fixture",
+  "host": "755494ce50a026f92f8c059bc8aee9b3",
+  "hostname": "fixture",
+  "pid": 13772,
+  "started": "2026-10-28T02:14:03.430Z",
+  "ended": "2026-10-28T02:14:03.463Z",
+  "status": "finished",
+  "outcome": "success",
+  "exit_code": 0,
+  "replay": {}
+}
+-- .opstruss/state/default/_kv/last --
+{
+  "version": 1,
+  "value": {
+    "count": 2,
+    "ratio": 0.5
+  }
+}
+-- .opstruss/state/default/_kv/token --
+{
+  "version": 1,
+  "value": "enc:v1:dbIXEXq9VNqWIGOLoaxq/LJ9TuqyZYUmwYLDPlGmB6seD2sr4DvY8jIT",
+  "sensitive": true
+}
+-- .opstruss/state/default/_kv.lock --
+-- .opstruss/state/default/_meta --
+{
+  "version": 1,
+  "project": "compat",
+  "key": {
+    "age": {
+      "to": [
+        "age1d62m9mh5dz8dmhqtal80c0s6ud7yke5nyuvrfcxu5r6h9nat74ksurxu9d"
+      ],
+      "data": "-----BEGIN AGE ENCRYPTED FILE-----\nYWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA1STdSaW1weTd4NGxJcklK\nRkNLd2taMnVFcjZadGpqVm5KUTdNTlFFbjE0CkpCd0J4eUtWZVRGMUR1UkV1NTJV\nUFVlK0dwNEVJTm1TeDRrYUxjZ0xxcGsKLS0tIEZuYXZYOEJYUXJYZXZpa1ZIZ2ky\nemxGZDlndHhDbGFaNFFnRzNocGVpd2cK3WAVHSgVVl5jTh7yiHUg5LX0Nx/AaUq1\nQ4AXSi9yLX38ABRw2ysfgh2i2Hy/P6kTVMDZY9u82/97qEP1V0bGiA==\n-----END AGE ENCRYPTED FILE-----\n"
+    }
+  }
+}
+-- .opstruss/state/default/_meta.backup --
+{
+  "version": 1,
+  "project": "compat"
+}
+-- .opstruss/state/default/_meta.lock --
+-- .opstruss/state/default/build/state.backup.json --
+{
+  "version": 1,
+  "id": "ece06613",
+  "state_key": "default/build.ece06613",
+  "address": "default/build",
+  "pending": {
+    "op": "up",
+    "run": "20261028T021403Z-15b488c1",
+    "holder": {
+      "version": 1,
+      "run": "20261028T021403Z-15b488c1",
+      "host": "755494ce50a026f92f8c059bc8aee9b3",
+      "hostname": "fixture",
+      "user": "fixture",
+      "pid": 13572,
+      "started": "2026-10-28T02:14:03.191307Z",
+      "since": "2026-10-28T02:14:03Z"
+    },
+    "approval": "--yes",
+    "digest": "sha256:v1:00d9a0b4bfc25691b7da664952db141e905c3d21da7ed3a8c1090206fbcb239b",
+    "outputs": {
+      "size": 6
+    }
+  }
+}
+-- .opstruss/state/default/build/state.json --
+{
+  "version": 1,
+  "id": "ece06613",
+  "state_key": "default/build.ece06613",
+  "address": "default/build",
+  "kind": "run",
+  "outputs": {
+    "size": 6
+  },
+  "digest": "sha256:v1:00d9a0b4bfc25691b7da664952db141e905c3d21da7ed3a8c1090206fbcb239b",
+  "parts": {
+    "kind": "5e87f618bd8837e8",
+    "outputs": "d14b779cfc4eab66",
+    "run": "f68c5a0c284879eb",
+    "sources": "44c841daffe5e774"
+  },
+  "run": "20261028T021403Z-15b488c1",
+  "updated": "2026-10-28T02:14:03Z"
+}
+-- .opstruss/state/default/build/state.lock --
+-- .opstruss/state/default/ratio/state.backup.json --
+{
+  "version": 1,
+  "id": "59bce4fb",
+  "state_key": "default/ratio.59bce4fb",
+  "address": "default/ratio",
+  "pending": {
+    "op": "up",
+    "run": "20261028T021403Z-15b488c1",
+    "holder": {
+      "version": 1,
+      "run": "20261028T021403Z-15b488c1",
+      "host": "755494ce50a026f92f8c059bc8aee9b3",
+      "hostname": "fixture",
+      "user": "fixture",
+      "pid": 13572,
+      "started": "2026-10-28T02:14:03.191307Z",
+      "since": "2026-10-28T02:14:03Z"
+    },
+    "approval": "--yes",
+    "digest": "sha256:v1:4d21bba43240d7ef93fc11b244089068198dda8dfd781ac29042013aef96bd1a",
+    "outputs": {
+      "count": 3,
+      "ratio": 2.0
+    }
+  }
+}
+-- .opstruss/state/default/ratio/state.json --
+{
+  "version": 1,
+  "id": "59bce4fb",
+  "state_key": "default/ratio.59bce4fb",
+  "address": "default/ratio",
+  "kind": "run",
+  "outputs": {
+    "count": 3,
+    "ratio": 2.0
+  },
+  "digest": "sha256:v1:4d21bba43240d7ef93fc11b244089068198dda8dfd781ac29042013aef96bd1a",
+  "parts": {
+    "kind": "5e87f618bd8837e8",
+    "outputs": "7ea738f94f5528bb",
+    "run": "aa9cbc7e46cae629"
+  },
+  "run": "20261028T021403Z-15b488c1",
+  "updated": "2026-10-28T02:14:03Z"
+}
+-- .opstruss/state/default/ratio/state.lock --
+-- .opstruss/state/default/token/state.backup.json --
+{
+  "version": 1,
+  "id": "81c005f9",
+  "state_key": "default/token.81c005f9",
+  "address": "default/token",
+  "pending": {
+    "op": "up",
+    "run": "20261028T021403Z-15b488c1",
+    "holder": {
+      "version": 1,
+      "run": "20261028T021403Z-15b488c1",
+      "host": "755494ce50a026f92f8c059bc8aee9b3",
+      "hostname": "fixture",
+      "user": "fixture",
+      "pid": 13572,
+      "started": "2026-10-28T02:14:03.191307Z",
+      "since": "2026-10-28T02:14:03Z"
+    },
+    "approval": "--yes",
+    "digest": "sha256:v1:4bfdc6efeee7013cd8071564ca95b9bfca660df08584d5ed72182a78f56bf1d3",
+    "sensitive": {
+      "outputs": {
+        "token": "enc:v1:660Ol9TjlvrYZoGusYSDD+BB01NgHOIizUl6cfSpjIZKO86InjX2amRq"
+      }
+    }
+  }
+}
+-- .opstruss/state/default/token/state.json --
+{
+  "version": 1,
+  "id": "81c005f9",
+  "state_key": "default/token.81c005f9",
+  "address": "default/token",
+  "kind": "run",
+  "sensitive": {
+    "outputs": {
+      "token": "enc:v1:OBMN4T4YqU9fLVK+tTc4eHPyHpIpwyDSxbw3PxUpEbO0BRKvndNJ9K2T"
+    }
+  },
+  "digest": "sha256:v1:4bfdc6efeee7013cd8071564ca95b9bfca660df08584d5ed72182a78f56bf1d3",
+  "parts": {
+    "env.GREETING": "5aa762ae383fbb72",
+    "kind": "5e87f618bd8837e8",
+    "outputs": "1fa05c978e6b4a19",
+    "run": "0fb1cba0c001adbc"
+  },
+  "run": "20261028T021403Z-15b488c1",
+  "updated": "2026-10-28T02:14:03Z"
+}
+-- .opstruss/state/default/token/state.lock --
+-- .opstruss/tasks/default/recall.lock --
+-- .opstruss/tasks/default/remember.lock --
+-- key.txt --
+# created: 2026-10-28T10:14:03+08:00
+# public key: age1d62m9mh5dz8dmhqtal80c0s6ud7yke5nyuvrfcxu5r6h9nat74ksurxu9d
+AGE-SECRET-KEY-1QUW2Y96KKU7GZGYHYWECJZ6TN7KFJSSJR0UXL72LNR0GGRQ5A6ASS0WXXG
+-- opstruss.yaml --
+# The project that generate.sh runs to write the data of one version: a
+# unit with sources and generates, one with a sensitive output, typed
+# numbers, a task, and kv, plain and sensitive.
+opstruss: "1.0"
+name: compat
+inputs:
+  greeting: {type: string, default: hello}
+units:
+  build:
+    run: [sh, -c, 'mkdir -p out && cp src/app.txt out/app.txt && echo built && echo "size=$(wc -c < out/app.txt | tr -d " ")" >> "$OPSTRUSS_OUTPUT"']
+    sources: [src/app.txt]
+    generates: [out/app.txt]
+    outputs:
+      size: {type: integer}
+  token:
+    run: [sh, -c, 'echo "token=t0ken-$GREETING" >> "$OPSTRUSS_OUTPUT"']
+    env: {GREETING: "${{ inputs.greeting }}"}
+    outputs:
+      token: {type: string, sensitive: true}
+  ratio:
+    run: [sh, -c, 'echo "{\"ratio\": 2.0, \"count\": 3}" > "$OPSTRUSS_OUTPUT"']
+    outputs:
+      ratio: {type: number}
+      count: {type: integer}
+tasks:
+  remember:
+    steps:
+      - kv: {key: last, value: {count: 2, ratio: 0.5}}
+      - kv: {key: token, value: "${{ units.token.outputs.token }}"}
+  recall:
+    steps:
+      - log: {msg: "count=${{ kv('last').count }} ratio=${{ units.ratio.outputs.ratio / 4.0 }} size=${{ units.build.outputs.size }}"}
+-- out/app.txt --
+hello
+-- src/app.txt --
+hello

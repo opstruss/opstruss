@@ -77,9 +77,13 @@ optional values (`?.`, `orValue`), `cel.bind`, and `base64`.
   list, a map, or `null` is refused, with `toJSON()` as the way to write
   it.
 - A value of `env:` and an item of a `run` list are always strings.
-- A number takes the type of the input or output it goes to. Without one,
-  as from `fromJSON()`, a whole number becomes an `int` and any other a
-  `double`, so `80` and `80.0` from two tools are equal.
+- A number takes the type of the input or output it goes to: a `number` is
+  a `double`, also when it is whole, and an `integer` is an `int`, which
+  holds 64 bits, so an id larger than that is a string. Without a type, as
+  from `fromJSON()`, a whole number becomes an `int` and any other a
+  `double`, so `80` and `80.0` from two tools are equal. An expression
+  does not mix the two, as in `2 / 4.0`; write `double(x)` for a value
+  without a type.
 - A map is always read in the order of its keys, in macros, in `for_each`,
   and as a list, so the same result gives the same digest.
 - The result of an expression that reads a secret or a sensitive value is

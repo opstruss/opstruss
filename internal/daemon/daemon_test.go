@@ -13,6 +13,7 @@ import (
 	"github.com/opstruss/opstruss/internal/api"
 	"github.com/opstruss/opstruss/internal/record"
 	"github.com/opstruss/opstruss/internal/schema"
+	"github.com/opstruss/opstruss/internal/state"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
@@ -179,8 +180,9 @@ func TestDaemonLosesLock(t *testing.T) {
 func TestReadNewer(t *testing.T) {
 	root := t.TempDir()
 	_ = os.MkdirAll(filepath.Join(root, "daemon"), 0o700)
-	_ = os.WriteFile(filePath(root, "prod"), []byte(`{"version": 9, "pid": 1}`), 0o600)
-	if _, err := Read(root, "prod"); err == nil || !strings.Contains(err.Error(), "newer opstruss") {
+	_ = os.WriteFile(filePath(root, "prod"), []byte(`{"version": 9, "pid": "one"}`), 0o600)
+	var newer *state.NewerError
+	if _, err := Read(root, "prod"); !errors.As(err, &newer) {
 		t.Fatalf("got %v", err)
 	}
 }

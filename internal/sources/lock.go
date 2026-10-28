@@ -37,8 +37,18 @@ func ReadLock(dir string) (*Lock, error) {
 	if err != nil {
 		return nil, err
 	}
+	// The version comes first, since a newer one may hold another shape;
+	// within a version, fields this OpsTruss does not know are ignored.
+	var head struct {
+		Version int `yaml:"version"`
+	}
+	if err := yaml.Unmarshal(b, &head); err != nil {
+		return nil, fmt.Errorf("%s: %w", LockName, err)
+	}
+	if head.Version > 1 {
+		return nil, fmt.Errorf("%s has version %d, written by a newer OpsTruss; this one reads up to 1: upgrade OpsTruss", LockName, head.Version)
+	}
 	d := yaml.NewDecoder(bytes.NewReader(b))
-	d.KnownFields(true)
 	l := &Lock{}
 	if err := d.Decode(l); err != nil {
 		return nil, fmt.Errorf("%s: %w", LockName, err)
@@ -48,7 +58,7 @@ func ReadLock(dir string) (*Lock, error) {
 		return nil, fmt.Errorf("%s: expected one document", LockName)
 	}
 	if l.Version != 1 || l.Sources == nil {
-		return nil, fmt.Errorf("%s: unsupported version or missing sources; upgrade OpsTruss if written by a newer version", LockName)
+		return nil, fmt.Errorf("%s: no version or no sources", LockName)
 	}
 	groups := map[string]Pin{}
 	for key, pin := range l.Sources {

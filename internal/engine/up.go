@@ -378,7 +378,7 @@ func (e *engine) decide(ctx context.Context, inst *instance, r *resolved, rec *s
 // the next plan says so rather than that it did not finish; a record that
 // cannot be written keeps the attempt as one that did not finish.
 func (e *engine) endAttempt(addr string, rec *state.Record, etag string, parent context.Context) {
-	rec.Pending.Outcome, rec.Pending.Ended = failure, time.Now().UTC().Format(time.RFC3339)
+	rec.Pending.Outcome, rec.Pending.Ended = failure, record.Stamp(time.Now())
 	if parent.Err() != nil {
 		rec.Pending.Outcome = cancelled
 	}

@@ -65,7 +65,50 @@ An event:
   has the same as text.
 
 The record of each run keeps the same events, which
-`opstruss runs <id> --json` prints again.
+`opstruss runs <id> --json` prints again. In a `diagnostic` of what fails
+before a run starts, `run` is empty, since there is no run.
+
+## Documents
+
+A command that reads prints one JSON object. A later version may add
+fields to it, never remove one or change what it means. An empty list is
+`[]`, never `null`, and times are RFC 3339 in UTC; those of runs and
+events are to the millisecond.
+
+| Command | Fields |
+|---|---|
+| `list` | `stack`; `tasks`, each with `name`, `description`, `internal`, `triggers`, `next`, and of its last run `run`, `via`, `outcome`, and `ended`; `units`, each with `address`, `kind`, `state` (`up`, `pending`, `absent`, or the state of a service), `run`, and `outputs`; `triggers`, with `daemon` and `error`, when a task has triggers |
+| `runs` | `stack`; `runs`, newest first, each a record of a run (below) |
+| `outputs` | `stack`; `outputs`, by name |
+| `doctor` | `stack`; `checks`, each with `check`, `status`, `message`, and `path` or `name` |
+| `explain` | `project`, `stack`, `inputs` (each with its `value` and where it is `from`), `order`, `units`, `tasks`, `outputs` |
+| `state list` | `stack`; `records`, each with `address`, `id`, and `kind`; `kv` |
+| `plugins`, `plugins fetch`, `plugins update` | `sources` |
+| `plugins prune` | `removed` |
+| `validate` | `valid`, `problems`, and `warnings`, each problem and warning with `file`, `line`, `column`, `path`, and `message`; only problems make `valid` false |
+| `stop` | `stack`, `stopped` |
+| `init` | `wrote` |
+| `version` | `version`, `os`, `arch` |
+| A command that fails before it reads | `error` |
+
+An output, in `outputs` and in the units of `list`:
+
+```json
+{"value": "https://example.com", "sensitive": false, "type": "string"}
+```
+
+- `value` is missing from a sensitive output, unless `outputs
+  --show-sensitive` shows it.
+- `type` is the type that the unit or its plugin declares, when it does.
+
+A record of a run has `version`; `opstruss`, the version of OpsTruss that
+ran it; `run`; `parent`, the run it ran inside; `project`, `stack`,
+`command`, `task`, and `args`; `trigger`, what made it, and `simulated`
+for `--event`; `user`, `host`, `hostname`, and `pid`; `started` and
+`ended`; `status`, `outcome`, `reason` (why it ended `cancelled`), and
+`exit_code`; `units` and `tasks`, what ran inside it; `outputs`;
+`events_incomplete` when its events could not all be written; `no_deps`;
+`rerun_of`; and `replay`, what `runs rerun` needs.
 
 ## Color
 

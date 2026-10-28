@@ -22,6 +22,7 @@ const CatalogFile = "opstruss.catalog.yaml"
 
 // catalogFile is what opstruss.catalog.yaml holds.
 type catalogFile struct {
+	Level  string   `json:"opstruss,omitempty"`
 	Shared []string `json:"shared,omitempty"`
 }
 

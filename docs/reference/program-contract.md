@@ -37,7 +37,9 @@ EOF
 ```
 
 A text value is read by the `type` of its output, so `port=8080` is a
-number for an output of type `integer`.
+number for an output of type `integer`. A name written twice keeps the
+last value, a line may end in `\r\n`, and a `name<<EOF` block without its
+closing `EOF` fails the program.
 
 ## Plans
 
@@ -73,7 +75,7 @@ A plugin's `plan` writes `$OPSTRUSS_PLAN`:
 | `OPSTRUSS_ARTIFACTS` | A directory for files that the record of the run keeps |
 | `OPSTRUSS_TEMP` | The temporary directory of the run, shared by its programs; removed when the run ends |
 | `OPSTRUSS_STATE_DIR` | For a plugin with `state: tool` on the local backend: the `tool/` directory of the unit |
-| `OPSTRUSS_STATE_KEY` | The lasting identity of a unit, such as `prod/zone.7f3a9c1e`, which stays when the unit moves; empty in the plan of a unit without a record |
+| `OPSTRUSS_STATE_KEY` | The lasting identity of a unit, such as `prod/zone.7f3a9c1e`, which stays when the unit moves; empty in the plan of a unit without a record. It holds `/` and, for an instance, `[` and `]`, so a tag that allows fewer characters gets it hashed or encoded |
 
 ## Facts
 
@@ -86,7 +88,7 @@ A plugin's `plan` writes `$OPSTRUSS_PLAN`:
 | `OPSTRUSS_REASON` | Why the unit runs: `changed`, `requested`, `forced`, or `interrupted` for one whose last attempt did not finish; a value it does not know reads as `changed` |
 | `OPSTRUSS_DIGEST` | The digest of the plan that was approved |
 | `OPSTRUSS_SERVICE_ID` | For a program that the daemon keeps running: an id that its children carry too |
-| `OPSTRUSS_CONTRACT` | The version of this contract, `1`; it goes up only for a change that breaks programs |
+| `OPSTRUSS_CONTRACT` | The version of this contract, `1`, which every 1.x version gives to plugins written for 1.0; a later contract, if one comes, goes only to plugins whose `opstruss:` names the version that brought it |
 
 Not every program runs inside a run or for a unit:
 

@@ -67,12 +67,12 @@ func (e *KVEntry) expired(now time.Time) bool {
 }
 
 func decodeKV(data []byte, name string) (*KVEntry, error) {
+	if err := CheckVersion(data, "version", "kv "+name, KVVersion); err != nil {
+		return nil, err
+	}
 	var e KVEntry
 	if err := decodeJSON(data, &e); err != nil {
 		return nil, fmt.Errorf("kv %s: %w", name, err)
-	}
-	if e.Version > KVVersion {
-		return nil, &NewerError{What: "kv " + name, Version: e.Version, Known: KVVersion}
 	}
 	e.Value = fixNumbers(e.Value)
 	return &e, nil
@@ -216,7 +216,7 @@ func (s *Store) KVPut(name string, value any, sensitive bool, ttl time.Duration,
 			}
 		}
 	} else {
-		e := &KVEntry{Version: KVVersion, Value: value}
+		e := &KVEntry{Version: KVVersion, Value: floats(value)}
 		if sensitive {
 			key, err := (&sealer{key: s.Key}).dataKey()
 			if err != nil {

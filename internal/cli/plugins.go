@@ -50,7 +50,7 @@ func (a *app) pluginsCommand() *cobra.Command {
 				return err
 			}
 			if a.json {
-				return a.printJSON(map[string]any{"removed": removed})
+				return a.printJSON(map[string]any{"removed": append([]string{}, removed...)})
 			}
 			for _, key := range removed {
 				fmt.Fprintln(a.stdout, "removed", key)
@@ -158,7 +158,7 @@ func (a *app) listSources(ctx context.Context) error {
 			}
 		}
 	}
-	var out []sourceRow
+	out := []sourceRow{}
 	for _, name := range slices.Sorted(maps.Keys(rows)) {
 		out = append(out, rows[name])
 	}
@@ -274,7 +274,7 @@ func (a *app) fetchSources(cmd *cobra.Command, update string) error {
 	if err := session.Finish(); err != nil {
 		return err
 	}
-	var rows []sourceRow
+	rows := []sourceRow{}
 	tw := tabwriter.NewWriter(a.stdout, 0, 0, 2, ' ', 0)
 	for _, key := range slices.Sorted(maps.Keys(session.Pins())) {
 		pin, old := session.Pins()[key], before.Sources[key]

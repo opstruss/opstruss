@@ -137,16 +137,20 @@ func TestStore(t *testing.T) {
 		t.Fatalf("records without _meta: %v", err)
 	}
 
-	// A newer layout or record stops the run before it reads further.
-	if err := os.WriteFile(filepath.Join(root, "prod", "_meta"), []byte(`{"version": 9, "project": "platform"}`), 0o600); err != nil {
+	// A newer layout, record, or value stops the run before it reads
+	// further, also when the newer version changed its shape.
+	if err := os.WriteFile(filepath.Join(root, "prod", "_meta"), []byte(`{"version": 9, "project": {"name": "platform"}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	var ne *NewerError
 	if _, err := Open(b, "prod", "platform"); !errors.As(err, &ne) {
 		t.Fatalf("a newer _meta: %v", err)
 	}
-	if _, err := DecodeRecord([]byte(`{"version": `+strconv.Itoa(RecordVersion+1)+`, "id": "x"}`), "prod/web"); !errors.As(err, &ne) {
+	if _, err := DecodeRecord([]byte(`{"version": `+strconv.Itoa(RecordVersion+1)+`, "id": {"x": 1}}`), "prod/web"); !errors.As(err, &ne) {
 		t.Fatalf("a newer record: %v", err)
+	}
+	if _, err := decodeKV([]byte(`{"version": `+strconv.Itoa(KVVersion+1)+`, "expires": {"at": 1}}`), "k"); !errors.As(err, &ne) {
+		t.Fatalf("a newer kv value: %v", err)
 	}
 }
 

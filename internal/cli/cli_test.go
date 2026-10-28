@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -13,6 +14,15 @@ import (
 	"github.com/opstruss/opstruss/internal/engine"
 	"github.com/spf13/cobra"
 )
+
+// ymlDir is a directory with opstruss.yml, which OpsTruss does not read.
+func ymlDir(t *testing.T) string {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "opstruss.yml"), []byte("name: app\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
 
 func TestRun(t *testing.T) {
 	tests := []struct {
@@ -43,6 +53,7 @@ func TestRun(t *testing.T) {
 		{args: []string{"version", "-d"}, code: 1, stderr: "-d is for up and tasks"},
 		{args: []string{"-C", t.TempDir(), "validate"}, code: 1, stderr: "no opstruss.yaml in"},
 		{args: []string{"-C", t.TempDir(), "plan", "--json"}, code: 1, stdout: `"type":"diagnostic","level":"error","message":"no opstruss.yaml in `},
+		{args: []string{"-C", ymlDir(t), "validate"}, code: 1, stderr: "has opstruss.yml, which OpsTruss does not read: rename it to opstruss.yaml"},
 	}
 	for _, tt := range tests {
 		t.Run(strings.Join(tt.args, " "), func(t *testing.T) {

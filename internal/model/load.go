@@ -56,6 +56,10 @@ type Project struct {
 	// Packages are the names in uses: that stand for something.
 	Packages map[string]*Package
 
+	// Warnings are what the files hold that works but may not do what was
+	// meant; validate prints them, and a run gives each as an event.
+	Warnings Problems
+
 	// doc is the merged document, for explain; origins says which file
 	// and path wrote each entry, for messages, by its name relative to
 	// base, the directory of the project.
@@ -90,6 +94,9 @@ func Find(dir string) (string, error) {
 		}
 		parent := filepath.Dir(d)
 		if parent == d {
+			if _, err := os.Stat(filepath.Join(dir, "opstruss.yml")); err == nil {
+				return "", fmt.Errorf("no %s in %s or a directory above it; %s has opstruss.yml, which OpsTruss does not read: rename it to %s", FileName, dir, dir, FileName)
+			}
 			return "", fmt.Errorf("no %s in %s or a directory above it; opstruss init makes one", FileName, dir)
 		}
 		d = parent
@@ -284,40 +291,49 @@ func readComponent(base, dir, stack string, session *sources.Session, owner *sou
 
 // Validate loads every stack of the project in dir and returns all
 // problems found, once each.
-func Validate(dir string) error { return ValidateWith(context.Background(), dir, sources.Options{}) }
+func Validate(dir string) error {
+	_, err := ValidateWith(context.Background(), dir, sources.Options{})
+	return err
+}
 
-func ValidateWith(ctx context.Context, dir string, opts sources.Options) error {
+// ValidateWith is Validate with options; it also returns the warnings of
+// the stacks that load, once each.
+func ValidateWith(ctx context.Context, dir string, opts sources.Options) (Problems, error) {
 	names, err := Stacks(dir)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	session, err := sources.Begin(ctx, dir, opts)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer session.Close()
-	var all Problems
+	var all, warns Problems
 	seen := map[string]bool{}
+	once := func(to *Problems, ps Problems) {
+		for _, pr := range ps {
+			if !seen[pr.String()] {
+				seen[pr.String()] = true
+				*to = append(*to, pr)
+			}
+		}
+	}
 	for _, s := range names {
-		_, err := LoadSession(dir, s, session)
+		p, err := LoadSession(dir, s, session)
 		var probs Problems
 		if errors.As(err, &probs) {
-			for _, pr := range probs {
-				if !seen[pr.String()] {
-					seen[pr.String()] = true
-					all = append(all, pr)
-				}
-			}
+			once(&all, probs)
 			continue
 		}
 		if err != nil {
-			return err
+			return nil, err
 		}
+		once(&warns, p.Warnings)
 	}
 	if len(all) > 0 {
-		return all
+		return warns, all
 	}
-	return session.Finish()
+	return warns, session.Finish()
 }
 
 // readDocument reads and parses a file, and returns how it differs from

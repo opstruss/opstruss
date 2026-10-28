@@ -23,12 +23,12 @@ Keys that start with x- are left for your own use.
 | `inputs` | map of [Input](opstruss-yaml#input) | Inputs of the units that use the plugin, which their with: gives, read by every task. |
 | `outputs` | `tool` or map of [Output](opstruss-yaml#output) | Outputs that up writes, or tool when the code of the user in the tool names them. |
 | `tasks` | map of [Task](opstruss-yaml#task) | The tasks of the plugin: the standard tasks plan, up, destroy, status, and logs, hooks such as exec, and tasks of its own. |
-| `bin` | map of map of [bin](#bin) | Binaries that OpsTruss downloads for the plugin, by name and platform, which its programs find in PATH. |
+| `bin` | map of map of [bin](#bin) | Binaries that OpsTruss downloads for the plugin, by name and platform, such as linux/amd64 or darwin/arm64, which its programs find in PATH; OpsTruss reads only the platform it runs on. |
 | `backend` | [backend](#backend) | A backend that keeps the state of stacks; not supported yet. |
 
 ## bin {#bin}
 
-Binaries that OpsTruss downloads for the plugin, by name and platform, which its programs find in PATH.
+Binaries that OpsTruss downloads for the plugin, by name and platform, such as linux/amd64 or darwin/arm64, which its programs find in PATH; OpsTruss reads only the platform it runs on.
 
 | Key | Type | Description |
 |---|---|---|

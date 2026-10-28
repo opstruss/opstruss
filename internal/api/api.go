@@ -184,7 +184,7 @@ func (a *API) Rerun(ctx context.Context, r Request) (*Result, error) {
 }
 
 // Outputs returns the outputs of the project.
-func (a *API) Outputs(_ context.Context, r Request) (map[string]any, error) {
+func (a *API) Outputs(_ context.Context, r Request) (*engine.OutputList, error) {
 	return engine.Outputs(a.options(r))
 }
 
@@ -199,7 +199,7 @@ func (a *API) Status(_ context.Context, r Request) (*engine.Status, error) {
 }
 
 // Runs returns the records of the stack's runs, newest first.
-func (a *API) Runs(_ context.Context, r Request) ([]*record.Record, error) {
+func (a *API) Runs(_ context.Context, r Request) (*engine.RunList, error) {
 	return engine.Runs(a.options(r))
 }
 

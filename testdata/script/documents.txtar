@@ -1,0 +1,45 @@
+# Each document that a command prints with --json is an object, so a later
+# version can add to it; an empty list is [], an output is its value with
+# whether it is sensitive and its declared type, and a sensitive one has no
+# value unless shown. The record of a run names the OpsTruss that ran it,
+# and its times are to the millisecond.
+
+env HOME=$WORK/home
+
+exec opstruss up --yes
+exec opstruss runs --json
+stdout '^\{$'
+stdout '"stack": "default"'
+stdout '"runs": \['
+stdout '"opstruss": "'
+stdout '"started": "[0-9-]+T[0-9:]+\.[0-9]{3}Z"'
+stdout '"ended": "[0-9-]+T[0-9:]+\.[0-9]{3}Z"'
+
+exec opstruss outputs --json
+stdout '"stack": "default"'
+stdout '"outputs": \{'
+stdout '"value": "hi"'
+stdout '"sensitive": true'
+! stdout 's3cr3t|\*\*\*'
+exec opstruss outputs --json --show-sensitive
+stdout '"value": "s3cr3t"'
+
+exec opstruss list --json
+stdout '"type": "string"'
+stdout '"type": "object"'
+! stdout 's3cr3t|\*\*\*'
+
+exec opstruss plugins --json
+stdout '"sources": \[\]'
+
+-- opstruss.yaml --
+name: documents
+outputs:
+  msg: {value: "${{ units.gen.outputs.msg }}"}
+  token: {value: "${{ units.gen.outputs.key.token }}", sensitive: true}
+units:
+  gen:
+    run: [sh, -c, 'echo "{\"msg\": \"hi\", \"key\": {\"token\": \"s3cr3t\"}}" > "$OPSTRUSS_OUTPUT"']
+    outputs:
+      msg: {type: string}
+      key: {type: object, sensitive: true}

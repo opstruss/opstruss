@@ -43,12 +43,12 @@
       "description": "The tasks of the plugin: the standard tasks plan, up, destroy, status, and logs, hooks such as exec, and tasks of its own."
     },
     "bin": {
-      "description": "Binaries that OpsTruss downloads for the plugin, by name and platform, which its programs find in PATH.",
+      "description": "Binaries that OpsTruss downloads for the plugin, by name and platform, such as linux/amd64 or darwin/arm64, which its programs find in PATH; OpsTruss reads only the platform it runs on.",
       "type": "object",
       "propertyNames": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
       "additionalProperties": {
         "type": "object",
-        "propertyNames": { "enum": ["linux/amd64", "linux/arm64", "darwin/amd64", "darwin/arm64"] },
+        "propertyNames": { "type": "string", "pattern": "^[a-z0-9]+/[a-z0-9]+$" },
         "additionalProperties": {
           "type": "object",
           "properties": {

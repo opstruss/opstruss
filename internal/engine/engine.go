@@ -329,7 +329,7 @@ func loadContext(ctx context.Context, opts Options) (*engine, error) {
 func (e *engine) start(command, task string, with map[string]any, tr *Trigger) error {
 	p, opts := e.p, e.opts
 	rec := &record.Record{Project: p.Name, Stack: p.StackName, Command: command, Task: task, Args: opts.Units,
-		Trigger: e.event["trigger"].(string), Host: e.host, PID: os.Getpid(), Started: e.started.Format(time.RFC3339Nano),
+		Trigger: e.event["trigger"].(string), Host: e.host, PID: os.Getpid(), Started: record.Stamp(e.started),
 		NoDeps: opts.NoDeps, RerunOf: opts.RerunOf}
 	var rp *replay
 	rec.Replay, rp = e.replayOf(command, with, tr)
@@ -348,6 +348,9 @@ func (e *engine) start(command, task string, with map[string]any, tr *Trigger) e
 	e.runID = e.rec.ID()
 	e.control()
 	e.emit(Event{Type: "run", Level: "info", Task: rec.Task, Status: record.Running, Message: "started"})
+	for _, w := range p.Warnings {
+		e.emit(Event{Type: "diagnostic", Level: "warn", Message: w.String()})
+	}
 	// The run is in its record now, which is what a webhook answers after;
 	// the rest of the start comes after that answer.
 	if opts.Started != nil {

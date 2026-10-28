@@ -24,6 +24,10 @@ func readPlugin(projectDir, dir string, b *bound) (*Plugin, Problems, error) {
 		return nil, nil, err
 	}
 	doc, probs, err := readDocument(projectDir, rel, schema.Plugin)
+	var pp Problems
+	if errors.As(err, &pp) {
+		probs, err = pp, nil
+	}
 	if err != nil || len(probs) > 0 {
 		return nil, probs, err
 	}
@@ -58,9 +62,6 @@ func readPlugin(projectDir, dir string, b *bound) (*Plugin, Problems, error) {
 // and the policies of a run belong to the project.
 func (c *checker) pluginRules() {
 	pl := c.plugin
-	if pl.Level != "" && newerLevel(pl.Level, Level) {
-		c.add([]string{"opstruss"}, "this file is for OpsTruss %s or newer; this OpsTruss reads files up to %s", pl.Level, Level)
-	}
 	for i, name := range pl.Env {
 		if ReservedEnv(name) {
 			c.add([]string{"env", strconv.Itoa(i)}, "OPSTRUSS_ and INPUT_ variables come from OpsTruss; a plugin cannot ask for them")

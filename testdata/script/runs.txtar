@@ -95,7 +95,7 @@ stderr 'upgrade OpsTruss$'
 cp current.json .opstruss/runs/default/20991231T000000Z-0000ffff/record.json
 cp newer.jsonl .opstruss/runs/default/20991231T000000Z-0000ffff/events.jsonl
 ! exec opstruss runs 20991231T000000Z-0000ffff
-stderr 'event 1 of .*events.jsonl has version 2, written by a newer OpsTruss; this one reads up to 1: upgrade OpsTruss$'
+stderr 'an event of .*events.jsonl has version 2, written by a newer OpsTruss; this one reads up to 1: upgrade OpsTruss$'
 cp broken.json .opstruss/runs/default/20991231T000000Z-0000ffff/record.json
 ! exec opstruss runs
 stderr 'record.json: unexpected end of JSON input; repair it, or remove .*20991231T000000Z-0000ffff to drop that run$'

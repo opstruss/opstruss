@@ -109,7 +109,7 @@ func Simulate(ctx context.Context, opts Options, name string, inputs, ev map[str
 // record keeps it.
 func (e *engine) tell(task, format string, args ...any) {
 	if e.opts.Emit != nil {
-		e.opts.Emit(Event{V: record.EventVersion, Time: time.Now().UTC().Format(time.RFC3339Nano), Type: "task", Level: "info",
+		e.opts.Emit(Event{V: record.EventVersion, Time: record.Stamp(time.Now()), Type: "task", Level: "info",
 			Task: task, Message: e.redact.Log(fmt.Sprintf(format, args...))})
 	}
 }

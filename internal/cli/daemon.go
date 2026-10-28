@@ -88,6 +88,12 @@ func (a *app) dial(req api.Request) (*api.Client, error) {
 		return nil, fmt.Errorf("the daemon of stack %s runs opstruss %s, which speaks protocol %d, not %d: stop it with opstruss stop, then start it again with opstruss up -d",
 			stack, pe.Version, pe.Protocol, api.Protocol)
 	}
+	// A daemon keeps the binary that started it, so the run goes by that
+	// version until the daemon starts again.
+	if c != nil && c.Version != version() {
+		fmt.Fprintf(a.stderr, "warning: the daemon of stack %s runs opstruss %s, and this is %s; to run this one, stop it with opstruss stop, then start it again with opstruss up -d\n",
+			stack, c.Version, version())
+	}
 	return c, err
 }
 

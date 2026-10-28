@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -53,12 +54,26 @@ func TestLockTransaction(t *testing.T) {
 	if !bytes.Equal(before, after) {
 		t.Fatal("warm run rewrote lock")
 	}
-	for _, b := range []string{"{}\n", "sources: {}\n", "version: 1\n", "version: 1\nsources: null\n", "version: 2\nsources: {}\n", "version: 1\nversion: 1\nsources: {}\n", "version: 1\nsources: {}\nextra: true\n", "version: 1\nsources: {}\n---\nversion: 1\n"} {
+	for _, b := range []string{"{}\n", "sources: {}\n", "version: 1\n", "version: 1\nsources: null\n", "version: 1\nversion: 1\nsources: {}\n", "version: 1\nsources: {}\n---\nversion: 1\n"} {
 		if err := os.WriteFile(filepath.Join(dir, LockName), []byte(b), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := ReadLock(dir); err == nil {
 			t.Errorf("accepted %q", b)
+		}
+	}
+	// A newer version is refused before its shape is read; a field of the
+	// same version that this OpsTruss does not know is ignored.
+	for b, want := range map[string]string{
+		"version: 2\nformat: later\nsources: []\n": "has version 2, written by a newer OpsTruss",
+		"version: 1\nsources: {}\nlater: true\n":   "",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, LockName), []byte(b), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_, err := ReadLock(dir)
+		if want == "" && err != nil || want != "" && (err == nil || !strings.Contains(err.Error(), want)) {
+			t.Errorf("%q: %v, want %q", b, err, want)
 		}
 	}
 }

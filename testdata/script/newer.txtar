@@ -1,0 +1,111 @@
+# A file written for a newer OpsTruss fails as the version it needs, before
+# its keys, tags, and values are read, so what that version added does not
+# read as unknown here. A lock of a newer version fails the same way, and
+# one of this version with fields this OpsTruss does not know reads.
+
+env HOME=$WORK/home
+
+cd $WORK/project
+! exec opstruss validate
+stderr '^opstruss.yaml:1:1: opstruss: this file is for OpsTruss 1.99 or newer; this OpsTruss reads files up to 1.0$'
+! stderr 'unknown key|tag|sometimes'
+! exec opstruss plan --json
+stdout '"type":"diagnostic","level":"error","message":"opstruss.yaml:1:1: opstruss: this file is for OpsTruss 1.99 or newer; this OpsTruss reads files up to 1.0"'
+! exec opstruss list --json
+stdout '"error": "opstruss.yaml:1:1: opstruss: this file is for OpsTruss 1.99 or newer'
+
+cd $WORK/component
+! exec opstruss validate
+stderr '^comp/opstruss.yaml:1:1: opstruss: this file is for OpsTruss 1.99 or newer; this OpsTruss reads files up to 1.0$'
+! stderr 'unknown key'
+
+cd $WORK/plugin
+! exec opstruss validate
+stderr '^plug/opstruss.plugin.yaml:1:1: opstruss: this file is for OpsTruss 1.99 or newer; this OpsTruss reads files up to 1.0$'
+! stderr 'unknown key'
+
+cd $WORK/catalog
+! exec opstruss validate
+stderr '^cat/opstruss.catalog.yaml:1:1: opstruss: this file is for OpsTruss 1.99 or newer; this OpsTruss reads files up to 1.0$'
+! stderr 'unknown key'
+cp current.yaml cat/opstruss.catalog.yaml
+exec opstruss validate
+stdout '^valid$'
+
+cd $WORK/lock
+! exec opstruss validate
+stderr '^opstruss: opstruss.lock has version 2, written by a newer OpsTruss; this one reads up to 1: upgrade OpsTruss$'
+cp extra.lock opstruss.lock
+exec opstruss validate
+stdout '^valid$'
+exec opstruss t
+stdout '^t \| hi$'
+
+-- project/opstruss.yaml --
+opstruss: "1.99"
+name: later
+token: !secret x
+units:
+  web:
+    run: [echo]
+    restart: sometimes
+    later: true
+-- component/opstruss.yaml --
+name: app
+uses:
+  c: ./comp
+units:
+  x:
+    uses: c
+-- component/comp/opstruss.yaml --
+opstruss: "1.99"
+later: true
+tasks:
+  hi:
+    run: [echo, hi]
+-- plugin/opstruss.yaml --
+name: app
+uses:
+  p: ./plug
+units:
+  x:
+    uses: p
+-- plugin/plug/opstruss.plugin.yaml --
+opstruss: "1.99"
+name: plug
+later: true
+tasks:
+  up:
+    run: [echo, up]
+-- catalog/opstruss.yaml --
+name: app
+uses:
+  cat: ./cat
+units:
+  h:
+    uses: cat.hello
+-- catalog/cat/opstruss.catalog.yaml --
+opstruss: "1.99"
+shared: []
+requires: [jq]
+-- catalog/current.yaml --
+opstruss: "1.0"
+shared: []
+-- catalog/cat/plugins/hello/opstruss.plugin.yaml --
+name: hello
+tasks:
+  up:
+    run: [echo, up]
+-- lock/opstruss.yaml --
+name: app
+tasks:
+  t:
+    run: [echo, hi]
+-- lock/opstruss.lock --
+version: 2
+format: later
+sources: {}
+-- lock/extra.lock --
+version: 1
+sources: {}
+later: true

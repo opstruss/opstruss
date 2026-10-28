@@ -59,6 +59,15 @@ func TestUseCases(t *testing.T) {
 	testscript.Run(t, params("testdata/usecases"))
 }
 
+// TestCompat reads what earlier versions of OpsTruss wrote: each .txtar
+// file in testdata/compat holds a project with the .opstruss/ that one
+// version left, which generate.sh made, and checks that this version runs
+// no unit again and reads its runs, records, and kv.
+func TestCompat(t *testing.T) {
+	workRoot(t)
+	testscript.Run(t, params("testdata/compat"))
+}
+
 // workRoot puts the work directories of the scripts of t in a directory of
 // their own, removed when t ends, since testscript removes the directory
 // it makes only when every script in it ran, which -run with the name of a

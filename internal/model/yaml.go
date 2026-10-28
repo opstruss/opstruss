@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"regexp"
 	"strconv"
 
 	"go.yaml.in/yaml/v3"
@@ -31,11 +32,14 @@ func parseYAML(data []byte, file string) (*document, error) {
 		}
 		return nil, Problems{{File: file, Line: 1, Column: 1, Message: err.Error()}}
 	}
+	doc := root.Content[0]
+	if err := newerFile(doc, file); err != nil {
+		return nil, err
+	}
 	var extra yaml.Node
 	if err := dec.Decode(&extra); err == nil {
 		return nil, Problems{{File: file, Line: extra.Line, Column: extra.Column, Message: "a file holds one document"}}
 	}
-	doc := root.Content[0]
 	if err := checkTags(doc, file); err != nil {
 		return nil, err
 	}
@@ -51,6 +55,26 @@ func parseYAML(data []byte, file string) (*document, error) {
 		return nil, Problems{{File: file, Line: 1, Column: 1, Message: err.Error()}}
 	}
 	return &document{file: file, root: doc, value: value.(map[string]any)}, nil
+}
+
+// level is the form of opstruss:, MAJOR.MINOR.
+var level = regexp.MustCompile(`^[0-9]+\.[0-9]+$`)
+
+// newerFile refuses a file whose opstruss: names a newer OpsTruss before
+// anything else of it is read, so that what that version added fails as
+// the version it needs, not as keys, tags, or values unknown here.
+func newerFile(doc *yaml.Node, file string) error {
+	if doc.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i+1 < len(doc.Content); i += 2 {
+		k, v := doc.Content[i], doc.Content[i+1]
+		if k.Value == "opstruss" && v.Kind == yaml.ScalarNode && v.Tag == "!!str" && level.MatchString(v.Value) && newerLevel(v.Value, Level) {
+			return Problems{{File: file, Line: k.Line, Column: k.Column, Path: "opstruss",
+				Message: fmt.Sprintf("this file is for OpsTruss %s or newer; this OpsTruss reads files up to %s", v.Value, Level)}}
+		}
+	}
+	return nil
 }
 
 func checkTags(n *yaml.Node, file string) error {

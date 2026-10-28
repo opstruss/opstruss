@@ -19,11 +19,26 @@ import (
 	"github.com/opstruss/opstruss/internal/state"
 )
 
+// Output is an output as a reader gets it: its value, which a sensitive
+// one has only when shown; whether it is sensitive; and its type, when
+// its unit or plugin declares one.
+type Output struct {
+	Value     *any   `json:"value,omitempty"`
+	Sensitive bool   `json:"sensitive"`
+	Type      string `json:"type,omitempty"`
+}
+
+// OutputList is the outputs of the project in one stack.
+type OutputList struct {
+	Stack   string            `json:"stack"`
+	Outputs map[string]Output `json:"outputs"`
+}
+
 // Outputs evaluates the outputs of the project from the stored outputs of
 // its units, as a snapshot read without a lock. A sensitive output, one
-// declared so or read from a sensitive value, is secret.Mask unless
+// declared so or read from a sensitive value, has no value unless
 // opts.ShowSensitive, which refuses a project that has none.
-func Outputs(opts Options) (map[string]any, error) {
+func Outputs(opts Options) (*OutputList, error) {
 	e, err := e0(opts)
 	if err != nil {
 		return nil, err
@@ -33,7 +48,7 @@ func Outputs(opts Options) (map[string]any, error) {
 	for _, name := range slices.Sorted(maps.Keys(e.p.Outputs)) {
 		s := e.frameScope(e.top, e.rootUnits(), e.p.DirOf("outputs."+name), "", nil, nil)
 		if o := e.p.Outputs[name]; !opts.ShowSensitive && (o.Sensitive || expr.MarksOf(o.Value, s) != nil) {
-			// It shows as *** anyway, and what it reads may need a secret,
+			// It has no value anyway, and what it reads may need a secret,
 			// which only a run resolves.
 			out[name], marks[name] = nil, true
 			continue
@@ -47,13 +62,43 @@ func Outputs(opts Options) (map[string]any, error) {
 			marks[name] = true
 		}
 	}
-	if !opts.ShowSensitive {
-		return e.shown(out, marks), nil
-	}
-	if len(marks) == 0 {
+	if opts.ShowSensitive && len(marks) == 0 {
 		return nil, errors.New("--show-sensitive shows sensitive outputs, and the project has none")
 	}
-	return out, nil
+	return &OutputList{Stack: e.p.StackName, Outputs: e.outputList(out, marks, nil, opts.ShowSensitive)}, nil
+}
+
+// outputList gives each output with whether it is sensitive and its
+// declared type; a sensitive one has no value unless show.
+func (e *engine) outputList(outputs, marks map[string]any, types map[string]string, show bool) map[string]Output {
+	list := make(map[string]Output, len(outputs))
+	for k, v := range outputs {
+		o := Output{Sensitive: marks[k] != nil, Type: types[k]}
+		switch {
+		case show:
+			o.Value = &v
+		case !o.Sensitive:
+			shown := e.redact.Value(v)
+			o.Value = &shown
+		}
+		list[k] = o
+	}
+	return list
+}
+
+// outputTypes are the types that a unit or its plugin declares for its
+// outputs.
+func outputTypes(u *model.Unit) map[string]string {
+	types := map[string]string{}
+	if t := u.Target; t != nil && t.Package != nil && t.Package.Plugin != nil {
+		for k, o := range t.Package.Plugin.Outputs.Declared {
+			types[k] = o.Type
+		}
+	}
+	for k, o := range u.Outputs {
+		types[k] = o.Type
+	}
+	return types
 }
 
 // e0 reads the project with the instances of its units and their records,
@@ -74,11 +119,11 @@ func e0(opts Options) (*engine, error) {
 
 // UnitStatus is a unit of the stack as its record has it.
 type UnitStatus struct {
-	Address string         `json:"address"`
-	Kind    string         `json:"kind"`
-	State   string         `json:"state"` // up, pending, or absent; for a service, as its status says
-	Run     string         `json:"run,omitempty"`
-	Outputs map[string]any `json:"outputs,omitempty"`
+	Address string            `json:"address"`
+	Kind    string            `json:"kind"`
+	State   string            `json:"state"` // up, pending, or absent; for a service, as its status says
+	Run     string            `json:"run,omitempty"`
+	Outputs map[string]Output `json:"outputs,omitempty"`
 }
 
 // TaskStatus is a task of the project with its last run.
@@ -165,7 +210,10 @@ func List(opts Options) (*Status, error) {
 			u.Kind = inst.def.Target.Kind
 		}
 		if rec := inst.record; rec != nil && rec.Tombstone == nil {
-			u.State, u.Run, u.Outputs = "up", rec.Run, e.shown(rec.Outputs, hiddenMarks(rec.Hidden[state.PartOutputs]))
+			u.State, u.Run = "up", rec.Run
+			if rec.Outputs != nil {
+				u.Outputs = e.outputList(rec.Outputs, hiddenMarks(rec.Hidden[state.PartOutputs]), outputTypes(inst.def), false)
+			}
 			if rec.Pending != nil {
 				u.State = "pending"
 			}
@@ -192,8 +240,14 @@ func lastRun(runs []*record.Record, name string) (r *record.Record, via string) 
 	return nil, ""
 }
 
+// RunList is the runs of one stack, newest first.
+type RunList struct {
+	Stack string           `json:"stack"`
+	Runs  []*record.Record `json:"runs"`
+}
+
 // Runs reads the records of the runs of the stack, newest first.
-func Runs(opts Options) ([]*record.Record, error) {
+func Runs(opts Options) (*RunList, error) {
 	p, err := project(opts)
 	if err != nil {
 		return nil, err
@@ -201,7 +255,11 @@ func Runs(opts Options) ([]*record.Record, error) {
 	if opts.Model == nil {
 		defer p.Close()
 	}
-	return runRecords(filepath.Join(p.Dir, ".opstruss"), p.StackName)
+	runs, err := runRecords(filepath.Join(p.Dir, ".opstruss"), p.StackName)
+	if err != nil {
+		return nil, err
+	}
+	return &RunList{Stack: p.StackName, Runs: runs}, nil
 }
 
 func runRecords(root, stack string) ([]*record.Record, error) {

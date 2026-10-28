@@ -5,6 +5,7 @@
   "type": "object",
   "properties": {
     "version": { "type": "integer", "minimum": 1 },
+    "opstruss": { "description": "The version of the OpsTruss that ran it, as opstruss version prints it; for people and tools that read old runs, never a reason to refuse one.", "type": "string" },
     "run": { "type": "string", "pattern": "^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$" },
     "parent": { "type": "string" },
     "project": { "type": "string" },

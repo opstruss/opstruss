@@ -22,6 +22,12 @@ import (
 	"github.com/robfig/cron/v3"
 )
 
+// The names below, and keywords, are refused where a user would write the
+// same name: in uses:, for a task, or as an input that makes a flag. They
+// stay as OpsTruss 1.0 has them, which TestNames keeps; a name that a later
+// version adds loses to a name of the user, with a warning, so that a
+// project valid in 1.0 stays valid.
+
 // BuiltinTasks are the tasks in the binary, also called opstruss.<name>.
 var BuiltinTasks = []string{"command", "http", "read", "write", "set", "assert", "wait", "log", "kv"}
 
@@ -71,6 +77,7 @@ type checker struct {
 	comps  *components
 	cats   map[string]*Catalog // read catalogs, by root; nil for one with problems
 	probs  Problems
+	warns  Problems
 
 	readsSecret  map[string]any // the locals that read a secret, once asked
 	readsProgram map[string]any // the locals that read a secret from a program or a task, once asked
@@ -93,6 +100,11 @@ func (c *checker) add(path []string, format string, args ...any) {
 	c.probs = append(c.probs, c.p.problem(path, format, args...))
 }
 
+// warn adds a warning: what works but may not do what was meant.
+func (c *checker) warn(path []string, format string, args ...any) {
+	c.warns = append(c.warns, c.p.problem(path, format, args...))
+}
+
 func at(path []string, more ...string) []string { return append(slices.Clone(path), more...) }
 
 func (p *Project) check() Problems {
@@ -100,9 +112,12 @@ func (p *Project) check() Problems {
 		cats: map[string]*Catalog{}}
 	c.file()
 	c.graph()
-	slices.SortStableFunc(c.probs, func(a, b Problem) int {
+	byPlace := func(a, b Problem) int {
 		return cmp.Or(cmp.Compare(a.File, b.File), cmp.Compare(a.Line, b.Line), cmp.Compare(a.Column, b.Column))
-	})
+	}
+	slices.SortStableFunc(c.probs, byPlace)
+	slices.SortStableFunc(c.warns, byPlace)
+	p.Warnings = c.warns
 	return c.probs
 }
 
@@ -175,6 +190,7 @@ func (c *checker) component(dir string, source *sources.Identity, sourceRoot str
 	cc := &checker{p: p, pkgs: c.pkgs, comps: cs, cats: c.cats}
 	cc.file()
 	c.probs = append(c.probs, cc.probs...)
+	c.warns = append(c.warns, cc.warns...)
 	cs.read[key] = p
 	return p, nil
 }
@@ -182,9 +198,6 @@ func (c *checker) component(dir string, source *sources.Identity, sourceRoot str
 func (c *checker) root() {
 	if c.p.Name == "" && !c.p.component {
 		c.add([]string{"name"}, "a project needs a name")
-	}
-	if c.p.Level != "" && newerLevel(c.p.Level, Level) {
-		c.add([]string{"opstruss"}, "this file is for OpsTruss %s or newer; this OpsTruss reads files up to %s", c.p.Level, Level)
 	}
 }
 
@@ -215,6 +228,8 @@ func (c *checker) uses() {
 			c.add(path, "%s is a keyword; give the declaration another name", name)
 		case name == "opstruss":
 			c.add(path, "opstruss is reserved")
+		case name == "image":
+			c.add(path, "image is reserved for a key of a later OpsTruss; give the declaration another name")
 		case strings.HasPrefix(name, "x-"):
 			c.add(path, "names in uses: do not start with x-")
 		}
@@ -558,6 +573,8 @@ func (c *checker) tasks() {
 		t, path := c.p.Tasks[name], []string{"tasks", name}
 		if slices.Contains(Commands, name) || slices.Contains(StandardTasks, name) {
 			c.add(path, "%s is a built-in command or a standard task; give the task another name", name)
+		} else if !c.p.component && c.unitTask(name) {
+			c.warn(path, "task %s of the project hides the task %s of its units at the command line; give one of them another name", name, name)
 		}
 		c.task(path, t, !c.p.component)
 		if t.On == nil {
@@ -733,7 +750,6 @@ func (c *checker) task(path []string, t *Task, project bool) {
 	if len(t.Steps) > 0 {
 		kinds++
 	}
-	c.hints(path, t.Calls)
 	c.calls(path, t.Calls)
 	switch {
 	case len(t.Calls) > 1:
@@ -816,24 +832,17 @@ func (c *checker) flags(path []string, inputs map[string]*Input) {
 	}
 }
 
-func (c *checker) hints(path []string, calls Calls) {
-	for _, name := range slices.Sorted(maps.Keys(calls)) {
-		if hint, ok := ansibleHint(name); ok {
-			c.add(at(path, name), "%s", hint)
-		}
-	}
-}
-
 // calls finds what each call of a task by name runs and checks its
-// inputs.
+// inputs. A name that is an Ansible keyword and calls nothing gets what
+// OpsTruss writes instead; one that calls something, as a name in uses:,
+// is a call.
 func (c *checker) calls(path []string, calls Calls) {
 	for _, name := range slices.Sorted(maps.Keys(calls)) {
-		if _, hinted := ansible[name]; hinted {
-			continue
-		}
 		t, err := c.call(name)
 		if err != nil {
-			if !errors.Is(err, errBroken) {
+			if hint, ok := ansibleHint(name); ok {
+				c.add(at(path, name), "%s", hint)
+			} else if !errors.Is(err, errBroken) {
 				c.add(at(path, name), "%v", err)
 			}
 			continue
@@ -965,7 +974,6 @@ func (c *checker) steps(path []string, steps []*Step, ids map[string]bool) {
 				kinds++
 			}
 		}
-		c.hints(sp, s.Calls)
 		c.calls(sp, s.Calls)
 		if c.plugin != nil && s.Task != "" {
 			c.add(at(sp, "task"), "a plugin task calls no task: chains belong to the project, and a plugin that needs one brings a component")
@@ -1026,7 +1034,6 @@ func (c *checker) secrets() {
 				kinds++
 			}
 		}
-		c.hints(path, s.Calls)
 		c.calls(path, s.Calls)
 		switch {
 		case len(s.Calls) > 1:

@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"runtime/debug"
 	"slices"
 	"strings"
 	"sync"
@@ -465,12 +464,7 @@ func (a *app) versionCommand() *cobra.Command {
 
 // version returns the module version stamped by the go command: the tag for
 // release builds and go install, a pseudo-version for builds in a checkout.
-func version() string {
-	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" {
-		return info.Main.Version
-	}
-	return "(devel)"
-}
+func version() string { return record.BinaryVersion() }
 
 // projectDir finds the project from the directory OpsTruss starts in.
 func (a *app) projectDir() (string, error) {
@@ -545,7 +539,7 @@ func (a *app) validateCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			err = model.ValidateWith(context.Background(), dir, sources.Options{Locked: a.locked})
+			warns, err := model.ValidateWith(context.Background(), dir, sources.Options{Locked: a.locked})
 			var probs model.Problems
 			if err != nil && !errors.As(err, &probs) {
 				return err
@@ -554,13 +548,19 @@ func (a *app) validateCommand() *cobra.Command {
 				if probs == nil {
 					probs = model.Problems{}
 				}
-				if err := a.printJSON(map[string]any{"valid": len(probs) == 0, "problems": probs}); err != nil {
+				if warns == nil {
+					warns = model.Problems{}
+				}
+				if err := a.printJSON(map[string]any{"valid": len(probs) == 0, "problems": probs, "warnings": warns}); err != nil {
 					return err
 				}
 				if len(probs) > 0 {
 					return &exitError{1}
 				}
 				return nil
+			}
+			for _, w := range warns {
+				fmt.Fprintf(a.stderr, "warning: %s\n", w)
 			}
 			if len(probs) > 0 {
 				return probs

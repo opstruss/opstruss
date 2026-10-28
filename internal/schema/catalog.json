@@ -4,6 +4,10 @@
   "description": "The root of an OpsTruss catalog: a repository of plugins and components.",
   "type": "object",
   "properties": {
+    "opstruss": {
+      "$ref": "project.json#/$defs/level",
+      "description": "The oldest OpsTruss version that reads this file, as MAJOR.MINOR."
+    },
     "shared": {
       "description": "Paths that every package of the catalog may use, relative to its root.",
       "type": "array",

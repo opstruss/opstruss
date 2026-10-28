@@ -112,6 +112,11 @@ func (in *Input) Conform(v any) (any, error) {
 		switch x := v.(type) {
 		case int64:
 			n = float64(x)
+			if in.Type == "number" {
+				// A number is a double in expressions, whole or not, so
+				// that 2 / 4 and 2.5 / 4.0 read the same.
+				v = n
+			}
 		case float64:
 			if in.Type == "integer" {
 				return nil, typeError(in.Type, v)

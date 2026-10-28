@@ -13,6 +13,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"slices"
 	"sync"
 	"syscall"
@@ -32,6 +33,15 @@ const (
 // MaxOutput is how much program output a run stores; the middle of more is
 // dropped, since an error is usually at the end.
 const MaxOutput = 10 << 20
+
+// BinaryVersion is the version of this OpsTruss, as opstruss version
+// prints it and the record of each run keeps it.
+func BinaryVersion() string {
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" {
+		return info.Main.Version
+	}
+	return "(devel)"
+}
 
 // Event is one thing that happened in a run, as every reader gets it.
 type Event struct {
@@ -56,6 +66,7 @@ type Event struct {
 // Record is record.json: who ran what and when, and how it ended.
 type Record struct {
 	Version   int              `json:"version"`
+	OpsTruss  string           `json:"opstruss,omitempty"` // the version of the OpsTruss that ran it, to read, never to refuse
 	Run       string           `json:"run"`
 	Parent    string           `json:"parent,omitempty"`
 	Project   string           `json:"project"`
@@ -182,7 +193,7 @@ func Create(root string, newID func() string, rec *Record, sink func(Event)) (*R
 		if err != nil {
 			return nil, err
 		}
-		rec.Run, rec.Status, rec.Version = id, Running, Version
+		rec.Run, rec.Status, rec.Version, rec.OpsTruss = id, Running, Version, BinaryVersion()
 		r := &Run{Dir: dir, rec: rec, sink: sink, done: make(chan struct{})}
 		live.Store(rec.Run, &Record{Run: rec.Run, Command: rec.Command, Task: rec.Task, Status: Running})
 		if err := r.open(); err != nil {
@@ -359,7 +370,7 @@ func (r *Run) Finish(update func(*Record)) error {
 	}
 	update(r.rec)
 	r.rec.Status, r.rec.EventsIncomplete = Finished, r.err != nil
-	r.rec.Ended = time.Now().UTC().Format(time.RFC3339)
+	r.rec.Ended = Stamp(time.Now())
 	if err := write(r.Dir, r.rec); err != nil {
 		return err
 	}
@@ -495,12 +506,13 @@ func Read(dir string) (*Record, error) {
 	if err != nil {
 		return nil, err
 	}
+	what := filepath.Join(dir, "record.json")
+	if err := state.CheckVersion(data, "version", what, Version); err != nil {
+		return nil, err
+	}
 	var rec Record
 	if err := json.Unmarshal(data, &rec); err != nil {
-		return nil, fmt.Errorf("%s: %w", filepath.Join(dir, "record.json"), err)
-	}
-	if rec.Version > Version {
-		return nil, &state.NewerError{What: filepath.Join(dir, "record.json"), Version: rec.Version, Known: Version}
+		return nil, fmt.Errorf("%s: %w", what, err)
 	}
 	return &rec, nil
 }

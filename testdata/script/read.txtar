@@ -17,7 +17,10 @@ stdout '"state": "up"'
 exec opstruss outputs
 stdout '^url: https://example.com$'
 exec opstruss outputs --json
-stdout '"url": "https://example.com"'
+stdout '"outputs": \{'
+stdout '"url": \{'
+stdout '"value": "https://example.com"'
+stdout '"sensitive": false'
 
 # runs lists the runs, newest first, and shows the events of one again
 exec opstruss runs

@@ -1,0 +1,38 @@
+# A value of type number is a double in expressions, whole or not, also
+# when its record or its kv value is read again; one of type integer stays
+# an int, and a fraction for it fails.
+
+env HOME=$WORK/home
+
+exec opstruss up --yes
+grep '"ratio": 2.0' .opstruss/state/default/gen/state.json
+exec opstruss calc
+stdout 'calc step 1 \| in=0.5 out=0.5 n=1.5 big=9007199254740993$'
+stdout 'calc step 3 \| kv=0.5$'
+exec opstruss calc --ratio 2.5
+stdout 'calc step 1 \| in=0.625 '
+stdout 'calc step 3 \| kv=0.625$'
+! exec opstruss count --times 2.5
+stderr 'times'
+
+-- opstruss.yaml --
+name: numbers
+units:
+  gen:
+    run: [sh, -c, 'echo "{\"ratio\": 2.0, \"n\": 3, \"big\": 9007199254740993}" > "$OPSTRUSS_OUTPUT"']
+    outputs:
+      ratio: {type: number}
+      n: {type: number}
+      big: {type: integer}
+tasks:
+  calc:
+    inputs:
+      ratio: {type: number, default: 2}
+    steps:
+      - log: {msg: "in=${{ inputs.ratio / 4.0 }} out=${{ units.gen.outputs.ratio / 4.0 }} n=${{ units.gen.outputs.n / 2.0 }} big=${{ units.gen.outputs.big }}"}
+      - kv: {key: ratio, value: "${{ inputs.ratio }}"}
+      - log: {msg: "kv=${{ kv('ratio') / 4.0 }}"}
+  count:
+    inputs:
+      times: {type: integer}
+    run: [echo, counted]

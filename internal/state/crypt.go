@@ -24,7 +24,7 @@ func IsSealed(s string) bool { return strings.HasPrefix(s, sealed) }
 // Seal encrypts v, as JSON, with AES-256-GCM under the data key, bound to
 // aad, such as the id of its record, so it cannot be moved to another.
 func Seal(key []byte, aad string, v any) (string, error) {
-	plain, err := encodeJSON(v)
+	plain, err := encodeJSON(floats(v))
 	if err != nil {
 		return "", err
 	}

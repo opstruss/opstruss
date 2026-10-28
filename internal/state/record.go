@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"strconv"
+	"strings"
 
 	"github.com/opstruss/opstruss/internal/sources"
 )
@@ -166,6 +168,26 @@ func (e *NewerError) Error() string {
 	return fmt.Sprintf("%s has version %d, written by a newer OpsTruss; this one reads up to %d: upgrade OpsTruss", e.What, e.Version, e.Known)
 }
 
+// CheckVersion reads the version of data, under key, before anything else,
+// since a newer version may have another shape: one newer than known is a
+// *NewerError.
+func CheckVersion(data []byte, key, what string, known int) error {
+	var head map[string]json.RawMessage
+	if err := json.Unmarshal(data, &head); err != nil {
+		return fmt.Errorf("%s: %w", what, err)
+	}
+	var v int
+	if raw, ok := head[key]; ok {
+		if err := json.Unmarshal(raw, &v); err != nil {
+			return fmt.Errorf("%s: %s: %w", what, key, err)
+		}
+	}
+	if v > known {
+		return &NewerError{What: what, Version: v, Known: known}
+	}
+	return nil
+}
+
 // DecodeRecord reads a record of any version up to RecordVersion.
 func DecodeRecord(data []byte, what string) (*Record, error) {
 	var head struct {
@@ -217,7 +239,58 @@ func DecodeRecord(data []byte, what string) (*Record, error) {
 // reads well from state pull.
 func EncodeRecord(r *Record) ([]byte, error) {
 	r.Version = RecordVersion
-	return encodeJSON(r)
+	c := *r
+	c.Inputs, c.Outputs, c.Pending = floatsMap(r.Inputs), floatsMap(r.Outputs), floatsAttempt(r.Pending)
+	c.Abandoned = nil
+	for _, a := range r.Abandoned {
+		c.Abandoned = append(c.Abandoned, floatsAttempt(a))
+	}
+	return encodeJSON(&c)
+}
+
+// floats copies v with each whole float64 written with a fraction, as
+// 2.0, so that it reads back as a float, not an int: a value of type
+// number stays one through state.
+func floats(v any) any {
+	switch x := v.(type) {
+	case float64:
+		if x == math.Trunc(x) && !math.IsInf(x, 0) {
+			s := strconv.FormatFloat(x, 'g', -1, 64)
+			if !strings.ContainsAny(s, ".eE") {
+				s += ".0"
+			}
+			return json.Number(s)
+		}
+	case map[string]any:
+		m := make(map[string]any, len(x))
+		for k, e := range x {
+			m[k] = floats(e)
+		}
+		return m
+	case []any:
+		l := make([]any, len(x))
+		for i, e := range x {
+			l[i] = floats(e)
+		}
+		return l
+	}
+	return v
+}
+
+func floatsMap(m map[string]any) map[string]any {
+	if m == nil {
+		return nil
+	}
+	return floats(m).(map[string]any)
+}
+
+func floatsAttempt(a *Attempt) *Attempt {
+	if a == nil {
+		return nil
+	}
+	c := *a
+	c.Inputs, c.Outputs = floatsMap(a.Inputs), floatsMap(a.Outputs)
+	return &c
 }
 
 // EncodeMeta writes _meta, indented so it reads well from state pull.
@@ -225,12 +298,12 @@ func EncodeMeta(m *Meta) ([]byte, error) { return encodeJSON(m) }
 
 // DecodeMeta reads _meta.
 func DecodeMeta(data []byte) (*Meta, error) {
+	if err := CheckVersion(data, "version", "_meta", MetaVersion); err != nil {
+		return nil, err
+	}
 	var m Meta
 	if err := json.Unmarshal(data, &m); err != nil {
 		return nil, fmt.Errorf("_meta: %w", err)
-	}
-	if m.Version > MetaVersion {
-		return nil, &NewerError{What: "_meta", Version: m.Version, Known: MetaVersion}
 	}
 	if m.Version < 1 {
 		return nil, fmt.Errorf("_meta: no version")
@@ -255,8 +328,9 @@ func decodeJSON(data []byte, v any) error {
 	return dec.Decode(v)
 }
 
-// fixMap turns json.Number into int64 when whole, float64 otherwise, the
-// value types of the engine.
+// fixMap turns json.Number into the value types of the engine: int64 for
+// an integer, float64 for a number written with a fraction or an exponent,
+// as floats writes each float.
 func fixMap(m map[string]any) {
 	for k, v := range m {
 		m[k] = fixNumbers(v)
@@ -270,9 +344,6 @@ func fixNumbers(v any) any {
 			return i
 		}
 		f, _ := x.Float64()
-		if f == math.Trunc(f) && f >= -(1<<63) && f < 1<<63 {
-			return int64(f)
-		}
 		return f
 	case map[string]any:
 		fixMap(x)

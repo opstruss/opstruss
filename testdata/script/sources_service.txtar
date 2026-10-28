@@ -6,7 +6,7 @@ exec opstruss up -d --yes --locked
 waitgrep 'remote-service' .opstruss/logs/default/site/worker.jsonl
 agecache $HOME/.opstruss/cache
 exec opstruss plugins prune --json
-stdout '"removed": null'
+stdout '"removed": \[\]'
 exec opstruss destroy --yes --locked
 exec opstruss stop
 agecache $HOME/.opstruss/cache

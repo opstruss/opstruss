@@ -48,7 +48,11 @@ stdout '^id: api-1$'
 exec opstruss outputs --show-sensitive
 stdout '^auth: Bearer s3cr3t-token-value$'
 exec opstruss list --json
-stdout '"auth": "\*\*\*"'
+stdout '"auth": \{'
+stdout '"sensitive": true'
+! stdout s3cr3t
+exec opstruss outputs --json
+stdout '"sensitive": true'
 ! stdout s3cr3t
 
 # kv keeps a sensitive value encrypted, and what reads it is sensitive

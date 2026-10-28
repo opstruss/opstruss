@@ -182,14 +182,14 @@ func mark(dir string) (*Record, error) {
 		return nil, err
 	}
 	rec.Status, rec.Outcome, rec.Reason = Finished, "cancelled", "interrupted"
-	rec.Ended = time.Now().UTC().Format(time.RFC3339)
+	rec.Ended = Stamp(time.Now())
 	if ev := lastEvent(filepath.Join(dir, "events.jsonl")); ev != nil && ev.Type == "run" {
 		rec.Outcome, rec.Reason, rec.Outputs = ev.Outcome, "", ev.Outputs
 		if ev.ExitCode != nil {
 			rec.ExitCode = *ev.ExitCode
 		}
 		if t, err := time.Parse(time.RFC3339Nano, ev.Time); err == nil {
-			rec.Ended = t.Format(time.RFC3339)
+			rec.Ended = Stamp(t)
 		}
 	}
 	if err := write(dir, rec); err != nil {
