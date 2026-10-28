@@ -34,7 +34,7 @@ stdout '"message":"single \*\*\*"'
 exec opstruss outputs
 stdout '^token: \*\*\*$'
 exec opstruss outputs --json
-stdout '"token": "\*\*\*"'
+stdout '"token": \{\s+"sensitive": true\s+\}'
 exec opstruss runs
 exec sh -c 'for r in $(opstruss runs | cut -d" " -f1); do opstruss runs "$r"; done'
 stdout 'single \*\*\*'
