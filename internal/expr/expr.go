@@ -328,8 +328,9 @@ var dashName = regexp.MustCompile(`\b(units|tasks|steps|secrets|locals|inputs)\.
 
 // compileError is why src does not compile, with what to write instead
 // where the parser says it poorly: $NAME reads the environment in a
-// shell, which an expression never reads, and a name with - is read with
-// brackets.
+// shell, which an expression never reads, a name with - is read with
+// brackets, and a name or a function that is not there is named, with the
+// one meant.
 func compileError(src string, err error) error {
 	if strings.Contains(err.Error(), "token recognition error at: '$'") {
 		name := "<VAR>"
@@ -340,6 +341,9 @@ func compileError(src string, err error) error {
 	}
 	if m := dashName.FindStringSubmatch(src); m != nil && strings.Contains(err.Error(), "undeclared reference") {
 		return fmt.Errorf("${{ %s }}: write %s['%s'] for a name with -, which %s.%s reads as a minus", src, m[1], m[2], m[1], m[2])
+	}
+	if msg, ok := unknown(src, err.Error()); ok {
+		return fmt.Errorf("${{ %s }}: %s", src, msg)
 	}
 	return fmt.Errorf("${{ %s }}: %w", src, err)
 }

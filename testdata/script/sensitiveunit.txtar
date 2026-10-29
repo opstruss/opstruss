@@ -79,7 +79,7 @@ env OPSTRUSS_AGE_KEY_FILE=/dev/null/keys.txt
 cd norule
 exec opstruss up plain --yes
 ! exec opstruss up secret --yes
-stderr '/dev/null/keys.txt: not a directory'
+stdout '/dev/null/keys.txt: not a directory'
 ! exists ran
 ! exec opstruss up marks --yes
 stderr 'the program gave sensitive outputs \(pin\), which were not kept'

@@ -30,7 +30,7 @@ exec sh -c 'grep -F "$(cat m1.pub)" .opstruss/state/default/_meta'
 # another machine cannot open it, and learns its own key to add
 env XDG_CONFIG_HOME=$WORK/m2
 ! exec opstruss up --yes
-stderr 'the data key of stack default does not open on this machine: default/_meta has it with age for age1[0-9a-z]+; the age key of this machine is age1[0-9a-z]+ \(in .*/m2/opstruss/age/keys.txt, made just now\): add it to encryption_keys, and run plan, up, or destroy on a machine that opens the data key, which wraps it again'
+stdout 'the data key of stack default does not open on this machine: default/_meta has it with age for age1[0-9a-z]+; the age key of this machine is age1[0-9a-z]+ \(in .*/m2/opstruss/age/keys.txt, made just now\): add it to encryption_keys, and run plan, up, or destroy on a machine that opens the data key, which wraps it again'
 exec sh pub.sh m2
 cp stdout m2.pub
 
@@ -93,7 +93,7 @@ stdout '^ok     the data key of stack default opens with sops$'
 stdout '^ok     sops 3\.13\.3 at .*/bin/sops$'
 env FAKESOPS_KEYS=
 ! exec opstruss up --yes
-stderr 'the data key of stack default does not open on this machine: default/_meta has it with age for age1[0-9a-z]+, and with sops for kms arn:fake:ci \(sops decrypt default/_meta: fakesops: Failed to get the data key required to decrypt the SOPS file.\)'
+stdout 'the data key of stack default does not open on this machine: default/_meta has it with age for age1[0-9a-z]+, and with sops for kms arn:fake:ci \(sops decrypt default/_meta: fakesops: Failed to get the data key required to decrypt the SOPS file.\)'
 
 # without encryption_keys again, _meta stays as it is
 env XDG_CONFIG_HOME=$WORK/m1

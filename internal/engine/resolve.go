@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"cmp"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -39,7 +38,7 @@ type resolved struct {
 	requires []string
 	timeout  time.Duration
 	stop     plugin.Stop
-	waitFor  string
+	waitFor  []string    // the addresses of the upstream units of reads, in plan order
 	reads    []string    // the parts that read outputs this run changes first, such as env.URL
 	plugin   *pluginUnit // for a unit that uses a plugin
 	task     *taskUnit   // for a unit that uses a task
@@ -54,16 +53,17 @@ type resolved struct {
 }
 
 // resolve evaluates the expressions of inst. In a preview, a unit that
-// reads outputs this run changes first is not evaluated: waitFor names the
-// first upstream unit, reads the parts that read such outputs, and the
-// unit is planned at its turn.
+// reads outputs this run changes first is not evaluated: waitFor names
+// every such upstream unit, reads the parts that read such outputs, and
+// the unit is planned at its turn.
 func (e *engine) resolve(inst *instance, preview bool) (*resolved, error) {
 	u := inst.def
 	r := &resolved{shell: u.Shell, timeout: DefaultTimeout}
 	if preview {
+		var ups []*instance
 		reads := func(name string, v any, f *frame) {
-			if up := e.changing(v, f); up != "" {
-				r.waitFor = cmp.Or(r.waitFor, up)
+			if changing := e.changing(v, f); len(changing) > 0 {
+				ups = append(ups, changing...)
 				r.reads = append(r.reads, name)
 			}
 		}
@@ -88,7 +88,7 @@ func (e *engine) resolve(inst *instance, preview bool) (*resolved, error) {
 				}
 			}
 		}
-		if r.waitFor != "" {
+		if r.waitFor = e.inPlanOrder(ups); len(r.waitFor) > 0 {
 			return r, nil
 		}
 	}

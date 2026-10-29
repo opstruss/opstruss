@@ -3,6 +3,7 @@ package cli
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -104,6 +105,12 @@ func TestApprove(t *testing.T) {
 		}}, "default/infra: will run: new\ndefault/config: will run: new; plan after default/infra (env.DB)\n" +
 			"default/old: will be destroyed\ndefault/job: will be forgotten: it has no destroy program\n" +
 			"Apply default/infra, default/config, destroy default/old, forget default/job? [y/N] "},
+		{engine.Question{Op: "destroy", Items: []engine.Question{
+			{Op: "destroy", Address: "default/shard[a]", Summary: "will be forgotten: it has no destroy program"},
+			{Op: "destroy", Address: "default/shard[b]", Summary: "will be forgotten: it has no destroy program"},
+			{Op: "destroy", Address: "default/sum", Summary: "will be forgotten: it has no destroy program"},
+		}}, "default/shard[a]: will be forgotten: it has no destroy program\ndefault/shard[b]: will be forgotten: it has no destroy program\n" +
+			"default/sum: will be forgotten: it has no destroy program\nForget 2 instances of default/shard, default/sum? [y/N] "},
 	}
 	for _, tt := range tests {
 		var stderr strings.Builder
@@ -115,6 +122,25 @@ func TestApprove(t *testing.T) {
 		if stderr.String() != tt.want {
 			t.Errorf("approve(%v) wrote %q, want %q", tt.q, stderr.String(), tt.want)
 		}
+	}
+}
+
+// TestApproveInstances: at a terminal, the question names the instances
+// of one unit by their count, in one line.
+func TestApproveInstances(t *testing.T) {
+	var stdout, stderr strings.Builder
+	a := &app{stdout: &stdout, stderr: &stderr, stdin: bufio.NewReader(strings.NewReader("n\n"))}
+	a.renderers = map[io.Writer]*renderer{&stdout: newRenderer(&stdout, &stderr, false, true, false, false, false)}
+	var items []engine.Question
+	for i := range 300 {
+		items = append(items, engine.Question{Op: "destroy", Address: fmt.Sprintf("default/shard[s%d]", i), Summary: "will be forgotten: it has no destroy program"})
+	}
+	items = append(items, engine.Question{Op: "destroy", Address: "default/sum", Summary: "will be forgotten: it has no destroy program"})
+	if ok, err := a.approve(context.Background(), engine.Question{Op: "destroy", Items: items}); err != nil || ok {
+		t.Fatalf("approve = %v, %v", ok, err)
+	}
+	if want := "Forget 300 instances of shard, sum? [y/N] "; stderr.String() != want {
+		t.Errorf("asked %q, want %q", stderr.String(), want)
 	}
 }
 

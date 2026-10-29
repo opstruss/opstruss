@@ -54,7 +54,7 @@ grep '^old$' destroys
 # a tombstone keeps an old checkout from making a second unit there
 cp opstruss5.yaml opstruss.yaml
 ! exec opstruss up --yes
-stderr '^default/cache: this address was forgotten in run'
+stdout '^default/cache: error: this address was forgotten in run'
 exec opstruss state rm cache
 exec opstruss up --yes
 stdout '^default/cache: up: done$'

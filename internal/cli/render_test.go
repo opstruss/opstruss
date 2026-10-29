@@ -201,6 +201,50 @@ func TestRenderLines(t *testing.T) {
 	}
 }
 
+// Without a terminal, the end of a unit says what its plan line did not,
+// as at a terminal: cannot be planned for the error the plan showed, and
+// for a change that stopped at plan only why.
+func TestRenderLinesAfterPlan(t *testing.T) {
+	failed := ev("unit", "default/db", "up", "", "finished", "failure", "env.URL: no such key: url")
+	failed.Level = "error"
+	approval := ev("approval", "prod/build", "up", "", "finished", "skipped", "will run: new; needs approval, stopped at plan")
+	var out, errs strings.Builder
+	got, gotErr := renderAll(newRenderer(&out, &errs, false, false, false, false, false),
+		planEvent("default/db", "failure", "error: env.URL: no such key: url", nil),
+		failed,
+		planEvent("prod/build", "success", "will run: new", map[string]any{"changes": []any{}}),
+		approval,
+	)
+	if want := "default/db: error: env.URL: no such key: url\nprod/build: will run: new\nprod/build: needs approval, stopped at plan\n"; got != want {
+		t.Errorf("got\n%q\nwant\n%q", got, want)
+	}
+	if want := "default/db: cannot be planned\n"; gotErr != want {
+		t.Errorf("stderr\n%q\nwant\n%q", gotErr, want)
+	}
+}
+
+// After the answer no, the units skipped only because one before them was
+// show no line each, with or without a terminal; the summary counts them.
+func TestRenderSkipsAfterNo(t *testing.T) {
+	events := []engine.Event{ev("approval", "default/sum", "destroy", "", "finished", "skipped",
+		"will be forgotten: it has no destroy program; the answer was no, stopped at plan")}
+	for i := range 300 {
+		events = append(events, ev("unit", fmt.Sprintf("default/shard[s%d]", i), "destroy", "", "finished", "skipped",
+			"skipped: default/sum, which needs it, is skipped"))
+	}
+	events = append(events, ev("run", "", "", "", "finished", "skipped", "skipped"))
+	var out, errs strings.Builder
+	got, _ := renderAll(newRenderer(&out, &errs, false, false, false, false, false), events...)
+	if want := "default/sum: the answer was no, stopped at plan\n"; got != want {
+		t.Errorf("without a terminal got\n%q\nwant\n%q", got, want)
+	}
+	got, _ = renderAll(terminalRenderer(false), events...)
+	if strings.Contains(got, "shard") || !strings.Contains(got, "○ sum › destroy: the answer was no, stopped at plan") ||
+		!strings.Contains(got, "Destroy of stack default: 301 skipped") {
+		t.Errorf("at a terminal got\n%s", got)
+	}
+}
+
 // In GitHub Actions, the lines of each source are a group, which any other
 // line closes, so a line of OpsTruss stays outside; a line of a program
 // keeps its prefix, so it never starts with :: for the runner to read.
@@ -245,8 +289,10 @@ func planEvent(addr, outcome, msg string, plan map[string]any) engine.Event {
 // first line, ends before it.
 func TestRenderPlanTable(t *testing.T) {
 	created := map[string]any{"changes": []any{map[string]any{"action": "create", "resource": "terraform_data.greeting"}}}
-	waits := map[string]any{"changes": []any{}, "after": "default/qa-out", "reason": "new"}
-	may := map[string]any{"changes": []any{}, "after": "default/infra"}
+	waits := map[string]any{"changes": []any{}, "after": []any{"default/qa-out"}, "reason": "new"}
+	may := map[string]any{"changes": []any{}, "after": []any{"default/infra"}}
+	both := map[string]any{"changes": []any{}, "after": []any{"default/infra", "default/qa-out"}, "reason": "new"}
+	shards := map[string]any{"changes": []any{}, "after": []any{"default/shard[a]", "default/shard[b]", "default/shard[c]"}, "reason": "new"}
 	auto := map[string]any{"changes": []any{map[string]any{"action": "run"}}, "approval": "auto"}
 	orphan := ev("diagnostic", "default/qa-http", "", "", "", "", "orphan: its unit is no longer in the files; add {from: qa-http, destroy: true} to removed: to destroy it, or destroy: false to forget it")
 	orphan.Level = "warn"
@@ -260,6 +306,8 @@ func TestRenderPlanTable(t *testing.T) {
 		planEvent("default/qa-each[a]", "failure", "error: this address was forgotten in run R; opstruss state rm qa-each[a] removes the tombstone so the name can be used again", nil),
 		planEvent("default/qa-stdin", "success", "will run: new; plan after default/qa-out (stdin)", waits),
 		planEvent("default/web", "success", "may run: plan after default/infra (env.GREETING)", may),
+		planEvent("default/report", "success", "will run: new; plan after default/infra, default/qa-out (env.A, env.B)", both),
+		planEvent("default/sum", "success", "will run: new; plan after 3 instances of default/shard (env.N)", shards),
 		planEvent("default/qa-secret", "failure", "error: env.TOKEN: secret qa_token: QA_TOKEN is not set", nil),
 		orphan,
 		ev("unit", "default/qa-build", "up", "", "running", "", "up: started"),
@@ -273,13 +321,15 @@ func TestRenderPlanTable(t *testing.T) {
   + qa-build    new · approval: auto
   + qa-stdin    new · after qa-out (stdin)
   ? web         after infra (env.GREETING)
+  + report      new · after infra, qa-out (env.A, env.B)
+  + sum         new · after 3 instances of shard (env.N)
   ! qa-http     orphan: its unit is no longer in the files
                 → add {from: qa-http, destroy: true} to removed: to destroy it, or destroy: false to forget it
   ✗ qa-each[a]  this address was forgotten in run R
                 → opstruss state rm qa-each[a] removes the tombstone so the name can be used again
   ✗ qa-secret   env.TOKEN: secret qa_token: QA_TOKEN is not set
 
-Plan of stack default: 3 to run, 1 may run, 1 unchanged, 1 orphan, 2 cannot be planned
+Plan of stack default: 5 to run, 1 may run, 1 unchanged, 1 orphan, 2 cannot be planned
 
 ▸ qa-build › up
 │ built

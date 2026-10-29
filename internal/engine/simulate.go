@@ -18,18 +18,8 @@ import (
 // event with a body of 1 MiB, also when JSON escapes much of it.
 const MaxEvent = 4 << 20
 
-// eventFields are the fields of an event of each trigger beside trigger
-// and time, as a caller of --event writes it: one event as its source
-// gives it, not what a batch or debounce gathers of many.
-var eventFields = map[string][]string{
-	"schedule": nil,
-	"every":    nil,
-	"webhook":  {"method", "path", "headers", "query", "body"},
-	"watch":    {"unit", "stream", "line", "paths"},
-	"after":    {"task", "unit", "outcome", "outputs"},
-}
-
-// fieldTypes are what the fields of eventFields hold; body holds anything.
+// fieldTypes are what the fields of model.EventFields hold; body holds
+// anything.
 var fieldTypes = map[string]string{
 	"method": "a string", "path": "a string", "unit": "a string", "stream": "a string", "line": "a string",
 	"task": "a string", "outcome": "a string", "headers": "an object of strings", "query": "an object of strings",
@@ -121,7 +111,9 @@ func (e *engine) tell(task, format string, args ...any) {
 func simulated(p *model.Project, name string, ev map[string]any) (*Trigger, time.Time, map[string]any, error) {
 	var at time.Time
 	kind, _ := ev["trigger"].(string)
-	allowed, ok := eventFields[kind]
+	// A caller of --event writes one event as its source gives it, not
+	// what a batch or debounce gathers of many.
+	allowed, ok := model.EventFields[kind]
 	if !ok {
 		return nil, at, nil, fmt.Errorf(`trigger is schedule, every, webhook, watch, or after, as in {"trigger": "webhook"}`)
 	}

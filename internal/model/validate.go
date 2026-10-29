@@ -100,6 +100,18 @@ func (c *checker) add(path []string, format string, args ...any) {
 	c.probs = append(c.probs, c.p.problem(path, format, args...))
 }
 
+// addEach adds a problem at path for each error that err joins, as each
+// cycle of a graph, or one for err.
+func (c *checker) addEach(path []string, err error) {
+	if j, ok := err.(interface{ Unwrap() []error }); ok {
+		for _, e := range j.Unwrap() {
+			c.add(path, "%v", e)
+		}
+		return
+	}
+	c.add(path, "%v", err)
+}
+
 // warn adds a warning: what works but may not do what was meant.
 func (c *checker) warn(path []string, format string, args ...any) {
 	c.warns = append(c.warns, c.p.problem(path, format, args...))
@@ -294,7 +306,7 @@ func (c *checker) stacks() {
 			in, v := c.p.Inputs[k], c.p.Stacks[s].With[k]
 			switch {
 			case in == nil:
-				c.add([]string{"stacks", s, "with", k}, "the project has no input %s%s", k, didYouMean(k, slices.Collect(maps.Keys(c.p.Inputs))))
+				c.add([]string{"stacks", s, "with", k}, "the project has no input %s%s", k, expr.DidYouMean(k, slices.Collect(maps.Keys(c.p.Inputs))))
 			case !holdsExpr(v):
 				// Every stack, not only the one chosen, as the with: of a
 				// unit is checked before a run.
@@ -313,6 +325,23 @@ func hasExpr(cmd *Command) bool {
 		return false
 	}
 	return strings.Contains(strings.ReplaceAll(cmd.Script, "$${{", ""), "${{")
+}
+
+// literal reports a value that holds no ${{ }}.
+func literal(v any) bool {
+	switch x := v.(type) {
+	case string:
+		return !expr.HasExpr(x)
+	case []any:
+		return !slices.ContainsFunc(x, func(it any) bool { return !literal(it) })
+	case map[string]any:
+		for k, it := range x {
+			if !literal(k) || !literal(it) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 var identifier = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
@@ -474,6 +503,13 @@ func (c *checker) units() {
 		for i, n := range u.Needs {
 			if c.p.Units[n] == nil {
 				c.add(at(path, "needs", strconv.Itoa(i)), "there is no unit %s", n)
+			}
+		}
+		// A for_each written out is checked as up checks the value of one
+		// that an expression gives.
+		if u.ForEach != nil && literal(u.ForEach) {
+			if _, _, err := ForEachItems(u.ForEach); err != nil {
+				c.add(at(path, "for_each"), "%v", err)
 			}
 		}
 		for k, cmd := range unitCommands(u) {
@@ -901,7 +937,7 @@ func schemaHint(path []string, msg string, doc map[string]any) (string, bool) {
 			return "", false
 		}
 		hint := path[n-1] + " is not a source of a secret: sops, env, run, or a call of a task of a plugin, which takes a map"
-		if near := nearest(path[n-1], secretKeys); near != "" {
+		if near := expr.Nearest(path[n-1], secretKeys); near != "" {
 			hint += "; did you mean " + near + "?"
 		}
 		return hint, true
@@ -918,48 +954,6 @@ func schemaHint(path []string, msg string, doc map[string]any) (string, bool) {
 		return keys[1] + " is not a key that sops wraps for: kms, gcp_kms, azure_keyvault, hc_vault_transit_uri, or pgp", true
 	}
 	return "", false
-}
-
-// nearest returns the word of words that s is a typo of, at most two edits
-// away, or "".
-func nearest(s string, words []string) string {
-	best, bestD := "", 3
-	for _, w := range words {
-		if d := distance(s, w); d < bestD && d < len(w) {
-			best, bestD = w, d
-		}
-	}
-	return best
-}
-
-// didYouMean is "; did you mean <word>?" for the word of words that s is a
-// typo of, or "".
-func didYouMean(s string, words []string) string {
-	if near := nearest(s, words); near != "" {
-		return "; did you mean " + near + "?"
-	}
-	return ""
-}
-
-// distance is the Levenshtein distance between a and b.
-func distance(a, b string) int {
-	prev := make([]int, len(b)+1)
-	for j := range prev {
-		prev[j] = j
-	}
-	for i := 1; i <= len(a); i++ {
-		cur := make([]int, len(b)+1)
-		cur[0] = i
-		for j := 1; j <= len(b); j++ {
-			cost := 1
-			if a[i-1] == b[j-1] {
-				cost = 0
-			}
-			cur[j] = min(prev[j]+1, cur[j-1]+1, prev[j-1]+cost)
-		}
-		prev = cur
-	}
-	return prev[len(b)]
 }
 
 func (c *checker) steps(path []string, steps []*Step, ids map[string]bool) {

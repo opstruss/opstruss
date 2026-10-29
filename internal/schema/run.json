@@ -23,7 +23,7 @@
     "ended": { "type": "string" },
     "status": { "enum": ["running", "finished"] },
     "outcome": { "enum": ["success", "failure", "skipped", "cancelled"] },
-    "reason": { "type": "string", "description": "Why a run ended cancelled: requested (opstruss runs cancel), concurrency (a call with concurrency: cancel), or interrupted (its process died)." },
+    "reason": { "type": "string", "description": "Why a run ended cancelled: signal (SIGINT or SIGTERM, as Ctrl-C sends; exit_code is 130 or 143), requested (opstruss runs cancel), concurrency (a call with concurrency: cancel), or interrupted (its process died)." },
     "exit_code": { "type": "integer" },
     "units": {
       "type": "object",

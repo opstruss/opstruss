@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 
 	"github.com/opstruss/opstruss/internal/model"
@@ -151,5 +152,30 @@ units:
 	}
 	if want := []string{"default/a,default/c after b: false", "default/d after b: true"}; !slices.Equal(asked, want) {
 		t.Fatalf("asked %q, want %q", asked, want)
+	}
+}
+
+// TestInterruptAtQuestion: a run that a signal stops while it asks ends
+// cancelled, by signal, with the exit code that a shell reports.
+func TestInterruptAtQuestion(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	project := t.TempDir()
+	yaml := "name: ask\nunits:\n  a:\n    run: [\"true\"]\n"
+	if err := os.WriteFile(filepath.Join(project, "opstruss.yaml"), []byte(yaml), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancelCause(t.Context())
+	defer cancel(nil)
+	res, err := Up(ctx, Options{Dir: project, Environ: os.Environ(), LookupEnv: os.LookupEnv,
+		Approve: func(ctx context.Context, _ Question) (bool, error) {
+			cancel(Interrupted{Signal: syscall.SIGINT})
+			<-ctx.Done()
+			return false, context.Cause(ctx)
+		}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Outcome != cancelled || res.ExitCode != 130 || res.Record.Reason != "signal" {
+		t.Fatalf("got %s, exit %d, reason %q; want cancelled, 130, signal", res.Outcome, res.ExitCode, res.Record.Reason)
 	}
 }

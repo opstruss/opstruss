@@ -174,7 +174,7 @@ func (c *checker) graph() {
 	}
 	g, err := graph.Build("units", deps)
 	if err != nil {
-		c.add([]string{"units"}, "%v", err)
+		c.addEach([]string{"units"}, err)
 		return
 	}
 	p.Order, p.Deps = g.Order, g.Deps

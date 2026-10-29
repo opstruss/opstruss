@@ -31,7 +31,7 @@ grep v3 default_m.applied
 
 # yes: true does not approve a plan that the run read as not exact
 ! exec opstruss review
-stdout '^default/inexact: will run: .*; the plan read earlier in this run was not exact, so yes does not approve it, stopped at plan$'
+stdout '^default/inexact: the plan read earlier in this run was not exact, so yes does not approve it, stopped at plan$'
 
 # nor one of a unit that another run held while the run read it
 cp v4 config
@@ -41,7 +41,7 @@ waitfile paused
 env OPSTRUSS_FAILPOINT=
 ! exec opstruss held
 stdout '^default/m: locked by run .*; left out$'
-stdout '^default/m: will run: .*; the plan read earlier in this run was not exact, so yes does not approve it, stopped at plan$'
+stdout '^default/m: the plan read earlier in this run was not exact, so yes does not approve it, stopped at plan$'
 wait
 grep v3 default_m.applied
 

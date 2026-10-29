@@ -24,7 +24,7 @@ stdout '"moved_to": "default/site"'
 # files from before the move hit the tombstone instead of making web again
 cp old.yaml opstruss.yaml
 ! exec opstruss up --yes
-stderr '^default/web: this address moved to default/site in run'
+stdout '^default/web: error: this address moved to default/site in run'
 
 # entries chain: what is still at the first address ends at the last
 cp renamed.yaml opstruss.yaml

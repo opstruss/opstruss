@@ -1,0 +1,150 @@
+# validate says what is wrong where the file writes it, with what was
+# meant when it is near: a name of an expression or a function, a key
+# that is not a name, a task or a plugin of a catalog, a duration, an
+# include in an included file, every cycle, a field of event that no
+# trigger of the task gives, and a for_each written out with a key that up
+# would refuse.
+
+env HOME=$WORK/home
+
+# names and functions in expressions
+! exec opstruss validate -C exprs
+stderr 'there is no name project; an expression reads inputs, locals, units, tasks, steps, secrets, stack, each, event, opstruss, and outputs; did you mean opstruss.project\?'
+stderr 'there is no function lenght; did you mean size\?'
+stderr 'toJSON takes its value as an argument: toJSON\(inputs.who\)'
+! stderr 'in container'
+
+# a key that is not a name, at the key
+! exec opstruss validate -C names
+stderr '^opstruss.yaml:3:3: units.Café: "Café" is not a name: '
+
+# tasks and plugins of a catalog
+! exec opstruss validate -C calls
+stderr '^opstruss.yaml:9:9: tasks.fetch.steps\[0\].htp: there is no task htp; did you mean http\?$'
+stderr '^opstruss.yaml:5:9: units.net.uses: cat has no plugin or component tofuu; did you mean tofu\?$'
+stderr 'names of three parts or more are reserved; to call a task of a package of cat, declare the package in uses:, as tofu: cat.tofu, and call tofu.plan'
+
+# a duration
+! exec opstruss validate -C duration
+stderr '^opstruss.yaml:5:5: units.slow.timeout: "5 minutes" is not a duration such as 30s, 5m, or 1h30m$'
+
+# include in an included file
+! exec opstruss validate -C nested
+stderr '^more.yaml:1:1: include: an included file cannot include others; list it in include: of opstruss.yaml$'
+
+# two cycles, one line each
+! exec opstruss validate -C cycles
+stderr 'units a → b → a form a cycle$'
+stderr 'units c → d → c form a cycle$'
+
+# event of the triggers of a task
+! exec opstruss validate -C events
+stderr '^opstruss.yaml:9:5: tasks.notify.run: the triggers of this task give no event.run; event has outcome, outputs, task, time, trigger, and unit \(in \$\{\{ event.run \}\}\)$'
+! stderr 'tasks.follow'
+! stderr 'tasks.manual'
+
+# for_each written out
+! exec opstruss validate -C each
+stderr '^opstruss.yaml:4:5: units.drinks.for_each: for_each key "kopi susu" has more than lower-case letters, digits'
+stderr '^opstruss.yaml:7:5: units.objects.for_each: for_each of a unit takes strings or a map, not object'
+! stderr 'units.later'
+
+# one that an expression gives is checked as up reads it
+exec opstruss validate -C later
+! exec opstruss up --yes -C later
+stdout '^default/later: error: for_each key "Bad Key" has more than lower-case letters, digits'
+stderr '^default/later: cannot be planned$'
+
+-- exprs/opstruss.yaml --
+name: shop
+inputs:
+  who: {type: string, default: sari}
+units:
+  a:
+    run: [echo, "${{ project.dir }}"]
+  b:
+    run: [echo, "${{ inputs.who.lenght() }}"]
+  c:
+    run: [echo, "${{ inputs.who.toJSON() }}"]
+-- names/opstruss.yaml --
+name: shop
+units:
+  Café:
+    run: [echo, hi]
+-- calls/opstruss.yaml --
+name: shop
+uses:
+  cat: ./catalog
+units:
+  net: {uses: cat.tofuu}
+tasks:
+  fetch:
+    steps:
+      - htp: {url: https://example.com}
+  preview:
+    steps:
+      - cat.tofu.plan: {}
+-- calls/catalog/opstruss.catalog.yaml --
+shared: []
+-- calls/catalog/plugins/tofu/opstruss.plugin.yaml --
+name: tofu
+tasks:
+  up:
+    run: ["true"]
+  plan:
+    run: ["true"]
+-- duration/opstruss.yaml --
+name: shop
+units:
+  slow:
+    run: [sleep, "1"]
+    timeout: 5 minutes
+-- nested/opstruss.yaml --
+name: shop
+include: [more.yaml]
+-- nested/more.yaml --
+include: [other.yaml]
+units:
+  a:
+    run: [echo, a]
+-- cycles/opstruss.yaml --
+name: shop
+units:
+  a: {run: [echo, a], needs: [b]}
+  b: {run: [echo, b], needs: [a]}
+  c: {run: [echo, c], needs: [d]}
+  d: {run: [echo, d], needs: [c]}
+-- events/opstruss.yaml --
+name: shop
+units:
+  web:
+    service: [sleep, "300"]
+tasks:
+  build:
+    run: [echo, build]
+  notify:
+    run: [echo, "${{ event.run }}"]
+    on: {after: {task: build}}
+  follow:
+    run: [echo, "${{ event.line }}"]
+    on: {watch: {unit: web}}
+  manual:
+    run: [echo, "${{ event.anything }}"]
+-- each/opstruss.yaml --
+name: shop
+units:
+  drinks:
+    for_each: [teh, kopi susu]
+    run: [echo, "${{ each.key }}"]
+  objects:
+    for_each: [{name: a}]
+    run: [echo, "${{ each.key }}"]
+  later:
+    for_each: ${{ ['Bad Key'] }}
+    run: [echo, "${{ each.key }}"]
+-- later/opstruss.yaml --
+name: shop
+units:
+  later:
+    for_each: ${{ ['Bad Key'] }}
+    run: [echo, "${{ each.key }}"]

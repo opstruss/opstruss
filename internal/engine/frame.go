@@ -30,10 +30,11 @@ type frame struct {
 }
 
 // frameSet is the instances of a component unit in a pass, or why they
-// could not be found.
+// could not be found, once ready is closed.
 type frameSet struct {
 	frames []*frame
 	err    error
+	ready  chan struct{}
 }
 
 // keys are the keys of the instances of the components f is in and of its
@@ -73,13 +74,22 @@ func (e *engine) framesOf(n *model.Node) ([]*frame, error) {
 	if n == nil {
 		return []*frame{e.top}, nil
 	}
+	// One caller finds them; the others, as units planned at once, wait.
 	e.mu.Lock()
 	fs := e.frames[n.Path]
+	first := fs == nil
+	if first {
+		fs = &frameSet{ready: make(chan struct{})}
+		e.frames[n.Path] = fs
+	}
+	collect := e.collect
 	e.mu.Unlock()
-	if fs != nil {
+	if !first {
+		<-fs.ready
 		return fs.frames, fs.err
 	}
-	fs = &frameSet{}
+	defer close(fs.ready)
+	var frames []*frame
 	parents, err := e.framesOf(n.Parent)
 	for _, pf := range parents {
 		keys, items, marks, kerr := e.keysOf(pf, n)
@@ -92,29 +102,25 @@ func (e *engine) framesOf(n *model.Node) ([]*frame, error) {
 			if n.Unit.ForEach != nil {
 				id += "[" + k + "]"
 			}
-			fs.frames = append(fs.frames, &frame{node: n, in: n.Component(), parent: pf, key: k, each: items[k], eachMarks: itemMarks(marks, k),
+			frames = append(frames, &frame{node: n, in: n.Component(), parent: pf, key: k, each: items[k], eachMarks: itemMarks(marks, k),
 				address: pf.address + "/" + id})
 		}
 	}
 	if err != nil {
-		fs = &frameSet{err: err}
+		fs.err = err
+		return nil, err
 	}
-	e.mu.Lock()
-	if prev := e.frames[n.Path]; prev != nil {
-		fs = prev
-	} else {
-		e.frames[n.Path] = fs
-	}
-	collect := e.collect
-	e.mu.Unlock()
-	if collect && fs.err == nil {
+	fs.frames = frames
+	if collect {
 		// Found in the preview of a pass, before any unit inside, which
 		// then plans from the records its moves give it.
-		for _, g := range fs.frames {
+		e.movesMu.Lock()
+		for _, g := range frames {
 			e.addMoves(g)
 		}
+		e.movesMu.Unlock()
 	}
-	return fs.frames, fs.err
+	return frames, nil
 }
 
 // expandComponents finds the instances of every component unit, also of
@@ -437,7 +443,7 @@ func (inst *instance) view() map[string]any {
 	if inst.outcome != "" {
 		v["outcome"], v["changed"] = inst.outcome, inst.changed
 	}
-	if inst.plan.digest != "" || inst.plan.waitFor != "" {
+	if inst.plan.digest != "" || len(inst.plan.waitFor) > 0 {
 		v["plan"] = inst.plan.view(inst.plan.exact())
 	}
 	return v
@@ -497,7 +503,7 @@ func (e *engine) componentView(g *frame) (map[string]any, any) {
 				outcome = inst.outcome
 			}
 		}
-		if inst.plan.digest != "" || inst.plan.waitFor != "" {
+		if inst.plan.digest != "" || len(inst.plan.waitFor) > 0 {
 			planned = append(planned, inst)
 		}
 	}
@@ -542,95 +548,113 @@ func (e *engine) inside(g *frame) []*instance {
 	return out
 }
 
-// changing returns the first unit whose outputs v, written in the files of
-// f, reads and that this run changes or plans later: read directly, or
-// through an input of the component, a local, or an output of a component.
-func (e *engine) changing(v any, f *frame) string {
+// changing returns the instances of the units whose outputs v, written in
+// the files of f, reads and that this run changes or plans later: read
+// directly, or through an input of the component, a local, or an output
+// of a component. One may come more than once.
+func (e *engine) changing(v any, f *frame) []*instance {
 	use, err := expr.AnalyzeValue(v)
 	if err != nil {
-		return ""
+		return nil
 	}
+	var out []*instance
 	for _, r := range use.Refs {
-		var up string
 		switch r.Path[0] {
 		case "units":
 			if len(r.Path) > 1 {
-				up = e.changingUnit(f, r.Path[1], r.Path[2:])
+				out = append(out, e.changingUnit(f, r.Path[1], r.Path[2:])...)
 			}
 		case "inputs":
 			if f.node == nil {
 				continue
 			}
 			for _, k := range slices.Sorted(maps.Keys(f.node.Unit.With)) {
-				if up == "" && (len(r.Path) == 1 || r.Path[1] == k) {
-					up = e.changing(f.node.Unit.With[k], f.parent)
+				if len(r.Path) == 1 || r.Path[1] == k {
+					out = append(out, e.changing(f.node.Unit.With[k], f.parent)...)
 				}
 			}
 		case "locals":
 			for _, k := range slices.Sorted(maps.Keys(f.in.Locals)) {
-				if up == "" && (len(r.Path) == 1 || r.Path[1] == k) {
-					up = e.changing(f.in.Locals[k], f)
+				if len(r.Path) == 1 || r.Path[1] == k {
+					out = append(out, e.changing(f.in.Locals[k], f)...)
 				}
 			}
 		}
-		if up != "" {
-			return up
-		}
 	}
-	return ""
+	return out
 }
 
 // changingUnit is changing for units.<name><rest> read in f.
-func (e *engine) changingUnit(f *frame, name string, rest []string) string {
+func (e *engine) changingUnit(f *frame, name string, rest []string) []*instance {
 	n := e.p.Nodes[f.child(name)]
 	if n == nil {
-		return ""
+		return nil
 	}
+	// units.<name>[<key>] of a unit with for_each reads one instance.
+	key, keyed := "", n.Unit.ForEach != nil && len(rest) > 0
+	if keyed {
+		key, rest = rest[0], rest[1:]
+	}
+	var out []*instance
 	comp := n.Component()
 	if comp == nil {
 		e.mu.Lock()
 		defer e.mu.Unlock()
 		for _, up := range e.byUnit[n.Path] {
-			if up.frame == f && (up.plan.run || up.plan.waitFor != "") && e.sel.has(up) {
-				return e.short(up.address)
+			if up.frame == f && (!keyed || up.key == key) && (up.plan.run || len(up.plan.waitFor) > 0) && e.sel.has(up) {
+				out = append(out, up)
 			}
 		}
-		return ""
+		return out
 	}
 	frames, _ := e.framesOf(n)
-	if n.Unit.ForEach != nil && len(rest) > 0 {
-		rest = rest[1:] // the key of an instance
-	}
 	for _, g := range frames {
-		if g.parent != f {
+		if g.parent != f || keyed && g.key != key {
 			continue
 		}
-		up := ""
 		switch {
 		case len(rest) >= 2 && rest[0] == "outputs":
 			if o := comp.Outputs[rest[1]]; o != nil {
-				up = e.changing(o.Value, g)
+				out = append(out, e.changing(o.Value, g)...)
 			}
 		case len(rest) == 1 && rest[0] == "outputs":
 			for _, k := range slices.Sorted(maps.Keys(comp.Outputs)) {
-				if up == "" {
-					up = e.changing(comp.Outputs[k].Value, g)
-				}
+				out = append(out, e.changing(comp.Outputs[k].Value, g)...)
 			}
 		default:
 			e.mu.Lock()
 			for _, inst := range e.inside(g) {
-				if up == "" && (inst.plan.run || inst.plan.waitFor != "") && e.sel.has(inst) {
-					up = e.short(inst.address)
+				if (inst.plan.run || len(inst.plan.waitFor) > 0) && e.sel.has(inst) {
+					out = append(out, inst)
 				}
 			}
 			e.mu.Unlock()
 		}
-		if up != "" {
-			return up
+	}
+	return out
+}
+
+// inPlanOrder are the addresses of insts, each once, in the order of the
+// plan.
+func (e *engine) inPlanOrder(insts []*instance) []string {
+	if len(insts) == 0 {
+		return nil
+	}
+	set := map[*instance]bool{}
+	for _, inst := range insts {
+		set[inst] = true
+	}
+	var out []string
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for _, path := range e.p.Order {
+		for _, inst := range e.byUnit[path] {
+			if set[inst] {
+				out = append(out, inst.address)
+			}
 		}
 	}
-	return ""
+	return out
 }
 
 // depsOf are the instances of the unit at path d that inst depends on: in

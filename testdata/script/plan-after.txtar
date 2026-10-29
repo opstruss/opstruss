@@ -1,0 +1,47 @@
+# A unit that reads the outputs of units that this run changes first is
+# planned at its turn: its plan line names each of them in plan order, the
+# instances of one unit by their count, and the after of its plan lists
+# their addresses.
+
+env HOME=$WORK/home
+
+exec opstruss plan
+stdout '^default/c: will run: new; plan after default/a, default/b \(env.A, env.B\)$'
+stdout '^default/sum: will run: new; plan after 3 instances of default/s \(env.N\)$'
+
+exec opstruss plan --json
+stdout '"address":"default/c","task":"plan",.*"after":\["default/a","default/b"\]'
+stdout '"address":"default/sum","task":"plan",.*"after":\["default/s\[x\]","default/s\[y\]","default/s\[z\]"\]'
+
+exec opstruss review
+stdout '^review: show \| \["default/a","default/b"\]$'
+
+-- opstruss.yaml --
+name: shop
+units:
+  a:
+    run: echo "x=1" >> "$OPSTRUSS_OUTPUT"
+    outputs: {x: {}}
+  b:
+    run: echo "y=2" >> "$OPSTRUSS_OUTPUT"
+    outputs: {y: {}}
+  c:
+    run: echo "$A $B"
+    env:
+      A: ${{ units.a.outputs.x }}
+      B: ${{ units.b.outputs.y }}
+  s:
+    for_each: [x, y, z]
+    run: echo "n=1" >> "$OPSTRUSS_OUTPUT"
+    outputs: {n: {}}
+  sum:
+    run: echo "$N"
+    env:
+      N: ${{ units.s.size() }}
+tasks:
+  review:
+    steps:
+      - id: plan
+        task: plan
+      - id: show
+        run: [echo, "${{ toJSON(steps.plan.units.c.plan.after) }}"]

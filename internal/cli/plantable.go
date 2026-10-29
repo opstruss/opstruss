@@ -84,9 +84,40 @@ func planText(ev engine.Event) string {
 	msg = strings.TrimPrefix(strings.TrimPrefix(msg, "plan: "), "plan ")
 	// The table names units without their stack.
 	if stack, _, ok := strings.Cut(ev.Address, "/"); ok {
-		msg = strings.NewReplacer("after "+stack+"/", "after ", "skipped: "+stack+"/", "skipped: ").Replace(msg)
+		msg = strings.NewReplacer("skipped: "+stack+"/", "skipped: ").Replace(msg)
+		msg = shortAfter(msg, stack)
 	}
 	return strings.NewReplacer("; plan: ", " · ", "; plan after ", " · after ", "; then ", " · then ").Replace(msg)
+}
+
+// shortAfter writes the units that a plan line waits for, after site,
+// infra (env.URL) or after 3 instances of shard, without stack.
+func shortAfter(msg, stack string) string {
+	head, rest, ok := strings.Cut(msg, "plan after ")
+	switch {
+	case ok:
+		head += "plan "
+	case strings.HasPrefix(msg, "after "):
+		head, rest = "", strings.TrimPrefix(msg, "after ")
+	default:
+		return msg
+	}
+	units, reads, paren := strings.Cut(rest, " (")
+	names := strings.Split(units, ", ")
+	for i, n := range names {
+		count, unit, ok := strings.Cut(n, " instances of ")
+		if !ok {
+			count, unit = "", n
+		} else {
+			count += " instances of "
+		}
+		names[i] = count + strings.TrimPrefix(unit, stack+"/")
+	}
+	msg = head + "after " + strings.Join(names, ", ")
+	if paren {
+		msg += " (" + reads
+	}
+	return msg
 }
 
 // describe writes the changes of a plan as the plan line of the engine

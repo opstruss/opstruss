@@ -102,7 +102,7 @@ type Daemon struct {
 
 	// runs ends the calls and the runs of triggers, as the daemon stops.
 	runs       context.Context
-	cancelRuns context.CancelFunc
+	cancelRuns context.CancelCauseFunc
 	kill       func() // kills the programs of runs and the services at once
 
 	mu       sync.Mutex
@@ -182,7 +182,7 @@ func Start(opts Options) (_ *Daemon, err error) {
 	d.sup = newSupervisor(root, opts.Stack, d.reg, func(ev record.Event) { d.log.Emit(ev) })
 	d.sup.watch, d.sup.kill = opts.Watch, proc.Kill(runs)
 	go d.sup.recover()
-	d.runs, d.cancelRuns = context.WithCancel(runs)
+	d.runs, d.cancelRuns = context.WithCancelCause(runs)
 	d.trig = &triggers{d: d, sources: map[string]*source{}, pending: map[string]int{}}
 	d.trig.hooks = &webhooks{t: d.trig}
 	// What fails here is in the log; the up that started the daemon
@@ -220,7 +220,7 @@ func socketDir() (string, error) {
 // the lock file is gone. Then it takes no new call, cancels the calls that
 // run, waits for them, and closes.
 func (d *Daemon) Serve(ctx context.Context) error {
-	defer d.cancelRuns()
+	defer d.cancelRuns(nil)
 	served := make(chan struct{})
 	defer close(served)
 	go func() {
@@ -261,7 +261,8 @@ func (d *Daemon) Serve(ctx context.Context) error {
 	d.mu.Lock()
 	d.stopping = true
 	d.mu.Unlock()
-	d.cancelRuns()
+	// The runs end as the signal that stops the daemon, if one does.
+	d.cancelRuns(context.Cause(ctx))
 	d.trig.close()
 	d.calls.Wait()
 	d.sup.stopAll()

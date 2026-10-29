@@ -76,7 +76,7 @@ stdout '^  after: skipped$'
 stdout 'task guarded needs approval; stopped'
 exec opstruss guarded --yes
 ! exec opstruss release
-stdout '^default/web: will run: new; needs approval, stopped at plan$'
+stdout '^default/web: needs approval, stopped at plan$'
 exec opstruss release-yes
 stdout '^default/web: up: done$'
 

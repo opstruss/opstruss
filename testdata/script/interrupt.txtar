@@ -1,7 +1,9 @@
 # Ctrl-C stops the programs of a run with their stop signal and stop.grace;
 # a second one kills them at once, and the run still writes its record and
 # the pending mark, then exits with 130, as a shell reports SIGINT. The
-# programs here trap SIGINT and go on, so only a kill ends them.
+# programs here trap SIGINT and go on, so only a kill ends them. The record
+# says cancelled, by signal, with the exit code of the process, so after
+# with outcome success does not follow the run.
 
 env HOME=$WORK/home
 
@@ -17,8 +19,23 @@ grep '^interrupted: nothing more starts, and the programs that run stop within t
 grep '^two interrupts received: killing the programs at once; the next plan shows what did not finish$' up.err
 grep '^default/slow: interrupted: ' up.out
 ! grep 'default/slow: the program exited' up.err
+exec sh record.sh up
+stdout '"outcome": "cancelled"'
+stdout '"reason": "signal"'
+stdout '"exit_code": 130'
 exec opstruss plan
 stdout '^default/slow: will run: up of run .* was cancelled$'
+
+# SIGTERM stops a task as SIGINT does, and its run ends with 143
+exec sh -c 'opstruss quick > quick.out 2>&1 & echo $! > pid; wait $!; echo $? > code' &quick&
+waitfile started-quick
+exec sh -c 'kill -TERM $(cat pid)'
+wait quick
+grep '^143$' code
+exec sh record.sh quick
+stdout '"outcome": "cancelled"'
+stdout '"reason": "signal"'
+stdout '"exit_code": 143'
 
 # a run in the daemon that this process follows
 cd daemon
@@ -30,8 +47,30 @@ exec sh -c 'kill -INT $(cat pid)'
 wait task
 grep '^130$' code
 grep '^two interrupts received' wait.err
+exec sh ../record.sh wait
+stdout '"outcome": "cancelled"'
+stdout '"reason": "signal"'
+stdout '"exit_code": 130'
+
+# an up in the daemon that Ctrl-C stops: after with outcome any follows it,
+# and after with outcome success does not
+exec sh -c 'opstruss up --yes > up.out 2>&1 & echo $! > pid; wait $!; echo $? > code' &up&
+waitfile started-up
+exec sh -c 'kill -INT $(cat pid)'
+wait up
+grep '^130$' code
+exec sh ../record.sh up
+stdout '"outcome": "cancelled"'
+stdout '"reason": "signal"'
+waitgrep '^any cancelled$' fired
+! grep '^success' fired
 exec opstruss stop
 
+-- record.sh --
+#!/bin/sh
+# record.sh <task>: the record of the newest run of task.
+id=$(opstruss runs | awk -v t="$1" '$2 == t { print $1; exit }')
+cat .opstruss/runs/default/$id/record.json
 -- opstruss.yaml --
 name: shop
 units:
@@ -40,11 +79,29 @@ units:
       trap 'touch got-int' INT
       touch started
       while :; do sleep 1 || true; done
+tasks:
+  quick:
+    run: |
+      touch started-quick
+      exec sleep 30
 -- daemon/opstruss.yaml --
 name: shop
+units:
+  slow:
+    run: |
+      touch started-up
+      exec sleep 30
 tasks:
   wait:
     run: |
       trap 'touch got-int' INT
       touch started
       while :; do sleep 1 || true; done
+  success:
+    run: echo success >> fired
+    on: {after: {task: up}}
+  any:
+    # Later than success would write, had it run.
+    run: sleep 1 && echo "any $O" >> fired
+    env: {O: '${{ event.outcome }}'}
+    on: {after: {task: up, outcome: any}}

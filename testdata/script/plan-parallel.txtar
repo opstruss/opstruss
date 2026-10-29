@@ -1,0 +1,50 @@
+# The plans of units that do not read each other run at once, at most
+# OPSTRUSS_PARALLEL, and a unit is planned once the units it depends on
+# are; the plan lines still come in graph order.
+
+env HOME=$WORK/home
+chmod 755 slow/plan.sh
+
+exec opstruss plan
+stdout '(?s)default/a: will run: new; plan: create r\n.*default/b: .*default/c: .*default/d: .*default/e: .*default/f: will run: new; plan: create r\n'
+exec sh -c 'sed -n 2p times'
+stdout '^start '
+exec sh after.sh default/a default/f
+
+# one at a time
+rm times
+env OPSTRUSS_PARALLEL=1
+exec opstruss plan
+exec awk 'NR % 2 == 1 && !/^start / || NR % 2 == 0 && !/^end / { bad = 1 } END { exit bad }' times
+exec sh after.sh default/a default/f
+
+-- after.sh --
+#!/bin/sh
+# after.sh <a> <b>: the plan of b starts after that of a ends.
+awk -v a="end $1" -v b="start $2" '$0 == a { e = NR } $0 == b { s = NR } END { exit !(e && s > e) }' times
+-- opstruss.yaml --
+name: shop
+uses:
+  slow: ./slow
+units:
+  a: {uses: slow}
+  b: {uses: slow}
+  c: {uses: slow}
+  d: {uses: slow}
+  e: {uses: slow}
+  f:
+    uses: slow
+    needs: [a]
+-- slow/opstruss.plugin.yaml --
+name: slow
+tasks:
+  plan:
+    run: [./plan.sh]
+  up:
+    run: ["true"]
+-- slow/plan.sh --
+#!/bin/sh
+echo "start $OPSTRUSS_ADDRESS" >> times
+sleep 0.5
+echo "end $OPSTRUSS_ADDRESS" >> times
+echo '{"changes": [{"action": "create", "resource": "r"}], "digest": "sha256:r", "exact": true}' > "$OPSTRUSS_PLAN"

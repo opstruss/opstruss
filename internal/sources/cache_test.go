@@ -446,3 +446,20 @@ func TestLocksCancelAndProtectActiveEntries(t *testing.T) {
 	}
 	exclusive.Close()
 }
+
+// TestGitErrorSaysWhy: a git that fails is named with the last line it
+// wrote to stderr, as why a fetch failed offline.
+func TestGitErrorSaysWhy(t *testing.T) {
+	bin := t.TempDir()
+	script := "#!/bin/sh\necho 'remote: counting objects' >&2\n" +
+		"echo \"fatal: unable to access 'https://github.com/opstruss/catalog/': Could not resolve host: github.com\" >&2\necho >&2\nexit 128\n"
+	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	_, err := gitOutput(t.Context(), t.TempDir(), "fetch")
+	want := "git fetch failed: exit status 128: fatal: unable to access 'https://github.com/opstruss/catalog/': Could not resolve host: github.com"
+	if err == nil || err.Error() != want {
+		t.Fatalf("got %v, want %s", err, want)
+	}
+}

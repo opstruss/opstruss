@@ -19,7 +19,7 @@ exec opstruss a-and-b
 exec opstruss up --yes
 exec opstruss only-a
 ! exec opstruss review-edited
-stdout '^default/site\[b\]: will be destroyed: its instance is no longer in if or for_each; the plan changed since this run read it, stopped at plan$'
+stdout '^default/site\[b\]: the plan changed since this run read it, stopped at plan$'
 exec opstruss state list
 stdout '^default/site\[b\]\t'
 
@@ -27,7 +27,7 @@ stdout '^default/site\[b\]\t'
 # up, so its destroy stops at plan too
 exec opstruss a-and-b
 ! exec opstruss review-late
-stdout '^default/site\[b\]: will be destroyed: its instance is no longer in if or for_each; the plan changed since this run read it, stopped at plan$'
+stdout '^default/site\[b\]: the plan changed since this run read it, stopped at plan$'
 
 -- opstruss.yaml --
 name: shop

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -110,7 +111,7 @@ func Validate(k Kind, doc any) ([]Problem, error) {
 		return nil, err
 	}
 	var out []Problem
-	collect(ve, &out)
+	collect(ve, &out, doc)
 	slices.SortStableFunc(out, func(a, b Problem) int {
 		return strings.Compare(strings.Join(a.Path, "\x00"), strings.Join(b.Path, "\x00"))
 	})
@@ -123,12 +124,25 @@ var printer = message.NewPrinter(language.English)
 
 // collect reports the errors that say what is wrong: leaves, and for a
 // oneOf the branch that matched the document furthest.
-func collect(e *jsonschema.ValidationError, out *[]Problem) {
+func collect(e *jsonschema.ValidationError, out *[]Problem, doc any) {
 	if len(e.Causes) == 0 {
 		*out = append(*out, leaf(e)...)
 		return
 	}
-	switch e.ErrorKind.(type) {
+	switch k := e.ErrorKind.(type) {
+	case *kind.PropertyNames:
+		// A name that the schema of names refuses is wrong at its key,
+		// where the file writes it, not at the map.
+		at := holder(doc, e.InstanceLocation, k.Property)
+		var names []Problem
+		for _, c := range e.Causes {
+			collect(c, &names, doc)
+		}
+		for _, p := range names {
+			p.Path = append(slices.Clone(at), k.Property)
+			*out = append(*out, p)
+		}
+		return
 	case *kind.OneOf, *kind.AnyOf:
 		// Branches whose type does not match say nothing about the value;
 		// of the others, the one that matched furthest explains it.
@@ -143,15 +157,54 @@ func collect(e *jsonschema.ValidationError, out *[]Problem) {
 			}
 		}
 		if best != nil {
-			collect(best, out)
+			collect(best, out, doc)
 			return
 		}
 		*out = append(*out, Problem{Path: e.InstanceLocation, Message: "expected " + alternatives(e)})
 		return
 	}
 	for _, c := range e.Causes {
-		collect(c, out)
+		collect(c, out, doc)
 	}
+}
+
+// holder is the path of the object of doc that holds key, at the depth of
+// loc: loc when that object holds it. jsonschema keeps loc of an error of
+// propertyNames as a slice that the paths it validates later write over,
+// so its depth is all that loc surely says.
+func holder(doc any, loc []string, key string) []string {
+	var found [][]string
+	var walk func(v any, path []string)
+	walk = func(v any, path []string) {
+		if len(path) == len(loc) {
+			if m, ok := v.(map[string]any); ok {
+				if _, has := m[key]; has {
+					found = append(found, path)
+				}
+			}
+			return
+		}
+		switch x := v.(type) {
+		case map[string]any:
+			for _, k := range slices.Sorted(maps.Keys(x)) {
+				walk(x[k], slices.Concat(path, []string{k}))
+			}
+		case []any:
+			for i, it := range x {
+				walk(it, slices.Concat(path, []string{strconv.Itoa(i)}))
+			}
+		}
+	}
+	walk(doc, nil)
+	for _, f := range found {
+		if slices.Equal(f, loc) {
+			return f
+		}
+	}
+	if len(found) > 0 {
+		return found[0]
+	}
+	return loc
 }
 
 // mismatch reports a branch that failed only on the type or constant of the
@@ -209,7 +262,10 @@ func alternatives(e *jsonschema.ValidationError) string {
 	return strings.Join(want, " or ")
 }
 
-const namePattern = "^[a-z][a-z0-9_-]{0,62}$"
+const (
+	namePattern     = "^[a-z][a-z0-9_-]{0,62}$"
+	durationPattern = `^([0-9]+(\.[0-9]+)?(ms|s|m|h))+$`
+)
 
 // known returns the keys of the properties of the schema at url, which
 // the compiler has compiled already.
@@ -249,8 +305,11 @@ func leaf(e *jsonschema.ValidationError) []Problem {
 	case *kind.Type:
 		return []Problem{{Path: at, Message: fmt.Sprintf("expected %s, got %s", strings.Join(k.Want, " or "), k.Got)}}
 	case *kind.Pattern:
-		if k.Want == namePattern {
+		switch k.Want {
+		case namePattern:
 			return []Problem{{Path: at, Message: fmt.Sprintf("%q is not a name: lowercase letters, digits, - and _, starting with a letter, at most 63 characters", k.Got)}}
+		case durationPattern:
+			return []Problem{{Path: at, Message: fmt.Sprintf("%q is not a duration such as 30s, 5m, or 1h30m", k.Got)}}
 		}
 		return []Problem{{Path: at, Message: fmt.Sprintf("%q does not match %s", k.Got, k.Want)}}
 	case *kind.FalseSchema:

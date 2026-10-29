@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/opstruss/opstruss/internal/expr"
@@ -76,29 +77,59 @@ func runCommand(ctx context.Context, opts Options, op string) (*Result, error) {
 	return e.result(), nil
 }
 
-// previewAll expands and plans every unit in graph order, so a unit knows
-// whether this run changes the units it reads before it is planned.
+// previewAll expands and plans every unit, so a unit knows whether this
+// run changes the units it reads before it is planned: a unit waits for
+// the units it depends on, and the plans of units that do not read each
+// other run at once, at most OPSTRUSS_PARALLEL, as their turns do. The
+// plan lines come in graph order.
 func (e *engine) previewAll(ctx context.Context) {
+	done := make(map[string]chan struct{}, len(e.p.Order))
 	for _, path := range e.p.Order {
-		insts, err := e.expand(path)
-		if err != nil {
-			insts = []*instance{e.broken(path, err)}
-		}
-		for _, inst := range insts {
+		done[path] = make(chan struct{})
+	}
+	found := make([][]*instance, len(e.p.Order))
+	slots := make(chan struct{}, e.parallel)
+	for i, path := range e.p.Order {
+		go func() {
+			defer close(done[path])
 			for _, d := range e.p.Deps[path] {
-				inst.deps = append(inst.deps, e.depsOf(inst, d)...)
+				<-done[d]
 			}
-			if err == nil {
-				e.preview(ctx, inst)
+			insts, err := e.expand(path)
+			if err != nil {
+				insts = []*instance{e.broken(path, err)}
 			}
+			var wg sync.WaitGroup
+			for _, inst := range insts {
+				e.mu.Lock()
+				for _, d := range e.p.Deps[path] {
+					inst.deps = append(inst.deps, e.depsOf(inst, d)...)
+				}
+				e.mu.Unlock()
+				if err != nil {
+					continue
+				}
+				wg.Go(func() {
+					slots <- struct{}{}
+					defer func() { <-slots }()
+					e.preview(ctx, inst)
+				})
+			}
+			wg.Wait()
+			e.mu.Lock()
+			e.byUnit[path] = insts
+			e.mu.Unlock()
+			found[i] = insts
+		}()
+	}
+	for i, path := range e.p.Order {
+		<-done[path]
+		for _, inst := range found[i] {
 			if e.sel.has(inst) {
 				e.sayPlan(inst)
 			}
 		}
-		e.mu.Lock()
-		e.byUnit[path] = insts
-		e.mu.Unlock()
-		e.insts = append(e.insts, insts...)
+		e.insts = append(e.insts, found[i]...)
 	}
 	e.expandComponents()
 	// Two units that keep the tool's state in one backend overwrite each
@@ -140,15 +171,18 @@ func (e *engine) broken(path string, err error) *instance {
 
 func (e *engine) preview(ctx context.Context, inst *instance) {
 	rec, _, err := e.store.Get(inst.address)
+	e.movesMu.Lock()
+	moved, moveErr := e.moveFrom[inst.address], e.moveFailed[inst.address]
+	e.movesMu.Unlock()
 	if err == nil {
-		err = e.moveFailed[inst.address]
+		err = moveErr
 	}
 	if err != nil {
 		inst.plan.err = err
 		return
 	}
-	if v := e.moveFrom[inst.address]; v != nil {
-		rec = v
+	if moved != nil {
+		rec = moved
 	}
 	e.setRecord(inst, rec)
 	if !e.sel.has(inst) {
@@ -181,9 +215,9 @@ func (e *engine) preview(ctx context.Context, inst *instance) {
 	case err != nil:
 		inst.plan.err = err
 		return
-	case r.waitFor != "":
+	case len(r.waitFor) > 0:
 		// What is known without the outputs it waits for is said now.
-		inst.plan.waitFor, inst.plan.reads = e.p.StackName+"/"+r.waitFor, r.reads
+		inst.plan.waitFor, inst.plan.reads = r.waitFor, r.reads
 		inst.plan.auto = e.approvalOf(inst.def) == "auto"
 		switch {
 		case rec == nil:
@@ -202,10 +236,10 @@ func (e *engine) preview(ctx context.Context, inst *instance) {
 	}
 	if err := e.missing(inst, r); err != nil {
 		// A unit that runs first in this run may install the program.
-		if up := e.runsBefore(inst); up != "" {
-			inst.plan.waitFor = up
+		if ups := e.runsBefore(inst); len(ups) > 0 {
+			inst.plan.waitFor = ups
 			inst.plan.auto = e.approvalOf(inst.def) == "auto"
-			e.warn(inst.address, "%v; planned at its turn, after %s", err, up)
+			e.warn(inst.address, "%v; planned at its turn, after %s", err, unitsText(ups))
 			return
 		}
 		inst.plan.err = err
@@ -265,14 +299,16 @@ func (e *engine) missing(inst *instance, r *resolved) error {
 	return nil
 }
 
-// runsBefore names an instance that inst depends on and this run runs.
-func (e *engine) runsBefore(inst *instance) string {
+// runsBefore names the instances that inst depends on and this run runs,
+// in plan order.
+func (e *engine) runsBefore(inst *instance) []string {
+	var ups []*instance
 	for _, d := range inst.deps {
-		if (d.plan.run || d.plan.waitFor != "") && e.sel.has(d) {
-			return d.address
+		if (d.plan.run || len(d.plan.waitFor) > 0) && e.sel.has(d) {
+			ups = append(ups, d)
 		}
 	}
-	return ""
+	return e.inPlanOrder(ups)
 }
 
 // tombstoned says why a unit cannot take the address of rec, which name

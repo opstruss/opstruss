@@ -14,12 +14,68 @@ import (
 	"github.com/opstruss/opstruss/internal/graph"
 )
 
-// Facts are the names under opstruss. that expressions may read.
-var Facts = []string{"address", "dir", "cwd", "project", "artifacts", "temp", "state_key", "reason", "os", "arch", "host", "time", "run"}
-
 // planFacts are the facts known when a plan is made, the only ones that if,
 // for_each, and locals may read.
 var planFacts = []string{"project", "os", "arch", "host"}
+
+// EventFields are the fields of the event of each trigger beside time and
+// trigger, as its source gives one event.
+var EventFields = map[string][]string{
+	"schedule": nil,
+	"every":    nil,
+	"webhook":  {"method", "path", "headers", "query", "body"},
+	"watch":    {"unit", "stream", "line", "paths"},
+	"after":    {"task", "unit", "outcome", "outputs"},
+}
+
+// triggerEvent is what event holds in a run of trigger kind, w for a
+// watch: what its source gives, also data, the JSON of a line that a call
+// or the hook of a plugin writes, and count of paths, and what a batch or
+// debounce gathers.
+func triggerEvent(kind string, w *Watch) []string {
+	fields := append([]string{"time", "trigger"}, EventFields[kind]...)
+	if kind == "watch" {
+		fields = append(fields, "data", "count")
+		if w.Batch != "" || w.Debounce != "" {
+			fields = append(fields, "lines", "truncated")
+		}
+	}
+	return fields
+}
+
+// andList writes words as a sentence lists them: a, b, and c.
+func andList(words []string) string {
+	switch len(words) {
+	case 0:
+		return ""
+	case 1:
+		return words[0]
+	case 2:
+		return words[0] + " and " + words[1]
+	}
+	return strings.Join(words[:len(words)-1], ", ") + ", and " + words[len(words)-1]
+}
+
+// taskEvent is what event may hold in a run of task t, in a run of any
+// of its triggers, or nil for a task without on:, which --event calls with
+// any trigger.
+func taskEvent(t *Task) []string {
+	if t.On == nil {
+		return nil
+	}
+	fields := []string{"time", "trigger"}
+	if len(t.On.Webhook) > 0 {
+		fields = append(fields, triggerEvent("webhook", nil)...)
+	}
+	if len(t.On.After) > 0 {
+		fields = append(fields, triggerEvent("after", nil)...)
+	}
+	for _, w := range t.On.Watch {
+		fields = append(fields, triggerEvent("watch", w)...)
+	}
+	slices.Sort(fields)
+	return slices.Compact(fields)
+}
 
 // place is where an expression is written, which decides what it may read.
 type place struct {
@@ -28,6 +84,7 @@ type place struct {
 	task    *Task
 	steps   map[string]*Step // the steps before, by id
 	forUnit bool             // a task that a unit uses, whose expressions read state_key and reason
+	event   []string         // the fields of event there, or nil when any may be
 }
 
 var readable = map[string][]string{
@@ -142,6 +199,15 @@ func (c *checker) refs(path []string, v any, pl place) []string {
 			if !pl.each {
 				c.add(path, "each is only in something with for_each (in ${{ %s }})", r.Expr)
 			}
+		case "event":
+			if name != "" && pl.event != nil && !slices.Contains(pl.event, name) {
+				who := "the triggers of this task give"
+				if pl.kind == "trigger" {
+					who = "this trigger gives"
+				}
+				c.add(path, "%s no event.%s; event has %s%s (in ${{ %s }})", who, name, andList(pl.event),
+					expr.DidYouMean(name, pl.event), r.Expr)
+			}
 		case "opstruss":
 			c.fact(path, name, r, pl)
 		}
@@ -211,7 +277,7 @@ func (c *checker) fact(path []string, name string, r expr.Ref, pl place) {
 	switch {
 	case name == "":
 		c.add(path, "read one fact, such as opstruss.project (in ${{ %s }})", r.Expr)
-	case !slices.Contains(Facts, name):
+	case !slices.Contains(expr.Facts, name):
 		c.add(path, "opstruss has no fact %s (in ${{ %s }})", name, r.Expr)
 	case (pl.kind == "cond" || pl.kind == "local" || pl.kind == "secret") && !slices.Contains(planFacts, name):
 		c.add(path, "%s read only facts known at plan, %s; not opstruss.%s (in ${{ %s }})", placeNames[pl.kind], "opstruss.project, .os, .arch, and .host", name, r.Expr)
@@ -334,7 +400,7 @@ func (c *checker) references() {
 		}
 	}
 	if _, err := graph.Build("locals", localDeps); err != nil {
-		c.add([]string{"locals"}, "%v", err)
+		c.addEach([]string{"locals"}, err)
 	}
 
 	for _, name := range slices.Sorted(maps.Keys(p.Units)) {
@@ -367,8 +433,9 @@ func (c *checker) references() {
 				if len(t.On.Schedule) > 1 {
 					sp = at(sp, strconv.Itoa(i))
 				}
-				c.refs(at(sp, "if"), condition(s.If), place{kind: "trigger"})
-				c.refs(at(sp, "with"), s.With, place{kind: "trigger"})
+				pl := place{kind: "trigger", event: triggerEvent("schedule", nil)}
+				c.refs(at(sp, "if"), condition(s.If), pl)
+				c.refs(at(sp, "with"), s.With, pl)
 			}
 			for i, w := range t.On.Watch {
 				wp := []string{"tasks", name, "on", "watch"}
@@ -381,16 +448,18 @@ func (c *checker) references() {
 				for j, it := range w.Paths {
 					c.refs(at(wp, "paths", strconv.Itoa(j)), it.Pattern, place{kind: "install"})
 				}
-				c.refs(at(wp, "if"), condition(w.If), place{kind: "trigger"})
-				c.refs(at(wp, "with"), w.With, place{kind: "trigger"})
+				pl := place{kind: "trigger", event: triggerEvent("watch", w)}
+				c.refs(at(wp, "if"), condition(w.If), pl)
+				c.refs(at(wp, "with"), w.With, pl)
 			}
 			for i, a := range t.On.After {
 				ap := []string{"tasks", name, "on", "after"}
 				if len(t.On.After) > 1 {
 					ap = at(ap, strconv.Itoa(i))
 				}
-				c.refs(at(ap, "if"), condition(a.If), place{kind: "trigger"})
-				c.refs(at(ap, "with"), a.With, place{kind: "trigger"})
+				pl := place{kind: "trigger", event: triggerEvent("after", nil)}
+				c.refs(at(ap, "if"), condition(a.If), pl)
+				c.refs(at(ap, "with"), a.With, pl)
 			}
 			for i, w := range t.On.Webhook {
 				wp := []string{"tasks", name, "on", "webhook"}
@@ -398,8 +467,9 @@ func (c *checker) references() {
 					wp = at(wp, strconv.Itoa(i))
 				}
 				c.refs(at(wp, "secret"), w.Secret, place{kind: "install"})
-				c.refs(at(wp, "if"), condition(w.If), place{kind: "trigger"})
-				c.refs(at(wp, "with"), w.With, place{kind: "trigger"})
+				pl := place{kind: "trigger", event: triggerEvent("webhook", nil)}
+				c.refs(at(wp, "if"), condition(w.If), pl)
+				c.refs(at(wp, "with"), w.With, pl)
 			}
 		}
 		calls[name] = slices.DeleteFunc(slices.Clone(t.Needs), func(n string) bool { return p.Tasks[n] == nil })
@@ -410,7 +480,7 @@ func (c *checker) references() {
 		})
 	}
 	if _, err := graph.Build("tasks", calls); err != nil {
-		c.add([]string{"tasks"}, "%v", err)
+		c.addEach([]string{"tasks"}, err)
 	}
 	for _, name := range slices.Sorted(maps.Keys(p.Outputs)) {
 		c.refs([]string{"outputs", name}, p.Outputs[name].Value, place{kind: "output"})
@@ -457,7 +527,7 @@ func walkSteps(steps []*Step, fn func(*Step)) {
 }
 
 func (c *checker) taskRefs(path []string, t *Task) {
-	pl := place{kind: "task", each: t.ForEach != nil, task: t, steps: map[string]*Step{}, forUnit: c.usedByUnit(path)}
+	pl := place{kind: "task", each: t.ForEach != nil, task: t, steps: map[string]*Step{}, forUnit: c.usedByUnit(path), event: taskEvent(t)}
 	if c.plugin != nil {
 		pl.kind = "plugin"
 	}
@@ -539,8 +609,8 @@ func (c *checker) stepField(s *Step, rest []string) string {
 		switch {
 		case expr.IsFunction(field):
 			msg += fmt.Sprintf("; %s is a function: %s(steps.%s)", field, field, s.ID)
-		case nearest(field, stepFields) != "":
-			msg += "; did you mean " + nearest(field, stepFields)
+		case expr.Nearest(field, stepFields) != "":
+			msg += "; did you mean " + expr.Nearest(field, stepFields)
 		case s.Run != nil:
 			msg += fmt.Sprintf("; what a run step prints is steps.%s.outputs.stdout", s.ID)
 		}
@@ -563,8 +633,8 @@ func (c *checker) stepField(s *Step, rest []string) string {
 	switch {
 	case expr.IsFunction(name):
 		msg += fmt.Sprintf("; %s is a function: %s(steps.%s.outputs)", name, name, s.ID)
-	case nearest(name, outs) != "":
-		msg += "; did you mean " + nearest(name, outs)
+	case expr.Nearest(name, outs) != "":
+		msg += "; did you mean " + expr.Nearest(name, outs)
 	}
 	return msg
 }

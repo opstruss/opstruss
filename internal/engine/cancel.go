@@ -5,16 +5,26 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"syscall"
 
 	"github.com/opstruss/opstruss/internal/model"
 	"github.com/opstruss/opstruss/internal/proc"
 	"github.com/opstruss/opstruss/internal/record"
 	"github.com/opstruss/opstruss/internal/sources"
+	"golang.org/x/sys/unix"
 )
 
 // errRequested is the cause of a run that a request in its cancel.jsonl
 // stopped.
 var errRequested = errors.New("cancelled by request")
+
+// Interrupted is the cause of a run that a signal stopped, as Ctrl-C at
+// the terminal of the caller does, or SIGTERM at the daemon it runs in:
+// the run ends cancelled with the exit code that a shell reports, 128 and
+// the signal.
+type Interrupted struct{ Signal syscall.Signal }
+
+func (i Interrupted) Error() string { return "interrupted by " + unix.SignalName(i.Signal) }
 
 // control makes the context of a run that stops on the requests of its
 // cancel.jsonl: the first cancels it, as Ctrl-C at its terminal does, and
@@ -58,15 +68,35 @@ func requester(c record.Cancel) string {
 	return s + ")"
 }
 
-// cancelledBy is the reason that the record of a run gives when a request
-// stopped it, or empty.
-func (e *engine) cancelledBy() string {
+// cancelledBy is the reason that the record of a run gives when a signal
+// or a request stopped it, or empty, with the exit code of such a run.
+func (e *engine) cancelledBy() (string, int) {
+	cause := context.Cause(e.ctx)
+	var in Interrupted
+	if errors.As(cause, &in) {
+		return "signal", 128 + int(in.Signal)
+	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.cancelReq == nil || !errors.Is(context.Cause(e.ctx), errRequested) {
-		return ""
+	if e.cancelReq == nil || !errors.Is(cause, errRequested) {
+		return "", 0
 	}
-	return e.cancelReq.Reason
+	return e.cancelReq.Reason, 1
+}
+
+// stopped reports whether a unit or task of a run ended cancelled.
+func stopped(units map[string]*record.Unit, tasks map[string]*record.Task) bool {
+	for _, u := range units {
+		if u.Outcome == cancelled {
+			return true
+		}
+	}
+	for _, t := range tasks {
+		if t.Outcome == cancelled {
+			return true
+		}
+	}
+	return false
 }
 
 // requestCancel asks the run in dir to cancel, for reason, as this

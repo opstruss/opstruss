@@ -49,3 +49,12 @@ func TestKeys(t *testing.T) {
 		t.Fatal("address")
 	}
 }
+
+// TestBuildCycles: each cycle is an error of its own, also beside another.
+func TestBuildCycles(t *testing.T) {
+	_, err := Build("units", map[string][]string{"a": {"b"}, "b": {"a"}, "c": {"d"}, "d": {"e"}, "e": {"c"}, "f": {"a"}, "g": nil})
+	want := "units a → b → a form a cycle\nunits c → d → e → c form a cycle"
+	if err == nil || err.Error() != want {
+		t.Fatalf("got %v, want %s", err, want)
+	}
+}

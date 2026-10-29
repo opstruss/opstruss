@@ -24,7 +24,7 @@ stderr '^work/links: requires: stow is not in PATH; planned at its turn, after w
 [linux] stdout '^work/apt: will run: new$'
 [linux] ! stdout 'work/(brew|macos)'
 [darwin] ! exec opstruss up --stack work
-[darwin] stdout '^work/macos: will run: new; needs approval, stopped at plan$'
+[darwin] stdout '^work/macos: needs approval, stopped at plan$'
 [!darwin] exec opstruss up --stack work
 stdout 'made the age key age1[0-9a-z]+ of this machine in .*/home/.*/opstruss/age/keys.txt; back it up'
 grep '"age1[0-9a-z]+"' .opstruss/state/work/_meta

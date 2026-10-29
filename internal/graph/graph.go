@@ -3,6 +3,7 @@
 package graph
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"regexp"
@@ -53,48 +54,100 @@ func Build(kind string, deps map[string][]string) (*Graph, error) {
 		}
 	}
 	if len(g.Order) < len(deps) {
-		return nil, fmt.Errorf("%s %s form a cycle", kind, strings.Join(cycle(g.Deps, indeg), " → "))
+		var errs []error
+		for _, c := range cycles(g.Deps, indeg) {
+			errs = append(errs, fmt.Errorf("%s %s form a cycle", kind, strings.Join(c, " → ")))
+		}
+		return nil, errors.Join(errs...)
 	}
 	return g, nil
 }
 
-// cycle finds one cycle among the nodes left with dependencies, as a path
-// that ends where it starts.
-func cycle(deps map[string][]string, indeg map[string]int) []string {
-	left := slices.Sorted(maps.Keys(indeg))
-	left = slices.DeleteFunc(left, func(n string) bool { return indeg[n] == 0 })
-	state := map[string]int{}
+// cycles finds each cycle among the nodes left with dependencies: for each
+// group of nodes that reach one another, a shortest path from its first
+// node by name back to it, in the order of those nodes.
+func cycles(deps map[string][]string, indeg map[string]int) [][]string {
+	left := map[string]bool{}
+	for n, k := range indeg {
+		if k > 0 {
+			left[n] = true
+		}
+	}
+	// The groups are the strongly connected components, found as Tarjan
+	// finds them.
+	index, low, on := map[string]int{}, map[string]int{}, map[string]bool{}
 	var stack []string
-	var found []string
-	var visit func(string) bool
-	visit = func(n string) bool {
-		state[n] = 1
+	var groups [][]string
+	var visit func(string)
+	visit = func(n string) {
+		index[n], low[n] = len(index), len(index)
 		stack = append(stack, n)
+		on[n] = true
 		for _, d := range deps[n] {
-			if indeg[d] == 0 {
+			if !left[d] {
 				continue
 			}
-			switch state[d] {
-			case 1:
-				i := slices.Index(stack, d)
-				found = append(slices.Clone(stack[i:]), d)
-				return true
-			case 0:
-				if visit(d) {
-					return true
-				}
+			if _, seen := index[d]; !seen {
+				visit(d)
+				low[n] = min(low[n], low[d])
+			} else if on[d] {
+				low[n] = min(low[n], index[d])
 			}
 		}
-		stack = stack[:len(stack)-1]
-		state[n] = 2
-		return false
+		if low[n] != index[n] {
+			return
+		}
+		var group []string
+		for m := ""; m != n; {
+			m = stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			on[m] = false
+			group = append(group, m)
+		}
+		groups = append(groups, group)
 	}
-	for _, n := range left {
-		if state[n] == 0 && visit(n) {
-			return found
+	for _, n := range slices.Sorted(maps.Keys(left)) {
+		if _, seen := index[n]; !seen {
+			visit(n)
 		}
 	}
-	return left
+	var out [][]string
+	for _, group := range groups {
+		start := slices.Min(group)
+		if len(group) == 1 && !slices.Contains(deps[start], start) {
+			// A node after a cycle, not in one.
+			continue
+		}
+		out = append(out, loop(deps, group, start))
+	}
+	slices.SortFunc(out, func(a, b []string) int { return strings.Compare(a[0], b[0]) })
+	return out
+}
+
+// loop is a shortest path from start back to start through the nodes of
+// group.
+func loop(deps map[string][]string, group []string, start string) []string {
+	parent := map[string]string{}
+	queue := []string{start}
+	for len(queue) > 0 {
+		n := queue[0]
+		queue = queue[1:]
+		for _, d := range deps[n] {
+			switch _, seen := parent[d]; {
+			case d == start:
+				var back []string
+				for m := n; m != start; m = parent[m] {
+					back = append(back, m)
+				}
+				slices.Reverse(back)
+				return append(append([]string{start}, back...), start)
+			case !seen && slices.Contains(group, d):
+				parent[d] = n
+				queue = append(queue, d)
+			}
+		}
+	}
+	return group
 }
 
 // Key is the pattern of a for_each key of a unit, which becomes part of an

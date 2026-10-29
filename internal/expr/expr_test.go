@@ -89,7 +89,7 @@ func TestEval(t *testing.T) {
 		"hosts ${{ inputs.hosts }}":           "is array inside text",
 		"${{ kv('last') }}":                   "kv() reads the memory of a stack, which is only open in a run",
 		"${{ file('none') }}":                 "file:",
-		"${{ nope.x }}":                       "undeclared reference",
+		"${{ nope.x }}":                       "there is no name nope",
 		"${{ opstruss.time.strftime('%Q') }}": "unknown directive %Q",
 	}
 	for in, want := range errs {
@@ -246,5 +246,27 @@ func TestLater(t *testing.T) {
 	}
 	if _, err := Made(s.Vars["secrets"]); err == nil {
 		t.Error("Made fails with the value that fails")
+	}
+}
+
+// TestUnknown: a name or a function that is not there is named, with the
+// one meant when it is near, without the position of the checker.
+func TestUnknown(t *testing.T) {
+	tests := []struct{ src, want string }{
+		{"project.dir", "${{ project.dir }}: there is no name project; an expression reads inputs, locals, units, tasks, steps, secrets, stack, each, event, opstruss, and outputs; did you mean opstruss.project?"},
+		{"unit.build.outputs.x", "${{ unit.build.outputs.x }}: there is no name unit; an expression reads inputs, locals, units, tasks, steps, secrets, stack, each, event, opstruss, and outputs; did you mean units?"},
+		{"env.HOME", "${{ env.HOME }}: there is no name env; an expression reads inputs, locals, units, tasks, steps, secrets, stack, each, event, opstruss, and outputs; a value of the environment comes in as an input or a secret with env:"},
+		{"inputs.who.lenght()", "${{ inputs.who.lenght() }}: there is no function lenght; did you mean size?"},
+		{"inputs.who.startswith('a')", "${{ inputs.who.startswith('a') }}: there is no function startswith; did you mean startsWith?"},
+		{"math.greates(1, 2)", "${{ math.greates(1, 2) }}: there is no function math.greates; did you mean math.greatest?"},
+		{"frobnicate(1)", "${{ frobnicate(1) }}: there is no function frobnicate"},
+		{"inputs.x.toJSON()", "${{ inputs.x.toJSON() }}: toJSON takes its value as an argument: toJSON(inputs.x)"},
+		{"(inputs.x + 'a').sha256()", "${{ (inputs.x + 'a').sha256() }}: sha256 takes its value as an argument: sha256(<value>)"},
+	}
+	for _, tt := range tests {
+		_, err := Eval(tt.src, &Scope{})
+		if err == nil || err.Error() != tt.want {
+			t.Errorf("%s:\n got %v\nwant %s", tt.src, err, tt.want)
+		}
 	}
 }

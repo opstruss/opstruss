@@ -214,6 +214,13 @@ func (sup *Supervisor) Start(ctx context.Context, spec *engine.Service) error {
 		if last := s.lastCheck(); last != nil {
 			err = fmt.Errorf("%w: %v", err, last)
 		}
+		// A check that fails because the program exits says so.
+		switch n, code := s.exits(); {
+		case n == 1:
+			err = fmt.Errorf("%w; the service exited with %d; opstruss logs %s shows its output", err, code, sup.short(addr))
+		case n > 1:
+			err = fmt.Errorf("%w; the service exited %d times, the last with %d; opstruss logs %s shows its output", err, n, code, sup.short(addr))
+		}
 	case <-ctx.Done():
 		err = context.Cause(ctx)
 	}
@@ -403,6 +410,8 @@ type service struct {
 	started  bool // the first program started
 	stopping bool
 	check    error // why the last ready check failed
+	exited   int   // how many of its programs exited, and with what the last
+	lastCode int
 }
 
 // child is one program of a service, from the gate to its end.
@@ -458,6 +467,9 @@ func (s *service) loop() {
 		}
 		s.cleanup(c)
 		code := c.code
+		s.mu.Lock()
+		s.exited, s.lastCode = s.exited+1, code
+		s.mu.Unlock()
 		if s.isStopping() {
 			s.sup.event("info", addr, "stopped, exit code %d", code)
 			s.end(errors.New("stopped before it was ready"))
@@ -520,6 +532,14 @@ func (s *service) lastCheck() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.check
+}
+
+// exits is how many programs of the service exited, and the code of the
+// last.
+func (s *service) exits() (int, int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.exited, s.lastCode
 }
 
 // start starts the program of the service through the gate: in a session

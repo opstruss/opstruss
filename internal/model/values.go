@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/opstruss/opstruss/internal/expr"
 )
 
 // ParseText reads text from a flag, an input's env:, or name=value output by
@@ -52,6 +54,42 @@ func ParseText(s, typ string) (any, error) {
 		return v, nil
 	}
 	return s, nil
+}
+
+// forEachKey is what a key of the for_each of a unit holds, since it
+// becomes part of an address.
+var forEachKey = regexp.MustCompile(`^[a-z0-9._-]+$`)
+
+// ForEachItems are the instances that the for_each value v of a unit
+// makes: each key with its item, and of a list of strings each item as its
+// own key, in key order. With an error, items still holds what was read,
+// so a caller can see first whether a key is sensitive.
+func ForEachItems(v any) ([]string, map[string]any, error) {
+	items := map[string]any{}
+	switch x := v.(type) {
+	case map[string]any:
+		items = x
+	case []any:
+		for _, it := range x {
+			k, ok := it.(string)
+			if !ok {
+				return nil, items, fmt.Errorf("for_each of a unit takes strings or a map, not %s; build a map with keys of your own", TypeName(it))
+			}
+			if _, dup := items[k]; dup {
+				return nil, items, fmt.Errorf("for_each has %s twice", k)
+			}
+			items[k] = k
+		}
+	default:
+		return nil, nil, fmt.Errorf("for_each takes a list or a map, not %s", TypeName(v))
+	}
+	keys := slices.Sorted(maps.Keys(items))
+	for _, k := range keys {
+		if !forEachKey.MatchString(k) {
+			return nil, items, fmt.Errorf("for_each key %q has more than lower-case letters, digits, '.', '-', and '_'", k)
+		}
+	}
+	return keys, items, nil
 }
 
 // TypeName names the type of a value the way schemas do.
@@ -163,7 +201,7 @@ func (in *Input) Conform(v any) (any, error) {
 			keys := slices.Sorted(maps.Keys(in.Properties))
 			for _, k := range slices.Sorted(maps.Keys(obj)) {
 				if in.Properties[k] == nil {
-					return nil, fmt.Errorf("unknown key %s%s", k, didYouMean(k, keys))
+					return nil, fmt.Errorf("unknown key %s%s", k, expr.DidYouMean(k, keys))
 				}
 			}
 			out := make(map[string]any, len(obj))

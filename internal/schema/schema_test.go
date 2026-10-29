@@ -56,3 +56,18 @@ func TestValidate(t *testing.T) {
 		})
 	}
 }
+
+// TestNameAtKey: a key that is not a name is wrong at the key, also when
+// the map is validated before its neighbours, which jsonschema lets write
+// over the path that it keeps of the error.
+func TestNameAtKey(t *testing.T) {
+	doc := map[string]any{"name": "shop", "units": map[string]any{"Café": map[string]any{"run": []any{"echo", "hi"}}},
+		"tasks": map[string]any{"x": map[string]any{"run": []any{"true"}}}}
+	for range 50 {
+		probs, err := Validate(Project, doc)
+		if err != nil || len(probs) != 1 || !slices.Equal(probs[0].Path, []string{"units", "Café"}) ||
+			!strings.HasPrefix(probs[0].Message, `"Café" is not a name`) {
+			t.Fatalf("got %+v, %v", probs, err)
+		}
+	}
+}

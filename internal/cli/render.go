@@ -45,7 +45,8 @@ type renderer struct {
 	wrote   bool                         // the terminal shows something already
 	tags    map[string]string            // the label that leads each line of a source while others print
 	blanks  map[string]int               // the blank lines of a block that wait for a line after them
-	failed  map[string]string            // the error of each unit that cannot be planned, which the table showed
+	failed  map[string]string            // the error of each unit that cannot be planned, which its plan line showed
+	said    map[string]bool              // the runs where the answer was no, by run
 	focus   string                       // the block that shows its lines as they come
 	held    map[string]*heldBlock        // the lines of the other blocks, until they end
 	waiting []piece                      // the blocks that ended while the focus went on, until it ends
@@ -65,7 +66,7 @@ func newRenderer(out, err io.Writer, json, terminal, github bool, colorOut, colo
 		colorOut: colorOut, colorErr: colorErr, planned: map[string]map[string]string{}, open: map[string]time.Time{},
 		printed: map[string]bool{}, labels: map[string]string{}, colors: map[string]string{}, shown: map[string]bool{},
 		tags: map[string]string{}, blanks: map[string]int{}, failed: map[string]string{}, ended: map[string]map[string]int{},
-		held: map[string]*heldBlock{}}
+		held: map[string]*heldBlock{}, said: map[string]bool{}}
 }
 
 func (r *renderer) render(ev engine.Event) []piece {
@@ -189,7 +190,7 @@ func unitName(addr string) string {
 
 // line renders ev as a line, the way output without a terminal reads.
 func (r *renderer) line(ev engine.Event) []piece {
-	if !lineShows(ev) || r.repeatsPlan(ev) {
+	if !lineShows(ev) || r.repeatsPlan(ev) || r.followsNo(ev) {
 		return nil
 	}
 	w, color := r.writer(ev)
@@ -210,7 +211,7 @@ func (r *renderer) line(ev engine.Event) []piece {
 			fmt.Fprintf(&b, "  %s: %s\n", k, expr.Text(ev.Outputs[k]))
 		}
 	case who(ev) != "":
-		fmt.Fprintf(&b, "%s: %s\n", who(ev), ev.Message)
+		fmt.Fprintf(&b, "%s: %s\n", who(ev), r.endText(ev, ev.Message))
 	default:
 		fmt.Fprintln(&b, ev.Message)
 	}
@@ -283,12 +284,46 @@ func (r *renderer) repeatsPlan(ev engine.Event) bool {
 			r.planned[ev.Run] = map[string]string{}
 		}
 		r.planned[ev.Run][ev.Address] = ev.Message
+		if ev.Outcome == "failure" {
+			r.failed[ev.Address] = strings.TrimPrefix(ev.Message, "error: ")
+		}
 	case "unit":
 		line, ok := r.planned[ev.Run][ev.Address]
 		delete(r.planned[ev.Run], ev.Address)
 		return ok && line == ev.Message
 	}
 	return false
+}
+
+// followsNo says whether ev ends a unit that is skipped only because
+// another one that the answer no skipped goes before it, as the 300
+// instances behind one question are: their lines would say nothing new.
+// The summary counts them, and the events stay in --json and the record.
+func (r *renderer) followsNo(ev engine.Event) bool {
+	if ev.Status != record.Finished {
+		return false
+	}
+	if ev.Type == "approval" && strings.Contains(ev.Message, "the answer was no") {
+		r.said[ev.Run] = true
+	}
+	return r.said[ev.Run] && ev.Type == "unit" && ev.Outcome == "skipped" &&
+		strings.HasPrefix(ev.Message, "skipped: ") && strings.HasSuffix(ev.Message, " is skipped")
+}
+
+// endText is what the end of an operation of a unit says that its plan
+// line did not: cannot be planned for the error that the plan line showed,
+// and for a change that stopped at plan, only why.
+func (r *renderer) endText(ev engine.Event, msg string) string {
+	switch {
+	case ev.Status != record.Finished:
+	case ev.Outcome == "failure" && msg == r.failed[ev.Address]:
+		return "cannot be planned"
+	case ev.Type == "approval":
+		if i := strings.LastIndex(msg, "; "); i >= 0 {
+			return msg[i+2:]
+		}
+	}
+	return msg
 }
 
 // SGR codes of the terminal renderer.
@@ -321,7 +356,7 @@ const maxLabel = 40
 func (r *renderer) block(ev engine.Event) []piece {
 	r.now = eventTime(ev)
 	r.count(ev)
-	if r.repeatsPlan(ev) {
+	if r.repeatsPlan(ev) || r.followsNo(ev) {
 		return nil
 	}
 	var out []piece
@@ -731,17 +766,7 @@ func (r *renderer) endLine(ev engine.Event, key string, color bool) string {
 	glyph, code := outcomeMark(ev.Outcome)
 	line := paint(color, code, glyph) + " " + text(cmpLabel(r.labels[key], label(ev)), color)
 	// The label names the operation of a unit already: up: done is done.
-	msg := strings.TrimPrefix(ev.Message, ev.Task+": ")
-	switch {
-	case ev.Outcome == "failure" && msg == r.failed[ev.Address]:
-		// The plan table showed the error.
-		msg = "cannot be planned"
-	case ev.Type == "approval":
-		// The plan table showed the change; why it stopped is what is new.
-		if i := strings.LastIndex(msg, "; "); i >= 0 {
-			msg = msg[i+2:]
-		}
-	}
+	msg := r.endText(ev, strings.TrimPrefix(ev.Message, ev.Task+": "))
 	if msg != ev.Outcome && (ev.Outcome != "failure" || msg != "failed") {
 		line += ": " + text(msg, color)
 	}
@@ -763,9 +788,6 @@ func (r *renderer) planLine(ev engine.Event, key string, color bool) []piece {
 		r.table = &planTable{title: "Plan", byAddr: map[string]*planRow{}}
 	}
 	r.table.plan(ev)
-	if ev.Outcome == "failure" {
-		r.failed[ev.Address] = strings.TrimPrefix(ev.Message, "error: ")
-	}
 	return out
 }
 

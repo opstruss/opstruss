@@ -2,7 +2,7 @@
 exec opstruss plan --stack dev
 stdout '^dev/infra: will run: new; plan: create terraform_data.site, create output.url$'
 stdout '^dev/site: will run: new$'
-stdout '^dev/publish: will run: new; plan after dev/site \(run\)$'
+stdout '^dev/publish: will run: new; plan after dev/infra, dev/site \(run\)$'
 exec opstruss up --stack dev --yes
 stdout '^dev/publish \| publishing dist/index.html to https://shop-dev.example.com$'
 exists dist/index.html

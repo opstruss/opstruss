@@ -82,6 +82,11 @@ grep '^130$' code
 grep '^interrupted: nothing more starts, and the programs that run stop within their stop.grace' fg.err
 grep '^default/web: stopped' fg.out
 
+# a service that exits at once is not ready when its time is up, and up
+# says that it exited and where its output is
+! exec opstruss up --yes dies
+stderr '^default/dies: not ready after 1s: .*; the service exited (with 1|[0-9]+ times, the last with 1); opstruss logs dies shows its output$'
+
 # a service is validated as one
 ! exec opstruss validate -C bad
 stderr 'ready has exactly one of http, tcp, or run'
@@ -117,6 +122,12 @@ units:
     service: echo done
     restart: "no"
     approval: auto
+  dies:
+    service: exit 1
+    restart: always
+    ready:
+      tcp: 127.0.0.1:1
+      timeout: 1s
 tasks:
   check:
     steps:

@@ -29,7 +29,8 @@ grep -count=3 . flaky.count
 
 # a program that requires: names and PATH does not have fails before it runs
 ! exec opstruss up needs-tool --yes
-stderr '^default/needs-tool: requires: no-such-tool-x is not in PATH$'
+stdout '^default/needs-tool: error: requires: no-such-tool-x is not in PATH$'
+stderr '^default/needs-tool: cannot be planned$'
 
 # timeout stops the program with stop.signal, then kills it
 ! exec opstruss up slow --yes

@@ -36,7 +36,7 @@ stderr 'uses.say: toolp.say is a task; an alias names a plugin or component, and
 stderr 'uses.twice: tool is an alias itself; name the declaration it names, as cat.tool'
 stderr 'uses.nope: cat has no plugin or component nope'
 stderr 'uses.same: same has a plugin and a component named x; give one another name'
-stderr 'units.three.uses: names of three parts or more are reserved; cat.tool.box has 3'
+stderr 'units.three.uses: names of three parts or more are reserved; to use a plugin or component of a package of cat, declare the package in uses:, as tool: cat.tool, and use tool.box'
 stderr 'units.tasks.uses: plugin cat.tool has no up, so a unit uses one of its tasks: name it in uses:, as <name>: cat.tool, then uses: <name>.<task>'
 stderr 'cat.tool is a plugin, which units use; to call its tasks, name it in uses:, as <name>: cat.tool'
 

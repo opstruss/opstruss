@@ -94,17 +94,21 @@ func (p *Project) resolve(name string, unit bool) (*Target, error) {
 	switch {
 	case strings.HasPrefix(name, "github.com/"):
 		return nil, fmt.Errorf("remote paths are resolved as unit sources")
+	case len(parts) > 2 && unit:
+		return nil, fmt.Errorf("names of three parts or more are reserved; to use a plugin or component of a package of %s, declare the package in uses:, as %s: %s.%s, and use %s.%s",
+			parts[0], parts[1], parts[0], parts[1], parts[1], strings.Join(parts[2:], "."))
 	case len(parts) > 2:
-		return nil, fmt.Errorf("names of three parts or more are reserved; %s has %d", name, len(parts))
+		return nil, fmt.Errorf("names of three parts or more are reserved; to call a task of a package of %s, declare the package in uses:, as %s: %s.%s, and call %s.%s",
+			parts[0], parts[1], parts[0], parts[1], parts[1], strings.Join(parts[2:], "."))
 	case len(parts) == 2 && parts[0] == "opstruss":
 		if Builtin(parts[1]) == nil {
-			return nil, fmt.Errorf("there is no built-in task %s", parts[1])
+			return nil, fmt.Errorf("there is no built-in task %s%s", parts[1], expr.DidYouMean(parts[1], slices.Collect(maps.Keys(builtins()))))
 		}
 		return &Target{Name: name, Kind: TargetBuiltin, Task: parts[1]}, nil
 	case len(parts) == 2:
 		pkg := p.Packages[parts[0]]
 		if pkg == nil {
-			return nil, fmt.Errorf("uses: declares no %s", parts[0])
+			return nil, fmt.Errorf("uses: declares no %s%s", parts[0], expr.DidYouMean(parts[0], slices.Collect(maps.Keys(p.Packages))))
 		}
 		return item(name, pkg, parts[1], unit)
 	}
@@ -126,10 +130,12 @@ func (p *Project) resolve(name string, unit bool) (*Target, error) {
 	if !unit && p.Tasks[name] != nil {
 		return nil, fmt.Errorf("%s is a task of this project; call it with task: %s", name, name)
 	}
+	names := slices.Concat(slices.Collect(maps.Keys(p.Packages)), slices.Collect(maps.Keys(builtins())))
 	if unit {
-		return nil, fmt.Errorf("there is no plugin, component, or task %s", name)
+		names = append(names, slices.Collect(maps.Keys(p.Tasks))...)
+		return nil, fmt.Errorf("there is no plugin, component, or task %s%s", name, expr.DidYouMean(name, names))
 	}
-	return nil, fmt.Errorf("there is no task %s", name)
+	return nil, fmt.Errorf("there is no task %s%s", name, expr.DidYouMean(name, names))
 }
 
 // item finds <package>.<item>: a task of the plugin, or for a unit a
@@ -165,9 +171,9 @@ func item(name string, pkg *Package, it string, unit bool) (*Target, error) {
 		return nil, fmt.Errorf("%s is a plugin, which units use; to call its tasks, name it in uses:, as <name>: %s", name, name)
 	}
 	if pkg.Plugin == nil {
-		return nil, fmt.Errorf("%s has no plugin or component %s", pkg.Name, it)
+		return nil, fmt.Errorf("%s has no plugin or component %s%s", pkg.Name, it, expr.DidYouMean(it, slices.Concat(pkg.Plugins, pkg.Components)))
 	}
-	return nil, fmt.Errorf("%s has no task or component %s", pkg.Name, it)
+	return nil, fmt.Errorf("%s has no task or component %s%s", pkg.Name, it, expr.DidYouMean(it, slices.Concat(slices.Collect(maps.Keys(pkg.Plugin.Tasks)), pkg.Components)))
 }
 
 // unitTarget is what a unit that uses pkg itself runs.
@@ -497,7 +503,7 @@ func (c *checker) declaredWith(path []string, pkg *Package) {
 	}
 	for _, k := range slices.Sorted(maps.Keys(with)) {
 		if !takes(pkg, k) {
-			c.add(at(path, "with", k), "%s has no input %s%s", pkg.Name, k, didYouMean(k, inputNames(pkg)))
+			c.add(at(path, "with", k), "%s has no input %s%s", pkg.Name, k, expr.DidYouMean(k, inputNames(pkg)))
 		}
 	}
 }
@@ -561,7 +567,7 @@ func (c *checker) with(path, missing []string, t *Target, with map[string]any) {
 		v, text := with[k].(string)
 		switch {
 		case inputs[k] == nil:
-			c.add(at(path, k), "%s has no input %s%s", t.Name, k, didYouMean(k, slices.Collect(maps.Keys(inputs))))
+			c.add(at(path, k), "%s has no input %s%s", t.Name, k, expr.DidYouMean(k, slices.Collect(maps.Keys(inputs))))
 		case inputs[k].Literal && text && expr.HasExpr(v):
 			c.add(at(path, k), "%s is taken as written; ${{ }} is not allowed in it (write $${{ for ${{)", k)
 		case holdsExpr(with[k]):

@@ -173,6 +173,9 @@ type engine struct {
 	have       map[string]bool          // the addresses with records, as the moves of the pass leave them
 	collect    bool                     // the pass previews the moves of the instances of components it finds
 	stale      []string                 // records of instances of components that the pass did not find
+	// movesMu guards the moves while the preview of a pass finds the
+	// instances of components, as other units are planned.
+	movesMu sync.Mutex
 
 	mu          sync.Mutex
 	exit        int
@@ -417,14 +420,18 @@ func (e *engine) close(outcome string, outputs, marks map[string]any) {
 		}
 	}
 	outputs = e.shown(outputs, marks)
-	reason := e.cancelledBy()
-	if reason != "" && outcome != success {
-		outcome = cancelled
-	}
-	e.outcome, e.outputs = outcome, outputs
 	e.mu.Lock()
 	touched, ran, code := e.touched, e.ran, e.exit
 	e.mu.Unlock()
+	// A run that a signal or a request stopped ends cancelled, also when
+	// what it stopped leaves its exit code 0, as units that ended
+	// cancelled do; one that ended before anything stopped keeps its
+	// outcome.
+	reason, stopCode := e.cancelledBy()
+	if reason != "" && (outcome != success || stopped(touched, ran)) {
+		outcome, code = cancelled, stopCode
+	}
+	e.outcome, e.outputs = outcome, outputs
 	err := e.rec.Finish(func(r *record.Record) {
 		r.Outcome, r.ExitCode, r.Outputs = outcome, code, outputs
 		if outcome == cancelled && reason != "" {

@@ -176,25 +176,47 @@ func (a *app) approve(ctx context.Context, q engine.Question) (bool, error) {
 		items = []engine.Question{q}
 	}
 	// One answer approves every item, as terraform apply asks once: the
-	// question names what yes does to each, in the order of the plan.
-	var asks, plans []string
-	verb := ""
+	// question names what yes does to each, in the order of the plan, and
+	// the instances of one unit by their count, as the plan does.
+	type ask struct {
+		verb, who, unit string
+		n               int
+	}
+	var groups []ask
+	var plans []string
 	for _, it := range items {
 		who := cmp.Or(it.Address, it.Task)
 		plans = append(plans, who+": "+it.Summary+"\n")
 		if r != nil && r.terminal {
 			who = unitName(who)
 		}
+		unit := who
+		if i := strings.LastIndex(who, "["); i > strings.LastIndex(who, "/") {
+			unit = who[:i]
+		}
 		v := askVerb(it)
+		if k := len(groups) - 1; k >= 0 && unit != who && groups[k].unit == unit && groups[k].verb == v {
+			groups[k].n++
+			continue
+		}
+		groups = append(groups, ask{v, who, unit, 1})
+	}
+	var asks []string
+	verb := ""
+	for _, g := range groups {
+		who := g.who
+		if g.n > 1 {
+			who = fmt.Sprintf("%d instances of %s", g.n, g.unit)
+		}
 		switch {
-		case v == verb:
+		case g.verb == verb:
 			asks = append(asks, who)
 		case verb == "":
-			asks = append(asks, v+" "+who)
+			asks = append(asks, g.verb+" "+who)
 		default:
-			asks = append(asks, strings.ToLower(v)+" "+who)
+			asks = append(asks, strings.ToLower(g.verb)+" "+who)
 		}
-		verb = v
+		verb = g.verb
 	}
 	question := strings.Join(plans, "") + strings.Join(asks, ", ") + "? [y/N] "
 	if r != nil && r.terminal {
@@ -433,8 +455,9 @@ func (a *app) endOutput() {
 }
 
 // interrupts is how a command that runs stops on SIGINT and SIGTERM: the
-// first cancels ctx, so each program gets its stop signal and stop.grace,
-// and a second kills them at once, as Terraform stops on two interrupts.
+// first cancels ctx with engine.Interrupted, so each program gets its stop
+// signal and stop.grace and the run ends cancelled, and a second kills
+// them at once, as Terraform stops on two interrupts.
 type interrupts struct {
 	ctx  context.Context
 	stop func()
@@ -443,7 +466,7 @@ type interrupts struct {
 }
 
 func (a *app) interrupts() *interrupts {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancelCause(context.Background())
 	ctx, kill := proc.WithKill(ctx)
 	ch := make(chan os.Signal, 2)
 	signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
@@ -457,11 +480,12 @@ func (a *app) interrupts() *interrupts {
 			case s := <-ch:
 				switch n {
 				case 0:
+					sig, _ := s.(syscall.Signal)
 					in.mu.Lock()
-					in.got, _ = s.(syscall.Signal)
+					in.got = sig
 					in.mu.Unlock()
 					a.notice("interrupted: nothing more starts, and the programs that run stop within their stop.grace; interrupt again to kill them at once")
-					cancel()
+					cancel(engine.Interrupted{Signal: sig})
 				case 1:
 					a.notice("two interrupts received: killing the programs at once; the next plan shows what did not finish")
 					kill()
@@ -472,7 +496,7 @@ func (a *app) interrupts() *interrupts {
 	in.stop = func() {
 		signal.Stop(ch)
 		close(done)
-		cancel()
+		cancel(nil)
 		kill()
 	}
 	return in

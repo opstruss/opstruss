@@ -30,7 +30,7 @@ stderr 'pass values differ from those of the record: AWS_PROFILE'
 # attempt is part of the record, so it is dropped rather than torn destroy
 env AWS_PROFILE=a
 ! exec opstruss up --yes
-stderr '^default/bucket: context changed: AWS_PROFILE differs from the record, whose destroy reaches the old target; up --force moves the unit and forgets that target$'
+stdout '^default/bucket: error: context changed: AWS_PROFILE differs from the record, whose destroy reaches the old target; up --force moves the unit and forgets that target$'
 exec opstruss up --yes --force
 stdout '^default/bucket: will run: context changed: AWS_PROFILE; forced, the old target is forgotten$'
 stdout '^default/bucket: the attempt of run .* has the contract of the record now; dropped without destroy$'

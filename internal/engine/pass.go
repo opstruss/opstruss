@@ -88,7 +88,7 @@ func (e *engine) unitPass(ctx context.Context, op string, p pass) (map[string]an
 					// another run holds does not.
 					e.exit = max(e.exit, 1)
 				}
-				exact := inst.plan.err == nil && inst.plan.waitFor == "" && inst.plan.locked == "" && !inst.plan.inexact
+				exact := inst.plan.err == nil && len(inst.plan.waitFor) == 0 && inst.plan.locked == "" && !inst.plan.inexact
 				digest := ""
 				if exact {
 					digest = inst.plan.approval()
@@ -202,8 +202,8 @@ func (e *engine) askFirst(ctx context.Context, insts []*instance, leftovers []*l
 	var digests []string
 	for _, inst := range insts {
 		p := inst.plan
-		after := p.waitFor != "" && planless(inst.def)
-		if !e.sel.has(inst) || p.err != nil || p.locked != "" || p.blocked != "" || p.waitFor != "" && !after ||
+		after := len(p.waitFor) > 0 && planless(inst.def)
+		if !e.sel.has(inst) || p.err != nil || p.locked != "" || p.blocked != "" || len(p.waitFor) > 0 && !after ||
 			!after && !p.run && len(p.teardown) == 0 || e.approvalOf(inst.def) == "auto" {
 			continue
 		}
@@ -369,7 +369,7 @@ func (inst *instance) outputsNow() map[string]any {
 // exact says whether the plan of an instance is all that the run knows: not
 // one that failed, waits for outputs of its turn, or another run holds.
 func (p plan) exact() bool {
-	return p.err == nil && p.waitFor == "" && p.locked == "" && p.blocked == ""
+	return p.err == nil && len(p.waitFor) == 0 && p.locked == "" && p.blocked == ""
 }
 
 // view is units.<n>.plan: one change "run" when up runs, the digest, and
@@ -404,8 +404,8 @@ func (p plan) view(exact bool) map[string]any {
 	if len(p.changed) > 0 {
 		v["changed"] = anyList(p.changed)
 	}
-	if p.waitFor != "" {
-		v["after"] = p.waitFor
+	if len(p.waitFor) > 0 {
+		v["after"] = anyList(p.waitFor)
 	}
 	if len(p.reads) > 0 {
 		v["reads"] = anyList(p.reads)

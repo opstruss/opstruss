@@ -11,6 +11,7 @@ import (
 	"os"
 	"slices"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/opstruss/opstruss/internal/engine"
@@ -212,8 +213,8 @@ func (s *Server) ServeConn(ctx context.Context, nc net.Conn) {
 		_ = c.send(message{ID: m.ID, Error: rerr})
 		return
 	}
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
 	ctx, kill := proc.WithKill(ctx)
 	defer kill()
 	q := &questions{c: c, pending: map[string]chan message{}, gone: make(chan struct{})}
@@ -276,8 +277,9 @@ type questions struct {
 }
 
 // listen reads what the caller sends while its call runs: cancel stops
-// the call, and with force also kills its programs at once.
-func (q *questions) listen(cancel context.CancelFunc, kill func()) {
+// the call, as the signal that the caller got when it names one, and with
+// force also kills its programs at once.
+func (q *questions) listen(cancel context.CancelCauseFunc, kill func()) {
 	defer close(q.gone)
 	for {
 		m, err := q.c.read(0)
@@ -285,9 +287,14 @@ func (q *questions) listen(cancel context.CancelFunc, kill func()) {
 			return
 		}
 		if m.Method == "cancel" {
-			cancel()
 			var p cancelParams
-			if json.Unmarshal(m.Params, &p) == nil && p.Force {
+			_ = json.Unmarshal(m.Params, &p)
+			var cause error
+			if p.Signal > 0 {
+				cause = engine.Interrupted{Signal: syscall.Signal(p.Signal)}
+			}
+			cancel(cause)
+			if p.Force {
 				kill()
 			}
 			continue
@@ -396,7 +403,8 @@ func (cl *Client) Close() error { return cl.c.nc.Close() }
 
 // cancelParams are the params of a cancel notification.
 type cancelParams struct {
-	Force bool `json:"force,omitempty"` // kill the programs at once, without the rest of their stop.grace
+	Force  bool `json:"force,omitempty"`  // kill the programs at once, without the rest of their stop.grace
+	Signal int  `json:"signal,omitempty"` // the signal that stopped the caller, which the run ends with
 }
 
 // Call makes the one call of the connection, then closes it. Events and
@@ -409,7 +417,14 @@ func (cl *Client) Call(ctx context.Context, method string, r Request, h Handlers
 	if err := cl.c.send(message{ID: id, Method: method, Params: raw(r)}); err != nil {
 		return nil, err
 	}
-	stop := context.AfterFunc(ctx, func() { _ = cl.c.send(message{Method: "cancel"}) })
+	stop := context.AfterFunc(ctx, func() {
+		var p cancelParams
+		var in engine.Interrupted
+		if errors.As(context.Cause(ctx), &in) {
+			p.Signal = int(in.Signal)
+		}
+		_ = cl.c.send(message{Method: "cancel", Params: raw(p)})
+	})
 	defer stop()
 	done := make(chan struct{})
 	defer close(done)

@@ -39,12 +39,31 @@ func gitCommand(ctx context.Context, dir string, args ...string) *exec.Cmd {
 	return cmd
 }
 
+// gitOutput runs git and returns its stdout; an error says why with the
+// last line that git wrote to stderr, such as fatal: unable to access.
 func gitOutput(ctx context.Context, dir string, args ...string) ([]byte, error) {
 	b, err := gitCommand(ctx, dir, args...).Output()
 	if err != nil {
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			if line := lastLine(exit.Stderr, 200); line != "" {
+				return nil, fmt.Errorf("git %s failed: %w: %s", args[0], err, line)
+			}
+		}
 		return nil, fmt.Errorf("git %s failed: %w", args[0], err)
 	}
 	return b, nil
+}
+
+// lastLine is the last line of out that is not blank, at most limit
+// characters.
+func lastLine(out []byte, limit int) string {
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	line := []rune(strings.TrimSpace(lines[len(lines)-1]))
+	if len(line) > limit {
+		line = append(line[:limit-1], '…')
+	}
+	return string(line)
 }
 
 func initGit(ctx context.Context, dir string) error {

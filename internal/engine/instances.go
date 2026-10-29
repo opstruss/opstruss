@@ -48,7 +48,7 @@ type plan struct {
 	reason   string            // why, when it runs, as the plan line says it
 	parts    map[string]string // the digests of the parts of the definition, which the record keeps
 	changed  []string          // the parts that differ from the record
-	waitFor  string            // an upstream unit whose outputs this run changes before this one's turn
+	waitFor  []string          // the upstream units whose outputs this run changes before this one's turn, in plan order
 	reads    []string          // the parts that read such outputs
 	blocked  string            // an upstream unit that cannot be planned
 	locked   string            // the holder of the address, for another run
@@ -97,10 +97,10 @@ func (p plan) summary() string {
 		return "locked by " + p.locked + "; left out"
 	case p.blocked != "":
 		return "skipped: " + p.blocked + " cannot be planned"
-	case p.waitFor != "":
+	case len(p.waitFor) > 0:
 		// As (known after apply) in Terraform: what reads the outputs is
 		// named, and planned at its turn, never with the old values.
-		after := "plan after " + p.waitFor
+		after := "plan after " + unitsText(p.waitFor)
 		if len(p.reads) > 0 {
 			after += " (" + strings.Join(p.reads, ", ") + ")"
 		}
@@ -116,6 +116,49 @@ func (p plan) summary() string {
 		return "will " + old
 	}
 	return "unchanged"
+}
+
+// unitGroup is the instances of one unit among addresses in plan order.
+type unitGroup struct {
+	unit  string // the address of the unit, without the key of an instance
+	first string // the address of the first instance
+	n     int
+}
+
+// groupUnits groups addrs, in plan order, by unit: the instances of a unit
+// with for_each come together.
+func groupUnits(addrs []string) []unitGroup {
+	var out []unitGroup
+	for _, a := range addrs {
+		unit := a
+		if i := strings.LastIndex(a, "["); i > strings.LastIndex(a, "/") {
+			unit = a[:i]
+		}
+		if k := len(out) - 1; k >= 0 && unit != a && out[k].unit == unit {
+			out[k].n++
+			continue
+		}
+		out = append(out, unitGroup{unit: unit, first: a, n: 1})
+	}
+	return out
+}
+
+// name is the group as a plan line names it: an instance alone by its
+// address, more by their count.
+func (g unitGroup) name() string {
+	if g.n == 1 {
+		return g.first
+	}
+	return fmt.Sprintf("%d instances of %s", g.n, g.unit)
+}
+
+// unitsText names the units at addrs, in plan order, as a plan line does.
+func unitsText(addrs []string) string {
+	var names []string
+	for _, g := range groupUnits(addrs) {
+		names = append(names, g.name())
+	}
+	return strings.Join(names, ", ")
 }
 
 var forEachKey = regexp.MustCompile(`^[a-z0-9._-]+$`)
@@ -332,8 +375,16 @@ func (e *engine) keysOf(f *frame, n *model.Node) ([]string, map[string]any, any,
 		if v == nil {
 			continue
 		}
-		if up := e.changing(v, f); up != "" {
-			return nil, nil, nil, fmt.Errorf("if and for_each of %s are known when the run starts, but this run changes %s first; run opstruss up %s, then this", n.Path, up, up)
+		if ups := e.inPlanOrder(e.changing(v, f)); len(ups) > 0 {
+			var short, picks []string
+			for _, a := range ups {
+				short = append(short, e.short(a))
+			}
+			for _, g := range groupUnits(short) {
+				picks = append(picks, map[bool]string{true: g.first, false: g.unit}[g.n == 1])
+			}
+			return nil, nil, nil, fmt.Errorf("if and for_each of %s are known when the run starts, but this run changes %s first; run opstruss up %s, then this",
+				n.Path, unitsText(short), strings.Join(picks, " "))
 		}
 	}
 	scope := e.scopeOf(f, n, "", nil, nil)
@@ -359,32 +410,14 @@ func (e *engine) keysOf(f *frame, n *model.Node) ([]string, map[string]any, any,
 		}
 		e.hide(v, marks)
 	}
-	items := map[string]any{}
-	switch x := v.(type) {
-	case map[string]any:
-		items = x
-	case []any:
-		for _, it := range x {
-			k, ok := it.(string)
-			if !ok {
-				return nil, nil, nil, fmt.Errorf("for_each of a unit takes strings or a map, not %s; build a map with keys of your own", model.TypeName(it))
-			}
-			if _, dup := items[k]; dup {
-				return nil, nil, nil, fmt.Errorf("for_each has %s twice", k)
-			}
-			items[k] = k
-		}
-	default:
-		return nil, nil, nil, fmt.Errorf("for_each takes a list or a map, not %s", model.TypeName(v))
-	}
-	keys := slices.Sorted(maps.Keys(items))
-	for _, k := range keys {
+	keys, items, err := model.ForEachItems(v)
+	for _, k := range slices.Sorted(maps.Keys(items)) {
 		if e.redact.Contains(k) {
 			return nil, nil, nil, errors.New("for_each: a key holds a sensitive value, and keys show in addresses")
 		}
-		if !forEachKey.MatchString(k) {
-			return nil, nil, nil, fmt.Errorf("for_each key %q has more than lower-case letters, digits, '.', '-', and '_'", k)
-		}
+	}
+	if err != nil {
+		return nil, nil, nil, err
 	}
 	return keys, items, marks, nil
 }
