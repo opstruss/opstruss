@@ -29,7 +29,7 @@ units:
 | `secrets.<name>` | A secret, hidden in what OpsTruss writes |
 | `stack` | The name of the stack |
 | `each.key`, `each.value` | The item of `for_each` |
-| `event.<field>` | The event of a trigger; `event.time` and `event.trigger` are in every run |
+| `event.<field>` | The event of a trigger; `event.time` and `event.trigger` are in every run, and the [other fields](../guides/triggers#what-a-run-gets-in-event) come from the trigger |
 | `outputs` | In `retry.until`, `failed_when`, and `changed_when`: the outputs being judged |
 | `opstruss.project` | The `name` of the root project, also inside a component |
 | `opstruss.address`, `opstruss.dir` | The address of the unit, and the directory of the file that writes it |
@@ -46,6 +46,16 @@ each instance. A macro
 combines them, such as
 `steps.attempts.exists(k, v, v.outcome == 'success')`.
 
+The key of an instance of a unit is part of its address, so it is
+lowercase letters, digits, `.`, `-`, and `_`, and a list for a unit holds
+strings, each its own key. Other names become such keys in a map:
+
+```yaml
+for_each: ${{ inputs.regions.transformMapEntry(i, r, {r.lowerAscii().replace(' ', '-'): r}) }}
+```
+
+`EU West` is then the instance `[eu-west]`, with `each.value` `EU West`.
+
 ## Functions
 
 OpsTruss adds:
@@ -54,8 +64,8 @@ OpsTruss adds:
 |---|---|
 | `file('<path>')` | The text of a file, relative to the file that writes the expression; at most 1 MiB |
 | `kv('<key>')`, `kv('<key>', <default>)` | A value of the [memory of the stack](./builtin-tasks#kv), or `null` or the default; `kv('<prefix>*')` gives every key with the prefix as a map |
-| `toJSON()`, `fromJSON()`, `toYAML()`, `fromYAML()` | Data as text, and text as data |
-| `sha256()` | The SHA-256 of a string, in hex |
+| `toJSON(<value>)`, `fromJSON(<text>)`, `toYAML(<value>)`, `fromYAML(<text>)` | Data as text, and text as data |
+| `sha256(<text>)` | The SHA-256 of a string, in hex |
 | `<timestamp>.strftime('<format>', '<timezone>')` | A time as `strftime` writes it, in UTC without a time zone |
 
 Yesterday in Jakarta:
@@ -96,6 +106,11 @@ optional values (`?.`, `orValue`), `cel.bind`, and `base64`.
 - A condition, as `if`, `failed_when`, `changed_when`, `retry.until`, and
   `that` of `assert`, may be written without `${{ }}`, unless it starts
   with `!`.
+- A YAML value that holds `: `, as `${{ a ? b : c }}` or `run: echo "a:
+  b"`, is quoted or written as a block with `|`, since YAML reads `: ` as
+  the start of a map.
+- The functions of OpsTruss take their value as an argument:
+  `toJSON(inputs.config)`, not `inputs.config.toJSON()`.
 - `$${{` writes `${{` as it is, as when a task writes a workflow of GitHub
   Actions.
 - An expression ends at the first `}}` outside quotes and braces, so a map

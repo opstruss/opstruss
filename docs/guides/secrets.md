@@ -23,8 +23,10 @@ environment, which the next section encrypts and runs:
 - `secrets.infra` is the whole decrypted file, so
   `secrets.infra.CLOUDFLARE_API_TOKEN` is one of its variables.
   `${{ stack }}` in the path picks the file of the stack.
-- A secret is read once per run, and only when what runs reads it, so a
-  unit that needs no secret runs without them.
+- A secret is read once per run, when a unit or task that reads it is
+  planned, also one that turns out unchanged, since its value is part of
+  the digest; `up <unit>` reads only the secrets of the units it plans,
+  and a unit that needs no secret runs without them.
 - What is computed from a secret is sensitive too, and so is an output
   that a plugin marks sensitive. `opstruss outputs` shows such an output
   as `***`, and `--show-sensitive` shows it as it is.

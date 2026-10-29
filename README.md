@@ -69,7 +69,8 @@ made the age key age1… of this machine in ~/.config/opstruss/age/keys.txt; bac
 `up` runs each unit once its definition changes, in the order of what it
 reads, and a task is a command with its inputs as flags. The first run
 that keeps a value encrypted, here the input of `greet` for `runs rerun`,
-makes the age key of this machine. The
+makes the age key of this machine: in `~/.config/opstruss/age/` on Linux,
+and in `~/Library/Application Support/opstruss/age/` on macOS. The
 [documentation](https://opstruss.github.io) goes on with an OpenTofu
 module and two stacks.
 

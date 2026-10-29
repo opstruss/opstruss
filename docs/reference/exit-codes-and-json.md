@@ -13,6 +13,9 @@
   approval exits with 1.
 - `plan` exits with 1 when a unit cannot be planned, and with 0 when a
   unit is held by another run.
+- A run that a signal stops ends `cancelled`: its record and its last
+  event have `reason` `signal` and the same `exit_code` as the process. A
+  run that ended before the signal stopped anything keeps its outcome.
 - A run that `opstruss runs cancel` cancels exits with 1, since it got no
   signal; `runs cancel` itself exits with 0 once that run ends as
   `cancelled`.
@@ -46,7 +49,7 @@ An event:
 | `outcome` | On a `finished` event: `success`, `failure`, `skipped`, or `cancelled` |
 | `exit_code` | On the last event of a run: the exit code of the command |
 | `outputs` | On the last event of a run: the outputs of the task |
-| `plan` | On a `plan` event: the plan of its unit, as `units.<name>.plan` reads it |
+| `plan` | On a `plan` event: the plan of its unit, as `units.<name>.plan` reads it (below) |
 
 - A reader ignores the fields and types it does not know: a new version
   may add some, and `message` is there to show any event.
@@ -63,6 +66,21 @@ An event:
   file and line in `message`, and a last `run` event with `exit_code`; a
   command that prints a document prints `{"error": "<message>"}`. stderr
   has the same as text.
+
+A plan, in a `plan` event and in `units.<name>.plan`:
+
+| Field | Is |
+|---|---|
+| `changes` | What the plan of its plugin changes, each with `action` (`create`, `update`, `delete`, `replace`, or `run`) and `resource` when it names one |
+| `outputs` | The outputs that the plan of its plugin says change |
+| `exact` | Whether `up` gets this plan: `false` for a unit planned at its turn, or a plugin that does not promise one |
+| `digest` | What an approval of the plan approves; `""` for a unit planned at its turn |
+| `summary` | The plan line, as without `--json` |
+| `approval` | `auto` when the unit runs without a question |
+| `reason` | Why it runs: `new`, `pending`, `forced`, `context`, `definition`, `not_running`, `generates`, or `plan`; for a destroy, `requested`, `gone`, or `removed` |
+| `changed` | The parts of its definition that changed, such as `sources` |
+| `after` | The addresses of the units whose outputs this run changes first and the unit reads, in the order of the plan; it is planned at its turn |
+| `reads` | The parts of the unit that read those outputs, such as `env.URL` |
 
 The record of each run keeps the same events, which
 `opstruss runs <id> --json` prints again. In a `diagnostic` of what fails
@@ -105,7 +123,9 @@ A record of a run has `version`; `opstruss`, the version of OpsTruss that
 ran it; `run`; `parent`, the run it ran inside; `project`, `stack`,
 `command`, `task`, and `args`; `trigger`, what made it, and `simulated`
 for `--event`; `user`, `host`, `hostname`, and `pid`; `started` and
-`ended`; `status`, `outcome`, `reason` (why it ended `cancelled`), and
+`ended`; `status`, `outcome`, `reason` (why it ended `cancelled`:
+`signal`, `requested` by `opstruss runs cancel`, `concurrency` for a call
+with `concurrency: cancel`, or `interrupted` when its process died), and
 `exit_code`; `units` and `tasks`, what ran inside it; `outputs`;
 `events_incomplete` when its events could not all be written; `no_deps`;
 `rerun_of`; and `replay`, what `runs rerun` needs.

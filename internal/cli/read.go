@@ -142,8 +142,10 @@ func (a *app) outputsCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "outputs",
 		Short: "Print the outputs of the project",
-		Long:  "Print the outputs of the project from the stored outputs of its units.",
-		Args:  cobra.NoArgs,
+		Long: `Print the outputs of the project, evaluated when read: from the stored
+outputs of its units and the inputs of this command, so an output that
+reads inputs or locals needs the same --input as the up.`,
+		Args: cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error {
 			req, err := a.request(nil)
 			if err != nil {

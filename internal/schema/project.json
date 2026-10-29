@@ -31,7 +31,7 @@
     },
     "outputs": {
       "$ref": "#/$defs/projectOutputs",
-      "description": "Outputs of the project, which opstruss outputs prints and a project that uses it as a component reads."
+      "description": "Outputs of the project, which opstruss outputs prints and a project that uses it as a component reads. They are evaluated when read, from the stored outputs of the units and the inputs of that command; an output that reads inputs or locals needs the same --input as the up."
     },
     "stacks": {
       "description": "The stacks of the project: copies of its units, each with its inputs and its own state.",
@@ -709,7 +709,7 @@
         },
         "for_each": {
           "$ref": "#/$defs/forEach",
-          "description": "A list or a map: one instance of the unit per item, read as each.key and each.value."
+          "description": "A list or a map: one instance of the unit per item, read as each.key and each.value. A key is part of the address of its instance: lowercase letters, digits, ., -, and _; a list holds strings, each its own key."
         },
         "approval": {
           "$ref": "#/$defs/approval",
@@ -781,7 +781,7 @@
         },
         "for_each": {
           "$ref": "#/$defs/forEach",
-          "description": "A list or a map: the task runs once per item, read as each.key and each.value."
+          "description": "A list or a map: the task runs once per item, read as each.key and each.value; a string of a list is its own key, and another item has its index."
         },
         "max_parallel": {
           "description": "How many items of for_each run at once; OPSTRUSS_PARALLEL by default.",
@@ -910,7 +910,7 @@
         "timeout": { "$ref": "#/$defs/duration", "description": "How long the step may run." },
         "for_each": {
           "$ref": "#/$defs/forEach",
-          "description": "A list or a map: the step runs once per item, read as each.key and each.value."
+          "description": "A list or a map: the step runs once per item, read as each.key and each.value; a string of a list is its own key, and another item has its index."
         },
         "retry": {
           "$ref": "#/$defs/retry",

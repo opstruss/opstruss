@@ -21,7 +21,7 @@ Keys that start with x- are left for your own use.
 | `uses` | map of string or [Uses](#uses) | Plugins, components, and catalogs that the project uses, by the name it calls them. |
 | `inputs` | map of [Input](#input) | Inputs of the project, which stacks, --input, or a prompt give. |
 | `locals` | object | Named values computed from inputs and other locals, read as locals.&lt;name&gt;. |
-| `outputs` | map of string or [Project outputs](#project-outputs) | Outputs of the project, which opstruss outputs prints and a project that uses it as a component reads. |
+| `outputs` | map of string or [Project outputs](#project-outputs) | Outputs of the project, which opstruss outputs prints and a project that uses it as a component reads. They are evaluated when read, from the stored outputs of the units and the inputs of that command; an output that reads inputs or locals needs the same --input as the up. |
 | `stacks` | map of [Stack](#stack) | The stacks of the project: copies of its units, each with its inputs and its own state. |
 | `backend` | `local` or [Backend](#backend) | Where the state of the stacks is kept: local, in .opstruss/state/, the only backend of this version. |
 | `secrets` | map of [Secret](#secret) | Secrets of the project, read as secrets.&lt;name&gt; and hidden in what OpsTruss writes. |
@@ -248,7 +248,7 @@ A unit: something that up brings up and destroy takes away, with exactly one of 
 | `ready` | [Unit › ready](#unit-ready) | When the service counts as started: a URL, a port, or a program; up waits for it. |
 | `needs` | list of string | Units that come before this one, besides those its expressions read. |
 | `if` | string or boolean | A condition that decides whether the unit is in the stack; one that leaves it is destroyed. |
-| `for_each` | array or object or string | A list or a map: one instance of the unit per item, read as each.key and each.value. |
+| `for_each` | array or object or string | A list or a map: one instance of the unit per item, read as each.key and each.value. A key is part of the address of its instance: lowercase letters, digits, ., -, and \_; a list holds strings, each its own key. |
 | `approval` | one of `ask`, `auto` | ask to wait for approval of changes to this unit, auto to apply them without asking. |
 | `timeout` | string | How long a program of the unit may run. |
 | `protect` | boolean | Refuse to destroy the unit. |
@@ -285,7 +285,7 @@ Exactly one of run, steps, or one call of a task.
 | `requires` | string or list of string | Programs that must be in PATH before the task runs. |
 | `needs` | list of string | Tasks that run before this one. |
 | `if` | string or boolean | A condition that skips the task when false. |
-| `for_each` | array or object or string | A list or a map: the task runs once per item, read as each.key and each.value. |
+| `for_each` | array or object or string | A list or a map: the task runs once per item, read as each.key and each.value; a string of a list is its own key, and another item has its index. |
 | `max_parallel` | integer | How many items of for\_each run at once; OPSTRUSS\_PARALLEL by default. |
 | `on` | [Triggers](#triggers) | Triggers that run the task from the daemon of the stack. |
 | `approval` | one of `ask`, `auto` | ask to wait for approval of the changes that the task makes, auto to apply them without asking. |
@@ -333,7 +333,7 @@ Exactly one of run, task, block, or one call of a task.
 | `dir` | string | The directory that the program starts in, relative to this file. |
 | `stdin` | [Stdin](#stdin) | What the program reads on its standard input. |
 | `timeout` | string | How long the step may run. |
-| `for_each` | array or object or string | A list or a map: the step runs once per item, read as each.key and each.value. |
+| `for_each` | array or object or string | A list or a map: the step runs once per item, read as each.key and each.value; a string of a list is its own key, and another item has its index. |
 | `retry` | [Retry](#retry) | Running the step again when it fails. |
 | `failed_when` | string or boolean | A condition on the outputs that marks the step failed. |
 | `changed_when` | string or boolean | A condition on the outputs that says whether the step changed something. |

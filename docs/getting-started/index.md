@@ -182,7 +182,7 @@ $ opstruss up
 
   + infra    new · create terraform_data.site, output.url
   + site     definition changed: sources
-  + publish  new · after site (run)
+  + publish  new · after infra, site (run)
 
 Plan of stack default: 3 to run
 
@@ -202,7 +202,9 @@ Up of stack default: 3 done
 The first command that read `uses:` fetched the catalog and wrote the
 commit that `v1` names to `opstruss.lock`. Commit that file with the
 project, so that every machine and CI run the same plugins until
-`opstruss plugins update` moves the pin.
+`opstruss plugins update` moves the pin. The first `up` of `infra` also
+wrote `infra/.terraform.lock.hcl`, the providers that OpenTofu chose,
+which is committed too.
 
 ## A task
 

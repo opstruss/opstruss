@@ -8,7 +8,9 @@ title: opstruss outputs
 
 # opstruss outputs
 
-Print the outputs of the project from the stored outputs of its units.
+Print the outputs of the project, evaluated when read: from the stored
+outputs of its units and the inputs of this command, so an output that
+reads inputs or locals needs the same --input as the up.
 
 ## Usage
 

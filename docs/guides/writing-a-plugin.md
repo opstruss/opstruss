@@ -48,6 +48,9 @@ with each input as `INPUT_<NAME>`:
 - `destroy` takes the file away, and succeeds when it is already gone.
   The record of the unit keeps this program and the inputs of the last
   `up`, so `destroy` works after the unit leaves the files.
+- Units run at once, up to `OPSTRUSS_PARALLEL`, also the units of the
+  same plugin, and so do their plans. A program that writes something
+  they share, such as a cache outside its unit, takes a lock of its own.
 
 The [program contract](../reference/program-contract) has everything a
 program gets and gives: `OPSTRUSS_STATE` with the last outputs,

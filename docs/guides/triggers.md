@@ -19,6 +19,25 @@ a `watch` or `event.body` of a webhook; a run whose `if` is false is
 skipped. `batch` and `debounce` gather the events of a `watch` into one
 run.
 
+## What a run gets in `event`
+
+Every run has `event.time`, when it was due or its event came, and
+`event.trigger`, what made it: `schedule`, `every`, `webhook`, `watch`,
+`after`, `cli`, or `mcp`. The other fields come from its trigger:
+
+| Trigger | `event` has |
+|---|---|
+| `schedule`, `every` | Nothing more |
+| `webhook` | `method`, `path`, `headers` (lowercase names), `query`, and `body`, parsed when it is JSON |
+| `watch` of a service (`unit:`) | `unit`, `stream`, and `line`; with `batch` or `debounce`, `lines`, `count`, and `truncated` instead of `line` |
+| `watch` of `paths` | `paths`, each `{path, op}` with `op` `create`, `write`, `remove`, or `rename`, and `count`; with `batch` or `debounce`, also `truncated` |
+| `watch` of a program | `line`, and `data` when the line is JSON |
+| `after` | `task`, `unit`, `outcome`, and `outputs` of the run it follows |
+
+`validate` refuses a field that no trigger of the task gives, such as
+`event.run`. A task that also runs from the command line reads a field
+with `has(event.<field>)`, or gets its value through `with:`.
+
 ## The daemon
 
 The webhook of `deploy` checks its requests with a secret from the
@@ -47,7 +66,15 @@ opstruss stop      # stop the daemon, its runs, and its services
   `signature`: `github`, `gitlab`, `slack`, `stripe`, `standard`,
   `bearer`, or a header of your own. A request that fails the check gets
   401 and runs nothing. TLS belongs to a reverse proxy, such as Caddy.
-  `respond: wait` answers with the outputs of the task.
+  The answer to a request that checks out:
+
+  | When | Status and body |
+  |---|---|
+  | `respond: accepted`, the default | 202, `{"run": "<id>"}` once the run starts |
+  | `respond: wait` | 200, or 500 when the run fails: `{"run", "outcome", "exit_code", "outputs"}` |
+  | `if:` is false | 202, `{}`, and no run |
+  | `with:` gives an input that the task refuses | 422, `{"error": "<why>"}` |
+  | The task has too many runs waiting | 503 |
 
 ## After a reboot
 
