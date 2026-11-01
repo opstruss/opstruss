@@ -11,7 +11,8 @@ What a unit reads, such as `${{ units.db.outputs.host }}`, makes it come
 after that unit, as `needs:` does. OpsTruss builds a graph of the units
 from those references, runs the ones that do not depend on each other at
 once, and hands the typed outputs of one to the next: a number stays a
-number, a list stays a list.
+number, a list stays a list
+([Pass results between tools](../guides/outputs)).
 
 ## Records and digests
 

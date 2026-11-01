@@ -18,6 +18,7 @@ features:
     details: A unit runs again only when its program, inputs, or source files change, in the order of what it reads.
   - title: Typed results between tools
     details: The outputs of an OpenTofu module, a Compose project, or any program reach the next unit as numbers, lists, and objects, never as text to parse.
+    link: /guides/outputs
   - title: Triggers and services
     details: The daemon of a stack keeps services running and runs tasks on a schedule, a webhook, or a change of files, with secrets hidden in every log.
 ---

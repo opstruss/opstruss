@@ -1,0 +1,37 @@
+opstruss: "1.0"
+name: shop
+inputs:
+  zone: {type: string, default: example.com}
+units:
+  dns:
+    description: Stands in for a DNS tool, and prints what it made
+    run: |
+      printf '{"zone_id": "z-%s", "records": {"www": "www.%s", "api": "api.%s"}, "ttl": 300}' "$ZONE" "$ZONE" "$ZONE"
+    env:
+      ZONE: ${{ inputs.zone }}
+    outputs:
+      zone: {from: stdout, format: json}
+  app:
+    description: Deploys to the host that dns made
+    run: echo "deploying to $HOST in zone $ZONE_ID"
+    env:
+      HOST: ${{ units.dns.outputs.zone.records.www }}
+      ZONE_ID: ${{ units.dns.outputs.zone.zone_id }}
+  purge:
+    description: Gets every record as JSON on stdin
+    run: cat
+    stdin:
+      value: ${{ units.dns.outputs.zone.records }}
+      format: json
+    needs: [app]
+  check:
+    uses: check-ttl
+    with:
+      ttl: ${{ units.dns.outputs.zone.ttl }}
+tasks:
+  check-ttl:
+    inputs:
+      ttl: {type: integer, minimum: 60}
+    run: [echo, "ttl ${{ inputs.ttl }} is a number of seconds"]
+outputs:
+  www: ${{ units.dns.outputs.zone.records.www }}

@@ -36,6 +36,7 @@ export default defineConfig({
         text: 'Guides',
         items: [
           { text: 'Structure a project', link: '/guides/structure-a-project' },
+          { text: 'Pass results between tools', link: '/guides/outputs' },
           { text: 'Tasks and steps', link: '/guides/tasks' },
           { text: 'Services', link: '/guides/services' },
           { text: 'Secrets with sops', link: '/guides/secrets' },

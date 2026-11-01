@@ -301,5 +301,7 @@ opstruss destroy --stack prod
 
 - [Structure a project](../guides/structure-a-project): components,
   versions of tools, and the catalog.
+- [Pass results between tools](../guides/outputs): where outputs come
+  from, and how each tool gets them in its own format.
 - [Secrets with sops](../guides/secrets): credentials for the tools.
 - [`opstruss.yaml`](../reference/opstruss-yaml): every key.

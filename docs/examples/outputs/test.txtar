@@ -1,0 +1,19 @@
+exec opstruss plan
+stdout '^default/app: will run: new; plan after default/dns \(env.HOST, env.ZONE_ID\)$'
+stdout '^default/check: will run: new; plan after default/dns \(with.ttl\)$'
+stdout '^default/purge: will run: new; plan after default/dns \(stdin\)$'
+exec opstruss up --yes
+stdout '^default/dns \| captured stdout as outputs.zone \(105 B, json\)$'
+stdout '^default/app \| deploying to www.example.com in zone z-example.com$'
+stdout '^default/check \| ttl 300 is a number of seconds$'
+stdout '(?s)default/app: up: done.*default/purge \| \{"api":"api.example.com","www":"www.example.com"\}'
+exec opstruss up --yes
+stdout '^default/dns: unchanged$'
+stdout '^default/purge: unchanged$'
+exec opstruss up --yes --input zone=example.org
+stdout '^default/check: unchanged$'
+stdout '^default/app \| deploying to www.example.org in zone z-example.org$'
+exec opstruss status dns
+stdout '^default/dns: outputs: \{"zone":'
+exec opstruss outputs
+stdout '^www: www.example.org$'
