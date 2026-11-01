@@ -181,15 +181,17 @@ reads inputs or locals needs the same --input as the up.`,
 
 func (a *app) runsCommand() *cobra.Command {
 	var follow bool
+	var limit int
 	cmd := &cobra.Command{
 		Use:   "runs [run]",
 		Short: "List the runs of the stack, or show one",
 		Example: `  opstruss runs
+  opstruss runs --limit 0    # every run that the stack keeps
   opstruss runs 4b2e91d0     # the events of one run, by the end of its id
   opstruss runs 4b2e91d0 -f  # follow a run that goes on`,
-		Long: "List the runs of the stack, or show the events of one as it ran.",
+		Long: "List the newest runs of the stack, 20 unless --limit says otherwise, or show the events of one as it ran.",
 		Args: cobra.MaximumNArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			req, err := a.request(nil)
 			if err != nil {
 				return err
@@ -198,6 +200,13 @@ func (a *app) runsCommand() *cobra.Command {
 			if follow && len(args) == 0 {
 				return errors.New("-f follows one run: write opstruss runs <run> -f")
 			}
+			if len(args) == 1 && cmd.Flags().Changed("limit") {
+				return errors.New("--limit is for the list of runs: write opstruss runs --limit <n>")
+			}
+			if limit < 0 {
+				return fmt.Errorf("--limit takes a number of runs, or 0 for all, not %d", limit)
+			}
+			req.Limit = limit
 			if len(args) == 1 {
 				// The events of the run, rendered as when it ran, or as
 				// they are stored with --json; with -f until it ends, or
@@ -230,6 +239,7 @@ func (a *app) runsCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&follow, "follow", false, "go on with what a run that still runs writes, until it ends; -f is the same")
+	cmd.Flags().IntVar(&limit, "limit", 20, "list that many of the newest runs; 0 lists all")
 	cmd.AddCommand(a.cancelCommand(), a.rerunCommand())
 	return cmd
 }

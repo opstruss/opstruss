@@ -92,7 +92,7 @@ func Logs(ctx context.Context, opts Options) (*Result, error) {
 // Runs are found in runs/, so those of the daemon and of other terminals
 // alike.
 func (e *engine) taskLogs(ctx context.Context, name string, follow bool) error {
-	runs, err := runRecords(e.root, e.p.StackName)
+	runs, err := runRecords(e.root, e.p.StackName, 0)
 	if err != nil {
 		return err
 	}
@@ -247,7 +247,7 @@ func (e *engine) unitLogs(ctx context.Context, inst *instance, follow bool) (any
 		}
 		return done, nil
 	}
-	runs, err := runRecords(e.root, e.p.StackName)
+	runs, err := runRecords(e.root, e.p.StackName, 0)
 	if err != nil {
 		return failed(err), nil
 	}

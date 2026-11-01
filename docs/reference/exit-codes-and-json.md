@@ -99,7 +99,7 @@ events are to the millisecond.
 | Command | Fields |
 |---|---|
 | `list` | `stack`; `tasks`, each with `name`, `description`, `internal`, `triggers`, `next`, and of its last run `run`, `via`, `outcome`, and `ended`; `units`, each with `address`, `kind`, `state` (`up`, `pending`, `absent`, or the state of a service), `run`, and `outputs`; `triggers`, with `daemon` and `error`, when a task has triggers |
-| `runs` | `stack`; `runs`, newest first, each a record of a run (below) |
+| `runs` | `stack`; `runs`, newest first, each a record of a run (below): the 20 newest, or as many as `--limit` says, and every one with `--limit 0` |
 | `outputs` | `stack`; `outputs`, by name |
 | `doctor` | `stack`; `checks`, each with `check`, `status`, `message`, and `path` or `name` |
 | `explain` | `project`, `stack`, `inputs` (each with its `value` and where it is `from`), `order`, `units`, `tasks`, `outputs` |

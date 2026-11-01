@@ -189,7 +189,7 @@ func List(opts Options) (*Status, error) {
 	}
 	defer e.releaseSources()
 	st := &Status{Stack: e.p.StackName, Tasks: []*TaskStatus{}, Units: []*UnitStatus{}}
-	runs, err := runRecords(e.root, e.p.StackName)
+	runs, err := runRecords(e.root, e.p.StackName, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -246,7 +246,8 @@ type RunList struct {
 	Runs  []*record.Record `json:"runs"`
 }
 
-// Runs reads the records of the runs of the stack, newest first.
+// Runs reads the records of the runs of the stack, newest first; only
+// opts.Limit of the newest when it is above 0.
 func Runs(opts Options) (*RunList, error) {
 	p, err := project(opts)
 	if err != nil {
@@ -255,14 +256,16 @@ func Runs(opts Options) (*RunList, error) {
 	if opts.Model == nil {
 		defer p.Close()
 	}
-	runs, err := runRecords(filepath.Join(p.Dir, ".opstruss"), p.StackName)
+	runs, err := runRecords(filepath.Join(p.Dir, ".opstruss"), p.StackName, opts.Limit)
 	if err != nil {
 		return nil, err
 	}
 	return &RunList{Stack: p.StackName, Runs: runs}, nil
 }
 
-func runRecords(root, stack string) ([]*record.Record, error) {
+// runRecords reads the records of the runs of the stack, newest first; a
+// limit above 0 reads only that many of the newest.
+func runRecords(root, stack string, limit int) ([]*record.Record, error) {
 	base := filepath.Join(root, "runs", stack)
 	ents, err := os.ReadDir(base)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -272,9 +275,16 @@ func runRecords(root, stack string) ([]*record.Record, error) {
 		return nil, err
 	}
 	out := []*record.Record{}
+	last := "" // the second of the last run read, from its name
 	for i := len(ents) - 1; i >= 0; i-- {
 		if !ents[i].IsDir() {
 			continue
+		}
+		// Names order runs by the second they started in, so once limit
+		// runs are read, a run of an earlier second is older than each.
+		second, _, _ := strings.Cut(ents[i].Name(), "-")
+		if limit > 0 && len(out) >= limit && second != last {
+			break
 		}
 		dir := filepath.Join(base, ents[i].Name())
 		rec, err := record.Read(dir)
@@ -282,6 +292,7 @@ func runRecords(root, stack string) ([]*record.Record, error) {
 		switch {
 		case err == nil:
 			out = append(out, rec)
+			last = second
 		case errors.Is(err, fs.ErrNotExist):
 			// A run that starts writes its record in a moment, and one
 			// that retention dropped meanwhile is gone.
@@ -298,6 +309,9 @@ func runRecords(root, stack string) ([]*record.Record, error) {
 		return t
 	}
 	slices.SortStableFunc(out, func(a, b *record.Record) int { return started(b).Compare(started(a)) })
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
 	return out, nil
 }
 

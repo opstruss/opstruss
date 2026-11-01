@@ -35,6 +35,7 @@ type Request struct {
 	Force   bool              `json:"force,omitempty"` // up: although unchanged; destroy: although pass values differ; cancel: kill at once
 	NoDeps  bool              `json:"no_deps,omitempty"`
 	Follow  bool              `json:"follow,omitempty"` // logs: go on with what is written
+	Limit   int               `json:"limit,omitempty"`  // runs: only that many of the newest; 0 reads all
 	Task    string            `json:"task,omitempty"`   // run: the task
 	With    map[string]any    `json:"with,omitempty"`   // run: its inputs
 	Flags   map[string]any    `json:"flags,omitempty"`  // run: inputs as flags wrote them, read by each task reached, over With
@@ -88,7 +89,7 @@ func (a *API) options(r Request) engine.Options {
 	}
 	o := engine.Options{Locked: r.Locked, Dir: r.Dir, Cwd: r.Cwd, Stack: r.Stack, Inputs: r.Inputs, Flags: r.Flags, Environ: r.Environ,
 		LookupEnv: func(k string) (string, bool) { v, ok := env[k]; return v, ok },
-		Units:     r.Units, Yes: r.Yes, Color: r.Color, Force: r.Force, NoDeps: r.NoDeps, Follow: r.Follow, Debug: r.Debug, ShowSensitive: r.ShowSensitive,
+		Units:     r.Units, Yes: r.Yes, Color: r.Color, Force: r.Force, NoDeps: r.NoDeps, Follow: r.Follow, Limit: r.Limit, Debug: r.Debug, ShowSensitive: r.ShowSensitive,
 		Emit: a.h.Event, Approve: a.h.Approve, Ask: a.h.Ask, Supervisor: a.Supervisor, Daemon: a.Daemon}
 	if a.Install != nil {
 		o.Install = func(inputs map[string]string) error { return a.Install(r, inputs) }

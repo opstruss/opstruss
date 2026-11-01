@@ -8,7 +8,7 @@ title: opstruss runs
 
 # opstruss runs
 
-List the runs of the stack, or show the events of one as it ran.
+List the newest runs of the stack, 20 unless --limit says otherwise, or show the events of one as it ran.
 
 ## Usage
 
@@ -20,6 +20,7 @@ opstruss runs [run] [flags]
 
 ```sh
 opstruss runs
+opstruss runs --limit 0    # every run that the stack keeps
 opstruss runs 4b2e91d0     # the events of one run, by the end of its id
 opstruss runs 4b2e91d0 -f  # follow a run that goes on
 ```
@@ -29,6 +30,7 @@ opstruss runs 4b2e91d0 -f  # follow a run that goes on
 | Flag | Description |
 |---|---|
 | `--follow` | go on with what a run that still runs writes, until it ends; -f is the same |
+| `--limit int` | list that many of the newest runs; 0 lists all (default 20) |
 
 ## Global flags
 

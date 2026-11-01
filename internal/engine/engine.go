@@ -49,6 +49,7 @@ type Options struct {
 	Force     bool     // up: run the units named although unchanged; destroy: although pass values differ
 	NoDeps    bool     // leave out the dependencies of up and the dependents of destroy
 	Follow    bool     // logs: go on with what services and plugins write
+	Limit     int      // runs: only that many of the newest; 0 reads all
 	// Color says that the output of the run is shown in color, so its
 	// programs may print color; without it they get NO_COLOR.
 	Color bool

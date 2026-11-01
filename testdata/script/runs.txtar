@@ -3,8 +3,9 @@
 # program put something there; runs <run> -f follows a run that still
 # runs, whose events come out within moments; after still sees a plan; a
 # record that cannot be written fails the run and is marked later from
-# its last event; a run in the daemon that cannot start ends failed; and
-# records and events of a newer OpsTruss are refused.
+# its last event; a run in the daemon that cannot start ends failed;
+# records and events of a newer OpsTruss are refused; and the list shows
+# the 20 newest runs, or as many as --limit says.
 
 env HOME=$WORK/home
 
@@ -102,6 +103,30 @@ stderr 'record.json: unexpected end of JSON input; repair it, or remove .*209912
 rm .opstruss/runs/default/20991231T000000Z-0000ffff
 exec opstruss runs
 
+# the list shows the 20 newest runs, also as JSON, and orders the runs of
+# one second by when each started; --limit says how many, 0 all, and is
+# only for the list
+exec sh -c 'mk() { r=20991231T0000$1Z-0000$2; mkdir .opstruss/runs/default/$r && sed "s/RUN/$r/; s/SECOND/$3/" old.json > .opstruss/runs/default/$r/record.json; }; for i in $(seq 10 29); do mk $i ff$i $i; done; mk 30 ff30 30.1; mk 30 aa30 30.9'
+exec sh -c 'opstruss runs | wc -l'
+stdout '^ *20$'
+exec opstruss runs
+stdout '^20991231T000012Z-0000ff12 '
+! stdout '20991231T000011Z'
+exec opstruss runs --limit 1
+stdout '^20991231T000030Z-0000aa30 +old +success '
+! stdout 'ff30'
+exec opstruss runs --json --limit 2
+stdout '"run": "20991231T000030Z-0000aa30"'
+stdout '"run": "20991231T000030Z-0000ff30"'
+! stdout '0000ff29'
+exec opstruss runs --limit 0
+stdout '^20991231T000010Z-0000ff10 '
+stdout ' keep +success '
+! exec opstruss runs --limit=-1
+stderr '^opstruss: --limit takes a number of runs, or 0 for all, not -1$'
+! exec opstruss runs aa30 --limit 1
+stderr '^opstruss: --limit is for the list of runs: write opstruss runs --limit <n>$'
+
 -- opstruss.yaml --
 name: shop
 units:
@@ -128,3 +153,6 @@ tasks:
 {"v": 2, "seq": 1, "time": "2099-12-31T00:00:00.000Z", "run": "20991231T000000Z-0000ffff", "type": "run", "level": "info", "message": "success"}
 -- broken.json --
 {"version": 1, "run":
+-- old.json --
+{"version": 1, "run": "RUN", "project": "shop", "stack": "default", "command": "task", "task": "old",
+ "host": "h", "pid": 1, "started": "2099-12-31T00:00:SECONDZ", "status": "finished", "outcome": "success", "exit_code": 0}

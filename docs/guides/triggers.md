@@ -47,7 +47,7 @@ environment, so set it first:
 export GITHUB_WEBHOOK_SECRET=…
 opstruss up -d     # start the daemon of the stack, with its triggers
 opstruss list      # each task, its triggers, and when it runs next
-opstruss runs      # the runs of the stack
+opstruss runs      # the newest runs of the stack
 opstruss stop      # stop the daemon, its runs, and its services
 ```
 
