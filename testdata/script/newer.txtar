@@ -26,9 +26,9 @@ stderr '^plug/opstruss.plugin.yaml:1:1: opstruss: this file is for OpsTruss 1.99
 
 cd $WORK/catalog
 ! exec opstruss validate
-stderr '^cat/opstruss.catalog.yaml:1:1: opstruss: this file is for OpsTruss 1.99 or newer; this OpsTruss reads files up to 1.0$'
+stderr '^ops/opstruss.catalog.yaml:1:1: opstruss: this file is for OpsTruss 1.99 or newer; this OpsTruss reads files up to 1.0$'
 ! stderr 'unknown key'
-cp current.yaml cat/opstruss.catalog.yaml
+cp current.yaml ops/opstruss.catalog.yaml
 exec opstruss validate
 stdout '^valid$'
 
@@ -80,18 +80,18 @@ tasks:
 -- catalog/opstruss.yaml --
 name: app
 uses:
-  cat: ./cat
+  ops: ./ops
 units:
   h:
-    uses: cat.hello
--- catalog/cat/opstruss.catalog.yaml --
+    uses: ops.hello
+-- catalog/ops/opstruss.catalog.yaml --
 opstruss: "1.99"
 shared: []
 requires: [jq]
 -- catalog/current.yaml --
 opstruss: "1.0"
 shared: []
--- catalog/cat/plugins/hello/opstruss.plugin.yaml --
+-- catalog/ops/plugins/hello/opstruss.plugin.yaml --
 name: hello
 tasks:
   up:

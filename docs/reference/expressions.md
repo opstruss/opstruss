@@ -7,7 +7,7 @@ secrets, and facts of the run.
 ```yaml
 units:
   web:
-    uses: cat.compose
+    uses: ops.compose
     env:
       IMAGE: ${{ units.build.outputs.image }}
 ```

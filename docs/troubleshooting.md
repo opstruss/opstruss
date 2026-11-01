@@ -7,7 +7,7 @@ filesystem of `.opstruss/`. Start there.
 ## A program is not in PATH
 
 ```text
-default/infra: error: plugin cat.tofu requires jq, which is not in PATH
+default/infra: error: plugin ops.tofu requires jq, which is not in PATH
 ```
 
 Install the program, for example with `mise use jq`, or put the

@@ -113,11 +113,11 @@ Plan of stack default: 1 to run
 
 Plugins wrap tools as units. The [catalog](../plugins) has a plugin for
 OpenTofu; declare the catalog once under `uses:`, and the unit uses its
-`tofu` plugin as `cat.tofu`:
+`tofu` plugin as `ops.tofu`:
 
 ```yaml
 uses:
-  cat: github.com/opstruss/catalog@v1
+  ops: github.com/opstruss/catalog@v1
 ```
 
 Write a module in `infra/main.tf`, after `mkdir infra`:
@@ -145,7 +145,7 @@ Add a unit that reads the outputs of the other two:
 opstruss: "1.0"
 name: shop
 uses:
-  cat: github.com/opstruss/catalog@v1
+  ops: github.com/opstruss/catalog@v1
 units:
   site:
     run: |
@@ -157,7 +157,7 @@ units:
     outputs:
       page: {}
   infra:
-    uses: cat.tofu
+    uses: ops.tofu
     with:
       dir: ./infra
       vars:

@@ -2,14 +2,14 @@
 
 The official plugins live in the
 [catalog](https://github.com/opstruss/catalog), which has versions of its
-own. Declare it once, and each unit uses a plugin as `cat.<name>`:
+own. Declare it once, and each unit uses a plugin as `ops.<name>`:
 
 ```yaml
 uses:
-  cat: github.com/opstruss/catalog@v1
+  ops: github.com/opstruss/catalog@v1
 units:
   infra:
-    uses: cat.tofu
+    uses: ops.tofu
     with: {dir: ./infra}
 ```
 

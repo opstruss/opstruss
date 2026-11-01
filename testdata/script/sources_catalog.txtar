@@ -77,22 +77,22 @@ cmp opstruss.lock before.lock
 name: catalog
 uses:
   a: github.com/opstruss/catalog/plugins/a@v1
-  cat: github.com/opstruss/catalog@v1
+  ops: github.com/opstruss/catalog@v1
 units:
   a:
     uses: a
   site:
-    uses: cat.site
+    uses: ops.site
 -- full.yaml --
 name: catalog
 uses:
   a: github.com/opstruss/catalog/plugins/a@v1
-  cat: github.com/opstruss/catalog@v1
+  ops: github.com/opstruss/catalog@v1
 units:
   a:
     uses: a
   site:
-    uses: cat.site
+    uses: ops.site
 -- removed.yaml --
 name: catalog
 removed:

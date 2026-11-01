@@ -30,14 +30,14 @@ features:
 opstruss: "1.0"
 name: shop
 uses:
-  cat: github.com/opstruss/catalog@v1
+  ops: github.com/opstruss/catalog@v1
 units:
   infra:
-    uses: cat.tofu
+    uses: ops.tofu
     with:
       dir: ./infra
   web:
-    uses: cat.compose
+    uses: ops.compose
     env:
       DATABASE_URL: ${{ units.infra.outputs.database_url }}
 tasks:

@@ -4,7 +4,7 @@ stacks:
   dev: {}
   prod: {}
 uses:
-  cat: github.com/opstruss/catalog@v1
+  ops: github.com/opstruss/catalog@v1
 units:
   #region site
   site:
@@ -19,7 +19,7 @@ units:
   #endregion site
   #region infra
   infra:
-    uses: cat.tofu
+    uses: ops.tofu
     with:
       dir: ./infra
       vars:

@@ -47,7 +47,7 @@ Up of stack default: 4 done
 
   ```yaml
   dns:
-    uses: cat.tofu
+    uses: ops.tofu
     with:
       dir: ./dns
   ```

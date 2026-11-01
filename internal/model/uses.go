@@ -68,7 +68,7 @@ type Target struct {
 func localPath(s string) bool { return strings.HasPrefix(s, "./") || strings.HasPrefix(s, "../") }
 
 // Alias splits a source that names a plugin or component of another
-// declaration, as tofu: cat.tofu; ok is false for any other source.
+// declaration, as tofu: ops.tofu; ok is false for any other source.
 func Alias(source string) (name, pkg string, ok bool) {
 	if localPath(source) || strings.HasPrefix(source, "opstruss.") || strings.HasPrefix(source, "github.com/") {
 		return "", "", false

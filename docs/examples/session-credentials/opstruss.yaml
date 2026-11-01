@@ -8,9 +8,9 @@ secrets:
   aws_session:
     env: AWS_SESSION_TOKEN
 uses:
-  cat: github.com/opstruss/catalog@v1
+  ops: github.com/opstruss/catalog@v1
   tofu:
-    source: cat.tofu
+    source: ops.tofu
     pass: [AWS_REGION]
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.aws_key }}

@@ -1,5 +1,5 @@
 # One declaration of a catalog names its plugins and components: units use
-# cat.<plugin> and cat.<component>, and an alias names a plugin or
+# ops.<plugin> and ops.<component>, and an alias names a plugin or
 # component of another declaration, with one pin for all of them.
 env HOME=$WORK/home
 env GREETING=from-env
@@ -17,8 +17,8 @@ stdout 'said'
 exec sh -c 'test "$(grep -c github.com/opstruss/catalog opstruss.lock)" = 1'
 exec opstruss plugins
 stdout '^NAME +KIND +SOURCE +COMMIT +STATUS$'
-stdout '^tool +plugin +cat.tool +[0-9a-f]{7} +present$'
-stdout '^cat +- +github.com/opstruss/catalog@v1 +[0-9a-f]{7} +present$'
+stdout '^tool +plugin +ops.tool +[0-9a-f]{7} +present$'
+stdout '^ops +- +github.com/opstruss/catalog@v1 +[0-9a-f]{7} +present$'
 exec opstruss plugins update tool
 stdout '^github.com/opstruss/catalog@v1 +[0-9a-f]{7} +\(unchanged\)$'
 exec opstruss plan --locked
@@ -33,12 +33,12 @@ stdout '^default/plain: unchanged$'
 cp bad.yaml opstruss.yaml
 ! exec opstruss validate
 stderr 'uses.say: toolp.say is a task; an alias names a plugin or component, and a task is called as toolp.say'
-stderr 'uses.twice: tool is an alias itself; name the declaration it names, as cat.tool'
-stderr 'uses.nope: cat has no plugin or component nope'
+stderr 'uses.twice: tool is an alias itself; name the declaration it names, as ops.tool'
+stderr 'uses.nope: ops has no plugin or component nope'
 stderr 'uses.same: same has a plugin and a component named x; give one another name'
-stderr 'units.three.uses: names of three parts or more are reserved; to use a plugin or component of a package of cat, declare the package in uses:, as tool: cat.tool, and use tool.box'
-stderr 'units.tasks.uses: plugin cat.tool has no up, so a unit uses one of its tasks: name it in uses:, as <name>: cat.tool, then uses: <name>.<task>'
-stderr 'cat.tool is a plugin, which units use; to call its tasks, name it in uses:, as <name>: cat.tool'
+stderr 'units.three.uses: names of three parts or more are reserved; to use a plugin or component of a package of ops, declare the package in uses:, as tool: ops.tool, and use tool.box'
+stderr 'units.tasks.uses: plugin ops.tool has no up, so a unit uses one of its tasks: name it in uses:, as <name>: ops.tool, then uses: <name>.<task>'
+stderr 'ops.tool is a plugin, which units use; to call its tasks, name it in uses:, as <name>: ops.tool'
 
 # A remote directory is named by its source, not by the cache.
 cp opstruss.yaml.orig opstruss.yaml
@@ -52,26 +52,26 @@ stderr 'github.com/opstruss/catalog@v1 has no opstruss.plugin.yaml, opstruss.yam
 -- opstruss.yaml --
 name: collection
 uses:
-  cat:
+  ops:
     source: github.com/opstruss/catalog@v1
     pass: [GREETING]
-  tool: cat.tool
+  tool: ops.tool
   greeter:
-    source: cat.app
+    source: ops.app
     env:
       GREETING: from-alias
   only: ./only
 units:
   app:
-    uses: cat.app
+    uses: ops.app
   greeter:
     uses: greeter
   plain:
-    uses: cat.plain
+    uses: ops.plain
   box:
     uses: tool.box
   site:
-    uses: cat.site
+    uses: ops.site
   local:
     uses: only.p
 tasks:
@@ -81,14 +81,14 @@ tasks:
 -- opstruss.yaml.orig --
 name: collection
 uses:
-  cat: github.com/opstruss/catalog@v1
+  ops: github.com/opstruss/catalog@v1
 units:
   plain:
-    uses: cat.plain
+    uses: ops.plain
 -- path.yaml --
 name: collection
 uses:
-  cat:
+  ops:
     source: github.com/opstruss/catalog@v1
     pass: [GREETING]
 units:
@@ -97,22 +97,22 @@ units:
 -- bad.yaml --
 name: collection
 uses:
-  cat: github.com/opstruss/catalog@v1
-  tool: cat.tool
+  ops: github.com/opstruss/catalog@v1
+  tool: ops.tool
   toolp: github.com/opstruss/catalog/plugins/tool@v1
   say: toolp.say
   twice: tool.box
-  nope: cat.nope
+  nope: ops.nope
   same: ./same
 units:
   three:
-    uses: cat.tool.box
+    uses: ops.tool.box
   tasks:
-    uses: cat.tool
+    uses: ops.tool
 tasks:
   call:
     steps:
-      - cat.tool: {}
+      - ops.tool: {}
 -- only/plugins/p/opstruss.plugin.yaml --
 name: p
 tasks:
