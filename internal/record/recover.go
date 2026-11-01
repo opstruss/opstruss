@@ -26,8 +26,8 @@ const (
 // First it marks the runs that ended with their record still running: a
 // crash, or a record that could not be written. Their .lock is free, or
 // gone, as an older OpsTruss removed it then. A run whose events end with
-// its run event takes how that says it ended; the others end cancelled,
-// as interrupted. Then it drops the oldest runs beyond Keep per task, then
+// its last run event takes how that says it ended; the others end
+// cancelled, as interrupted, with exit code 1. Then it drops the oldest runs beyond Keep per task, then
 // beyond MaxRuns in all, but never a run still running, nor the last run
 // that touched each unit, which logs reads. It returns the records it
 // marked, so the run can say so; runs it could not mark or drop are in the
@@ -181,9 +181,11 @@ func mark(dir string) (*Record, error) {
 	if err != nil || rec.Status != Running {
 		return nil, err
 	}
-	rec.Status, rec.Outcome, rec.Reason = Finished, "cancelled", "interrupted"
+	rec.Status, rec.Outcome, rec.Reason, rec.ExitCode = Finished, "cancelled", "interrupted", 1
 	rec.Ended = Stamp(time.Now())
-	if ev := lastEvent(filepath.Join(dir, "events.jsonl")); ev != nil && ev.Type == "run" {
+	// Only the last run event says how the run ended; the first says it
+	// started.
+	if ev := lastEvent(filepath.Join(dir, "events.jsonl")); ev != nil && ev.Type == "run" && ev.Status == Finished {
 		rec.Outcome, rec.Reason, rec.Outputs = ev.Outcome, "", ev.Outputs
 		if ev.ExitCode != nil {
 			rec.ExitCode = *ev.ExitCode

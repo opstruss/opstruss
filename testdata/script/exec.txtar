@@ -31,6 +31,16 @@ exec opstruss runs --json
 stdout '"task": "web/exec"'
 stdout '"exit_code": 3'
 
+# a run killed while its program runs has only its first event; the next
+# run marks it cancelled, as interrupted, with exit code 1
+! exec opstruss exec web -- sh -c 'kill -9 $PPID; sleep 1'
+exec opstruss plan
+stderr 'it is marked cancelled, as interrupted$'
+exec opstruss runs --json
+stdout '"outcome": "cancelled"'
+stdout '"reason": "interrupted"'
+stdout '"exit_code": 1'
+
 # exec runs for one unit
 ! exec opstruss exec site -- true
 stderr 'site uses a component; exec runs for one unit inside it, as site/<unit>'

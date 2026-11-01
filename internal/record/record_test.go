@@ -140,7 +140,7 @@ func TestInterruptedAndPrune(t *testing.T) {
 		t.Fatalf("interrupted: %v %v", got, err)
 	}
 	rec, _ := Read(r.Dir)
-	if rec.Status != Finished || rec.Outcome != "cancelled" || rec.Reason != "interrupted" {
+	if rec.Status != Finished || rec.Outcome != "cancelled" || rec.Reason != "interrupted" || rec.ExitCode != 1 {
 		t.Fatalf("record %+v", rec)
 	}
 
@@ -362,7 +362,7 @@ func TestRecordNotWritten(t *testing.T) {
 		}
 		if last {
 			code := 1
-			r.Emit(Event{Type: "run", Level: "info", Message: "success", Outcome: "success", ExitCode: &code,
+			r.Emit(Event{Type: "run", Level: "info", Message: "success", Status: Finished, Outcome: "success", ExitCode: &code,
 				Outputs: map[string]any{"id": "x"}})
 		}
 		r.Close()
@@ -385,9 +385,33 @@ func TestRecordNotWritten(t *testing.T) {
 			t.Fatalf("record %+v %v", rec, err)
 		case last && (rec.Outcome != "success" || rec.ExitCode != 1 || rec.Reason != "" || rec.Outputs["id"] != "x"):
 			t.Fatalf("record from the last event %+v", rec)
-		case !last && (rec.Outcome != "cancelled" || rec.Reason != "interrupted"):
+		case !last && (rec.Outcome != "cancelled" || rec.Reason != "interrupted" || rec.ExitCode != 1):
 			t.Fatalf("record without the last event %+v", rec)
 		}
+	}
+}
+
+// A run killed after its first event, which says it started, is marked
+// interrupted, not as that event says: it holds no outcome.
+func TestInterruptedAfterStart(t *testing.T) {
+	root := t.TempDir()
+	r, err := Create(root, ids(), &Record{Project: "shop", Stack: "dev", Command: "exec", Host: "h", PID: 1, Started: "now"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Emit(Event{Type: "run", Level: "info", Status: Running, Message: "started"})
+	_ = r.lock.Close()
+	live.Delete(r.ID())
+	before := time.Now()
+	if got, err := Prune(root, "dev"); err != nil || len(got) != 1 {
+		t.Fatalf("interrupted %v %v", got, err)
+	}
+	rec, err := Read(r.Dir)
+	if err != nil || rec.Status != Finished || rec.Outcome != "cancelled" || rec.Reason != "interrupted" || rec.ExitCode != 1 {
+		t.Fatalf("record %+v %v", rec, err)
+	}
+	if ended, err := time.Parse(time.RFC3339Nano, rec.Ended); err != nil || ended.Before(before.Truncate(time.Second)) {
+		t.Fatalf("ended %q, not when it was marked", rec.Ended)
 	}
 }
 

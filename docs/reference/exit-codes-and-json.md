@@ -19,6 +19,9 @@
 - A run that `opstruss runs cancel` cancels exits with 1, since it got no
   signal; `runs cancel` itself exits with 0 once that run ends as
   `cancelled`.
+- A run whose process was killed, such as by SIGKILL, ends with no last
+  event. The next run of its stack marks its record `cancelled`, with
+  `reason` `interrupted` and `exit_code` 1, and says so on stderr.
 - `logs -f` and `runs <id> -f` stopped by Ctrl-C exit with 0, since they
   only read, and so does a daemon stopped by a signal.
 
