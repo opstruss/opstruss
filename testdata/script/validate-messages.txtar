@@ -9,7 +9,7 @@ env HOME=$WORK/home
 
 # names and functions in expressions
 ! exec opstruss validate -C exprs
-stderr 'there is no name project; an expression reads inputs, locals, units, tasks, steps, secrets, stack, each, event, opstruss, and outputs; did you mean opstruss.project\?'
+stderr 'there is no name project; an expression reads inputs, locals, units, tasks, steps, secrets, stack, each, event, opstruss, and outputs; did you mean opstruss.dir\?'
 stderr 'there is no function lenght; did you mean size\?'
 stderr 'toJSON takes its value as an argument: toJSON\(inputs.who\)'
 ! stderr 'in container'

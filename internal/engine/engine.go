@@ -433,7 +433,8 @@ func (e *engine) close(outcome string, outputs, marks map[string]any) {
 	}
 	e.outcome, e.outputs = outcome, outputs
 	err := e.rec.Finish(func(r *record.Record) {
-		r.Outcome, r.ExitCode, r.Outputs = outcome, code, outputs
+		exit := code
+		r.Outcome, r.ExitCode, r.Outputs = outcome, &exit, outputs
 		if outcome == cancelled && reason != "" {
 			r.Reason = reason
 		}

@@ -85,7 +85,7 @@ type Record struct {
 	Status    string           `json:"status"`
 	Outcome   string           `json:"outcome,omitempty"`
 	Reason    string           `json:"reason,omitempty"`
-	ExitCode  int              `json:"exit_code"`
+	ExitCode  *int             `json:"exit_code,omitempty"` // once the run is finished
 	Units     map[string]*Unit `json:"units,omitempty"`
 	Tasks     map[string]*Task `json:"tasks,omitempty"` // the tasks of the project that ran inside the run, by name
 	Outputs   map[string]any   `json:"outputs,omitempty"`

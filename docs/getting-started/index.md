@@ -202,9 +202,9 @@ Up of stack default: 3 done
 The first command that read `uses:` fetched the catalog and wrote the
 commit that `v1` names to `opstruss.lock`. Commit that file with the
 project, so that every machine and CI run the same plugins until
-`opstruss plugins update` moves the pin. The first `up` of `infra` also
-wrote `infra/.terraform.lock.hcl`, the providers that OpenTofu chose,
-which is committed too.
+`opstruss plugins update` moves the pin. A module with providers also
+gets `.terraform.lock.hcl` next to it at its first `up`, the providers
+that OpenTofu chose, which is committed too; this one has none.
 
 ## A task
 
@@ -214,6 +214,7 @@ A task is a command of the project, with its inputs as flags:
 
 ```console
 $ opstruss smoke --path /health
+made the age key age1… of this machine in …; back it up with .opstruss/state/ of each project, …
 ▸ smoke
 │ GET https://shop-default.example.com/health
 ✓ smoke  0.0s
@@ -221,6 +222,11 @@ $ opstruss smoke --path /health
 
 `opstruss --help` lists it under "Project tasks", and `opstruss list`
 shows each task with its last run, and each unit with its state.
+
+The first run on a machine that keeps a value encrypted, here the inputs
+of `smoke` for `runs rerun`, makes the age key of this machine and says
+where it is, once; [Back up the state](#back-up-the-state) says why it
+matters.
 
 ## Two stacks
 

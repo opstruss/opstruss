@@ -253,7 +253,8 @@ func TestLater(t *testing.T) {
 // one meant when it is near, without the position of the checker.
 func TestUnknown(t *testing.T) {
 	tests := []struct{ src, want string }{
-		{"project.dir", "${{ project.dir }}: there is no name project; an expression reads inputs, locals, units, tasks, steps, secrets, stack, each, event, opstruss, and outputs; did you mean opstruss.project?"},
+		{"project.dir", "${{ project.dir }}: there is no name project; an expression reads inputs, locals, units, tasks, steps, secrets, stack, each, event, opstruss, and outputs; did you mean opstruss.dir?"},
+		{"project", "${{ project }}: there is no name project; an expression reads inputs, locals, units, tasks, steps, secrets, stack, each, event, opstruss, and outputs; did you mean opstruss.project?"},
 		{"unit.build.outputs.x", "${{ unit.build.outputs.x }}: there is no name unit; an expression reads inputs, locals, units, tasks, steps, secrets, stack, each, event, opstruss, and outputs; did you mean units?"},
 		{"env.HOME", "${{ env.HOME }}: there is no name env; an expression reads inputs, locals, units, tasks, steps, secrets, stack, each, event, opstruss, and outputs; a value of the environment comes in as an input or a secret with env:"},
 		{"inputs.who.lenght()", "${{ inputs.who.lenght() }}: there is no function lenght; did you mean size?"},
@@ -261,6 +262,8 @@ func TestUnknown(t *testing.T) {
 		{"math.greates(1, 2)", "${{ math.greates(1, 2) }}: there is no function math.greates; did you mean math.greatest?"},
 		{"frobnicate(1)", "${{ frobnicate(1) }}: there is no function frobnicate"},
 		{"inputs.x.toJSON()", "${{ inputs.x.toJSON() }}: toJSON takes its value as an argument: toJSON(inputs.x)"},
+		{`units.box["beta"].outputs.tags.toJSON()`, `${{ units.box["beta"].outputs.tags.toJSON() }}: toJSON takes its value as an argument: toJSON(units.box["beta"].outputs.tags)`},
+		{"size(inputs.x).toJSON()", "${{ size(inputs.x).toJSON() }}: toJSON takes its value as an argument: toJSON(<value>)"},
 		{"(inputs.x + 'a').sha256()", "${{ (inputs.x + 'a').sha256() }}: sha256 takes its value as an argument: sha256(<value>)"},
 	}
 	for _, tt := range tests {

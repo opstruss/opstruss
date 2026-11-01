@@ -181,14 +181,15 @@ func mark(dir string) (*Record, error) {
 	if err != nil || rec.Status != Running {
 		return nil, err
 	}
-	rec.Status, rec.Outcome, rec.Reason, rec.ExitCode = Finished, "cancelled", "interrupted", 1
+	code := 1
+	rec.Status, rec.Outcome, rec.Reason, rec.ExitCode = Finished, "cancelled", "interrupted", &code
 	rec.Ended = Stamp(time.Now())
 	// Only the last run event says how the run ended; the first says it
 	// started.
 	if ev := lastEvent(filepath.Join(dir, "events.jsonl")); ev != nil && ev.Type == "run" && ev.Status == Finished {
 		rec.Outcome, rec.Reason, rec.Outputs = ev.Outcome, "", ev.Outputs
 		if ev.ExitCode != nil {
-			rec.ExitCode = *ev.ExitCode
+			rec.ExitCode = ev.ExitCode
 		}
 		if t, err := time.Parse(time.RFC3339Nano, ev.Time); err == nil {
 			rec.Ended = Stamp(t)

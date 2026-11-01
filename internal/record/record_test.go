@@ -131,6 +131,11 @@ func TestInterruptedAndPrune(t *testing.T) {
 	if got, _ := Prune(root, "dev"); len(got) != 0 {
 		t.Fatalf("a live run is interrupted: %v", got)
 	}
+	// A run that has not finished has no exit code yet, as its first run
+	// event has none.
+	if data, err := os.ReadFile(filepath.Join(r.Dir, "record.json")); err != nil || strings.Contains(string(data), "exit_code") {
+		t.Fatalf("a running record has an exit code: %s %v", data, err)
+	}
 	// A crash lets go of the lock without finishing the record, and the
 	// process that knew the run is gone.
 	_ = r.lock.Close()
@@ -140,7 +145,7 @@ func TestInterruptedAndPrune(t *testing.T) {
 		t.Fatalf("interrupted: %v %v", got, err)
 	}
 	rec, _ := Read(r.Dir)
-	if rec.Status != Finished || rec.Outcome != "cancelled" || rec.Reason != "interrupted" || rec.ExitCode != 1 {
+	if rec.Status != Finished || rec.Outcome != "cancelled" || rec.Reason != "interrupted" || exit(rec) != 1 {
 		t.Fatalf("record %+v", rec)
 	}
 
@@ -383,9 +388,9 @@ func TestRecordNotWritten(t *testing.T) {
 		switch {
 		case err != nil || rec.Status != Finished:
 			t.Fatalf("record %+v %v", rec, err)
-		case last && (rec.Outcome != "success" || rec.ExitCode != 1 || rec.Reason != "" || rec.Outputs["id"] != "x"):
+		case last && (rec.Outcome != "success" || exit(rec) != 1 || rec.Reason != "" || rec.Outputs["id"] != "x"):
 			t.Fatalf("record from the last event %+v", rec)
-		case !last && (rec.Outcome != "cancelled" || rec.Reason != "interrupted" || rec.ExitCode != 1):
+		case !last && (rec.Outcome != "cancelled" || rec.Reason != "interrupted" || exit(rec) != 1):
 			t.Fatalf("record without the last event %+v", rec)
 		}
 	}
@@ -407,7 +412,7 @@ func TestInterruptedAfterStart(t *testing.T) {
 		t.Fatalf("interrupted %v %v", got, err)
 	}
 	rec, err := Read(r.Dir)
-	if err != nil || rec.Status != Finished || rec.Outcome != "cancelled" || rec.Reason != "interrupted" || rec.ExitCode != 1 {
+	if err != nil || rec.Status != Finished || rec.Outcome != "cancelled" || rec.Reason != "interrupted" || exit(rec) != 1 {
 		t.Fatalf("record %+v %v", rec, err)
 	}
 	if ended, err := time.Parse(time.RFC3339Nano, rec.Ended); err != nil || ended.Before(before.Truncate(time.Second)) {
@@ -600,4 +605,12 @@ func TestIndexHeld(t *testing.T) {
 	if data, _ := os.ReadFile(path); len(data) != 0 {
 		t.Fatalf("the index got %q", data)
 	}
+}
+
+// exit is the exit code of a finished record, or -1 without one.
+func exit(rec *Record) int {
+	if rec.ExitCode == nil {
+		return -1
+	}
+	return *rec.ExitCode
 }

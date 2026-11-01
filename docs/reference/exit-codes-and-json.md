@@ -126,10 +126,11 @@ A record of a run has `version`; `opstruss`, the version of OpsTruss that
 ran it; `run`; `parent`, the run it ran inside; `project`, `stack`,
 `command`, `task`, and `args`; `trigger`, what made it, and `simulated`
 for `--event`; `user`, `host`, `hostname`, and `pid`; `started` and
-`ended`; `status`, `outcome`, `reason` (why it ended `cancelled`:
-`signal`, `requested` by `opstruss runs cancel`, `concurrency` for a call
-with `concurrency: cancel`, or `interrupted` when its process died), and
-`exit_code`; `units` and `tasks`, what ran inside it; `outputs`;
+`ended`; `status`, `running` or `finished`, and once it is `finished`,
+`outcome`, `reason` (why it ended `cancelled`: `signal`, `requested` by
+`opstruss runs cancel`, `concurrency` for a call with `concurrency:
+cancel`, or `interrupted` when its process died), and `exit_code`; `units`
+and `tasks`, what ran inside it; `outputs`;
 `events_incomplete` when its events could not all be written; `no_deps`;
 `rerun_of`; and `replay`, what `runs rerun` needs.
 

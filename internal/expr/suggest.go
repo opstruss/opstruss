@@ -72,9 +72,13 @@ var otherNames = map[string]string{"length": "size", "len": "size", "count": "si
 // when it is near. ok is false for other errors.
 func unknown(src, msg string) (string, bool) {
 	if m := memberCall.FindStringSubmatch(msg); m != nil && slices.Contains(argumentFunctions, m[1]) {
+		// The value is a chain of names and indexes, such as
+		// units.box["beta"].outputs.tags; any other, such as (a + b) or
+		// f(x).y, is named <value>.
 		value := "<value>"
-		if r := regexp.MustCompile(`([\w.]+)\.` + m[1] + `\(\s*\)`).FindStringSubmatch(src); r != nil {
-			value = r[1]
+		re := regexp.MustCompile(`([a-zA-Z_]\w*(?:\.[a-zA-Z_]\w*|\[[^\[\]]*\])*)\.` + m[1] + `\(\s*\)`)
+		if r := re.FindStringSubmatchIndex(src); r != nil && (r[2] == 0 || !strings.ContainsRune(`.])"'`, rune(src[r[2]-1]))) {
+			value = src[r[2]:r[3]]
 		}
 		return m[1] + " takes its value as an argument: " + m[1] + "(" + value + ")", true
 	}
@@ -110,7 +114,12 @@ func unknown(src, msg string) (string, bool) {
 	}
 	msg = "there is no name " + name + "; an expression reads " + strings.Join(Namespaces[:len(Namespaces)-1], ", ") +
 		", and " + Namespaces[len(Namespaces)-1]
+	// A name with a field of opstruss after it, such as project.dir, means
+	// that field.
+	member := regexp.MustCompile(`\b` + regexp.QuoteMeta(name) + `\.([a-zA-Z_]\w*)`).FindStringSubmatch(src)
 	switch {
+	case member != nil && slices.Contains(Facts, member[1]):
+		msg += "; did you mean opstruss." + member[1] + "?"
 	case slices.Contains(Facts, name):
 		msg += "; did you mean opstruss." + name + "?"
 	case Nearest(name, Namespaces) != "":
