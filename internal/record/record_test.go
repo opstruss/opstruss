@@ -437,6 +437,34 @@ func TestInterruptedWithoutLock(t *testing.T) {
 	}
 }
 
+// A run that another process drops while Prune reads it, as one that just
+// ended, is no error: its directory may go between the read and the mark.
+func TestPruneWhileDropped(t *testing.T) {
+	root := t.TempDir()
+	for i := range 100 {
+		dir := filepath.Join(root, "runs", "dev", fmt.Sprintf("20261102T000000Z-%08x", i))
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := write(dir, &Record{Version: Version, Run: filepath.Base(dir), Command: "task", Status: Running}); err != nil {
+			t.Fatal(err)
+		}
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			// A mark that writes into it meanwhile fails one removal.
+			for os.RemoveAll(dir) != nil {
+				time.Sleep(time.Millisecond)
+			}
+		}()
+		_, err := Prune(root, "dev")
+		<-done
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 // Records and events of a newer version are refused, not read as these.
 func TestNewerVersions(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "20261023T000000Z-00000001")

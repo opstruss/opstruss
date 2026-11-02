@@ -8,7 +8,8 @@ env OPSTRUSS_FAILPOINT_LOG=$WORK/visited
 
 exec opstruss up -d --yes
 stdout 'default/web: running'
-exec sh -c 'n=0; for p in $(cat pids); do kill -0 "$p" 2> /dev/null && n=$((n+1)); done; echo "alive $n"'
+cp stdout up
+exec sh alive up
 stdout '^alive 1$'
 
 env OPSTRUSS_FAILPOINT=up-before-pending=kill
@@ -17,7 +18,8 @@ exec opstruss stop
 env OPSTRUSS_FAILPOINT=
 exec opstruss up -d --yes
 stdout 'default/web: running'
-exec sh -c 'n=0; for p in $(cat pids); do kill -0 "$p" 2> /dev/null && n=$((n+1)); done; echo "alive $n"'
+cp stdout up
+exec sh alive up
 stdout '^alive 1$'
 
 env OPSTRUSS_FAILPOINT=up-before-program=kill
@@ -27,7 +29,8 @@ env OPSTRUSS_FAILPOINT=
 exec opstruss plan
 stdout 'default/web: will run: up of run .* did not finish'
 exec opstruss up -d --yes
-exec sh -c 'n=0; for p in $(cat pids); do kill -0 "$p" 2> /dev/null && n=$((n+1)); done; echo "alive $n"'
+cp stdout up
+exec sh alive up
 stdout '^alive 1$'
 
 # killed after the entry and before the gate lets the program run: it
@@ -41,7 +44,8 @@ env OPSTRUSS_FAILPOINT=
 exec sh -c 'wc -l < pids'
 cmp stdout before
 exec opstruss up -d --yes
-exec sh -c 'n=0; for p in $(cat pids); do kill -0 "$p" 2> /dev/null && n=$((n+1)); done; echo "alive $n"'
+cp stdout up
+exec sh alive up
 stdout '^alive 1$'
 
 # killed while the service runs: the next daemon stops it before it starts
@@ -51,7 +55,8 @@ exec opstruss stop
 ! exec opstruss up -d --yes --force
 env OPSTRUSS_FAILPOINT=
 exec opstruss up -d --yes
-exec sh -c 'n=0; for p in $(cat pids); do kill -0 "$p" 2> /dev/null && n=$((n+1)); done; echo "alive $n"'
+cp stdout up
+exec sh alive up
 stdout '^alive 1$'
 
 env OPSTRUSS_FAILPOINT=up-before-put=kill
@@ -59,13 +64,14 @@ exec opstruss stop
 ! exec opstruss up -d --yes --force
 env OPSTRUSS_FAILPOINT=
 exec opstruss up -d --yes
-exec sh -c 'n=0; for p in $(cat pids); do kill -0 "$p" 2> /dev/null && n=$((n+1)); done; echo "alive $n"'
+cp stdout up
+exec sh alive up
 stdout '^alive 1$'
 exec opstruss state pull web
 stdout '"kind": "service"'
 
 exec opstruss stop
-exec sh -c 'n=0; for p in $(cat pids); do kill -0 "$p" 2> /dev/null && n=$((n+1)); done; echo "alive $n"'
+exec sh alive
 stdout '^alive 0$'
 exec sh -c 'sort -u visited'
 cmp stdout points
@@ -78,6 +84,22 @@ up-after-program
 up-before-pending
 up-before-program
 up-before-put
+-- alive --
+# alive [up]: says how many of the pids in pids run; with the output of up,
+# it first waits until the service that up started wrote its pid there, as
+# up returns once the program started.
+if [ -n "$1" ]; then
+	pid=$(sed -n 's/.*: running, pid //p' "$1")
+	i=0
+	until grep -qx "$pid" pids 2> /dev/null; do
+		i=$((i + 1))
+		[ "$i" -lt 100 ] || { echo "pid $pid is not in pids"; exit 1; }
+		sleep 0.1
+	done
+fi
+n=0
+for p in $(cat pids); do kill -0 "$p" 2> /dev/null && n=$((n + 1)); done
+echo "alive $n"
 -- opstruss.yaml --
 name: shop
 units:

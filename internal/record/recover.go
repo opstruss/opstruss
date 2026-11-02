@@ -68,6 +68,12 @@ func Prune(root, stack string) ([]*Record, error) {
 		if rec.Status == Running {
 			m, err := mark(dir)
 			if err != nil {
+				// Another process may have dropped the run since, once it
+				// ended: a record that went is left alone, as one that
+				// cannot be read.
+				if _, rerr := Read(dir); rerr != nil {
+					continue
+				}
 				errs = append(errs, fmt.Errorf("marking run %s, which ended without its record: %w", name, err))
 			}
 			if m == nil {
