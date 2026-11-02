@@ -13,8 +13,12 @@ units:
     with: {dir: ./infra}
 ```
 
-`opstruss.lock` pins the commit that `v1` names, and `opstruss plugins
-update` moves the pin.
+Three versions meet here: the OpsTruss that you run; the level in the
+`opstruss:` line of a file, the OpsTruss that the file is written for
+([compatibility](./reference/compatibility)); and `v1`, the major version
+of the catalog, whose plugins below work with OpsTruss 1.0 and later.
+`opstruss.lock` pins the commit that `v1` names, one pin for every plugin
+of the catalog, and `opstruss plugins update ops` moves them all at once.
 
 | Plugin | What it runs | Main inputs |
 |---|---|---|
