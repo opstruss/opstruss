@@ -55,6 +55,10 @@ A plugin's `plan` writes `$OPSTRUSS_PLAN`:
 ```
 
 - `action` is `create`, `update`, `delete`, `replace`, or `run`.
+  `protect: true` on the unit refuses a plan with `delete` or `replace`.
+- An action that OpsTruss does not know, which a later version may add,
+  is a change that needs approval, and `protect: true` refuses it as a
+  `replace`. Every action is a lowercase word.
 - `digest` is a hash of what will be applied, the actions and their
   values, not of a plan file: the same for the same state and inputs, so
   a plan made again in another run matches. OpsTruss joins it with the

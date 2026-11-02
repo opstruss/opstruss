@@ -251,7 +251,7 @@ A unit: something that up brings up and destroy takes away, with exactly one of 
 | `for_each` | array or object or string | A list or a map: one instance of the unit per item, read as each.key and each.value. A key is part of the address of its instance: lowercase letters, digits, ., -, and \_; a list holds strings, each its own key. |
 | `approval` | one of `ask`, `auto` | ask to wait for approval of changes to this unit, auto to apply them without asking. |
 | `timeout` | string | How long a program of the unit may run. |
-| `protect` | boolean | Refuse to destroy the unit. |
+| `protect` | boolean | Refuse to destroy the unit, and a plan of its plugin that deletes or replaces it. |
 | `retry` | [Retry](#retry) | Running the program again when it fails. |
 
 ## Unit › ready {#unit-ready}

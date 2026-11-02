@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -400,11 +401,41 @@ func (e *engine) planPlugin(ctx context.Context, inst *instance, r *resolved, re
 		return nil, fmt.Errorf("$OPSTRUSS_PLAN: %w", err)
 	}
 	for i, c := range pp.Changes {
-		if a, _ := c["action"].(string); !slices.Contains([]string{"create", "update", "delete", "replace", "run"}, a) {
-			return nil, fmt.Errorf("$OPSTRUSS_PLAN: change %d has action %q, not create, update, delete, replace, or run", i, a)
+		if a, ok := c["action"].(string); !ok || !actionWord.MatchString(a) {
+			raw, _ := json.Marshal(c["action"])
+			return nil, fmt.Errorf("$OPSTRUSS_PLAN: change %d has action %s, not a lowercase word such as create, update, delete, replace, or run", i, raw)
 		}
 	}
 	return pp, nil
+}
+
+// actionWord is what an action of a plan may be. Actions are open: one
+// that a later OpsTruss adds is a change here too, which needs approval.
+var actionWord = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
+
+// protects says why protect: true refuses changes of a plugin's plan: a
+// delete, a replace, or an action that this OpsTruss does not know, which
+// may be a replace. It is nil when it refuses none.
+func protects(changes []map[string]any) error {
+	var refused []map[string]any
+	unknown := false
+	for _, c := range changes {
+		switch c["action"] {
+		case "create", "update", "run":
+		case "delete", "replace":
+			refused = append(refused, c)
+		default:
+			refused, unknown = append(refused, c), true
+		}
+	}
+	if len(refused) == 0 {
+		return nil
+	}
+	why := ""
+	if unknown {
+		why = ", as an action this OpsTruss does not know may be a replace"
+	}
+	return fmt.Errorf("protect: true refuses %s%s; remove protect from the unit first, or leave the unit out", describe(refused), why)
 }
 
 // describe writes the changes of a plan as a plan line does.

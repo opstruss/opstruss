@@ -1,0 +1,95 @@
+# protect: true refuses a plan of a plugin that deletes or replaces, and an
+# action that this OpsTruss does not know, which may be either; up never
+# runs it. Without protect, such an action is a change that needs approval.
+
+env HOME=$WORK/home
+chmod 755 plugins/fake/plan.sh
+chmod 755 plugins/fake/up.sh
+
+# create and update run under protect
+cp plans/create.json plan.json
+exec opstruss up --yes
+stdout '^default/db: up: done$'
+cp plans/update.json plan.json
+exec opstruss up --yes
+stdout '^default/db: up: done$'
+
+# replace, delete, and an unknown action fail plan and up
+cp plans/replace.json plan.json
+! exec opstruss plan
+stdout '^default/db: error: protect: true refuses replace db; remove protect from the unit first, or leave the unit out$'
+! exec opstruss up --yes
+stdout 'default/db: .*protect: true refuses replace db;'
+cp plans/delete.json plan.json
+! exec opstruss up --yes
+stdout 'default/db: .*protect: true refuses delete db;'
+cp plans/refresh.json plan.json
+! exec opstruss plan
+stdout '^default/db: error: protect: true refuses refresh db, as an action this OpsTruss does not know may be a replace; remove protect from the unit first, or leave the unit out$'
+! exec opstruss up --yes
+cmp ups ups.want
+
+# without protect, an unknown action is a change that needs approval
+cp unprotected.yaml opstruss.yaml
+exec opstruss plan
+stdout '^default/db: will run: plan: refresh db$'
+! exec opstruss up
+stdout '^default/db: needs approval, stopped at plan$'
+exec opstruss up --yes
+stdout '^default/db: up: done$'
+grep '^sha256:refresh$' ups
+
+# an action must be a lowercase word
+cp plans/none.json plan.json
+! exec opstruss plan
+stdout 'change 0 has action null, not a lowercase word such as create, update, delete, replace, or run'
+cp plans/number.json plan.json
+! exec opstruss plan
+stdout 'change 0 has action 1, not a lowercase word'
+cp plans/upper.json plan.json
+! exec opstruss plan
+stdout 'change 0 has action "Replace", not a lowercase word'
+
+-- opstruss.yaml --
+name: app
+units:
+  db:
+    uses: ./plugins/fake
+    protect: true
+-- unprotected.yaml --
+name: app
+units:
+  db:
+    uses: ./plugins/fake
+-- ups.want --
+sha256:create
+sha256:update
+-- plugins/fake/opstruss.plugin.yaml --
+name: fake
+tasks:
+  plan:
+    run: [./plan.sh]
+  up:
+    run: [./up.sh]
+-- plugins/fake/plan.sh --
+#!/bin/sh
+cp plan.json "$OPSTRUSS_PLAN"
+-- plugins/fake/up.sh --
+#!/bin/sh
+echo "$OPSTRUSS_DIGEST" >> ups
+-- plans/create.json --
+{"changes": [{"action": "create", "resource": "db"}], "digest": "sha256:create", "exact": true}
+-- plans/update.json --
+{"changes": [{"action": "update", "resource": "db"}], "digest": "sha256:update", "exact": true}
+-- plans/replace.json --
+{"changes": [{"action": "replace", "resource": "db"}], "digest": "sha256:replace", "exact": true}
+-- plans/delete.json --
+{"changes": [{"action": "delete", "resource": "db"}], "digest": "sha256:delete", "exact": true}
+-- plans/refresh.json --
+{"changes": [{"action": "refresh", "resource": "db"}], "digest": "sha256:refresh", "exact": true}
+-- plans/none.json --
+{"changes": [{"resource": "db"}], "digest": "sha256:none", "exact": true}
+-- plans/number.json --
+{"changes": [{"action": 1, "resource": "db"}], "digest": "sha256:number", "exact": true}
+-- plans/upper.json --
+{"changes": [{"action": "Replace", "resource": "db"}], "digest": "sha256:upper", "exact": true}

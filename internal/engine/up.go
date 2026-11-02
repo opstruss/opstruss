@@ -398,6 +398,11 @@ func (e *engine) decide(ctx context.Context, inst *instance, r *resolved, rec *s
 		if err != nil {
 			return plan{err: err}
 		}
+		if inst.def.Protect {
+			if err := protects(pp.Changes); err != nil {
+				return plan{err: err}
+			}
+		}
 		p.changes, p.outputs, p.pluginDigest, p.inexact = pp.Changes, pp.Outputs, pp.Digest, !pp.Exact
 		switch {
 		case len(pp.Changes) > 0 && !p.run:

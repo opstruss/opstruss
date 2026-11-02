@@ -339,6 +339,15 @@ Plan of stack default: 5 to run, 1 may run, 1 unchanged, 1 orphan, 2 cannot be p
 	}
 }
 
+// A plan line with an action that this OpsTruss does not know has the
+// mark of a replace, which it may be.
+func TestPlanMarkUnknownAction(t *testing.T) {
+	refresh := map[string]any{"changes": []any{map[string]any{"action": "refresh", "resource": "db"}}}
+	if mark, _ := planMark(planEvent("default/db", "success", "will run: plan: refresh db", refresh)); mark != "±" {
+		t.Errorf("mark %q, want ±", mark)
+	}
+}
+
 // A note of the run that comes while the plan is gathered, as that this
 // machine got an age key, comes under the table, not between the blocks of
 // the plans of plugins.

@@ -719,7 +719,7 @@
           "$ref": "#/$defs/duration",
           "description": "How long a program of the unit may run."
         },
-        "protect": { "description": "Refuse to destroy the unit.", "type": "boolean" },
+        "protect": { "description": "Refuse to destroy the unit, and a plan of its plugin that deletes or replaces it.", "type": "boolean" },
         "retry": {
           "$ref": "#/$defs/retry",
           "description": "Running the program again when it fails."

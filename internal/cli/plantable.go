@@ -364,7 +364,12 @@ func planMark(ev engine.Event) (string, string) {
 		for _, c := range changes {
 			if m, ok := c.(map[string]any); ok {
 				a, _ := m["action"].(string)
-				top = max(top, rank[a])
+				r, known := rank[a]
+				if !known {
+					// An action that this OpsTruss does not know may be a replace.
+					r = rank["replace"]
+				}
+				top = max(top, r)
 			}
 		}
 	}
