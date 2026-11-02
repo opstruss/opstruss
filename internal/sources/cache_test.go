@@ -298,6 +298,9 @@ func TestCacheConcurrentPruneAndLease(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if got := temporaries(t, cache); got != "" {
+		t.Fatalf("fetches left %s", got)
+	}
 	id, root, lease, err := cache.Git(ctx, id, false, false)
 	if err != nil {
 		t.Fatal(err)
@@ -419,6 +422,58 @@ func TestPruneRejectsSymlinkDirectories(t *testing.T) {
 	if b, err := os.ReadFile(filepath.Join(outside, "keep")); err != nil || string(b) != "untouched" {
 		t.Fatalf("outside changed: %s %v", b, err)
 	}
+}
+
+// TestTemporariesGo: the temporary directory of a fetch goes with its lock,
+// and prune removes those that no one holds, as a crash leaves them, but
+// not one that a fetch holds.
+func TestTemporariesGo(t *testing.T) {
+	cache := &Cache{Root: t.TempDir()}
+	ctx := context.Background()
+	dir, _, cleanup, err := cache.temporary(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A crash leaves a directory with its lock, or a lock alone.
+	if err := os.Mkdir(filepath.Join(cache.Root, "tmp", "fetch-1"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"tmp-fetch-1", "tmp-fetch-2"} {
+		if err := os.WriteFile(filepath.Join(cache.Root, "locks", name), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := cache.Prune(ctx); err != nil {
+		t.Fatal(err)
+	}
+	held := filepath.Base(dir)
+	if got := temporaries(t, cache); got != "tmp/"+held+" locks/tmp-"+held {
+		t.Fatalf("after prune: %s", got)
+	}
+	cleanup()
+	if got := temporaries(t, cache); got != "" {
+		t.Fatalf("after the fetch: %s", got)
+	}
+}
+
+// temporaries lists the temporary directories of cache and their locks.
+func temporaries(t *testing.T, cache *Cache) string {
+	t.Helper()
+	var out []string
+	for _, pattern := range []string{"tmp/*", "locks/tmp-*"} {
+		paths, err := filepath.Glob(filepath.Join(cache.Root, pattern))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, p := range paths {
+			rel, err := filepath.Rel(cache.Root, p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out = append(out, filepath.ToSlash(rel))
+		}
+	}
+	return strings.Join(out, " ")
 }
 
 func TestLocksCancelAndProtectActiveEntries(t *testing.T) {

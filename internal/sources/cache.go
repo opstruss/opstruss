@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -216,28 +218,55 @@ func (c *Cache) Prune(ctx context.Context) ([]string, error) {
 			return removed, err
 		}
 	}
-	// Each temporary directory has its own lock, retained outside it.
+	// Each temporary directory has its own lock, retained outside it; a
+	// crash can leave either alone.
 	guard, err := c.lock(ctx, "temporary", true, true)
 	if err != nil {
 		return removed, err
 	}
 	defer guard.Close()
+	names := map[string]bool{}
 	temps, err := os.ReadDir(filepath.Join(c.Root, "tmp"))
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return removed, err
 	}
 	for _, e := range temps {
-		l, err := c.lock(ctx, "tmp-"+e.Name(), true, false)
+		names[e.Name()] = true
+	}
+	locks, err := os.ReadDir(filepath.Join(c.Root, "locks"))
+	if err != nil {
+		return removed, err
+	}
+	for _, e := range locks {
+		// Only names that temporary makes, so none is tmp/ itself.
+		if name, ok := strings.CutPrefix(e.Name(), "tmp-"); ok && strings.HasPrefix(name, "fetch-") {
+			names[name] = true
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(names)) {
+		l, err := c.lock(ctx, "tmp-"+name, true, false)
 		if err != nil {
 			continue
 		}
-		err = removeEntry(filepath.Join(c.Root, "tmp", e.Name()))
-		l.Close()
-		if err != nil {
+		if err := c.dropTemporary(name, l); err != nil {
 			return removed, err
 		}
 	}
 	return removed, nil
+}
+
+// dropTemporary removes the temporary directory name, then its lock, which
+// l holds, and lets go of l.  The caller holds the guard of temporaries, so
+// no one opens that lock meanwhile to wait for it.
+func (c *Cache) dropTemporary(name string, l *Lease) error {
+	defer l.Close()
+	if err := removeEntry(filepath.Join(c.Root, "tmp", name)); err != nil {
+		return err
+	}
+	if err := os.Remove(filepath.Join(c.Root, "locks", "tmp-"+name)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 
 func (c *Cache) temporary(ctx context.Context) (string, context.Context, func(), error) {
@@ -254,12 +283,24 @@ func (c *Cache) temporary(ctx context.Context) (string, context.Context, func(),
 	if err != nil {
 		return "", nil, nil, err
 	}
-	l, err := c.lock(ctx, "tmp-"+filepath.Base(dir), true, true)
+	name := filepath.Base(dir)
+	l, err := c.lock(ctx, "tmp-"+name, true, true)
 	if err != nil {
 		_ = removeEntry(dir)
 		return "", nil, nil, err
 	}
-	return dir, context.WithValue(ctx, gitLeaseKey{}, l.file), func() { _ = removeEntry(dir); l.Close() }, nil
+	cleanup := func() {
+		// The name and its lock go under the guard, as they came.
+		guard, err := c.lock(context.WithoutCancel(ctx), "temporary", true, true)
+		if err != nil {
+			_ = removeEntry(dir)
+			l.Close()
+			return
+		}
+		defer guard.Close()
+		_ = c.dropTemporary(name, l)
+	}
+	return dir, context.WithValue(ctx, gitLeaseKey{}, l.file), cleanup, nil
 }
 
 // Git obtains a pinned snapshot. Repair is reserved for explicit fetch.
