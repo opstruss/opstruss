@@ -1,0 +1,9 @@
+# What generate.sh changes between its runs, as it ends: flaky, whose up
+# fails while ready is missing, has the destroy of its last attempt, and
+# gone, which an earlier run made, is destroyed.
+units:
+  flaky:
+    run: test -f ready
+    destroy: echo flaky-b >> destroyed
+removed:
+  - {from: gone, destroy: true}

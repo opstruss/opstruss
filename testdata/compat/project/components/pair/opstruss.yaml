@@ -1,0 +1,4 @@
+units:
+  inner:
+    run: echo inner >> ran
+    destroy: echo inner >> destroyed

@@ -1,27 +1,37 @@
 # The project that generate.sh runs to write the data of one version: a
 # unit with sources and generates, one with a sensitive output, typed
-# numbers, a task, and kv, plain and sensitive.
+# numbers, a unit of a plugin, one of a component, a task, and kv, plain
+# and sensitive. changing.yaml is what generate.sh changes between its
+# runs, so the data also holds a pending attempt, an abandoned one, a
+# tombstone, and an orphan. Each unit writes its name to ran when it runs,
+# so a check counts what runs again.
 opstruss: "1.0"
 name: compat
+include: [changing.yaml]
 inputs:
   greeting: {type: string, default: hello}
 units:
   build:
-    run: [sh, -c, 'mkdir -p out && cp src/app.txt out/app.txt && echo built && echo "size=$(wc -c < out/app.txt | tr -d " ")" >> "$OPSTRUSS_OUTPUT"']
+    run: [sh, -c, 'mkdir -p out && cp src/app.txt out/app.txt && echo built && echo "size=$(wc -c < out/app.txt | tr -d " ")" >> "$OPSTRUSS_OUTPUT" && echo build >> ran']
     sources: [src/app.txt]
     generates: [out/app.txt]
     outputs:
       size: {type: integer}
   token:
-    run: [sh, -c, 'echo "token=t0ken-$GREETING" >> "$OPSTRUSS_OUTPUT"']
+    run: [sh, -c, 'echo "token=t0ken-$GREETING" >> "$OPSTRUSS_OUTPUT" && echo token >> ran']
     env: {GREETING: "${{ inputs.greeting }}"}
     outputs:
       token: {type: string, sensitive: true}
   ratio:
-    run: [sh, -c, 'echo "{\"ratio\": 2.0, \"count\": 3}" > "$OPSTRUSS_OUTPUT"']
+    run: [sh, -c, 'echo "{\"ratio\": 2.0, \"count\": 3}" > "$OPSTRUSS_OUTPUT" && echo ratio >> ran']
     outputs:
       ratio: {type: number}
       count: {type: integer}
+  note:
+    uses: ./plugins/note
+    with: {text: "${{ inputs.greeting }}"}
+  pair:
+    uses: ./components/pair
 tasks:
   remember:
     steps:

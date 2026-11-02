@@ -1,0 +1,18 @@
+opstruss: "1.0"
+name: note
+inputs:
+  text: {type: string, required: true}
+outputs:
+  path: {type: string}
+tasks:
+  plan:
+    run: |
+      if [ "$(cat note.txt 2>/dev/null)" = "$INPUT_TEXT" ]; then
+        echo '{"changes": [], "digest": "sha256:same", "exact": true}' > "$OPSTRUSS_PLAN"
+      else
+        echo '{"changes": [{"action": "create", "resource": "note"}], "digest": "sha256:note", "exact": true}' > "$OPSTRUSS_PLAN"
+      fi
+  up:
+    run: echo "$INPUT_TEXT" > note.txt && echo path=note.txt >> "$OPSTRUSS_OUTPUT" && echo note >> ran
+  destroy:
+    run: rm note.txt && echo "note $INPUT_TEXT" >> destroyed
