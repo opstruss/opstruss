@@ -190,6 +190,12 @@ func LoadSession(dir, stack string, session *sources.Session) (*Project, error) 
 func Declarations(dir, stack string) (*Project, error) { return readProject(dir, stack, nil, false) }
 
 func readProject(dir, stack string, session *sources.Session, check bool) (*Project, error) {
+	// The project is in its real directory, as the components and packages
+	// it uses are, so the paths between them, which digests and records
+	// keep, do not depend on a symbolic link on the way to it.
+	if real, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = real
+	}
 	root, probs, err := readDocument(dir, FileName, schema.Project)
 	if err != nil {
 		return nil, err

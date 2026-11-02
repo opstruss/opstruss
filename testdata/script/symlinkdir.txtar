@@ -1,0 +1,31 @@
+# The paths that records and digests keep are relative to the real
+# directory of the project, so a symbolic link on the way to it changes
+# nothing: the plan through the link and through the real path agree, and
+# destroy of a moved copy runs in that copy.
+
+env HOME=$WORK/home
+symlink link -> real
+
+exec opstruss -C link up --yes
+stdout '^default/pair/inner: up: done$'
+exec opstruss -C real plan
+stdout '^default/pair/inner: unchanged$'
+exec opstruss -C link plan
+stdout '^default/pair/inner: unchanged$'
+
+exec cp -R real moved
+exec opstruss -C moved destroy --yes
+stdout '^default/pair/inner: destroy: done$'
+exists moved/components/pair/destroyed
+! exists real/components/pair/destroyed
+
+-- real/opstruss.yaml --
+name: app
+units:
+  pair:
+    uses: ./components/pair
+-- real/components/pair/opstruss.yaml --
+units:
+  inner:
+    run: echo inner
+    destroy: echo inner >> destroyed
