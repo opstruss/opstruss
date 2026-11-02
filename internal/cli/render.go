@@ -683,7 +683,7 @@ func (r *renderer) count(ev engine.Event) {
 	}
 	kind := map[string]string{"success": "done", "failure": "failed", "skipped": "skipped", "cancelled": "cancelled"}[ev.Outcome]
 	switch {
-	case ev.Message == "unchanged" || ev.Message == "already destroy":
+	case ev.Message == "unchanged" || ev.Message == "already destroyed":
 		kind = "unchanged"
 	case interruptedBefore(ev):
 		// Skipped after a unit that the interrupt stopped: the interrupt

@@ -1,5 +1,5 @@
 # An attempt that did not finish with another destroy contract, such as other
-# pass values, is kept as abandoned when up runs again, and torn destroy only
+# pass values, is kept as abandoned when up runs again, and destroyed only
 # with its own context: no resource is left without a record.
 
 env HOME=$WORK/home
@@ -10,7 +10,7 @@ env AWS_PROFILE=a
 stderr '^default/bucket: the program exited with 1$'
 
 # up from context b keeps that attempt as abandoned, succeeds, and cannot
-# tear it destroy with the values of b
+# destroy it with the values of b
 env AWS_PROFILE=b
 cp ok.sh up.sh
 exec opstruss plan
@@ -27,7 +27,7 @@ stderr 'pass values differ from those of the record: AWS_PROFILE'
 
 # up with other pass values than the record's is refused, since its destroy
 # reaches the old target; --force moves the unit, and then the abandoned
-# attempt is part of the record, so it is dropped rather than torn destroy
+# attempt is part of the record, so it is dropped rather than destroyed
 env AWS_PROFILE=a
 ! exec opstruss up --yes
 stdout '^default/bucket: error: context changed: AWS_PROFILE differs from the record, whose destroy reaches the old target; up --force moves the unit and forgets that target$'

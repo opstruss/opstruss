@@ -401,7 +401,7 @@ func (e *engine) destroyOne(ctx context.Context, l *leftover) string {
 		return fail(err)
 	}
 	if rec == nil || rec.Tombstone != nil {
-		e.ended(addr, "destroy", success, "already destroy")
+		e.ended(addr, "destroy", success, "already destroyed")
 		return success
 	}
 	if err := e.checkDestroySources(ctx, rec); err != nil {

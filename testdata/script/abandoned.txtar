@@ -1,0 +1,28 @@
+# An attempt that did not finish, whose destroy differs from that of the
+# next attempt, is destroyed by its own destroy once the next one succeeds.
+
+env HOME=$WORK/home
+
+! exec opstruss up --yes
+stderr '^default/flaky: the program exited with 1$'
+
+cp next.yaml opstruss.yaml
+exec touch ready
+exec opstruss up --yes
+stdout '^default/flaky: destroyed the attempt of run [0-9]'
+stdout '^default/flaky: up: done$'
+grep '^a$' destroyed
+! grep '^b$' destroyed
+
+-- opstruss.yaml --
+name: app
+units:
+  flaky:
+    run: test -f ready
+    destroy: echo a >> destroyed
+-- next.yaml --
+name: app
+units:
+  flaky:
+    run: test -f ready
+    destroy: echo b >> destroyed

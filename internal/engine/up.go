@@ -906,7 +906,7 @@ func (e *engine) tearDown(ctx context.Context, addr string, rec *state.Record, e
 		if etag, err = e.store.Put(addr, rec, etag); err != nil {
 			return err
 		}
-		e.say("unit", addr, "tore destroy the attempt of run %s", a.Run)
+		e.say("unit", addr, "destroyed the attempt of run %s", a.Run)
 	}
 	return nil
 }
