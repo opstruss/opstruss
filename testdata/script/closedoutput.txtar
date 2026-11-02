@@ -1,0 +1,25 @@
+# A reader that closes the output of a run, as head does, does not stop the
+# run: what follows is dropped, the program goes on, and the record ends as
+# the run does.
+
+env HOME=$WORK/home
+
+exec sh -c 'opstruss up --yes | head -n 1'
+exists marker
+exec opstruss logs chatty
+stdout 'three'
+exec opstruss runs --json
+stdout '"outcome":\s*"success"'
+! stdout '"outcome":\s*"(cancelled|failure)"'
+
+-- opstruss.yaml --
+name: app
+units:
+  chatty:
+    run: |
+      echo one
+      sleep 1
+      echo two
+      sleep 1
+      echo three
+      echo done > marker

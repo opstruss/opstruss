@@ -470,6 +470,11 @@ func (a *app) interrupts() *interrupts {
 	ctx, kill := proc.WithKill(ctx)
 	ch := make(chan os.Signal, 2)
 	signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
+	// A reader that closes the output, as head does, does not stop the run:
+	// with SIGPIPE caught, a write there fails and is dropped, the programs
+	// go on, and the run ends with its record, as one without a terminal.
+	// It stays caught until the process ends, as output follows the run.
+	signal.Notify(make(chan os.Signal, 1), syscall.SIGPIPE)
 	in := &interrupts{ctx: ctx}
 	done := make(chan struct{})
 	go func() {
