@@ -799,6 +799,20 @@ func (e *engine) turn(ctx context.Context, inst *instance, leave func()) {
 		failed(err)
 		return
 	}
+	if err := e.upstreamStays(inst); err != nil {
+		// Nothing ran, so the record goes back to what it was.
+		var undo error
+		if rec == nil {
+			undo = e.store.Delete(addr, etag)
+		} else {
+			_, undo = e.store.Put(addr, rec, etag)
+		}
+		if undo != nil {
+			e.warn(addr, "the up mark stays in the record: %v", undo)
+		}
+		failed(err)
+		return
+	}
 	failpoint.Hit("up-before-program")
 	// up of a plugin gets the digest of its own plan, to apply what it
 	// planned or refuse.
@@ -1062,6 +1076,31 @@ func (e *engine) path() string {
 		}
 	}
 	return ""
+}
+
+// upstreamStays checks, once inst carries its up mark, that each unit it
+// needs and that had a record in this run still has one that no destroy
+// holds. That destroy marks its unit before it looks for units that need it
+// (see stillNeeded), so of the two runs one always sees the other.
+func (e *engine) upstreamStays(inst *instance) error {
+	for _, d := range inst.deps {
+		e.mu.Lock()
+		had := d.record != nil || e.sel.has(d)
+		e.mu.Unlock()
+		if !had {
+			continue
+		}
+		rec, _, err := e.store.Get(d.address)
+		switch {
+		case err != nil:
+			return err
+		case rec == nil:
+			return fmt.Errorf("%s, which it needs, was destroyed after this run read it; up again makes both", d.address)
+		case rec.Pending != nil && rec.Pending.Op == "destroy":
+			return fmt.Errorf("%s, which it needs, has an unfinished destroy of run %s; up again once that run ends", d.address, rec.Pending.Run)
+		}
+	}
+	return nil
 }
 
 // needs are the addresses inst depends on, which destroy follows in reverse.

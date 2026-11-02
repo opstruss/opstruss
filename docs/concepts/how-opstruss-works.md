@@ -47,7 +47,11 @@ is the one that `up` applies: if the plan changed since the approval, the
 unit fails rather than apply something else.
 
 Each address has a lock, so two runs never change one unit at once; a
-run waits for a lock that another holds, and says who holds it.
+run waits for a lock that another holds, and says who holds it. When
+another run makes a unit that needs a unit while `destroy` waits for it,
+`destroy` leaves that unit and names the new one, unless `--no-deps`
+leaves such units as they are; and `up` does not start a unit while
+another run destroys a unit that it needs.
 
 ## Stacks and state
 

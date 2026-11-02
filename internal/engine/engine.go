@@ -174,6 +174,7 @@ type engine struct {
 	have       map[string]bool          // the addresses with records, as the moves of the pass leave them
 	collect    bool                     // the pass previews the moves of the instances of components it finds
 	stale      []string                 // records of instances of components that the pass did not find
+	atPlan     map[string]*state.Record // records that the plan saw and the pass does not destroy
 	// movesMu guards the moves while the preview of a pass finds the
 	// instances of components, as other units are planned.
 	movesMu sync.Mutex

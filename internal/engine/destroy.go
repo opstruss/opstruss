@@ -140,6 +140,7 @@ func (e *engine) destroyPass(ctx context.Context) ([]*leftover, error) {
 	if len(records) == 0 {
 		e.say("run", "", "stack %s has no units to destroy", e.p.StackName)
 	}
+	e.keepPlan(records, items)
 	// As Terraform and Pulumi refuse a destroy that reaches a protected
 	// resource, nothing is destroyed while one of the units is protected,
 	// rather than the units that depend on it going first.
@@ -265,6 +266,12 @@ func (e *engine) previewLeftovers() []*leftover {
 			}
 		}
 		out = append(out, l)
+	}
+	e.keepPlan(records, out)
+	for _, inst := range e.insts {
+		if inst.record != nil {
+			e.atPlan[inst.address] = inst.record
+		}
 	}
 	return out
 }
@@ -404,6 +411,7 @@ func (e *engine) destroyOne(ctx context.Context, l *leftover) string {
 		e.ended(addr, "destroy", success, "already destroyed")
 		return success
 	}
+	read := *rec // as read, which a destroy that stops puts back
 	if err := e.checkDestroySources(ctx, rec); err != nil {
 		return fail(err)
 	}
@@ -454,6 +462,12 @@ func (e *engine) destroyOne(ctx context.Context, l *leftover) string {
 	if etag, err = e.store.Put(addr, rec, etag); err != nil {
 		return fail(err)
 	}
+	if err := e.stillNeeded(l); err != nil {
+		if _, undo := e.store.Put(addr, &read, etag); undo != nil {
+			e.warn(addr, "the destroy mark stays in the record: %v", undo)
+		}
+		return fail(err)
+	}
 	failpoint.Hit("destroy-before-program")
 	if service {
 		if err := e.services().Stop(ctx, addr); err != nil {
@@ -492,6 +506,57 @@ func (e *engine) destroyOne(ctx context.Context, l *leftover) string {
 		e.ended(addr, "destroy", success, "destroy: done")
 	}
 	return success
+}
+
+// keepPlan keeps the records that the plan saw and that the pass does not
+// destroy, which stillNeeded leaves as the plan did.
+func (e *engine) keepPlan(records, destroyed []*leftover) {
+	e.atPlan = map[string]*state.Record{}
+	for _, r := range records {
+		if !slices.Contains(destroyed, r) {
+			e.atPlan[r.address] = r.record
+		}
+	}
+}
+
+// stillNeeded looks again, once l carries its destroy mark, for a record
+// that came to need it after the plan, which an up of another run may have
+// made. That up marks its unit before it checks that what it needs stays
+// (see upstreamStays), so of the two runs one always sees the other. A
+// record that needed it at the plan and stays, such as an orphan, is left
+// as the plan left it, and so is every record with destroy --no-deps.
+func (e *engine) stillNeeded(l *leftover) error {
+	if e.pass.noDeps && l.cause == "requested" {
+		return nil
+	}
+	recs, err := e.records(map[string]bool{l.address: true})
+	if err != nil {
+		return err
+	}
+	for _, r := range recs {
+		if !recordNeeds(r.record, l.address) {
+			continue
+		}
+		if p := e.atPlan[r.address]; p != nil && p.ID == r.record.ID && recordNeeds(p, l.address) {
+			continue
+		}
+		return fmt.Errorf("%s came to need it after the plan, so it stays", r.address)
+	}
+	return nil
+}
+
+// recordNeeds reports whether rec needs addr: in its last state, or in an
+// attempt it still holds.
+func recordNeeds(rec *state.Record, addr string) bool {
+	if slices.Contains(rec.Needs, addr) {
+		return true
+	}
+	for _, a := range append([]*state.Attempt{rec.Pending}, rec.Abandoned...) {
+		if a != nil && slices.Contains(a.Needs, addr) {
+			return true
+		}
+	}
+	return false
 }
 
 // approvalOf is how a change to a unit of def is approved: by its own

@@ -95,6 +95,74 @@ grep '^0$' nested.code
 grep '^default/place: moved from default/site$' nested.out
 grep '^0$' parent.code
 
+# a destroy that waits for the lock of a unit while another run makes a unit
+# that needs it leaves the unit as it was, and names the one that needs it
+cd $WORK/needs
+exec opstruss up --yes base
+env OPSTRUSS_FAILPOINT=up-before-program=pause
+env OPSTRUSS_FAILPOINT_PAUSE=$WORK/held
+exec sh -c 'opstruss up --yes --force base > held1.out 2>&1; echo $? > held1.code' &
+waitfile $WORK/held
+env OPSTRUSS_FAILPOINT=
+exec sh -c 'opstruss destroy --yes > destroy1.out 2>&1; echo $? > destroy1.code' &
+waitgrep '^default/base: waiting for the lock held by run ' destroy1.out
+exec opstruss up --yes --no-deps app
+stdout '^default/app: up: done$'
+rm $WORK/held
+wait
+grep '^0$' held1.code
+grep '^1$' destroy1.code
+grep '^default/base: default/app came to need it after the plan, so it stays$' destroy1.out
+exec opstruss state pull base
+! stdout '"pending"'
+! exists destroys
+
+# destroy --no-deps leaves such a unit as it is
+exec opstruss destroy --yes app
+env OPSTRUSS_FAILPOINT=up-before-program=pause
+exec sh -c 'opstruss up --yes --force base > held2.out 2>&1; echo $? > held2.code' &
+waitfile $WORK/held
+env OPSTRUSS_FAILPOINT=
+exec sh -c 'opstruss destroy --yes --no-deps base > destroy2.out 2>&1; echo $? > destroy2.code' &
+waitgrep '^default/base: waiting for the lock held by run ' destroy2.out
+exec opstruss up --yes --no-deps app
+rm $WORK/held
+wait
+grep '^0$' destroy2.code
+grep '^base$' destroys
+exists .opstruss/state/default/app/state.json
+
+# a unit whose upstream unit another run is destroying does not start, and
+# a unit that had no record has none again
+exec opstruss destroy --yes app
+exec opstruss up --yes base
+env OPSTRUSS_FAILPOINT=destroy-before-program=pause
+env OPSTRUSS_FAILPOINT_PAUSE=$WORK/marked
+exec sh -c 'opstruss destroy --yes > destroy3.out 2>&1; echo $? > destroy3.code' &
+waitfile $WORK/marked
+env OPSTRUSS_FAILPOINT=
+! exec opstruss up --yes --no-deps app
+stderr '^default/app: default/base, which it needs, has an unfinished destroy of run [^ ]+; up again once that run ends$'
+! exists .opstruss/state/default/app/state.json
+rm $WORK/marked
+wait
+grep '^0$' destroy3.code
+! exists .opstruss/state/default/base/state.json
+
+-- needs/opstruss.yaml --
+name: needs
+units:
+  base:
+    run: echo "id=b-$$" >> "$OPSTRUSS_OUTPUT"
+    destroy: echo base >> destroys
+    outputs:
+      id: {}
+  app:
+    run: echo "app on $BASE"
+    env:
+      BASE: ${{ units.base.outputs.id }}
+    destroy: echo app >> destroys
+
 -- nested/opstruss.yaml --
 name: nested
 units:
