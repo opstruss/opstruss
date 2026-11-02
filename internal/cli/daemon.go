@@ -47,8 +47,12 @@ func (a *app) call(ctx context.Context, method string, req api.Request) (*api.Re
 	x.Supervisor = fg
 	res, err := x.Call(ctx, method, req)
 	if fg.Started() {
-		a.render()(engine.Event{Type: "daemon", Level: "info",
-			Message: fmt.Sprintf("this process is the daemon of stack %s while its services run; Ctrl-C stops them", fg.Stack)})
+		// Only while a service lives: one that already ended, as one that
+		// never got ready, leaves nothing to wait for.
+		if fg.Serving() {
+			a.render()(engine.Event{Type: "daemon", Level: "info",
+				Message: fmt.Sprintf("this process is the daemon of stack %s while its services run; Ctrl-C stops them", fg.Stack)})
+		}
 		fg.Wait(ctx)
 	}
 	return res, err

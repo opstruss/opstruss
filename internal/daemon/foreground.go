@@ -123,6 +123,13 @@ func (f *Foreground) Forget(addr string) ([]string, error) {
 // Started reports whether this process became the daemon of the stack.
 func (f *Foreground) Started() bool { return f.daemon() != nil }
 
+// Serving reports whether this process, as the daemon of the stack, still
+// has a service that lives or a call that runs, which Wait waits for.
+func (f *Foreground) Serving() bool {
+	d := f.daemon()
+	return d != nil && !d.idle()
+}
+
 // Wait keeps this process the daemon of the stack while a service lives
 // or a call runs, until ctx ends, then stops it with its services.
 func (f *Foreground) Wait(ctx context.Context) {
