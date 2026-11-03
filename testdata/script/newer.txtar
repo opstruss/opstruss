@@ -7,26 +7,26 @@ env HOME=$WORK/home
 
 cd $WORK/project
 ! exec opstruss validate
-stderr '^opstruss.yaml:1:1: opstruss: this file is for OpsTruss 1.99 or newer; this OpsTruss reads files up to 1.0$'
+stderr '^opstruss.yaml:1:1: opstruss: this file is for OpsTruss 1.99 or newer; this OpsTruss reads files up to 1.0: upgrade OpsTruss$'
 ! stderr 'unknown key|tag|sometimes'
 ! exec opstruss plan --json
-stdout '"type":"diagnostic","level":"error","message":"opstruss.yaml:1:1: opstruss: this file is for OpsTruss 1.99 or newer; this OpsTruss reads files up to 1.0"'
+stdout '"type":"diagnostic","level":"error","message":"opstruss.yaml:1:1: opstruss: this file is for OpsTruss 1.99 or newer; this OpsTruss reads files up to 1.0: upgrade OpsTruss"'
 ! exec opstruss list --json
 stdout '"error": "opstruss.yaml:1:1: opstruss: this file is for OpsTruss 1.99 or newer'
 
 cd $WORK/component
 ! exec opstruss validate
-stderr '^comp/opstruss.yaml:1:1: opstruss: this file is for OpsTruss 1.99 or newer; this OpsTruss reads files up to 1.0$'
+stderr '^comp/opstruss.yaml:1:1: opstruss: this file is for OpsTruss 1.99 or newer; this OpsTruss reads files up to 1.0: upgrade OpsTruss$'
 ! stderr 'unknown key'
 
 cd $WORK/plugin
 ! exec opstruss validate
-stderr '^plug/opstruss.plugin.yaml:1:1: opstruss: this file is for OpsTruss 1.99 or newer; this OpsTruss reads files up to 1.0$'
+stderr '^plug/opstruss.plugin.yaml:1:1: opstruss: this file is for OpsTruss 1.99 or newer; this OpsTruss reads files up to 1.0: upgrade OpsTruss$'
 ! stderr 'unknown key'
 
 cd $WORK/catalog
 ! exec opstruss validate
-stderr '^ops/opstruss.catalog.yaml:1:1: opstruss: this file is for OpsTruss 1.99 or newer; this OpsTruss reads files up to 1.0$'
+stderr '^ops/opstruss.catalog.yaml:1:1: opstruss: this file is for OpsTruss 1.99 or newer; this OpsTruss reads files up to 1.0: upgrade OpsTruss$'
 ! stderr 'unknown key'
 cp current.yaml ops/opstruss.catalog.yaml
 exec opstruss validate

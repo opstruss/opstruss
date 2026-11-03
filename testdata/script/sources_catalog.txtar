@@ -47,7 +47,8 @@ cp newer.yaml repo/plugins/a/opstruss.plugin.yaml
 exec git -C repo commit -qam newer
 exec git -C repo tag -f v1
 ! exec opstruss plugins update
-stderr 'opstruss: this file is for OpsTruss 1.99 or newer'
+stderr '^github.com/opstruss/catalog@v1/plugins/a/opstruss.plugin.yaml:1:1: opstruss: this file is for OpsTruss 1.99 or newer; this OpsTruss reads files up to 1.0: upgrade OpsTruss$'
+! stderr 'cache/git'
 ! stderr 'unknown key'
 cmp opstruss.lock before.lock
 exec opstruss plan --locked

@@ -333,7 +333,7 @@ func (c *checker) readPackage(dir string) (*Package, error) {
 				return nil, err
 			}
 		}
-		pl, probs, err := readPlugin(c.p.base, dir, b)
+		pl, probs, err := readPlugin(c.p.base, dir, b, c.p.Sources)
 		if err != nil {
 			return nil, err
 		}

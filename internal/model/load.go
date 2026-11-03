@@ -107,7 +107,7 @@ func Find(dir string) (string, error) {
 // Stacks returns the stack names of the project in dir.
 func Stacks(dir string) ([]string, error) {
 	// Problems against the schema are for Load to report with the rest.
-	root, _, err := readDocument(dir, FileName, schema.Project)
+	root, _, err := readDocument(dir, FileName, schema.Project, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -196,7 +196,7 @@ func readProject(dir, stack string, session *sources.Session, check bool) (*Proj
 	if real, err := filepath.EvalSymlinks(dir); err == nil {
 		dir = real
 	}
-	root, probs, err := readDocument(dir, FileName, schema.Project)
+	root, probs, err := readDocument(dir, FileName, schema.Project, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -273,7 +273,7 @@ func readComponent(base, dir, stack string, session *sources.Session, owner *sou
 			return nil, nil, err
 		}
 	}
-	root, probs, err := readDocument(base, rel, schema.Project)
+	root, probs, err := readDocument(base, rel, schema.Project, session)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -345,16 +345,24 @@ func ValidateWith(ctx context.Context, dir string, opts sources.Options) (Proble
 
 // readDocument reads and parses a file, and returns how it differs from
 // its schema; the document comes back with them, so the files it includes
-// are still checked.
-func readDocument(dir, rel string, k schema.Kind) (*document, Problems, error) {
+// are still checked.  A file inside a source that src fetched is named by
+// its address in problems, not by the path of its copy in the cache.
+func readDocument(dir, rel string, k schema.Kind, src *sources.Session) (*document, Problems, error) {
 	data, err := os.ReadFile(filepath.Join(dir, rel))
 	if err != nil {
 		return nil, nil, err
 	}
-	doc, err := parseYAML(data, rel)
+	name := rel
+	if src != nil {
+		if a := src.FileAddress(filepath.Join(dir, rel)); a != "" {
+			name = a
+		}
+	}
+	doc, err := parseYAML(data, name)
 	if err != nil {
 		return nil, nil, err
 	}
+	doc.file = rel
 	found, err := schema.Validate(k, doc.value)
 	if err != nil {
 		return nil, nil, err
@@ -466,7 +474,7 @@ func (p *Project) include(d *document, path []string) Problems {
 					continue
 				}
 			}
-			inc, ip, err := readDocument(p.base, filepath.Join(p.rel(), filepath.FromSlash(m)), schema.Include)
+			inc, ip, err := readDocument(p.base, filepath.Join(p.rel(), filepath.FromSlash(m)), schema.Include, p.Sources)
 			var pp Problems
 			switch {
 			case errors.As(err, &pp):
@@ -508,7 +516,7 @@ func (p *Project) merge(inc *document) Problems {
 		for name, v := range entries {
 			if _, dup := dst[name]; dup {
 				first := p.origins[s+"."+name]
-				probs = append(probs, inc.problem([]string{s, name}, "%s %s is also defined in %s", strings.TrimSuffix(s, "s"), name, first.doc.file))
+				probs = append(probs, inc.problem([]string{s, name}, "%s %s is also defined in %s", strings.TrimSuffix(s, "s"), name, first.doc.name))
 				continue
 			}
 			dst[name] = v

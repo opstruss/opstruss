@@ -106,7 +106,7 @@ events are to the millisecond.
 | `state list` | `stack`; `records`, each with `address`, `id`, and `kind`; `kv` |
 | `plugins`, `plugins fetch`, `plugins update` | `sources` |
 | `plugins prune` | `removed` |
-| `validate` | `valid`, `problems`, and `warnings`, each problem and warning with `file`, `line`, `column`, `path`, and `message`; only problems make `valid` false |
+| `validate` | `valid`, `problems`, and `warnings`, each problem and warning with `file`, `line`, `column`, `path`, and `message`; `file` is relative to the project, or `<repository>@<ref>/<path>` for a file of a remote plugin, component, or catalog; only problems make `valid` false |
 | `stop` | `stack`, `stopped` |
 | `init` | `wrote` |
 | `version` | `version`, `os`, `arch` |

@@ -263,15 +263,36 @@ func (s *Session) Owner(name string) (*Identity, string, error) {
 // Address names a path inside a fetched source, for messages: the address
 // of the source with the path in it, and its ref; "" outside them.
 func (s *Session) Address(name string) string {
+	id, rel, ok := s.locate(name)
+	if !ok {
+		return ""
+	}
+	id.Path = rel
+	return id.Key()
+}
+
+// FileAddress names a file inside a fetched source, for messages, as
+// <repository>@<ref>/<path>, since a ref names the whole repository and a
+// line and column then follow the path; "" outside them.
+func (s *Session) FileAddress(name string) string {
+	id, rel, ok := s.locate(name)
+	if !ok {
+		return ""
+	}
+	return id.Group() + "/" + rel
+}
+
+// locate finds the fetched source that holds name, and the slash path of
+// name in it.
+func (s *Session) locate(name string) (Identity, string, bool) {
 	for _, key := range slices.Sorted(maps.Keys(s.resolved)) {
 		id := s.resolved[key]
 		rel, err := filepath.Rel(s.Cache.Snapshot(id), name)
 		if err == nil && filepath.IsLocal(rel) {
-			id.Path = filepath.ToSlash(rel)
-			return id.Key()
+			return id, filepath.ToSlash(rel), true
 		}
 	}
-	return ""
+	return Identity{}, "", false
 }
 
 func (s *Session) Finish() error {

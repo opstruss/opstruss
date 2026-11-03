@@ -18,12 +18,12 @@ const PluginFile = "opstruss.plugin.yaml"
 // readPlugin reads opstruss.plugin.yaml in dir and checks it, with the
 // programs that it names by a relative path in b; messages name the file
 // relative to the project in projectDir.
-func readPlugin(projectDir, dir string, b *bound) (*Plugin, Problems, error) {
+func readPlugin(projectDir, dir string, b *bound, src *sources.Session) (*Plugin, Problems, error) {
 	rel, err := filepath.Rel(projectDir, filepath.Join(dir, PluginFile))
 	if err != nil {
 		return nil, nil, err
 	}
-	doc, probs, err := readDocument(projectDir, rel, schema.Plugin)
+	doc, probs, err := readDocument(projectDir, rel, schema.Plugin, src)
 	var pp Problems
 	if errors.As(err, &pp) {
 		probs, err = pp, nil

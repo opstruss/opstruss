@@ -53,5 +53,5 @@ func dotted(path []string) string {
 // problem builds a Problem at path in doc.
 func (d *document) problem(path []string, format string, args ...any) Problem {
 	line, col := d.pos(path)
-	return Problem{File: d.file, Line: line, Column: col, Path: dotted(path), Message: fmt.Sprintf(format, args...)}
+	return Problem{File: d.name, Line: line, Column: col, Path: dotted(path), Message: fmt.Sprintf(format, args...)}
 }

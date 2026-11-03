@@ -15,14 +15,15 @@ import (
 // document is one file: its decoded value, and the node tree that knows
 // where each value is written.
 type document struct {
-	file  string
+	file  string // relative to the project
+	name  string // in messages, the address of a file in a remote source
 	root  *yaml.Node
 	value map[string]any
 }
 
 // parseYAML reads a file as YAML 1.2 core schema: on, off, yes, and no are
 // strings, merge keys are allowed, and duplicate keys, explicit tags, and
-// more than one document are errors.
+// more than one document are errors.  Its problems name the file name.
 func parseYAML(data []byte, file string) (*document, error) {
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	var root yaml.Node
@@ -54,7 +55,7 @@ func parseYAML(data []byte, file string) (*document, error) {
 	if err != nil {
 		return nil, Problems{{File: file, Line: 1, Column: 1, Message: err.Error()}}
 	}
-	return &document{file: file, root: doc, value: value.(map[string]any)}, nil
+	return &document{file: file, name: file, root: doc, value: value.(map[string]any)}, nil
 }
 
 // level is the form of opstruss:, MAJOR.MINOR.
@@ -71,7 +72,7 @@ func newerFile(doc *yaml.Node, file string) error {
 		k, v := doc.Content[i], doc.Content[i+1]
 		if k.Value == "opstruss" && v.Kind == yaml.ScalarNode && v.Tag == "!!str" && level.MatchString(v.Value) && newerLevel(v.Value, Level) {
 			return Problems{{File: file, Line: k.Line, Column: k.Column, Path: "opstruss",
-				Message: fmt.Sprintf("this file is for OpsTruss %s or newer; this OpsTruss reads files up to %s", v.Value, Level)}}
+				Message: fmt.Sprintf("this file is for OpsTruss %s or newer; this OpsTruss reads files up to %s: upgrade OpsTruss", v.Value, Level)}}
 		}
 	}
 	return nil
