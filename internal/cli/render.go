@@ -446,7 +446,8 @@ func (r *renderer) blockEvent(ev engine.Event) []piece {
 			msg = paint(color, dim, msg)
 		}
 		r.printed[k] = true
-		return r.blockLine(k, w, paint(color, dim, "│")+" "+msg+"\n", color)
+		gutter := paint(color, dim, "│") + " "
+		return r.blockLine(k, w, under(w, gutter, gutter, msg), color)
 	}
 	if r.table != nil && ev.Address == "" && ev.Status == "" && ev.Type != "approval" {
 		// A note of the run while the plan is gathered, as that this machine
@@ -517,7 +518,7 @@ func (r *renderer) program(ev engine.Event, key string, w io.Writer, color bool)
 		for ; r.blanks[k] > 0; r.blanks[k]-- {
 			out = append(out, r.blockLine(k, w, gutter+"\n", color)...)
 		}
-		return append(out, r.blockLine(k, w, gutter+" "+msg+"\n", color)...)
+		return append(out, r.blockLine(k, w, under(w, gutter+" ", gutter+" ", msg), color)...)
 	}
 	// A line outside any block, as of a service: led by its source while
 	// others print too, as docker compose up does.
@@ -536,14 +537,25 @@ func (r *renderer) program(ev engine.Event, key string, w io.Writer, color bool)
 		}
 		l := r.tags[key]
 		pad := strings.Repeat(" ", r.width-utf8.RuneCountInString(l))
-		return []piece{{w, paint(color, r.color(key), l) + pad + " " + paint(color, dim, "│") + " " + msg + "\n"}}
+		gutter := " " + paint(color, dim, "│") + " "
+		return []piece{{w, under(w, paint(color, r.color(key), l)+pad+gutter, strings.Repeat(" ", r.width)+gutter, msg)}}
 	}
 	var out []piece
 	if r.last != key {
 		out = append(out, piece{w, r.header(key, color) + "\n"})
 		r.last = key
 	}
-	return append(out, piece{w, paint(color, dim, "│") + " " + msg + "\n"})
+	gutter := paint(color, dim, "│") + " "
+	return append(out, piece{w, under(w, gutter, gutter, msg)})
+}
+
+// under is msg after lead, as a line of the terminal of w. A terminal
+// starts the rows of a line that it wraps at its left edge, beside no
+// gutter; under wraps a line too wide itself, and starts each row after
+// the first with more, as wide as lead.
+func under(w io.Writer, lead, more, msg string) string {
+	rows := ansi.Wrap(msg, utf8.RuneCountInString(ansi.Strip(lead)), termWidth(w))
+	return lead + strings.Join(rows, "\n"+more) + "\n"
 }
 
 // maxHeldBlock bounds the lines that a block holds while another shows; a

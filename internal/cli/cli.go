@@ -48,6 +48,20 @@ func writesTerminal(w io.Writer) bool {
 	return ok && isTerminal(f)
 }
 
+// termWidth is the width of the terminal that w writes to, or 0 for a
+// writer that is not one.
+func termWidth(w io.Writer) int {
+	f, ok := w.(*os.File)
+	if !ok {
+		return 0
+	}
+	n, _, err := term.GetSize(int(f.Fd()))
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
 // colorFor says whether what goes to w is in color (ansi.Color); with
 // --json, only the environment turns it on, for a reader that shows ANSI.
 func (a *app) colorFor(w io.Writer) bool {
