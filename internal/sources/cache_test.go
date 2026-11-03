@@ -190,6 +190,49 @@ func TestGitCacheIntegrityOfflineAndRepair(t *testing.T) {
 	}
 }
 
+// A name that is both a tag and a branch names the tag, lightweight or
+// annotated, as git reads it, so a branch named after a major tag does not
+// move the projects that use the tag.
+func TestResolveRefPrefersTag(t *testing.T) {
+	dir, tagged := gitFixture(t)
+	git := func(args ...string) string {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null")
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	git("commit", "-q", "--allow-empty", "-m", "branch")
+	branch := git("rev-parse", "HEAD")
+	git("branch", "v1")
+	cache, err := UserCache()
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolve := func(ref string) string {
+		t.Helper()
+		id, _ := Parse(Repository + "@" + ref)
+		commit, err := cache.ResolveRef(context.Background(), id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return commit
+	}
+	if got := resolve("v1"); got != tagged {
+		t.Fatalf("lightweight tag and branch v1: %s, want the tag %s", got, tagged)
+	}
+	git("tag", "-f", "-a", "-m", "v1", "v1", tagged)
+	if got := resolve("v1"); got != tagged {
+		t.Fatalf("annotated tag and branch v1: %s, want the tag %s", got, tagged)
+	}
+	if got := resolve("main"); got != branch {
+		t.Fatalf("branch main: %s, want %s", got, branch)
+	}
+}
+
 func TestGitHashModesLinksAndWholeTree(t *testing.T) {
 	dir, commit := gitFixture(t)
 	ctx := context.Background()

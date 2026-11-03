@@ -96,20 +96,20 @@ func (c *Cache) ResolveRef(ctx context.Context, id Identity) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("%s: cannot resolve ref: %w", id.Key(), err)
 	}
-	var commit, peeled string
+	refs := map[string]string{}
 	for line := range strings.SplitSeq(string(b), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) != 2 {
-			continue
-		}
-		if strings.HasSuffix(fields[1], "^{}") {
-			peeled = fields[0]
-		} else if commit == "" {
-			commit = fields[0]
+		if fields := strings.Fields(line); len(fields) == 2 {
+			refs[fields[1]] = fields[0]
 		}
 	}
-	if peeled != "" {
-		commit = peeled
+	// A tag wins over a branch of the same name, as git reads a name, and
+	// an annotated tag names the commit that it points to.
+	commit := refs["refs/tags/"+id.Ref+"^{}"]
+	if commit == "" {
+		commit = refs["refs/tags/"+id.Ref]
+	}
+	if commit == "" {
+		commit = refs["refs/heads/"+id.Ref]
 	}
 	if !commitPattern.MatchString(commit) {
 		return "", fmt.Errorf("%s: ref did not resolve to a commit", id.Key())
