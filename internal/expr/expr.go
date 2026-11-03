@@ -426,7 +426,9 @@ func EvalString(str string, s *Scope) (any, error) {
 			return nil, err
 		}
 		switch v.(type) {
-		case nil, []any, map[string]any:
+		case nil:
+			return nil, withWhy(fmt.Sprintf("${{ %s }} is null inside text", p.Expr), whyNull(p.Expr, s))
+		case []any, map[string]any:
 			return nil, fmt.Errorf("${{ %s }} is %s inside text: write the whole value as one ${{ }}, or use toJSON()", p.Expr, TypeName(v))
 		}
 		b.WriteString(Text(v))
@@ -442,10 +444,85 @@ func EvalText(str string, s *Scope) (string, error) {
 		return "", err
 	}
 	switch v.(type) {
-	case nil, []any, map[string]any:
+	case nil:
+		return "", withWhy(fmt.Sprintf("%q is null, and env values and argv items are strings", str), WhyNull(str, s))
+	case []any, map[string]any:
 		return "", fmt.Errorf("%q is %s, and env values and argv items are strings: use toJSON()", str, TypeName(v))
 	}
 	return Text(v), nil
+}
+
+// WhyNull says why a value as written, such as "${{ units.db.outputs.count
+// }}", is null when it reads an output that is null: "unit db gave no value
+// for output count", as a plugin that does not write it. It is "" for a
+// value that reads no such output.
+func WhyNull(v any, s *Scope) string {
+	str, ok := v.(string)
+	if !ok {
+		return ""
+	}
+	parts, err := Split(str)
+	if err != nil {
+		return ""
+	}
+	for _, p := range parts {
+		if !p.IsExpr {
+			continue
+		}
+		if why := whyNull(p.Expr, s); why != "" {
+			return why
+		}
+	}
+	return ""
+}
+
+// whyNull is WhyNull for the source of one expression: the first output of
+// a unit or a step that src reads whose value is null.
+func whyNull(src string, s *Scope) string {
+	u, err := analyzed(src)
+	if err != nil {
+		return ""
+	}
+	for _, r := range u.Refs {
+		var kind string
+		switch r.Path[0] {
+		case "units":
+			kind = "unit"
+		case "steps":
+			kind = "step"
+		default:
+			continue
+		}
+		n := len(r.Path)
+		if r.Dynamic || n < 4 || r.Path[n-2] != "outputs" || !nullAt(s.Vars[r.Path[0]], r.Path[1:]) {
+			continue
+		}
+		return fmt.Sprintf("%s %s gave no value for output %s", kind, r.Path[1], r.Path[n-1])
+	}
+	return ""
+}
+
+// nullAt reports whether v holds null at path: a key there whose value is
+// null, not a key that is missing.
+func nullAt(v any, path []string) bool {
+	for _, k := range path {
+		m, ok := v.(map[string]any)
+		if !ok {
+			return false
+		}
+		if v, ok = m[k]; !ok {
+			return false
+		}
+	}
+	return v == nil
+}
+
+// withWhy is the error msg, followed by why when there is one.
+func withWhy(msg, why string) error {
+	if why == "" {
+		return errors.New(msg)
+	}
+	return fmt.Errorf("%s: %s", msg, why)
 }
 
 // EvalValue evaluates every expression in a string, map, or list.

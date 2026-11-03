@@ -84,8 +84,9 @@ optional values (`?.`, `orValue`), `cel.bind`, and `base64`.
 - A value that is a single `${{ }}` keeps the type of its result: a list,
   a map, a number, or a boolean, also in quotes in YAML.
 - `${{ }}` inside text gives a string. Numbers and booleans become text; a
-  list, a map, or `null` is refused, with `toJSON()` as the way to write
-  it.
+  list or a map is refused, with `toJSON()` as the way to write it. `null`
+  is refused too, and the error names the output that is null, as
+  `unit db gave no value for output count`.
 - A value of `env:` and an item of a `run` list are always strings.
 - A number takes the type of the input or output it goes to: a `number` is
   a `double`, also when it is whole, and an `integer` is an `int`, which

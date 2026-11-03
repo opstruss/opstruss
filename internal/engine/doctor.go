@@ -165,7 +165,7 @@ func (d *doctor) units() {
 		var inputs map[string]any
 		if err == nil {
 			decl, _ := t.Inputs()
-			inputs, err = conform(decl, v.(map[string]any))
+			inputs, err = conform(decl, v.(map[string]any), nil, nil)
 		}
 		if err != nil {
 			d.skip = append(d.skip, &Check{Check: "program", Status: "skip", For: []string{what},

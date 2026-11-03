@@ -1,0 +1,61 @@
+# An output that its unit gives no value, as one that a plugin declares but
+# does not write, is null: an input given it takes its default, and env, a
+# run item, or a required input that reads it stops the unit, naming the
+# unit and the output.
+
+env HOME=$WORK/home
+
+! exec opstruss up --yes
+stdout '^default/db: up: done$'
+stdout '^default/sized \| size 3$'
+stderr '^default/envvar: env.C: "\$\{\{ units.db.outputs.count \}\}" is null, and env values and argv items are strings: unit db gave no value for output count$'
+stderr '^default/argv: run: item 1: \$\{\{ units.db.outputs.count \}\} is null inside text: unit db gave no value for output count$'
+stderr '^default/need: with: input count: required; unit db gave no value for output count$'
+stderr '^default/comp/show: run: item 1: \$\{\{ inputs.count \}\}: input count of comp: required; unit db gave no value for output count$'
+! stderr toJSON
+
+-- opstruss.yaml --
+name: app
+uses:
+  hosts: ./plugins/hosts
+  need: ./plugins/need
+units:
+  db:
+    uses: hosts
+  sized:
+    uses: need
+    with: {count: 1, size: "${{ units.db.outputs.count }}"}
+  envvar:
+    run: [sh, -c, 'echo "$C"']
+    env:
+      C: ${{ units.db.outputs.count }}
+  argv:
+    run: [echo, "count ${{ units.db.outputs.count }}"]
+  need:
+    uses: need
+    with: {count: "${{ units.db.outputs.count }}"}
+  comp:
+    uses: ./comp
+    with: {count: "${{ units.db.outputs.count }}"}
+-- plugins/hosts/opstruss.plugin.yaml --
+name: hosts
+outputs:
+  line: {type: string}
+  count: {type: integer}
+tasks:
+  up:
+    run: [sh, -c, 'echo "line=10.0.0.2 db.local" > "$OPSTRUSS_OUTPUT"']
+-- plugins/need/opstruss.plugin.yaml --
+name: need
+inputs:
+  count: {type: integer, required: true}
+  size: {type: integer, default: 3}
+tasks:
+  up:
+    run: [sh, -c, 'echo "size $INPUT_SIZE"']
+-- comp/opstruss.yaml --
+inputs:
+  count: {type: integer, required: true}
+units:
+  show:
+    run: [echo, "${{ inputs.count }}"]

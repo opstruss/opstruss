@@ -76,7 +76,7 @@ func (e *engine) resolvePlugin(inst *instance, r *resolved, s *expr.Scope) error
 		}
 		r.inputHidden[k], inputMarks[k] = true, true
 	}
-	inputs, err := conform(pl.Inputs, v.(map[string]any))
+	inputs, err := conform(pl.Inputs, v.(map[string]any), given, s)
 	if err != nil {
 		return fmt.Errorf("with: %w", err)
 	}

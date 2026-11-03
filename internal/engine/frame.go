@@ -237,7 +237,12 @@ func (e *engine) inputsAndMarks(f *frame) (map[string]any, map[string]any) {
 				e.known("input "+name+" of "+e.short(f.address), v)
 			}
 			if err == nil {
-				v, err = in.Conform(v)
+				null := v == nil
+				if v, err = in.Conform(v); err != nil && null {
+					if why := expr.WhyNull(w, s); why != "" {
+						err = fmt.Errorf("%w; %s", err, why)
+					}
+				}
 			}
 			if err != nil {
 				err = fmt.Errorf("input %s of %s: %w", name, e.short(f.address), err)

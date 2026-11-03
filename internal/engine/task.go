@@ -499,7 +499,7 @@ func (e *engine) callTask(ctx context.Context, name string, t *model.Task, dir s
 			marks[k] = true
 		}
 	}
-	inputs, err := conform(decl, given)
+	inputs, err := conform(decl, given, nil, nil)
 	if err != nil {
 		if c.top && e.opts.RerunOf == "" {
 			err = flagHint(decl, given, err)
@@ -1213,8 +1213,10 @@ func forEachItems(val any) (map[string]any, error) {
 }
 
 // conform gives a task its inputs: each given value checked against its
-// schema, and the default of each input not given.
-func conform(decl map[string]*model.Input, given map[string]any) (map[string]any, error) {
+// schema, and the default of each input not given. written holds the given
+// values as written, read in s, when there are any, so a required input
+// given null names the output that is null.
+func conform(decl map[string]*model.Input, given, written map[string]any, s *expr.Scope) (map[string]any, error) {
 	for k := range given {
 		if decl[k] == nil {
 			return nil, fmt.Errorf("the task has no input %s", k)
@@ -1224,6 +1226,11 @@ func conform(decl map[string]*model.Input, given map[string]any) (map[string]any
 	for k, in := range decl {
 		v, err := in.Conform(given[k])
 		if err != nil {
+			if given[k] == nil {
+				if why := expr.WhyNull(written[k], s); why != "" {
+					err = fmt.Errorf("%w; %s", err, why)
+				}
+			}
 			return nil, fmt.Errorf("input %s: %w", k, err)
 		}
 		out[k] = v

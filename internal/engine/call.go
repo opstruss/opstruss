@@ -212,7 +212,7 @@ func (e *engine) callInputs(t *model.Target, args map[string]any, s *expr.Scope)
 	if !typed {
 		return out, marks, nil
 	}
-	out, err := conform(decl, out)
+	out, err := conform(decl, out, given, s)
 	return out, marks, err
 }
 

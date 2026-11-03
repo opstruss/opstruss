@@ -271,7 +271,7 @@ func (e *engine) fire(ctx context.Context, t *Trigger, over map[string]any, ask 
 			given = map[string]any{}
 		}
 		maps.Copy(given, over)
-		if _, err := conform(task.Inputs, given); err != nil {
+		if _, err := conform(task.Inputs, given, nil, nil); err != nil {
 			return nil, &WithError{e.redact.Err(fmt.Errorf("with: %w", err))}
 		}
 	}

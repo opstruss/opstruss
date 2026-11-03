@@ -88,6 +88,15 @@ where it is, and an output holds its path.
   ```
 
 - A value of `env:` and an item of a `run` list are always strings.
+- An output that its unit gives no value, as one that a program or a
+  plugin declares but does not write, is `null`. An input given `null`
+  takes its default, as one not given. Text, a value of `env:`, an item of
+  a `run` list, or a required input that reads it stops the unit, naming
+  the unit and the output:
+
+  ```console
+  default/show: env.C: "${{ units.db.outputs.count }}" is null, and env values and argv items are strings: unit db gave no value for output count
+  ```
 
 [Expressions](../reference/expressions#types) has every rule of types.
 

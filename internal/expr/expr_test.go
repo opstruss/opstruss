@@ -124,6 +124,28 @@ func TestEval(t *testing.T) {
 	if _, err := EvalText("${{ inputs.hosts }}", s); err == nil || !strings.Contains(err.Error(), "use toJSON()") {
 		t.Errorf("an array is not an env value: %v", err)
 	}
+	// A null names the output that its unit or step gave no value.
+	null := &Scope{Vars: map[string]any{
+		"units": map[string]any{
+			"db":  map[string]any{"outputs": map[string]any{"count": nil}},
+			"web": map[string]any{"a": map[string]any{"outputs": map[string]any{"url": nil}}},
+		},
+		"steps":  map[string]any{"build": map[string]any{"outputs": map[string]any{"image": nil}}},
+		"inputs": map[string]any{"tag": nil},
+	}}
+	for in, want := range map[string]string{
+		"${{ units.db.outputs.count }}":      `"${{ units.db.outputs.count }}" is null, and env values and argv items are strings: unit db gave no value for output count`,
+		"${{ units.web['a'].outputs.url }}":  `"${{ units.web['a'].outputs.url }}" is null, and env values and argv items are strings: unit web gave no value for output url`,
+		"x ${{ steps.build.outputs.image }}": "${{ steps.build.outputs.image }} is null inside text: step build gave no value for output image",
+		"${{ inputs.tag }}":                  `"${{ inputs.tag }}" is null, and env values and argv items are strings`,
+	} {
+		if _, err := EvalText(in, null); err == nil || err.Error() != want {
+			t.Errorf("%s: got %v, want %s", in, err, want)
+		}
+	}
+	if why := WhyNull("${{ units.db.outputs.other }}", null); why != "" {
+		t.Errorf("an output that is not there is not null: %s", why)
+	}
 	if ok, err := EvalCondition("inputs.port > 80", s); err != nil || !ok {
 		t.Errorf("condition without ${{ }}: %v %v", ok, err)
 	}
