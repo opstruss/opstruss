@@ -245,7 +245,7 @@ A unit: something that up brings up and destroy takes away, with exactly one of 
 | `outputs` | map of [Output](#output) | Outputs of the program, which other units read as units.&lt;name&gt;.outputs.&lt;output&gt;. |
 | `destroy` | string or list of string | The program that takes the unit away, which its record keeps. |
 | `restart` | one of `no`, `on-failure`, `always` | When the daemon starts the service again after it exits: no, on-failure, or always; on-failure by default. |
-| `stop` | [Stop](#stop) | How the program is stopped. |
+| `stop` | [Stop](#stop) | How each program of the unit is stopped; each key it gives wins over the stop of what the unit uses. |
 | `ready` | [Unit › ready](#unit-ready) | When the service counts as started: a URL, a port, or a program; up waits for it. |
 | `needs` | list of string | Units that come before this one, besides those its expressions read. |
 | `if` | string or boolean | A condition that decides whether the unit is in the stack; one that leaves it is destroyed. |
@@ -293,7 +293,7 @@ Exactly one of run, steps, or one call of a task.
 | `approval` | one of `ask`, `auto` | ask to wait for approval of the changes that the task makes, auto to apply them without asking. |
 | `concurrency` | one of `queue`, `cancel`, `skip`, `parallel` or [Task › concurrency](#task-concurrency) | What a new run of the task does while another goes on, also across the tasks of one group. |
 | `timeout` | string | How long the task may run. |
-| `stop` | [Stop](#stop) | How its program is stopped. |
+| `stop` | [Stop](#stop) | How the program is stopped, also each step's program and the task a step calls by name; each key it gives wins over the stop of the task it calls. always: has its grace after a cancel. |
 | `retry` | [Retry](#retry) | Running the task again when it fails. |
 | `failed_when` | string or boolean | A condition on the outputs that marks the task failed. |
 | `changed_when` | string or boolean | A condition on the outputs that says whether the task changed something. |

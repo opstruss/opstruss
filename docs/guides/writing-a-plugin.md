@@ -90,8 +90,10 @@ text differs; `destroy` removes it.
   `note.<task>: {…}` and a unit uses as `uses: note.<task>`.
 - `plan`, `up`, and `destroy` run only for a unit, under its lock, so a
   step cannot call them; a step runs `task: up` with `units:` instead.
-- `stop:` and `tty:` on a task are its defaults, which the unit or the
-  step that runs it can change. `tty: true` gives the tool a terminal of
+- `stop:` and `tty:` on a task are its defaults. The unit that uses it or
+  the step that calls it can change `tty:`; the unit or the task of that
+  step can change `stop:`, key by key. The destroy contract of the unit
+  keeps both. `tty: true` gives the tool a terminal of
   its own while the run shows on one, for the progress of a tool such as
   `docker compose`; it gets pipes in CI, so it must work with either
   ([program contract](../reference/program-contract#a-terminal-of-its-own)).

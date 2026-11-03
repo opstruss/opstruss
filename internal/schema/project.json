@@ -675,7 +675,7 @@
           "description": "When the daemon starts the service again after it exits: no, on-failure, or always; on-failure by default.",
           "enum": ["no", "on-failure", "always"]
         },
-        "stop": { "$ref": "#/$defs/stop", "description": "How the program is stopped." },
+        "stop": { "$ref": "#/$defs/stop", "description": "How each program of the unit is stopped; each key it gives wins over the stop of what the unit uses." },
         "ready": {
           "description": "When the service counts as started: a URL, a port, or a program; up waits for it.",
           "type": "object",
@@ -828,7 +828,7 @@
           ]
         },
         "timeout": { "$ref": "#/$defs/duration", "description": "How long the task may run." },
-        "stop": { "$ref": "#/$defs/stop", "description": "How its program is stopped." },
+        "stop": { "$ref": "#/$defs/stop", "description": "How the program is stopped, also each step's program and the task a step calls by name; each key it gives wins over the stop of the task it calls. always: has its grace after a cancel." },
         "retry": {
           "$ref": "#/$defs/retry",
           "description": "Running the task again when it fails."

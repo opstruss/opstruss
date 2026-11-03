@@ -164,6 +164,14 @@ group is killed. Processes left in the group when the program ends, such
 as `server &` in a script, are stopped the same way before the lock of
 the unit is let go, as systemd does with `KillMode=control-group`.
 
+`stop` of a unit covers each program run for it, the `plan`, `status`,
+`logs`, and `destroy` of its plugin included, and `stop` of a task covers
+the programs of its steps; `always:` gets its `stop.grace` after a
+cancel. Each key comes from the nearest that writes it: a unit or a task
+wins over the task it runs, a unit of a component over the unit that uses
+the component, and the `stop` of a task in a plugin is the default, so
+`stop: {grace: 5m}` on a unit keeps the signal that the plugin asks for.
+
 The lock of the run is the inherited file descriptor 3, which a shell and
 Go pass on to children; a run that starts after OpsTruss died waits while
 a program of the old run still holds it, or still carries

@@ -40,6 +40,7 @@ type resolved struct {
 	stop     plugin.Stop
 	tty      bool        // of the program of up
 	ttyDown  bool        // of the program of destroy
+	stopDown *model.Stop // of the program of destroy, as its contract keeps it
 	waitFor  []string    // the addresses of the upstream units of reads, in plan order
 	reads    []string    // the parts that read outputs this run changes first, such as env.URL
 	plugin   *pluginUnit // for a unit that uses a plugin
@@ -158,7 +159,7 @@ func (e *engine) resolve(inst *instance, preview bool) (*resolved, error) {
 	if r.stop, err = plugin.StopOf(u.Stop); err != nil {
 		return nil, err
 	}
-	r.tty, r.ttyDown = isTrue(u.TTY), isTrue(u.TTY)
+	r.tty, r.ttyDown, r.stopDown = isTrue(u.TTY), isTrue(u.TTY), u.Stop
 	if u.Service != nil {
 		if err := e.resolveService(u, r, s); err != nil {
 			return nil, err
@@ -437,7 +438,7 @@ func (e *engine) destroyContract(inst *instance, r *resolved) *state.Destroy {
 			d.Env[k] = v.Text
 		}
 	}
-	if s := inst.def.Stop; s != nil {
+	if s := r.stopDown; s != nil {
 		d.Stop = &state.DestroyStop{Signal: s.Signal, Grace: s.Grace}
 	}
 	e.sourceContract(inst, r, d)

@@ -237,7 +237,7 @@ func (e *engine) unitLogs(ctx context.Context, inst *instance, follow bool) (any
 		if inst.record != nil {
 			ur.state = programState(inst.record)
 		}
-		res := e.callTask(ctx, "logs", task, inst.dir, given, call{unit: inst, plugin: run, unitRun: ur, tty: inst.def.TTY})
+		res := e.callTask(ctx, "logs", task, inst.dir, given, call{unit: inst, plugin: run, unitRun: ur, tty: inst.def.TTY, stop: inst.def.Stop})
 		return res.view(), res.viewMarks()
 	}
 	if inst.def.Service != nil {

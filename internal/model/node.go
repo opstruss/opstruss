@@ -38,9 +38,9 @@ func (n *Node) Dir() string { return n.In.DirOf("units." + n.Name) }
 // Def is the unit as it runs, with what the units that use the components
 // it is in give it: protect when any of them writes it; approval ask when
 // any writes ask, otherwise auto when any writes auto, so a component only
-// narrows what its user decides; timeout, retry, stop, and tty from the
-// nearest that writes them; pass from all. Env stays the unit's own, since
-// each is read where it is written.
+// narrows what its user decides; timeout, retry, and tty from the nearest
+// that writes them, and each key of stop too; pass from all. Env stays the
+// unit's own, since each is read where it is written.
 func (n *Node) Def() *Unit {
 	if n.Parent == nil {
 		return n.Unit
@@ -59,9 +59,7 @@ func (n *Node) Def() *Unit {
 		if u.Retry == nil {
 			u.Retry = au.Retry
 		}
-		if u.Stop == nil {
-			u.Stop = au.Stop
-		}
+		u.Stop = u.Stop.Over(au.Stop)
 		if u.TTY == nil {
 			u.TTY = au.TTY
 		}
@@ -70,6 +68,20 @@ func (n *Node) Def() *Unit {
 		}
 	}
 	return &u
+}
+
+// Over is s with the keys it leaves out taken from base: the stop of what
+// is nearer the program, over that of what it runs.
+func (s *Stop) Over(base *Stop) *Stop {
+	if s == nil {
+		return base
+	}
+	if base == nil {
+		return s
+	}
+	out := *s
+	out.Signal, out.Grace = cmp.Or(s.Signal, base.Signal), cmp.Or(s.Grace, base.Grace)
+	return &out
 }
 
 // Segment is one step of an address: a unit and the key of its instance.

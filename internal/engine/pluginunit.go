@@ -28,6 +28,7 @@ type pluginUnit struct {
 	inputs map[string]any // the plugin's inputs, from the declaration's with: and the unit's
 	plan   *model.Command // nil when the plugin has no plan
 	tty    bool           // of the plan
+	stop   plugin.Stop    // of the plan
 	hash   string         // of what the plugin's directory holds, as h1: is
 	tool   string         // tool/, where a plugin with state: tool keeps the tool's state
 	env    model.Env      // the env of the declaration and the unit, evaluated
@@ -97,14 +98,18 @@ func (e *engine) resolvePlugin(inst *instance, r *resolved, s *expr.Scope) error
 		return fmt.Errorf("up: %w", err)
 	}
 	r.shell = up.Shell
-	// The tty of the unit, as its stop, wins over that of each task.
+	// The tty of the unit wins over that of each task, and each key of its
+	// stop over that of the task.
 	r.tty = isTrue(ttyOf(u.TTY, up.TTY))
+	if r.stop, err = plugin.StopOf(u.Stop.Over(up.Stop)); err != nil {
+		return err
+	}
 	if d := pl.Tasks["destroy"]; d != nil {
 		cmd, err := e.command(d.Run, ps)
 		if err != nil {
 			return fmt.Errorf("destroy: %w", err)
 		}
-		r.destroy, r.ttyDown = &cmd, isTrue(ttyOf(u.TTY, d.TTY))
+		r.destroy, r.ttyDown, r.stopDown = &cmd, isTrue(ttyOf(u.TTY, d.TTY)), u.Stop.Over(d.Stop)
 	}
 	if p := pl.Tasks["plan"]; p != nil {
 		cmd, err := e.command(p.Run, ps)
@@ -112,6 +117,9 @@ func (e *engine) resolvePlugin(inst *instance, r *resolved, s *expr.Scope) error
 			return fmt.Errorf("plan: %w", err)
 		}
 		pu.plan, pu.tty = &cmd, isTrue(ttyOf(u.TTY, p.TTY))
+		if pu.stop, err = plugin.StopOf(u.Stop.Over(p.Stop)); err != nil {
+			return err
+		}
 	}
 	pu.base = r.dir
 	if up.Dir != "" {
@@ -170,11 +178,6 @@ func (e *engine) resolvePlugin(inst *instance, r *resolved, s *expr.Scope) error
 		return fmt.Errorf("requires: %w", err)
 	}
 	r.requires = append(append(slices.Clone(pl.Requires), reqs...), r.requires...)
-	if u.Stop == nil && up.Stop != nil {
-		if r.stop, err = plugin.StopOf(up.Stop); err != nil {
-			return err
-		}
-	}
 	r.plugin = pu
 	return nil
 }
@@ -283,7 +286,7 @@ func (e *engine) statusPass(ctx context.Context, patterns []string) (map[string]
 				ur.state = programState(inst.record)
 			}
 			res := e.callTask(ctx, "status", t.Package.Plugin.Tasks["status"], inst.dir, r.plugin.inputs,
-				call{unit: inst, plugin: run, unitRun: ur, tty: inst.def.TTY})
+				call{unit: inst, plugin: run, unitRun: ur, tty: inst.def.TTY, stop: inst.def.Stop})
 			out[short] = res.view()
 			if m := res.viewMarks(); m != nil {
 				marks[short] = m
@@ -378,7 +381,7 @@ type pluginPlan struct {
 func (e *engine) planPlugin(ctx context.Context, inst *instance, r *resolved, rec *state.Record, held *heldLogs) (*pluginPlan, error) {
 	pl := r.plugin.target.Package.Plugin
 	c := &plugin.Call{Command: *r.plugin.plan, Shell: pl.Tasks["plan"].Shell, Base: inst.dir, Dir: r.dir,
-		Env: r.env, Pass: slices.Sorted(maps.Keys(r.pass)), Stop: r.stop, Task: "plan", Reason: "requested", Plan: true,
+		Env: r.env, Pass: slices.Sorted(maps.Keys(r.pass)), Stop: r.plugin.stop, Task: "plan", Reason: "requested", Plan: true,
 		Unit: e.unitOf(inst, r, rec), Inputs: r.plugin.inputs, PluginDir: r.plugin.dir}
 	ss := e.streams(c, r.plugin.tty, Event{Address: inst.address, Task: "plan"}, held)
 	defer ss.out.flush()
