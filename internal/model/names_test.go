@@ -25,7 +25,7 @@ func TestNames(t *testing.T) {
 			"concurrency", "continue_on_error", "debounce", "description", "dir", "env", "failed_when", "field", "for_each",
 			"force", "id", "if", "inputs", "internal", "max_parallel", "name", "needs", "on", "outputs", "pass", "paths",
 			"requires", "rescue", "retry", "run", "shell", "sops", "stdin", "steps", "stop", "stream", "task", "timeout",
-			"unit", "units", "with", "yes"}},
+			"tty", "unit", "units", "with", "yes"}},
 	} {
 		if !slices.Equal(l.got, l.want) {
 			t.Errorf("%s is %q; 1.0 has %q, and a name added later loses to a name of the user instead", l.name, l.got, l.want)

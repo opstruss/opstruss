@@ -1,0 +1,78 @@
+# tty is for a program that a run shows: validate refuses it on a service,
+# which runs in the daemon, on a task: step, whose task keeps its own, and on
+# the watch and exec hooks of a plugin, and takes it elsewhere.
+
+env HOME=$WORK/home
+
+exec opstruss validate -C good
+stdout 'valid'
+
+! exec opstruss validate -C bad
+stderr '^opstruss.yaml:6:5: units.web.tty: tty is for programs that a run shows; a service runs in the daemon$'
+stderr '^opstruss.yaml:11:9: tasks.deploy.steps\[0\].tty: a task: step passes data through with:; the task keeps its own tty$'
+
+! exec opstruss validate --json -C bad
+stdout '"valid": false'
+stdout '"path": "units.web.tty"'
+stdout '"path": "tasks.deploy.steps\[0\].tty"'
+
+! exec opstruss validate -C hooks
+stderr '^plugins/p/opstruss.plugin.yaml:7:5: tasks.watch.tty: the stdout of the watch hook is its events, which the daemon reads; a terminal is for programs that a run shows$'
+stderr '^plugins/p/opstruss.plugin.yaml:10:5: tasks.exec.tty: the program of the exec hook has the terminal of opstruss exec already$'
+
+-- good/opstruss.yaml --
+name: shop
+uses:
+  p: ./plugins/p
+units:
+  db:
+    uses: p
+    tty: false
+  site:
+    run: [echo, up]
+    tty: true
+tasks:
+  build:
+    tty: true
+    steps:
+      - run: [npm, install]
+      - run: [echo, done]
+        tty: false
+-- good/plugins/p/opstruss.plugin.yaml --
+name: p
+tasks:
+  up:
+    run: [echo, up]
+    tty: true
+-- bad/opstruss.yaml --
+name: shop
+units:
+  web:
+    service: [sleep, "60"]
+    restart: always
+    tty: true
+tasks:
+  deploy:
+    steps:
+      - task: build
+        tty: true
+  build:
+    run: [echo, build]
+-- hooks/opstruss.yaml --
+name: shop
+uses:
+  p: ./plugins/p
+units:
+  db:
+    uses: p
+-- hooks/plugins/p/opstruss.plugin.yaml --
+name: p
+tasks:
+  up:
+    run: [echo, up]
+  watch:
+    run: [echo, watch]
+    tty: true
+  exec:
+    run: [sh]
+    tty: true

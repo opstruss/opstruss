@@ -114,6 +114,7 @@ type call struct {
 	unitRun *unitRun       // what the unit gives, for a task that runs for it
 	marks   map[string]any // which of the given inputs are sensitive
 	top     bool           // the call of the command line, whose inputs come from its flags
+	tty     *bool          // what the caller writes over the tty of the task
 }
 
 // address is the unit that runs the call, which the lines of its programs
@@ -661,18 +662,19 @@ func (e *engine) taskOnce(ctx context.Context, name, label string, t *model.Task
 	e.startTask(c.address(), label, "")
 	var res *taskResult
 	env, pass := c.envPass(t)
+	tty := ttyOf(c.tty, t.TTY)
 	switch {
 	case t.Run != nil:
 		res = e.program(ctx, progSpec{frame: c.where(e), label: label, task: name, cmd: t.Run, shell: t.Shell, dir: t.Dir, base: dir,
 			env: env, pass: pass, stdin: t.Stdin, inputs: scope.Vars["inputs"].(map[string]any), outputs: t.Outputs,
-			retry: t.Retry, failedWhen: t.FailedWhen, changedWhen: t.ChangedWhen, stop: t.Stop, unit: c.unit, plugin: c.plugin,
+			retry: t.Retry, failedWhen: t.FailedWhen, changedWhen: t.ChangedWhen, stop: t.Stop, tty: tty, unit: c.unit, plugin: c.plugin,
 			unitRun: c.unitRun}, scope)
 	case len(t.Calls) == 1:
 		// A task that calls one task passes on its outputs.
 		for callee, args := range t.Calls {
 			res = e.callByName(ctx, progSpec{frame: c.where(e), label: label, task: name, shell: t.Shell, dir: t.Dir, base: dir, env: env,
 				pass: pass, stdin: t.Stdin, retry: t.Retry, failedWhen: t.FailedWhen, changedWhen: t.ChangedWhen,
-				stop: t.Stop, unit: c.unit, plugin: c.plugin, unitRun: c.unitRun}, callee, args, scope)
+				stop: t.Stop, tty: tty, unit: c.unit, plugin: c.plugin, unitRun: c.unitRun}, callee, args, scope)
 		}
 	default:
 		res = e.stepsWithRetry(ctx, name, label, t, dir, scope, c)
@@ -708,7 +710,7 @@ func (e *engine) stepsWithRetry(ctx context.Context, name, label string, t *mode
 	for i := 1; ; i++ {
 		tc := &taskCtx{e: e, name: name, label: label, dir: dir, scope: scope, steps: map[string]any{}, marks: map[string]any{}, c: c}
 		env, pass := c.envPass(t)
-		res := tc.run(ctx, t.Steps, defaults{shell: t.Shell, dir: t.Dir, env: env, pass: pass}, tc.label+" step ")
+		res := tc.run(ctx, t.Steps, defaults{shell: t.Shell, dir: t.Dir, env: env, pass: pass, tty: ttyOf(c.tty, t.TTY)}, tc.label+" step ")
 		res.outputs, res.marks = tc.values(t.Outputs)
 		js := tc.scopeNow().WithMarks("outputs", res.outputs, anyMarks(res.marks))
 		res = judge(res, t.FailedWhen, t.ChangedWhen, js)
@@ -743,10 +745,11 @@ type defaults struct {
 	shell, dir string
 	env        model.Env
 	pass       []string
+	tty        *bool
 }
 
-func (d defaults) with(shell, dir string, env model.Env, pass []string) defaults {
-	out := defaults{shell: cmp.Or(shell, d.shell), dir: cmp.Or(dir, d.dir), env: maps.Clone(d.env), pass: d.pass}
+func (d defaults) with(shell, dir string, env model.Env, pass []string, tty *bool) defaults {
+	out := defaults{shell: cmp.Or(shell, d.shell), dir: cmp.Or(dir, d.dir), env: maps.Clone(d.env), pass: d.pass, tty: ttyOf(tty, d.tty)}
 	if out.env == nil {
 		out.env = model.Env{}
 	}
@@ -930,22 +933,22 @@ func (tc *taskCtx) stepOnce(ctx context.Context, s *model.Step, label string, d 
 	var res *taskResult
 	switch {
 	case s.Run != nil:
-		d := d.with(s.Shell, s.Dir, s.Env, s.Pass)
+		d := d.with(s.Shell, s.Dir, s.Env, s.Pass, s.TTY)
 		res = tc.e.program(ctx, progSpec{frame: tc.c.where(tc.e), label: tc.label, step: label, task: tc.name, cmd: s.Run, shell: d.shell, dir: d.dir, base: tc.dir,
-			env: d.env, pass: d.pass, stdin: s.Stdin, outputs: s.Outputs, retry: s.Retry,
+			env: d.env, pass: d.pass, stdin: s.Stdin, outputs: s.Outputs, retry: s.Retry, tty: d.tty,
 			failedWhen: s.FailedWhen, changedWhen: s.ChangedWhen, unit: tc.c.unit, plugin: tc.c.plugin, unitRun: tc.c.unitRun}, scope)
 	case len(s.Calls) == 1:
-		d := d.with(s.Shell, s.Dir, s.Env, s.Pass)
+		d := d.with(s.Shell, s.Dir, s.Env, s.Pass, s.TTY)
 		for callee, args := range s.Calls {
 			res = tc.e.callByName(ctx, progSpec{frame: tc.c.where(tc.e), label: tc.label, step: label, task: tc.name, shell: d.shell, dir: d.dir,
-				base: tc.dir, env: d.env, pass: d.pass, stdin: s.Stdin, retry: s.Retry, failedWhen: s.FailedWhen,
+				base: tc.dir, env: d.env, pass: d.pass, stdin: s.Stdin, retry: s.Retry, failedWhen: s.FailedWhen, tty: d.tty,
 				changedWhen: s.ChangedWhen, unit: tc.c.unit, plugin: tc.c.plugin, unitRun: tc.c.unitRun}, callee, args, scope)
 		}
 	case s.Task != "":
 		res = tc.callStep(ctx, s, label, scope)
 		res = judge(res, s.FailedWhen, s.ChangedWhen, scope.WithMarks("outputs", res.outputs, anyMarks(res.marks)))
 	case len(s.Block) > 0:
-		res = tc.block(ctx, s, label, d.with(s.Shell, s.Dir, s.Env, s.Pass))
+		res = tc.block(ctx, s, label, d.with(s.Shell, s.Dir, s.Env, s.Pass, s.TTY))
 	}
 	return res
 }

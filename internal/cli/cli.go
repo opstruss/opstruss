@@ -51,15 +51,22 @@ func writesTerminal(w io.Writer) bool {
 // termWidth is the width of the terminal that w writes to, or 0 for a
 // writer that is not one.
 func termWidth(w io.Writer) int {
+	cols, _ := termSize(w)
+	return cols
+}
+
+// termSize is the width and height of the terminal that w writes to, or 0
+// and 0 for a writer that is not one.
+func termSize(w io.Writer) (cols, rows int) {
 	f, ok := w.(*os.File)
 	if !ok {
-		return 0
+		return 0, 0
 	}
-	n, _, err := term.GetSize(int(f.Fd()))
+	cols, rows, err := term.GetSize(int(f.Fd()))
 	if err != nil {
-		return 0
+		return 0, 0
 	}
-	return n
+	return cols, rows
 }
 
 // colorFor says whether what goes to w is in color (ansi.Color); with
@@ -106,6 +113,8 @@ type app struct {
 	heldBytes int
 	heldOver  int    // lines left out
 	heldRun   string // the run whose record has them
+
+	drawn int // the rows of the area at the bottom of the terminal that it shows now
 }
 
 // exitError ends a command that already wrote why it failed.

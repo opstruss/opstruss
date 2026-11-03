@@ -53,6 +53,16 @@ type renderer struct {
 	now     time.Time                    // the time of the event that renders
 	focusAt time.Time                    // when the focus last showed a line
 	ended   map[string]map[string]int    // how the operations of units ended, by operation and as the summary counts them
+
+	// The area at the bottom of the terminal shows the rows that the
+	// programs with a terminal of their own may still change.
+	lives []liveRows // in the order that they first drew
+}
+
+// liveRows are the rows that one program may still change.
+type liveRows struct {
+	src, key string // the source of the program and its block
+	rows     []string
 }
 
 // piece is text for one writer.
@@ -82,6 +92,7 @@ func (r *renderer) render(ev engine.Event) []piece {
 
 // end is what the renderer prints once the command is done.
 func (r *renderer) end() []piece {
+	r.lives = nil
 	out := append(r.flushPlan(), r.waiting...)
 	r.waiting = nil
 	for len(r.held) > 0 {
@@ -634,6 +645,7 @@ func (r *renderer) release(k string, color bool) []piece {
 // does not cut another; while that one is quiet for a second, at once.
 // Once the block that showed ends, the next one shows.
 func (r *renderer) closeBlock(k string, color bool, last piece) []piece {
+	r.lives = slices.DeleteFunc(r.lives, func(l liveRows) bool { return l.key == k })
 	if r.focus == k {
 		out := append([]piece{last}, r.waiting...)
 		r.waiting = nil
@@ -646,11 +658,71 @@ func (r *renderer) closeBlock(k string, color bool, last piece) []piece {
 	block := append(r.release(k, color), last)
 	if r.focus != "" && r.now.Sub(r.focusAt) < time.Second {
 		r.waiting = append(r.waiting, block...)
-		r.last = r.focus
+		if r.shown[r.focus] {
+			// The block that shows goes on under its header; one whose
+			// program only drew the area has none on the terminal yet.
+			r.last = r.focus
+		}
 		return nil
 	}
 	r.last = ""
 	return block
+}
+
+// live takes the rows that a program with a terminal of its own may still
+// change, which the area at the bottom of the terminal shows, as docker
+// compose draws its progress there; while the block of the program holds
+// its lines, its rows show there too. No rows take them away.
+func (r *renderer) live(s engine.Rows) {
+	ev := engine.Event{Address: s.Address, Task: s.Task, Step: s.Step}
+	src := source(ev)
+	i := slices.IndexFunc(r.lives, func(l liveRows) bool { return l.src == src })
+	switch {
+	case len(s.Rows) == 0:
+		if i >= 0 {
+			r.lives = slices.Delete(r.lives, i, i+1)
+		}
+	case i >= 0:
+		r.lives[i].rows = s.Rows
+	default:
+		if k := r.owner(ev, src); k != "" {
+			r.lives = append(r.lives, liveRows{src: src, key: k, rows: s.Rows})
+		}
+	}
+}
+
+// area is what the area at the bottom of the terminal shows: the rows of
+// each program of live under the gutter of its block, as the lines of a
+// program show, after the header of the block unless the line above is of
+// that block. The blank rows that start a block that printed nothing show
+// nothing, as its blank lines do.
+func (r *renderer) area() string {
+	blank := func(row string) bool { return strings.TrimSpace(ansi.Strip(row)) == "" }
+	color := r.colorOut
+	gutter := paint(color, dim, "│")
+	var b strings.Builder
+	last := r.last
+	for _, l := range r.lives {
+		rows := l.rows
+		for !r.printed[l.key] && len(rows) > 0 && blank(rows[0]) {
+			rows = rows[1:]
+		}
+		if len(rows) == 0 {
+			continue
+		}
+		if last != l.key {
+			b.WriteString(r.header(l.key, color) + "\n")
+			last = l.key
+		}
+		for _, row := range rows {
+			if blank(row) {
+				b.WriteString(gutter + "\n")
+				continue
+			}
+			b.WriteString(under(r.out, gutter+" ", gutter+" ", text(row, color)))
+		}
+	}
+	return b.String()
 }
 
 // promote gives the terminal to the block that started first of those that

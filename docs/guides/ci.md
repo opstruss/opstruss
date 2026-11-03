@@ -56,7 +56,9 @@ reviewers: one job runs `opstruss plan --stack prod`, and the job with
 In GitHub Actions, OpsTruss prints in color, and puts the lines of each
 program in a group that folds, `::group::`, so the lines of OpsTruss
 itself stay in view. `--json` prints one event per line instead, for a
-step that reads them.
+step that reads them. A program with `tty: true` gets pipes there, as
+without a terminal, so a tool such as `docker compose` prints a line per
+change rather than its progress.
 
 ## Without mise
 

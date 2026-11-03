@@ -64,6 +64,9 @@ type Handlers struct {
 	Event   func(record.Event)
 	Approve func(context.Context, engine.Question) (bool, error)
 	Ask     func(context.Context, string, *model.Input) (string, error)
+	// Terminal is the terminal that shows the run as it goes, in this
+	// process only: a call through the socket has none.
+	Terminal *engine.Terminal
 }
 
 // API answers calls in this process. Supervisor keeps the services that
@@ -90,7 +93,7 @@ func (a *API) options(r Request) engine.Options {
 	o := engine.Options{Locked: r.Locked, Dir: r.Dir, Cwd: r.Cwd, Stack: r.Stack, Inputs: r.Inputs, Flags: r.Flags, Environ: r.Environ,
 		LookupEnv: func(k string) (string, bool) { v, ok := env[k]; return v, ok },
 		Units:     r.Units, Yes: r.Yes, Color: r.Color, Force: r.Force, NoDeps: r.NoDeps, Follow: r.Follow, Limit: r.Limit, Debug: r.Debug, ShowSensitive: r.ShowSensitive,
-		Emit: a.h.Event, Approve: a.h.Approve, Ask: a.h.Ask, Supervisor: a.Supervisor, Daemon: a.Daemon}
+		Emit: a.h.Event, Approve: a.h.Approve, Ask: a.h.Ask, Terminal: a.h.Terminal, Supervisor: a.Supervisor, Daemon: a.Daemon}
 	if a.Install != nil {
 		o.Install = func(inputs map[string]string) error { return a.Install(r, inputs) }
 	}

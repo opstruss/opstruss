@@ -149,6 +149,11 @@ func (a *app) handlers() api.Handlers {
 	if a.answers() {
 		h.Approve, h.Ask = a.approve, a.ask
 	}
+	if a.rendererFor(a.stdout).terminal {
+		// The run shows on this terminal as it goes, so a program with tty
+		// gets a terminal of its own.
+		h.Terminal = &engine.Terminal{Size: func() (int, int) { return termSize(a.stdout) }, Draw: a.drawLive}
+	}
 	return h
 }
 
@@ -231,7 +236,7 @@ func (a *app) approve(ctx context.Context, q engine.Question) (bool, error) {
 	}
 	a.question(question)
 	line, err := a.readLine(ctx)
-	a.answered(err != nil)
+	a.answered(err != nil, strings.TrimRight(line, "\r\n"))
 	if err != nil {
 		return false, err
 	}
@@ -270,11 +275,11 @@ func (a *app) ask(ctx context.Context, name string, in *model.Input) (string, er
 	if f, ok := a.in.(*os.File); ok && in.Sensitive && term.IsTerminal(int(f.Fd())) {
 		// A sensitive input is typed without echo, so the line ends here.
 		b, err := term.ReadPassword(int(f.Fd()))
-		a.answered(true)
+		a.answered(true, "")
 		return string(b), err
 	}
 	line, err := a.readLine(ctx)
-	a.answered(err != nil)
+	a.answered(err != nil, strings.TrimRight(line, "\r\n"))
 	return strings.TrimRight(line, "\r\n"), err
 }
 
@@ -287,6 +292,7 @@ const maxHeld = 1 << 20
 func (a *app) question(text string) {
 	a.renderMu.Lock()
 	defer a.renderMu.Unlock()
+	a.erase()
 	// The plan is done once the run asks about it.
 	for _, r := range a.renderers {
 		for _, p := range r.flushPlan() {
@@ -294,24 +300,48 @@ func (a *app) question(text string) {
 		}
 	}
 	a.asking = true
-	// At a terminal, the output of the run goes on above the question, which
-	// stays the last line, as prompt_toolkit prints above its prompt;
-	// elsewhere the output waits for the answer.
+	// At a terminal, the output of the run, and the area of the programs
+	// that draw, go on above the question, which stays the last line, as
+	// prompt_toolkit prints above its prompt; elsewhere the output waits
+	// for the answer.
 	r := a.renderers[a.stdout]
 	a.live = r != nil && r.terminal && writesTerminal(a.stderr) && !strings.Contains(text, "\n")
 	a.prompt = text
-	fmt.Fprint(a.stderr, text)
+	if a.live {
+		a.draw()
+	} else {
+		fmt.Fprint(a.stderr, text)
+	}
 }
 
+// prompting reports whether the question is the last line of the terminal,
+// under the output of the run. The caller holds renderMu.
+func (a *app) prompting() bool { return a.asking && a.live && a.prompt != "" }
+
 // answered writes the output that came while the question waited, and
-// says how much of it, past maxHeld, only the record keeps.
-// The line of a question that got no answer, as one Ctrl-C ended, ends
-// with closeLine.
-func (a *app) answered(closeLine bool) {
+// says how much of it, past maxHeld, only the record keeps. The line of the
+// question stays as the terminal shows it, with echo, the answer that it
+// echoed: the area above it moves under it. The line of a question that
+// got no answer, as one Ctrl-C ended, ends with closeLine.
+func (a *app) answered(closeLine bool, echo string) {
 	a.renderMu.Lock()
 	defer a.renderMu.Unlock()
-	if closeLine && a.prompt != "" {
+	switch {
+	case a.prompting() && a.drawn > 0:
+		up := a.drawn
+		if !closeLine {
+			up++ // the answer ended the line of the question
+		}
+		fmt.Fprintf(a.stdout, "\r\x1b[%dA\x1b[J", up)
+		fmt.Fprint(a.stderr, a.prompt+echo+"\n")
+		a.drawn = 0
+	case closeLine && a.prompt != "":
 		fmt.Fprintln(a.stderr)
+	}
+	if r := a.renderers[a.stdout]; r != nil {
+		// The line of the question stays between the lines of a block and
+		// those that come after it, which start under their header again.
+		r.last = ""
 	}
 	a.asking, a.live, a.prompt = false, false, ""
 	for _, h := range a.held {
@@ -321,21 +351,16 @@ func (a *app) answered(closeLine bool) {
 		fmt.Fprintf(a.stderr, "%d more lines came while the question waited; opstruss runs %s shows them\n", a.heldOver, a.heldRun)
 	}
 	a.held, a.heldBytes, a.heldOver = nil, 0, 0
+	a.draw()
 }
 
-// write writes text to w, or holds it while a question waits. The caller
-// holds renderMu.
+// write writes text to w, or holds it while a question waits elsewhere
+// than at a terminal. The caller holds renderMu, and at a terminal takes
+// the bottom of it away first (erase) and draws it again after (draw).
 func (a *app) write(w io.Writer, text, run string) {
 	switch {
-	case !a.asking:
+	case !a.asking || a.live:
 		_, _ = io.WriteString(w, text)
-	case a.live:
-		// The question line gives way to the output and comes back under it.
-		_, _ = io.WriteString(a.stderr, "\r\x1b[2K")
-		_, _ = io.WriteString(w, text)
-		if a.prompt != "" {
-			_, _ = io.WriteString(a.stderr, a.prompt)
-		}
 	case a.heldBytes+len(text) > maxHeld:
 		a.heldOver += strings.Count(text, "\n")
 		a.heldRun = cmp.Or(run, a.heldRun)
@@ -420,10 +445,90 @@ func (a *app) renderTo(out io.Writer) func(engine.Event) {
 		// Runs and services write at once, a line each.
 		a.renderMu.Lock()
 		defer a.renderMu.Unlock()
-		for _, p := range r.render(ev) {
-			a.write(p.w, p.text, ev.Run)
+		if pieces := r.render(ev); len(pieces) > 0 {
+			a.erase()
+			for _, p := range pieces {
+				a.write(p.w, p.text, ev.Run)
+			}
+			a.draw()
 		}
 	}
+}
+
+// drawLive shows the rows that a program with a terminal of its own may
+// still change in the area at the bottom of the terminal, in place of
+// those it showed.
+func (a *app) drawLive(rows engine.Rows) {
+	a.renderMu.Lock()
+	defer a.renderMu.Unlock()
+	r := a.renderers[a.stdout]
+	if r == nil {
+		return
+	}
+	r.live(rows)
+	if a.drawn == 0 && r.area() == "" {
+		return
+	}
+	_, _ = io.WriteString(a.stdout, a.eraseText()+a.areaText())
+	if a.prompting() {
+		_, _ = io.WriteString(a.stderr, a.prompt)
+	}
+}
+
+// The bottom of the terminal, under the output of the run, holds the area
+// of the programs with a terminal of their own, and under it the question
+// that waits there, if one does. Whatever else goes to the terminal takes
+// them away first (erase) and draws them again after it (draw). The caller
+// holds renderMu.
+
+func (a *app) erase() {
+	if s := a.eraseText(); s != "" {
+		_, _ = io.WriteString(a.stdout, s)
+	}
+}
+
+func (a *app) draw() {
+	if s := a.areaText(); s != "" {
+		_, _ = io.WriteString(a.stdout, s)
+	}
+	if a.prompting() {
+		_, _ = io.WriteString(a.stderr, a.prompt)
+	}
+}
+
+// eraseText takes the bottom of the terminal away: the line of the question
+// that the cursor is on, and the area above, from the first column, as the
+// ^C of the terminal may have moved the cursor.
+func (a *app) eraseText() string {
+	s := ""
+	if a.prompting() {
+		s = "\r\x1b[2K"
+	}
+	if a.drawn > 0 {
+		s += fmt.Sprintf("\r\x1b[%dA\x1b[J", a.drawn)
+		a.drawn = 0
+	}
+	return s
+}
+
+// areaText is the area to draw; of an area taller than the terminal, its
+// last rows, since eraseText reaches only the rows that the terminal still
+// shows. While a question waits elsewhere than at the terminal, nothing
+// there changes.
+func (a *app) areaText() string {
+	r := a.renderers[a.stdout]
+	if r == nil || a.drawn > 0 || a.asking && !a.live {
+		return ""
+	}
+	area := r.area()
+	n := strings.Count(area, "\n")
+	if _, rows := termSize(a.stdout); rows > 1 && n > rows-1 {
+		for ; n > rows-1; n-- {
+			area = area[strings.IndexByte(area, '\n')+1:]
+		}
+	}
+	a.drawn = n
+	return area
 }
 
 // rendererFor returns the one renderer of what the command writes to out.
@@ -447,6 +552,7 @@ func (a *app) rendererFor(out io.Writer) *renderer {
 func (a *app) endOutput() {
 	a.renderMu.Lock()
 	defer a.renderMu.Unlock()
+	a.erase()
 	for _, r := range a.renderers {
 		for _, p := range r.end() {
 			a.write(p.w, p.text, "")
@@ -530,11 +636,18 @@ func (a *app) notice(msg string) {
 	if terminal {
 		msg = paint(a.colorFor(a.stderr), yellow, msg)
 	}
-	if a.asking && a.live && a.prompt != "" {
-		// An interrupt ends the question: its line stays as it is, with
-		// the ^C of the terminal, and the notice comes under it.
+	if a.prompting() {
+		// An interrupt ends the question: its line stays, with the ^C of
+		// the terminal unless the area above has to move under it, and the
+		// notice comes under it.
+		if a.drawn > 0 {
+			fmt.Fprintf(a.stdout, "\r\x1b[%dA\x1b[J", a.drawn)
+			_, _ = io.WriteString(a.stderr, a.prompt)
+			a.drawn = 0
+		}
 		a.prompt = ""
 		_, _ = io.WriteString(a.stderr, "\n"+msg+"\n")
+		a.draw()
 		return
 	}
 	if terminal {
@@ -542,5 +655,7 @@ func (a *app) notice(msg string) {
 		// under it.
 		msg = "\n" + msg
 	}
+	a.erase()
 	a.write(a.stderr, msg+"\n", "")
+	a.draw()
 }

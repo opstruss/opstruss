@@ -27,6 +27,7 @@ type pluginUnit struct {
 	dir    string         // the plugin's directory
 	inputs map[string]any // the plugin's inputs, from the declaration's with: and the unit's
 	plan   *model.Command // nil when the plugin has no plan
+	tty    bool           // of the plan
 	hash   string         // of what the plugin's directory holds, as h1: is
 	tool   string         // tool/, where a plugin with state: tool keeps the tool's state
 	env    model.Env      // the env of the declaration and the unit, evaluated
@@ -96,19 +97,21 @@ func (e *engine) resolvePlugin(inst *instance, r *resolved, s *expr.Scope) error
 		return fmt.Errorf("up: %w", err)
 	}
 	r.shell = up.Shell
+	// The tty of the unit, as its stop, wins over that of each task.
+	r.tty = isTrue(ttyOf(u.TTY, up.TTY))
 	if d := pl.Tasks["destroy"]; d != nil {
 		cmd, err := e.command(d.Run, ps)
 		if err != nil {
 			return fmt.Errorf("destroy: %w", err)
 		}
-		r.destroy = &cmd
+		r.destroy, r.ttyDown = &cmd, isTrue(ttyOf(u.TTY, d.TTY))
 	}
 	if p := pl.Tasks["plan"]; p != nil {
 		cmd, err := e.command(p.Run, ps)
 		if err != nil {
 			return fmt.Errorf("plan: %w", err)
 		}
-		pu.plan = &cmd
+		pu.plan, pu.tty = &cmd, isTrue(ttyOf(u.TTY, p.TTY))
 	}
 	pu.base = r.dir
 	if up.Dir != "" {
@@ -280,7 +283,7 @@ func (e *engine) statusPass(ctx context.Context, patterns []string) (map[string]
 				ur.state = programState(inst.record)
 			}
 			res := e.callTask(ctx, "status", t.Package.Plugin.Tasks["status"], inst.dir, r.plugin.inputs,
-				call{unit: inst, plugin: run, unitRun: ur})
+				call{unit: inst, plugin: run, unitRun: ur, tty: inst.def.TTY})
 			out[short] = res.view()
 			if m := res.viewMarks(); m != nil {
 				marks[short] = m
@@ -373,15 +376,15 @@ type pluginPlan struct {
 // planPlugin runs the plan of a plugin for inst under its lock, with the
 // work directory that up of the same turn finds again.
 func (e *engine) planPlugin(ctx context.Context, inst *instance, r *resolved, rec *state.Record, held *heldLogs) (*pluginPlan, error) {
-	u := e.unitOf(inst, r, rec)
-	out := &lineWriter{e: e, addr: inst.address, task: "plan", stream: "stdout", held: held}
-	errw := &lineWriter{e: e, addr: inst.address, task: "plan", stream: "stderr", held: held}
-	defer out.flush()
-	defer errw.flush()
 	pl := r.plugin.target.Package.Plugin
-	res, err := e.run.Exec(ctx, &plugin.Call{Command: *r.plugin.plan, Shell: pl.Tasks["plan"].Shell, Base: inst.dir, Dir: r.dir,
+	c := &plugin.Call{Command: *r.plugin.plan, Shell: pl.Tasks["plan"].Shell, Base: inst.dir, Dir: r.dir,
 		Env: r.env, Pass: slices.Sorted(maps.Keys(r.pass)), Stop: r.stop, Task: "plan", Reason: "requested", Plan: true,
-		Unit: u, Inputs: r.plugin.inputs, PluginDir: r.plugin.dir, Stdout: out, Stderr: errw})
+		Unit: e.unitOf(inst, r, rec), Inputs: r.plugin.inputs, PluginDir: r.plugin.dir}
+	ss := e.streams(c, r.plugin.tty, Event{Address: inst.address, Task: "plan"}, held)
+	defer ss.out.flush()
+	defer ss.err.flush()
+	res, err := e.run.Exec(ctx, c)
+	ss.end()
 	if err != nil {
 		return nil, err
 	}

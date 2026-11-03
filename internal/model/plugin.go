@@ -123,6 +123,14 @@ func (c *checker) pluginRules() {
 		if t.Approval == "auto" {
 			c.add(at(path, "approval"), "approval: auto is for the project to choose; a plugin cannot approve its own changes")
 		}
+		if t.TTY != nil {
+			switch name {
+			case "watch":
+				c.add(at(path, "tty"), "the stdout of the watch hook is its events, which the daemon reads; a terminal is for programs that a run shows")
+			case "exec":
+				c.add(at(path, "tty"), "the program of the exec hook has the terminal of opstruss exec already")
+			}
+		}
 		c.task(path, t, false)
 		c.taskRefs(path, t)
 	}

@@ -1020,25 +1020,25 @@ func (e *engine) exec(ctx context.Context, inst *instance, r *resolved, rec *sta
 	if r.task != nil && !command {
 		return e.execTask(ctx, inst, r, rec, reason), nil
 	}
-	out := &lineWriter{e: e, addr: inst.address, task: "up", stream: "stdout"}
-	errw := &lineWriter{e: e, addr: inst.address, task: "up", stream: "stderr"}
-	defer out.flush()
-	defer errw.flush()
 	c := &plugin.Call{Command: r.cmd, Shell: r.shell, Base: inst.dir, Dir: r.dir, Env: r.env,
 		Pass: slices.Sorted(maps.Keys(r.pass)), Stdin: r.stdin, Stop: r.stop, Task: "up", Reason: reason, Digest: digest,
-		Unit: e.unitOf(inst, r, rec), Outputs: inst.def.Outputs, Stdout: out, Stderr: errw}
+		Unit: e.unitOf(inst, r, rec), Outputs: inst.def.Outputs}
 	if r.plugin != nil {
 		outs := r.plugin.target.Package.Plugin.Outputs
 		c.Inputs, c.PluginDir, c.Outputs, c.AnyOutputs = r.plugin.inputs, r.plugin.dir, outs.Declared, outs.Tool
 	}
+	ss := e.streams(c, r.tty, Event{Address: inst.address, Task: "up"}, nil)
+	defer ss.out.flush()
+	defer ss.err.flush()
 	res, err := e.run.Exec(ctx, c)
+	ss.end()
 	if err != nil {
 		return nil, err
 	}
 	for _, w := range res.Warnings {
 		e.warn(inst.address, "%s", w)
 	}
-	logRead(res, c.Outputs, e.outputMarks(inst, r, res, true), out, errw)
+	logRead(res, c.Outputs, e.outputMarks(inst, r, res, true), ss.out, ss.err)
 	if command {
 		// A unit that uses command has its outputs.
 		res.Outputs = map[string]any{"stdout": res.Stdout, "stderr": res.Stderr, "exit_code": int64(res.ExitCode)}

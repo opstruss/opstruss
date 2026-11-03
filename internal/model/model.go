@@ -199,6 +199,7 @@ type Unit struct {
 	Env         Env                `json:"env,omitempty"`
 	Pass        []string           `json:"pass,omitempty"`
 	Stdin       *Stdin             `json:"stdin,omitempty"`
+	TTY         *bool              `json:"tty,omitempty"`
 	Sources     []PathItem         `json:"sources,omitempty"`
 	Generates   []string           `json:"generates,omitempty"`
 	Revision    string             `json:"revision,omitempty"`
@@ -236,6 +237,7 @@ type Task struct {
 	Env             Env                `json:"env,omitempty"`
 	Pass            []string           `json:"pass,omitempty"`
 	Stdin           *Stdin             `json:"stdin,omitempty"`
+	TTY             *bool              `json:"tty,omitempty"`
 	Requires        *Requires          `json:"requires,omitempty"`
 	Needs           []string           `json:"needs,omitempty"`
 	If              any                `json:"if,omitempty"`
@@ -279,6 +281,7 @@ type Step struct {
 	Shell           string             `json:"shell,omitempty"`
 	Dir             string             `json:"dir,omitempty"`
 	Stdin           *Stdin             `json:"stdin,omitempty"`
+	TTY             *bool              `json:"tty,omitempty"`
 	Timeout         string             `json:"timeout,omitempty"`
 	ForEach         any                `json:"for_each,omitempty"`
 	Retry           *Retry             `json:"retry,omitempty"`

@@ -172,7 +172,7 @@ func (e *engine) execTask(ctx context.Context, inst *instance, r *resolved, rec 
 	ur := &unitRun{env: r.env, pass: slices.Sorted(maps.Keys(r.pass)), stateKey: rec.StateKey, reason: reason,
 		workdir: e.workdir(inst.address), state: programState(rec)}
 	// The unit's approval covers what its task asks.
-	c := call{frame: inst.frame, unit: inst, yes: true, source: "unit", unitRun: ur}
+	c := call{frame: inst.frame, unit: inst, yes: true, source: "unit", unitRun: ur, tty: inst.def.TTY}
 	var res *taskResult
 	switch t.Kind {
 	case model.TargetProject:

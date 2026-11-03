@@ -39,6 +39,8 @@ on one machine.
   `plugins`, and shell completion; a schema for editors.
 - Output as blocks at a terminal, groups in GitHub Actions, and JSON
   events with `--json`.
+- `tty: true` gives a tool a terminal of its own while the run shows on
+  one, so its color and progress show as they do in a terminal.
 - Release builds for Linux and macOS on amd64 and arm64, with checksums,
   SBOMs, and build provenance; documentation at opstruss.github.io.
 

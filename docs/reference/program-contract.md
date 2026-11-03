@@ -127,6 +127,35 @@ color, or when an output reads the stream of the program; a tool that
 colors with a flag, as `tofu`, can color when `NO_COLOR` is not set.
 `env: {FORCE_COLOR: "1"}` asks a tool for color.
 
+## A terminal of its own
+
+A program with `tty: true` gets a terminal of its own while the run shows
+on one: `opstruss` in the foreground, with its output on a terminal of at
+least 22 × 5, without `--json`, and `TERM` other than `dumb`. Tools such
+as `docker compose` then draw their color and progress as they do at a
+terminal. Elsewhere, in CI, in the daemon, for a trigger, with `-d` or
+`--json`, or when the output goes to a pipe or a file, the program gets
+pipes, so it must work with either. A program whose stream an output
+reads, and the program of a secret, always gets pipes.
+
+- Its stdout and stderr are one terminal, as with `docker run -t`, so its
+  stderr comes in the stream `stdout`, and the output `stdout` of a step
+  holds the last bytes of that terminal; `stderr` is empty.
+- The terminal is as wide as the terminal of the run less 2 columns, the
+  gutter, and 2 rows shorter. Its size stays as it was when the program
+  started.
+- Its stdin is what `stdin:` gives, or nothing, as without `tty`, and
+  `/dev/tty` is still the terminal of the operator.
+- The log gets the rows of that terminal, not each frame that the program
+  drew: a row goes to the log once it leaves the top of the terminal, and
+  the rows left go once the program ends. Until then, the rows that the
+  program may still change show at the bottom of the terminal of the run.
+
+`tty` is a boolean in a unit, a task, a step, a block, and a task of a
+plugin; the one nearest to the program wins, and a unit or a step that
+calls a task wins over the `tty` of that task. A service, a `task:` step,
+and the hooks `watch` and `exec` do not take it.
+
 ## Stopping
 
 At cancel or timeout, `stop.signal` (SIGINT by default) goes to the

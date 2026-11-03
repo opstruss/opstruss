@@ -25,7 +25,7 @@ func Wrap(s string, indent, width int) []string {
 	col, used := indent, false
 	for i := 0; i < len(s); {
 		if s[i] == esc {
-			n, keep := sequence(s[i:])
+			n, keep, _ := sequence(s[i:])
 			seq := s[i : i+n]
 			b.WriteString(seq)
 			if keep {
@@ -74,6 +74,9 @@ func runeWidth(r rune, col int) int {
 	switch {
 	case r == '\t':
 		return 8 - col%8
+	case r < 0x300 && r != 0xad:
+		// Before the combining marks, only the soft hyphen has no width.
+		return 1
 	case unicode.In(r, unicode.Mn, unicode.Me, unicode.Cf):
 		return 0
 	}

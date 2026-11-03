@@ -238,6 +238,7 @@ A unit: something that up brings up and destroy takes away, with exactly one of 
 | `env` | map of string or [Env](#env) | Variables set for the programs of the unit. |
 | `pass` | list of string | Variables of the environment that the programs of the unit get; not \* alone, since the unit keeps their values in its digest and destroy context. |
 | `stdin` | [Stdin](#stdin) | What the program reads on its standard input. |
+| `tty` | boolean | Gives each program of the unit a terminal of its own while the run shows on one, over the tty of what the unit uses, for tools that draw color and progress there, such as docker compose; its stderr then comes with its stdout. In CI, in the daemon, with --json, or when an output reads its stream, it gets pipes. Not for a service, which runs in the daemon. |
 | `sources` | list of string or [Paths](#paths) | Files whose content is part of the definition, so a change to one runs the unit again. |
 | `generates` | list of string | Files that the unit makes, relative to this file and read as written; a missing one runs the unit again. |
 | `revision` | string | A value whose change runs the unit again. |
@@ -282,6 +283,7 @@ Exactly one of run, steps, or one call of a task.
 | `env` | map of string or [Env](#env) | Variables set for the programs of the task and its steps. |
 | `pass` | list of string | Variables of the environment that the programs of the task and its steps get. |
 | `stdin` | [Stdin](#stdin) | What the program reads on its standard input. |
+| `tty` | boolean | Gives the program a terminal of its own while the run shows on one, also each step's program, for tools that draw color and progress there, such as docker compose; its stderr then comes with its stdout. In CI, in the daemon, with --json, or when an output reads its stream, it gets pipes. |
 | `requires` | string or list of string | Programs that must be in PATH before the task runs. |
 | `needs` | list of string | Tasks that run before this one. |
 | `if` | string or boolean | A condition that skips the task when false. |
@@ -332,6 +334,7 @@ Exactly one of run, task, block, or one call of a task.
 | `shell` | one of `sh`, `bash`, `python`, `node`, `pwsh` | The shell that runs a script. |
 | `dir` | string | The directory that the program starts in, relative to this file. |
 | `stdin` | [Stdin](#stdin) | What the program reads on its standard input. |
+| `tty` | boolean | Gives the program of the step, or of the task it calls by name, a terminal of its own while the run shows on one, for tools that draw color and progress there, such as docker compose; in a block, also each step's program. Its stderr then comes with its stdout. In CI, in the daemon, with --json, or when an output reads its stream, it gets pipes. |
 | `timeout` | string | How long the step may run. |
 | `for_each` | array or object or string | A list or a map: the step runs once per item, read as each.key and each.value; a string of a list is its own key, and another item has its index. |
 | `retry` | [Retry](#retry) | Running the step again when it fails. |

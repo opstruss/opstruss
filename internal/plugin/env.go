@@ -43,8 +43,8 @@ func basic(name string) bool {
 	return strings.HasPrefix(name, "LC_") || strings.HasPrefix(name, "SSL_CERT_")
 }
 
-// readsStream reports whether an output of c reads stdout or stderr.
-func readsStream(c *Call) bool {
+// ReadsStream reports whether an output of c reads stdout or stderr.
+func (c *Call) ReadsStream() bool {
 	for _, o := range c.Outputs {
 		if o.From == "stdout" || o.From == "stderr" {
 			return true
@@ -81,7 +81,7 @@ func (r *Run) environment(c *Call, write func(name string, data []byte) (string,
 	}
 	// A program prints color only where the run shows it, and never into a
 	// stream that an output reads; env: still sets NO_COLOR as it says.
-	if !r.Color || readsStream(c) {
+	if !r.Color || c.ReadsStream() {
 		env["NO_COLOR"] = "1"
 	}
 	for k, v := range c.Env {

@@ -35,6 +35,7 @@ type progSpec struct {
 	failedWhen  any
 	changedWhen any
 	stop        *model.Stop
+	tty         *bool      // nil when nothing around the program writes it
 	unit        *instance  // for the task of a unit
 	call        bool       // a call of command, whose outputs are its streams
 	plugin      *pluginRun // for the programs of a plugin task
@@ -201,12 +202,9 @@ func (e *engine) execProgram(ctx context.Context, p progSpec, c *plugin.Call) (*
 	if c.Unit != nil {
 		addr = c.Unit.Address
 	}
-	out := &lineWriter{e: e, addr: addr, task: p.label, step: p.step, stream: "stdout"}
-	errw := &lineWriter{e: e, addr: addr, task: p.label, step: p.step, stream: "stderr"}
-	c.Stdout, c.Stderr = out, errw
+	ss := e.streams(c, isTrue(p.tty), Event{Address: addr, Task: p.label, Step: p.step}, nil)
 	res, err := e.run.Exec(ctx, c)
-	out.flush()
-	errw.flush()
+	ss.flush()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -240,7 +238,7 @@ func (e *engine) execProgram(ctx context.Context, p progSpec, c *plugin.Call) (*
 	e.hide(judged, anyMarks(marks))
 	if !c.Secret {
 		// What a program that gives a secret prints is that secret.
-		logRead(res, c.Outputs, marks, out, errw)
+		logRead(res, c.Outputs, marks, ss.out, ss.err)
 	}
 	r := &taskResult{outcome: success, changed: res.Changed, outputs: res.Outputs, marks: marks}
 	if p.step != "" || p.call {
@@ -259,6 +257,73 @@ func (e *engine) execProgram(ctx context.Context, p progSpec, c *plugin.Call) (*
 	}
 	return r, judged, nil
 }
+
+// streams are where the streams of a program go: a lineWriter each, or,
+// for a program that has a terminal of its own, a screenWriter for both.
+type streams struct {
+	out, err *lineWriter
+	screen   *screenWriter
+}
+
+// streams gives c the writers of its streams, for the program of ev,
+// whose lines wait in held when held is not nil. The program gets a
+// terminal of its own when tty says so and terminalSize allows it.
+func (e *engine) streams(c *plugin.Call, tty bool, ev Event, held *heldLogs) *streams {
+	ss := &streams{
+		out: &lineWriter{e: e, addr: ev.Address, task: ev.Task, step: ev.Step, stream: "stdout", held: held},
+		err: &lineWriter{e: e, addr: ev.Address, task: ev.Task, step: ev.Step, stream: "stderr", held: held},
+	}
+	if cols, rows, ok := e.terminalSize(c, tty); ok {
+		ss.screen = e.newScreenWriter(ev, held, cols, rows)
+		c.TTY, c.Stdout, c.Stderr = &plugin.TTY{Cols: cols, Rows: rows}, ss.screen, nil
+	} else {
+		c.Stdout, c.Stderr = ss.out, ss.err
+	}
+	return ss
+}
+
+// end takes the rows of a program with a terminal away from the terminal of
+// the run once it ended, and sends those left; the lines of pipes wait for
+// flush.
+func (ss *streams) end() {
+	if ss.screen != nil {
+		ss.screen.flush()
+	}
+}
+
+func (ss *streams) flush() {
+	ss.end()
+	ss.out.flush()
+	ss.err.flush()
+}
+
+// terminalSize is the size of the terminal that the program of c gets of
+// its own: when tty says so, the run shows on a terminal of at least 22 × 5,
+// no output reads a stream of the program, as NO_COLOR goes by too, and the
+// program gives no secret. It is the terminal of the run less the gutter of
+// the output, and less the header of its block and the row of the cursor
+// around the rows that the program may still change.
+func (e *engine) terminalSize(c *plugin.Call, tty bool) (cols, rows int, ok bool) {
+	t := e.opts.Terminal
+	if !tty || t == nil || c.ReadsStream() || c.Secret {
+		return 0, 0, false
+	}
+	if cols, rows = t.Size(); cols < 22 || rows < 5 {
+		return 0, 0, false
+	}
+	return cols - 2, rows - 2, true
+}
+
+// ttyOf is the tty of a program: own when something nearer the program
+// writes it, and otherwise def.
+func ttyOf(own, def *bool) *bool {
+	if own != nil {
+		return own
+	}
+	return def
+}
+
+func isTrue(b *bool) bool { return b != nil && *b }
 
 // logRead writes to the log what the streams that outputs read held, once
 // the outputs are parsed, unless one of those outputs is sensitive, as

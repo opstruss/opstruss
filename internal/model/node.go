@@ -38,9 +38,9 @@ func (n *Node) Dir() string { return n.In.DirOf("units." + n.Name) }
 // Def is the unit as it runs, with what the units that use the components
 // it is in give it: protect when any of them writes it; approval ask when
 // any writes ask, otherwise auto when any writes auto, so a component only
-// narrows what its user decides; timeout, retry, and stop from the nearest
-// that writes them; pass from all. Env stays the unit's own, since each is
-// read where it is written.
+// narrows what its user decides; timeout, retry, stop, and tty from the
+// nearest that writes them; pass from all. Env stays the unit's own, since
+// each is read where it is written.
 func (n *Node) Def() *Unit {
 	if n.Parent == nil {
 		return n.Unit
@@ -61,6 +61,9 @@ func (n *Node) Def() *Unit {
 		}
 		if u.Stop == nil {
 			u.Stop = au.Stop
+		}
+		if u.TTY == nil {
+			u.TTY = au.TTY
 		}
 		if n.In.Source == nil {
 			u.Pass = append(slices.Clone(u.Pass), au.Pass...)

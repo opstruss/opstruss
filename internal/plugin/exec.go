@@ -55,8 +55,13 @@ type Call struct {
 	Secret bool
 
 	Outputs map[string]*model.Output // a stream that an output reads stays out of the log
-	Stdout  io.Writer                // live log of the streams that no output reads
-	Stderr  io.Writer
+	// TTY gives the program a terminal of that size for its stdout and
+	// stderr, which Stdout gets as one stream, as docker run -t does; the
+	// caller sets it only for a program that a run shows on a terminal and
+	// whose streams no output reads.
+	TTY    *TTY
+	Stdout io.Writer // live log of the streams that no output reads
+	Stderr io.Writer
 }
 
 // Unit is what the program of a unit receives: its address and state key,
@@ -241,6 +246,9 @@ func (s *stream) write(p []byte) {
 }
 
 func (s *stream) tail() string {
+	if s == nil {
+		return ""
+	}
 	b := s.buf
 	if len(b) > Tail {
 		b = b[len(b)-Tail:]
@@ -298,12 +306,23 @@ func (r *Run) Exec(ctx context.Context, c *Call) (*Result, error) {
 			_ = f.Close()
 		}
 	}
-	stdout, err := pipe("stdout", c.Stdout)
-	if err == nil {
-		cmd.Stdout = stdout
-		var stderr *os.File
-		stderr, err = pipe("stderr", c.Stderr)
-		cmd.Stderr = stderr
+	var term *terminal
+	if c.TTY != nil {
+		// One terminal for both streams; the call keeps a copy of its slave
+		// until it has read what the program wrote (settle).
+		if term, err = openTerminal(*c.TTY); err == nil {
+			ours = append(ours, term.master)
+			streams["stdout"] = &stream{r: term.master, live: c.Stdout, mu: &mu, done: make(chan struct{})}
+			cmd.Stdout, cmd.Stderr = term.slave, term.slave
+		}
+	} else {
+		var stdout *os.File
+		if stdout, err = pipe("stdout", c.Stdout); err == nil {
+			cmd.Stdout = stdout
+			var stderr *os.File
+			stderr, err = pipe("stderr", c.Stderr)
+			cmd.Stderr = stderr
+		}
 	}
 	var stdin *os.File
 	if err == nil && c.Stdin != nil {
@@ -315,12 +334,14 @@ func (r *Run) Exec(ctx context.Context, c *Call) (*Result, error) {
 	}
 	if err != nil {
 		closeAll(append(ours, theirs...))
+		term.close()
 		return nil, err
 	}
 	g, err := proc.Start(cmd)
 	closeAll(theirs)
 	if err != nil {
 		closeAll(ours)
+		term.close()
 		return nil, startError(cmd, err)
 	}
 	failpoint.Hit("program-started")
@@ -364,6 +385,9 @@ func (r *Run) Exec(ctx context.Context, c *Call) (*Result, error) {
 	}
 	if stdin != nil {
 		_ = stdin.Close()
+	}
+	if term != nil {
+		term.settle(PipeWait)
 	}
 	if !drain(streams, PipeWait) {
 		res.Warnings = append(res.Warnings, "a process outside the program's process group still holds its output; what it writes later is lost")

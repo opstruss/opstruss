@@ -647,6 +647,10 @@
           "$ref": "#/$defs/stdin",
           "description": "What the program reads on its standard input."
         },
+        "tty": {
+          "description": "Gives each program of the unit a terminal of its own while the run shows on one, over the tty of what the unit uses, for tools that draw color and progress there, such as docker compose; its stderr then comes with its stdout. In CI, in the daemon, with --json, or when an output reads its stream, it gets pipes. Not for a service, which runs in the daemon.",
+          "type": "boolean"
+        },
         "sources": {
           "$ref": "#/$defs/paths",
           "description": "Files whose content is part of the definition, so a change to one runs the unit again."
@@ -769,6 +773,10 @@
         "stdin": {
           "$ref": "#/$defs/stdin",
           "description": "What the program reads on its standard input."
+        },
+        "tty": {
+          "description": "Gives the program a terminal of its own while the run shows on one, also each step's program, for tools that draw color and progress there, such as docker compose; its stderr then comes with its stdout. In CI, in the daemon, with --json, or when an output reads its stream, it gets pipes.",
+          "type": "boolean"
         },
         "requires": {
           "$ref": "#/$defs/requires",
@@ -906,6 +914,10 @@
         "stdin": {
           "$ref": "#/$defs/stdin",
           "description": "What the program reads on its standard input."
+        },
+        "tty": {
+          "description": "Gives the program of the step, or of the task it calls by name, a terminal of its own while the run shows on one, for tools that draw color and progress there, such as docker compose; in a block, also each step's program. Its stderr then comes with its stdout. In CI, in the daemon, with --json, or when an output reads its stream, it gets pipes.",
+          "type": "boolean"
         },
         "timeout": { "$ref": "#/$defs/duration", "description": "How long the step may run." },
         "for_each": {

@@ -6,6 +6,7 @@ require (
 	cel.dev/cel-go v0.32.0
 	filippo.io/age v1.3.2
 	github.com/bmatcuk/doublestar/v4 v4.10.3
+	github.com/creack/pty v1.1.24
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/rogpeppe/go-internal v1.16.0

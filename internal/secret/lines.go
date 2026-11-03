@@ -73,19 +73,26 @@ func (l *Lines) line(text string) {
 }
 
 // out hands on a line, or a piece of one, that the Stream hid, as
-// ansi.Clean cleans it. A value or a shape that color codes cut, which the
-// bytes as they are do not show, is looked for in the text without them,
-// and when one is there, the line goes without color, hidden.
+// ansi.Clean cleans it, and as recheck finds it.
 func (l *Lines) out(text string) {
 	text = strings.ToValidUTF8(text, "�")
 	clean := ansi.Clean(text)
 	if l.s != nil && (clean != text || strings.IndexByte(clean, 0x1b) >= 0) {
-		plain := ansi.Strip(clean)
-		if hidden := l.s.r.Log(plain); hidden != plain {
-			clean = hidden
-		}
+		clean = l.s.recheck(clean)
 	}
 	l.emit(clean)
+}
+
+// recheck looks again in clean, a line as ansi.Clean leaves it, for a value
+// or a shape that escapes cut, which the bytes as they came did not show:
+// it looks in the text without SGR, and when one is there, the line goes
+// without color, hidden.
+func (s *Stream) recheck(clean string) string {
+	plain := ansi.Strip(clean)
+	if hidden := s.r.Log(plain); hidden != plain {
+		return hidden
+	}
+	return clean
 }
 
 // cut splits the start of a long line into what goes out now and what is

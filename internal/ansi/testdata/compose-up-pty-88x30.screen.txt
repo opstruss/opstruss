@@ -1,0 +1,5 @@
+[+] up 4/4
+ ✔ Network ttyprobe_default Created                                                 0.0s
+ ✔ Container ttyprobe-db-1  Healthy                                                 3.8s
+ ✔ Container ttyprobe-api-1 Healthy                                                 3.6s
+ ✔ Container ttyprobe-web-1 Healthy                                                 3.5s

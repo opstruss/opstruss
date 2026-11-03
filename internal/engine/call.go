@@ -64,7 +64,8 @@ func (e *engine) callByName(ctx context.Context, p progSpec, name string, args m
 			dir = filepath.Join(p.base, dir)
 		}
 		if t.Kind == model.TargetTask {
-			r := e.callTask(ctx, name, t.Package.Plugin.Tasks[t.Task], dir, in, call{frame: p.frame, unit: p.unit, plugin: e.pluginRunOf(t, p), unitRun: p.unitRun, marks: marks})
+			r := e.callTask(ctx, name, t.Package.Plugin.Tasks[t.Task], dir, in, call{frame: p.frame, unit: p.unit, plugin: e.pluginRunOf(t, p),
+				unitRun: p.unitRun, marks: marks, tty: p.tty})
 			return r, r.outputs, nil
 		}
 		var res *builtin.Result

@@ -627,14 +627,9 @@ func (e *engine) runDestroy(ctx context.Context, addr, stateKey string, c *state
 			return err
 		}
 	}
-	out := &lineWriter{e: e, addr: addr, task: "destroy", stream: "stdout"}
-	errw := &lineWriter{e: e, addr: addr, task: "destroy", stream: "stderr"}
-	defer out.flush()
-	defer errw.flush()
 	call := &plugin.Call{Command: cmd, Shell: d.Shell, Base: e.p.Dir, Dir: dir, BinDirs: bins, LeaseFiles: files, Env: env,
 		Pass: slices.Sorted(maps.Keys(d.Pass)), Stop: stop, Task: "destroy", Reason: "requested",
-		Unit:   &plugin.Unit{Address: addr, StateKey: stateKey, Workdir: e.workdir(addr), State: map[string]any{"inputs": c.Inputs, "outputs": c.Outputs}},
-		Stdout: out, Stderr: errw}
+		Unit: &plugin.Unit{Address: addr, StateKey: stateKey, Workdir: e.workdir(addr), State: map[string]any{"inputs": c.Inputs, "outputs": c.Outputs}}}
 	if d.Plugin != "" {
 		// destroy of a plugin runs from its directory with the inputs it was
 		// written with.
@@ -646,7 +641,11 @@ func (e *engine) runDestroy(ctx context.Context, addr, stateKey string, c *state
 	if d.Tool {
 		call.Unit.StateDir, _ = e.store.ToolDir(addr)
 	}
+	ss := e.streams(call, d.TTY, Event{Address: addr, Task: "destroy"}, nil)
+	defer ss.out.flush()
+	defer ss.err.flush()
 	res, err := e.run.Exec(ctx, call)
+	ss.end()
 	if err != nil {
 		return err
 	}

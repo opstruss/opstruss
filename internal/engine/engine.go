@@ -62,6 +62,9 @@ type Options struct {
 	Approve func(context.Context, Question) (bool, error)
 	Ask     func(context.Context, string, *model.Input) (string, error)
 	Debug   bool // OPSTRUSS_LOG=debug: diagnostics of the engine as debug events
+	// Terminal is the terminal that shows the run as it goes, when one does;
+	// a program whose tty says so then gets a terminal of its own.
+	Terminal *Terminal
 	// Supervisor keeps the services of the stack; without one, a service
 	// cannot start.
 	Supervisor Supervisor
@@ -91,6 +94,21 @@ type Question struct {
 	Task    string     `json:"task,omitempty"`
 	Summary string     `json:"summary"`
 	Items   []Question `json:"items,omitempty"`
+}
+
+// Terminal is the terminal that shows the run as it goes: a program with
+// tty gets a terminal of its own, as big as Size says, and Draw shows the
+// rows that the program may still change.
+type Terminal struct {
+	Size func() (cols, rows int)
+	Draw func(Rows)
+}
+
+// Rows are the rows that one program may still change, none once it ended.
+type Rows struct {
+	Address, Task, Step string
+	Time                time.Time
+	Rows                []string
 }
 
 // Event is one thing that happened in a run; the last one, of type run,
@@ -869,10 +887,98 @@ func (h *heldLogs) release(e *engine, shown bool) {
 	h.events, h.off = nil, true
 }
 
+// holding reports whether h holds lines back now.
+func (h *heldLogs) holding() bool {
+	if h == nil {
+		return false
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return !h.off
+}
+
 func (w *lineWriter) flush() {
 	if w.lines != nil {
 		w.lines.Flush()
 	}
+}
+
+// liveEvery is how often the rows that a program may still change are drawn
+// at most, as docker compose draws its progress.
+const liveEvery = 100 * time.Millisecond
+
+// screenWriter turns what a program writes to a terminal of its own into
+// log events, one per row once the row is final, as lineWriter does for
+// lines, and draws the rows that the program may still change on the
+// terminal of the run: at most every liveEvery, and not while the lines of
+// the program are held.
+type screenWriter struct {
+	e      *engine
+	ev     Event // the address, task, and step of the program
+	held   *heldLogs
+	mu     sync.Mutex
+	screen *secret.Screen
+	drawn  time.Time   // when the rows were drawn last
+	timer  *time.Timer // the draw that waits for liveEvery
+	ended  bool
+}
+
+func (e *engine) newScreenWriter(ev Event, held *heldLogs, cols, rows int) *screenWriter {
+	w := &screenWriter{e: e, ev: ev, held: held}
+	w.screen = secret.NewScreen(e.redact.Stream(), cols, rows, func(text string) {
+		ev := Event{Type: "log", Level: "info", Address: w.ev.Address, Task: w.ev.Task, Step: w.ev.Step, Stream: "stdout", Message: text}
+		if !w.held.hold(w.e, ev) {
+			w.e.send(ev)
+		}
+	})
+	return w
+}
+
+func (w *screenWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	_, _ = w.screen.Write(p)
+	switch wait := liveEvery - time.Since(w.drawn); {
+	case w.timer != nil:
+	case wait <= 0:
+		w.draw(w.screen.Rows())
+	default:
+		w.timer = time.AfterFunc(wait, func() {
+			w.mu.Lock()
+			defer w.mu.Unlock()
+			w.timer = nil
+			if !w.ended {
+				w.draw(w.screen.Rows())
+			}
+		})
+	}
+	return len(p), nil
+}
+
+// draw shows rows as those that the program may still change, unless its
+// lines are held.
+func (w *screenWriter) draw(rows []string) {
+	w.drawn = time.Now()
+	if !w.held.holding() {
+		w.e.opts.Terminal.Draw(Rows{Address: w.ev.Address, Task: w.ev.Task, Step: w.ev.Step, Time: w.drawn, Rows: rows})
+	}
+}
+
+// flush takes the rows away from the terminal once the program ended, and
+// sends those left as events.
+func (w *screenWriter) flush() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.ended {
+		return
+	}
+	if w.timer != nil {
+		w.timer.Stop()
+		w.timer = nil
+	}
+	w.ended = true
+	w.draw(nil)
+	w.screen.Flush()
 }
 
 // lock takes the lock of addr, waiting while another run holds it; a lock

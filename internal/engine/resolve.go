@@ -38,6 +38,8 @@ type resolved struct {
 	requires []string
 	timeout  time.Duration
 	stop     plugin.Stop
+	tty      bool        // of the program of up
+	ttyDown  bool        // of the program of destroy
 	waitFor  []string    // the addresses of the upstream units of reads, in plan order
 	reads    []string    // the parts that read outputs this run changes first, such as env.URL
 	plugin   *pluginUnit // for a unit that uses a plugin
@@ -156,6 +158,7 @@ func (e *engine) resolve(inst *instance, preview bool) (*resolved, error) {
 	if r.stop, err = plugin.StopOf(u.Stop); err != nil {
 		return nil, err
 	}
+	r.tty, r.ttyDown = isTrue(u.TTY), isTrue(u.TTY)
 	if u.Service != nil {
 		if err := e.resolveService(u, r, s); err != nil {
 			return nil, err
@@ -420,7 +423,7 @@ func (e *engine) destroyContract(inst *instance, r *resolved) *state.Destroy {
 		rel = r.cwd
 	}
 	d := &state.Destroy{Run: cmdValue(*r.destroy), Shell: r.shell, Dir: filepath.ToSlash(rel), Plugin: e.pluginOf(r),
-		Tool: r.plugin != nil && r.plugin.tool != "", Pass: r.fingerprints(), Timeout: inst.def.Timeout}
+		Tool: r.plugin != nil && r.plugin.tool != "", Pass: r.fingerprints(), Timeout: inst.def.Timeout, TTY: r.ttyDown}
 	for k, v := range r.env {
 		if v.File {
 			if d.EnvFiles == nil {

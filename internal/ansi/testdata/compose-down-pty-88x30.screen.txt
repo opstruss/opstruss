@@ -1,0 +1,5 @@
+[+] down 4/4
+ ✔ Container ttyprobe-web-1 Removed                                                 0.3s
+ ✔ Container ttyprobe-api-1 Removed                                                 1.2s
+ ✔ Container ttyprobe-db-1  Removed                                                 1.2s
+ ✔ Network ttyprobe_default Removed                                                 0.1s

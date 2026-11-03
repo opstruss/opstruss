@@ -51,6 +51,23 @@ list.
 - `if` skips a step, `retry` runs it again, `timeout` stops it, and
   `continue_on_error` goes on after it fails.
 - `needs` runs other tasks first, once per run.
+- `shell`, `dir`, `env`, `pass`, and `tty` of a task or a `block` are the
+  defaults of the steps in it; a step writes its own to change one.
+
+A tool that draws progress at a terminal, as `npm install` does, shows it
+with `tty: true` while the run shows on a terminal; in CI, and with
+`--json`, it prints lines as before
+([program contract](../reference/program-contract#a-terminal-of-its-own)):
+
+```yaml
+tasks:
+  setup:
+    tty: true
+    steps:
+      - run: npm install
+      - run: npm test
+        tty: false        # plain lines, as a test reporter prints them
+```
 
 ## Approval is a step
 

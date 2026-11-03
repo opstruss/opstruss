@@ -1,0 +1,102 @@
+[?25l[0G[+] down 0/1
+ [33m⠋[0m Container ttyprobe-web-1 Stopping                                                [34m0.1s[0m
+[?25h[?25l[2A[0G[+] down 0/1
+ [33m⠙[0m Container ttyprobe-web-1 Removing                                                [34m0.2s[0m
+[?25h[?25l[2A[0G[+] down 1/2
+ [32m✔[0m Container ttyprobe-web-1 [32mRemoved[0m                                                 [34m0.3s[0m
+ [33m⠋[0m Container ttyprobe-api-1 Stopping                                                [34m0.0s[0m
+[?25h[?25l[3A[0G[+] down 1/2
+ [32m✔[0m Container ttyprobe-web-1 [32mRemoved[0m                                                 [34m0.3s[0m
+ [33m⠙[0m Container ttyprobe-api-1 Stopping                                                [34m0.1s[0m
+[?25h[?25l[3A[0G[+] down 1/2
+ [32m✔[0m Container ttyprobe-web-1 [32mRemoved[0m                                                 [34m0.3s[0m
+ [33m⠹[0m Container ttyprobe-api-1 Stopping                                                [34m0.2s[0m
+[?25h[?25l[3A[0G[+] down 1/2
+ [32m✔[0m Container ttyprobe-web-1 [32mRemoved[0m                                                 [34m0.3s[0m
+ [33m⠸[0m Container ttyprobe-api-1 Stopping                                                [34m0.3s[0m
+[?25h[?25l[3A[0G[+] down 1/2
+ [32m✔[0m Container ttyprobe-web-1 [32mRemoved[0m                                                 [34m0.3s[0m
+ [33m⠼[0m Container ttyprobe-api-1 Stopping                                                [34m0.4s[0m
+[?25h[?25l[3A[0G[+] down 1/2
+ [32m✔[0m Container ttyprobe-web-1 [32mRemoved[0m                                                 [34m0.3s[0m
+ [33m⠴[0m Container ttyprobe-api-1 Stopping                                                [34m0.5s[0m
+[?25h[?25l[3A[0G[+] down 1/2
+ [32m✔[0m Container ttyprobe-web-1 [32mRemoved[0m                                                 [34m0.3s[0m
+ [33m⠦[0m Container ttyprobe-api-1 Stopping                                                [34m0.6s[0m
+[?25h[?25l[3A[0G[+] down 1/2
+ [32m✔[0m Container ttyprobe-web-1 [32mRemoved[0m                                                 [34m0.3s[0m
+ [33m⠧[0m Container ttyprobe-api-1 Stopping                                                [34m0.7s[0m
+[?25h[?25l[3A[0G[+] down 1/2
+ [32m✔[0m Container ttyprobe-web-1 [32mRemoved[0m                                                 [34m0.3s[0m
+ [33m⠇[0m Container ttyprobe-api-1 Stopping                                                [34m0.8s[0m
+[?25h[?25l[3A[0G[+] down 1/2
+ [32m✔[0m Container ttyprobe-web-1 [32mRemoved[0m                                                 [34m0.3s[0m
+ [33m⠏[0m Container ttyprobe-api-1 Stopping                                                [34m0.9s[0m
+[?25h[?25l[3A[0G[+] down 1/2
+ [32m✔[0m Container ttyprobe-web-1 [32mRemoved[0m                                                 [34m0.3s[0m
+ [33m⠋[0m Container ttyprobe-api-1 Stopping                                                [34m1.0s[0m
+[?25h[?25l[3A[0G[+] down 1/2
+ [32m✔[0m Container ttyprobe-web-1 [32mRemoved[0m                                                 [34m0.3s[0m
+ [33m⠙[0m Container ttyprobe-api-1 Stopping                                                [34m1.1s[0m
+[?25h[?25l[3A[0G[+] down 1/2
+ [32m✔[0m Container ttyprobe-web-1 [32mRemoved[0m                                                 [34m0.3s[0m
+ [33m⠹[0m Container ttyprobe-api-1 Removing                                                [34m1.2s[0m
+[?25h[?25l[3A[0G[+] down 2/3
+ [32m✔[0m Container ttyprobe-web-1 [32mRemoved[0m                                                 [34m0.3s[0m
+ [32m✔[0m Container ttyprobe-api-1 [32mRemoved[0m                                                 [34m1.2s[0m
+ [33m⠋[0m Container ttyprobe-db-1  Stopping                                                [34m0.1s[0m
+[?25h[?25l[4A[0G[+] down 2/3
+ [32m✔[0m Container ttyprobe-web-1 [32mRemoved[0m                                                 [34m0.3s[0m
+ [32m✔[0m Container ttyprobe-api-1 [32mRemoved[0m                                                 [34m1.2s[0m
+ [33m⠙[0m Container ttyprobe-db-1  Stopping                                                [34m0.2s[0m
+[?25h[?25l[4A[0G[+] down 2/3
+ [32m✔[0m Container ttyprobe-web-1 [32mRemoved[0m                                                 [34m0.3s[0m
+ [32m✔[0m Container ttyprobe-api-1 [32mRemoved[0m                                                 [34m1.2s[0m
+ [33m⠹[0m Container ttyprobe-db-1  Stopping                                                [34m0.3s[0m
+[?25h[?25l[4A[0G[+] down 2/3
+ [32m✔[0m Container ttyprobe-web-1 [32mRemoved[0m                                                 [34m0.3s[0m
+ [32m✔[0m Container ttyprobe-api-1 [32mRemoved[0m                                                 [34m1.2s[0m
+ [33m⠸[0m Container ttyprobe-db-1  Stopping                                                [34m0.4s[0m
+[?25h[?25l[4A[0G[+] down 2/3
+ [32m✔[0m Container ttyprobe-web-1 [32mRemoved[0m                                                 [34m0.3s[0m
+ [32m✔[0m Container ttyprobe-api-1 [32mRemoved[0m                                                 [34m1.2s[0m
+ [33m⠼[0m Container ttyprobe-db-1  Stopping                                                [34m0.5s[0m
+[?25h[?25l[4A[0G[+] down 2/3
+ [32m✔[0m Container ttyprobe-web-1 [32mRemoved[0m                                                 [34m0.3s[0m
+ [32m✔[0m Container ttyprobe-api-1 [32mRemoved[0m                                                 [34m1.2s[0m
+ [33m⠴[0m Container ttyprobe-db-1  Stopping                                                [34m0.6s[0m
+[?25h[?25l[4A[0G[+] down 2/3
+ [32m✔[0m Container ttyprobe-web-1 [32mRemoved[0m                                                 [34m0.3s[0m
+ [32m✔[0m Container ttyprobe-api-1 [32mRemoved[0m                                                 [34m1.2s[0m
+ [33m⠦[0m Container ttyprobe-db-1  Stopping                                                [34m0.7s[0m
+[?25h[?25l[4A[0G[+] down 2/3
+ [32m✔[0m Container ttyprobe-web-1 [32mRemoved[0m                                                 [34m0.3s[0m
+ [32m✔[0m Container ttyprobe-api-1 [32mRemoved[0m                                                 [34m1.2s[0m
+ [33m⠧[0m Container ttyprobe-db-1  Stopping                                                [34m0.8s[0m
+[?25h[?25l[4A[0G[+] down 2/3
+ [32m✔[0m Container ttyprobe-web-1 [32mRemoved[0m                                                 [34m0.3s[0m
+ [32m✔[0m Container ttyprobe-api-1 [32mRemoved[0m                                                 [34m1.2s[0m
+ [33m⠇[0m Container ttyprobe-db-1  Stopping                                                [34m0.9s[0m
+[?25h[?25l[4A[0G[+] down 2/3
+ [32m✔[0m Container ttyprobe-web-1 [32mRemoved[0m                                                 [34m0.3s[0m
+ [32m✔[0m Container ttyprobe-api-1 [32mRemoved[0m                                                 [34m1.2s[0m
+ [33m⠏[0m Container ttyprobe-db-1  Stopping                                                [34m1.0s[0m
+[?25h[?25l[4A[0G[+] down 2/3
+ [32m✔[0m Container ttyprobe-web-1 [32mRemoved[0m                                                 [34m0.3s[0m
+ [32m✔[0m Container ttyprobe-api-1 [32mRemoved[0m                                                 [34m1.2s[0m
+ [33m⠋[0m Container ttyprobe-db-1  Stopping                                                [34m1.1s[0m
+[?25h[?25l[4A[0G[+] down 2/3
+ [32m✔[0m Container ttyprobe-web-1 [32mRemoved[0m                                                 [34m0.3s[0m
+ [32m✔[0m Container ttyprobe-api-1 [32mRemoved[0m                                                 [34m1.2s[0m
+ [33m⠙[0m Container ttyprobe-db-1  Removing                                                [34m1.2s[0m
+[?25h[?25l[4A[0G[+] down 3/4
+ [32m✔[0m Container ttyprobe-web-1 [32mRemoved[0m                                                 [34m0.3s[0m
+ [32m✔[0m Container ttyprobe-api-1 [32mRemoved[0m                                                 [34m1.2s[0m
+ [32m✔[0m Container ttyprobe-db-1  [32mRemoved[0m                                                 [34m1.2s[0m
+ [33m⠋[0m Network ttyprobe_default Removing                                                [34m0.1s[0m
+[?25h[?25l[5A[0G[+] down 4/4
+ [32m✔[0m Container ttyprobe-web-1 [32mRemoved[0m                                                 [34m0.3s[0m
+ [32m✔[0m Container ttyprobe-api-1 [32mRemoved[0m                                                 [34m1.2s[0m
+ [32m✔[0m Container ttyprobe-db-1  [32mRemoved[0m                                                 [34m1.2s[0m
+ [32m✔[0m Network ttyprobe_default [32mRemoved[0m                                                 [34m0.1s[0m
+[?25h

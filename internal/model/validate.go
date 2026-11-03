@@ -490,6 +490,9 @@ func (c *checker) units() {
 			if u.Retry != nil {
 				c.add(at(path, "retry"), "a service starts again by restart:, not retry:")
 			}
+			if u.TTY != nil {
+				c.add(at(path, "tty"), "tty is for programs that a run shows; a service runs in the daemon")
+			}
 			c.ready(at(path, "ready"), u.Ready)
 		}
 		if u.Uses != "" {
@@ -988,7 +991,7 @@ func (c *checker) steps(path []string, steps []*Step, ids map[string]bool) {
 				}
 			}
 		} else {
-			for k, set := range map[string]bool{"env": len(s.Env) > 0, "pass": len(s.Pass) > 0, "shell": s.Shell != "", "dir": s.Dir != "", "stdin": s.Stdin != nil} {
+			for k, set := range map[string]bool{"env": len(s.Env) > 0, "pass": len(s.Pass) > 0, "shell": s.Shell != "", "dir": s.Dir != "", "stdin": s.Stdin != nil, "tty": s.TTY != nil} {
 				if set {
 					c.add(at(sp, k), "a task: step passes data through with:; the task keeps its own %s", k)
 				}
