@@ -40,6 +40,32 @@ exec opstruss plan --locked
 stdout '^default/a: will run: definition changed: plugin$'
 stdout '^default/site/page: will run: definition changed: component$'
 
+# A package that comes to need a newer OpsTruss stops update, which keeps
+# the pins, so the project runs on them until OpsTruss is upgraded.
+cp opstruss.lock before.lock
+cp newer.yaml repo/plugins/a/opstruss.plugin.yaml
+exec git -C repo commit -qam newer
+exec git -C repo tag -f v1
+! exec opstruss plugins update
+stderr 'opstruss: this file is for OpsTruss 1.99 or newer'
+! stderr 'unknown key'
+cmp opstruss.lock before.lock
+exec opstruss plan --locked
+stdout '^default/a: will run: definition changed: plugin$'
+
+# A package of the catalog that needs a newer OpsTruss stops only the
+# projects that use it.
+cp a.yaml repo/plugins/a/opstruss.plugin.yaml
+mkdir repo/plugins/c
+cp later.yaml repo/plugins/c/opstruss.plugin.yaml
+exec git -C repo add plugins/c
+exec git -C repo commit -qam later
+exec git -C repo tag -f v1
+exec opstruss plugins update
+! cmp opstruss.lock before.lock
+exec opstruss plan --locked
+stdout '^default/a: will run: definition changed: plugin$'
+
 # Cleanup runs the destroy of the pin in the record, fetched again.
 cp removed.yaml opstruss.yaml
 exec sh -c 'chmod -R u+w "$HOME/.opstruss/cache/git"; rm -rf "$HOME/.opstruss/cache/git"'
@@ -156,3 +182,26 @@ tasks:
     run: [../../../outside.sh]
   destroy:
     run: [./destroy.sh]
+-- a.yaml --
+name: a
+tasks:
+  up:
+    run: [./up.sh]
+  destroy:
+    run: [./destroy.sh]
+-- newer.yaml --
+opstruss: "1.99"
+name: a
+later: true
+tasks:
+  up:
+    run: [./up.sh]
+  destroy:
+    run: [./destroy.sh]
+-- later.yaml --
+opstruss: "1.99"
+name: c
+later: true
+tasks:
+  up:
+    run: [./up.sh]
