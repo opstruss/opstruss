@@ -1,19 +1,19 @@
 ---
-title: opstruss plugins prune
+title: opstruss uses update
 ---
 
 <!-- Written by go run ./internal/docgen; edit the source, not this page. -->
 
 ::: v-pre
 
-# opstruss plugins prune
+# opstruss uses update
 
-Remove shared cache entries unused for 30 days, skipping active entries.
+Update all sources, or a root uses declaration and its repository/ref group.
 
 ## Usage
 
 ```text
-opstruss plugins prune
+opstruss uses update [name]
 ```
 
 ## Global flags

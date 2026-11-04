@@ -267,7 +267,7 @@ func TestWebhookKeepsItsSnapshot(t *testing.T) {
 		return `name: shop
 inputs:
   hook: {type: string, env: HOOK}
-runtime:
+daemon:
   listen: 127.0.0.1:0
 tasks:
   deploy:

@@ -202,7 +202,7 @@ Up of stack default: 3 done
 The first command that read `uses:` fetched the catalog and wrote the
 commit that `v1` names to `opstruss.lock`. Commit that file with the
 project, so that every machine and CI run the same plugins until
-`opstruss plugins update` moves the pin. A module with providers also
+`opstruss uses update` moves the pin. A module with providers also
 gets `.terraform.lock.hcl` next to it at its first `up`, the providers
 that OpenTofu chose, which is committed too; this one has none.
 

@@ -45,7 +45,7 @@ opstruss [flags]
 | [`opstruss explain`](./explain) | Print the project of a stack as resolved |
 | [`opstruss doctor`](./doctor) | Check what runs of the stack need on this machine |
 | [`opstruss exec`](./exec) | Run a program with the environment of a unit |
-| [`opstruss plugins`](./plugins) | List the sources of the project and their pins |
+| [`opstruss uses`](./uses) | List the sources of the project and their pins |
 | [`opstruss state`](./state) | Read and repair the records of a stack |
 | [`opstruss stop`](./stop) | Stop the daemon of the stack and its services |
 | [`opstruss unlock`](./unlock) | Forget a leftover service so up can start it again |

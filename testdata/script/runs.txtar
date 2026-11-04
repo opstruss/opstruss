@@ -150,7 +150,7 @@ tasks:
 {"version": 1, "run": "20991231T000000Z-0000ffff", "project": "shop", "stack": "default", "command": "task", "task": "keep",
  "host": "h", "pid": 1, "started": "2099-12-31T00:00:00Z", "status": "finished", "outcome": "success", "exit_code": 0}
 -- newer.jsonl --
-{"v": 2, "seq": 1, "time": "2099-12-31T00:00:00.000Z", "run": "20991231T000000Z-0000ffff", "type": "run", "level": "info", "message": "success"}
+{"version": 2, "seq": 1, "time": "2099-12-31T00:00:00.000Z", "run": "20991231T000000Z-0000ffff", "type": "run", "level": "info", "message": "success"}
 -- broken.json --
 {"version": 1, "run":
 -- old.json --

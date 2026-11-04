@@ -210,10 +210,10 @@ func (a *app) jsonError(cmd *cobra.Command, err error) {
 	seq := int64(0)
 	for _, m := range msgs {
 		seq++
-		_ = enc.Encode(record.Event{V: 1, Seq: seq, Time: now, Type: "diagnostic", Level: "error", Message: m})
+		_ = enc.Encode(record.Event{Version: record.EventVersion, Seq: seq, Time: now, Type: "diagnostic", Level: "error", Message: m})
 	}
 	code := 1
-	_ = enc.Encode(record.Event{V: 1, Seq: seq + 1, Time: now, Type: "run", Level: "error", Message: "failed before it started",
+	_ = enc.Encode(record.Event{Version: record.EventVersion, Seq: seq + 1, Time: now, Type: "run", Level: "error", Message: "failed before it started",
 		Status: record.Finished, Outcome: "failure", ExitCode: &code})
 }
 
@@ -329,7 +329,7 @@ func (a *app) root() *cobra.Command {
 	root.AddCommand(a.initCommand(), a.validateCommand())
 	root.AddCommand(units...)
 	root.AddCommand(a.listCommand(), a.outputsCommand(), a.runsCommand(), a.explainCommand(), a.doctorCommand(),
-		a.execCommand(), a.pluginsCommand(), a.stateCommand(), a.stopCommand(), a.unlockCommand(), a.versionCommand(),
+		a.execCommand(), a.usesCommand(), a.stateCommand(), a.stopCommand(), a.unlockCommand(), a.versionCommand(),
 		a.daemonCommand())
 	a.completions(root)
 	root.SetUsageTemplate(usageTemplate(root.UsageTemplate()))
@@ -397,7 +397,8 @@ func usageTemplate(t string) string {
 // docsPath is the page of cmd in the documentation: its reference, or the
 // start for opstruss itself and the tasks of a project.
 func docsPath(cmd *cobra.Command) string {
-	if !cmd.HasParent() || cmd.GroupID == groupTasks {
+	// The reference has a page for each command that help lists.
+	if !cmd.HasParent() || cmd.GroupID == groupTasks || !cmd.IsAvailableCommand() {
 		return ""
 	}
 	return "reference/cli/" + strings.ReplaceAll(strings.TrimPrefix(cmd.CommandPath(), cmd.Root().Name()+" "), " ", "-")

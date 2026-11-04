@@ -26,9 +26,10 @@ type sourceRow struct {
 	Cache  string `json:"cache"`
 }
 
-func (a *app) pluginsCommand() *cobra.Command {
-	cmd := &cobra.Command{Use: "plugins", Short: "List the sources of the project and their pins",
-		Long: "List project sources and their pins without fetching.", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return a.listSources(cmd.Context()) }}
+func (a *app) usesCommand() *cobra.Command {
+	cmd := &cobra.Command{Use: "uses", Short: "List the sources of the project and their pins",
+		Long: "List project sources and their pins without fetching.", SuggestFor: []string{"plugins", "deps"}, Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error { return a.listSources(cmd.Context()) }}
 	cmd.AddCommand(&cobra.Command{Use: "fetch", Short: "Fetch the pinned sources and binaries",
 		Long: "Prepare all project sources and binaries; repair pinned cache entries.", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return a.fetchSources(cmd, "") }})
 	cmd.AddCommand(&cobra.Command{Use: "update [name]", Short: "Update the pins of all sources, or of one",
@@ -98,18 +99,20 @@ func (a *app) listSources(ctx context.Context) error {
 				row.Kind, row.Cache = "builtin", "builtin"
 			}
 			if pkg := p.Packages[name]; pkg != nil {
-				if pkg.Plugin != nil {
-					row.Kind = "plugin"
-				} else if pkg.Component {
-					row.Kind = "component"
-				}
+				row.Kind = cmp.Or(row.Kind, packageKind(pkg))
 			}
 			rows[name+"@"+stack] = row
 		}
 		for _, name := range slices.Sorted(maps.Keys(p.Units)) {
 			src := p.Units[name].Uses
 			if strings.HasPrefix(src, "github.com/") {
-				rows["units."+name+"@"+stack] = sourceRow{Scope: stack, Name: "units." + name, Source: src, Cache: "unlocked"}
+				row := sourceRow{Scope: stack, Name: "units." + name, Source: src, Cache: "unlocked"}
+				if loaded != nil {
+					if u := loaded.Units[name]; u != nil && u.Target != nil && u.Target.Package != nil {
+						row.Kind = packageKind(u.Target.Package)
+					}
+				}
+				rows["units."+name+"@"+stack] = row
 			}
 		}
 	}
@@ -206,6 +209,20 @@ func (a *app) listSources(ctx context.Context) error {
 	return tw.Flush()
 }
 
+// packageKind is the kind of a package that is read: "" while it is not,
+// or when its files have problems.
+func packageKind(pkg *model.Package) string {
+	switch {
+	case pkg.Plugin != nil:
+		return "plugin"
+	case pkg.Component:
+		return "component"
+	case pkg.IsCatalog():
+		return "catalog"
+	}
+	return ""
+}
+
 // shortCommit is the first seven characters of a commit, as git log
 // --oneline shows it.
 func shortCommit(c string) string {
@@ -217,7 +234,7 @@ func shortCommit(c string) string {
 
 func (a *app) fetchSources(cmd *cobra.Command, update string) error {
 	if cmd.Flags().Changed("stack") {
-		return fmt.Errorf("plugins %s covers the whole project and all stacks; omit --stack", cmd.Name())
+		return fmt.Errorf("uses %s covers the whole project and all stacks; omit --stack", cmd.Name())
 	}
 	dir, err := a.projectDir()
 	if err != nil {

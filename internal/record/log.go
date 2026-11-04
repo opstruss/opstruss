@@ -111,7 +111,7 @@ func (l *Log) Emit(ev Event) Event {
 			l.err = err
 		}
 		l.lost++
-		ev.V, ev.Seq, ev.Time = EventVersion, l.seq+1, now()
+		ev.Version, ev.Seq, ev.Time = EventVersion, l.seq+1, now()
 		return ev
 	}
 	if l.closed {
@@ -144,7 +144,7 @@ func (l *Log) Emit(ev Event) Event {
 // write gives ev its envelope and appends it, after the full file turned
 // over. A write that fails leaves no part of its line.
 func (l *Log) write(ev Event) (Event, error) {
-	ev.V, ev.Seq, ev.Time = EventVersion, l.seq+1, now()
+	ev.Version, ev.Seq, ev.Time = EventVersion, l.seq+1, now()
 	data, err := json.Marshal(ev)
 	if err != nil {
 		return ev, err
@@ -345,7 +345,7 @@ func readEvents(f *os.File, rest *[]byte, fn func(Event)) error {
 			line := bytes.TrimSpace(*rest)
 			var ev Event
 			var newer *state.NewerError
-			if err := state.CheckVersion(line, "v", "an event of "+f.Name(), EventVersion); errors.As(err, &newer) {
+			if err := state.CheckVersion(line, "version", "an event of "+f.Name(), EventVersion); errors.As(err, &newer) {
 				return err
 			} else if err == nil && json.Unmarshal(line, &ev) == nil {
 				fn(ev)

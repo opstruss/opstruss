@@ -131,7 +131,7 @@ tasks:
  "host": "h", "pid": 1, "started": "2020-01-01T00:00:00Z", "status": "finished", "outcome": "success", "exit_code": 0}
 -- opstruss.yaml --
 name: shop
-runtime:
+daemon:
   listen: 127.0.0.1:0
 inputs:
   region: {type: string, default: home}
@@ -166,7 +166,7 @@ tasks:
             note: from hook
 -- later.yaml --
 name: shop
-runtime:
+daemon:
   listen: 127.0.0.1:0
 inputs:
   region: {type: string, default: home}
@@ -202,7 +202,7 @@ tasks:
             note: later
 -- gone.yaml --
 name: shop
-runtime:
+daemon:
   listen: 127.0.0.1:0
 inputs:
   region: {type: string, default: home}

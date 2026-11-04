@@ -129,8 +129,8 @@ func Triggers(opts Options) ([]*Trigger, string, error) {
 	}
 	out = append(out, later...)
 	listen := ""
-	if e.p.Runtime != nil {
-		listen = e.p.Runtime.Listen
+	if e.p.Daemon != nil {
+		listen = e.p.Daemon.Listen
 	}
 	return out, listen, nil
 }

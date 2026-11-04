@@ -19,7 +19,7 @@ exec opstruss stop
 name: load
 inputs:
   hook: {type: string, env: HOOK}
-runtime:
+daemon:
   listen: 127.0.0.1:0
 tasks:
   queued:

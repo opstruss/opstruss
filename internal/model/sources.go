@@ -83,7 +83,7 @@ func (p *Project) SameDefinition(other *Project) bool {
 		}
 		packages := map[string]any{}
 		for name, pkg := range p.Packages {
-			packages[name] = []any{pkg.Dir, pkg.Plugin, pkg.Source, pkg.Catalog, pkg.Components, pkg.Builtin}
+			packages[name] = []any{pkg.Dir, pkg.Plugin, pkg.Source, pkg.Catalog, pkg.Builtin}
 		}
 		components := map[string]any{}
 		for name, u := range p.Units {
@@ -92,7 +92,7 @@ func (p *Project) SameDefinition(other *Project) bool {
 			}
 			if u.Target != nil && u.Target.Package != nil {
 				pkg := u.Target.Package
-				packages["units."+name] = []any{pkg.Dir, pkg.Plugin, pkg.Source, pkg.Catalog, pkg.Components, pkg.Builtin}
+				packages["units."+name] = []any{pkg.Dir, pkg.Plugin, pkg.Source, pkg.Catalog, pkg.Builtin}
 			}
 		}
 		origins := map[string]string{}

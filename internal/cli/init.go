@@ -101,7 +101,7 @@ func initProject(dir, name string, res *initResult) error {
 	if err != nil {
 		return err
 	}
-	modeline := "# yaml-language-server: $schema=" + docsURL(version(), "schema/project.json")
+	modeline := "# yaml-language-server: $schema=" + docsURL(version(), schemaPath)
 	if _, err := fmt.Fprintf(f, "%s\nopstruss: %q\nname: %s\n", modeline, model.Level, name); err != nil {
 		_ = f.Close()
 		return err

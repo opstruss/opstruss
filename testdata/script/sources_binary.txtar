@@ -3,7 +3,7 @@
 env HOME=$WORK/home
 env OPSTRUSS_TEST_ASSETS=$WORK/assets
 sourcerepo repo
-exec opstruss plugins fetch
+exec opstruss uses fetch
 cp opstruss.lock before.lock
 exec opstruss doctor --json
 stdout '"name": "demo-tool"'
@@ -18,7 +18,7 @@ stdout 'private-path'
 exec sh -c 'for f in "$HOME"/.opstruss/cache/bin/*/exec/demo-tool; do chmod u+w "$f"; echo tampered > "$f"; done'
 ! exec opstruss plan
 stderr 'binary cache integrity'
-exec opstruss plugins fetch
+exec opstruss uses fetch
 cmp opstruss.lock before.lock
 exec opstruss plan
 ! stdout 'will run'
@@ -30,7 +30,7 @@ cp v2.plugin.yaml repo/compiled/opstruss.plugin.yaml
 exec git -C repo add .
 exec git -C repo commit -qm v2
 exec git -C repo tag -f v1
-exec opstruss plugins update compiled
+exec opstruss uses update compiled
 cp removed.yaml opstruss.yaml
 exec sh -c 'chmod -R u+w "$HOME/.opstruss/cache/git" "$HOME/.opstruss/cache/bin"; rm -rf "$HOME/.opstruss/cache/git" "$HOME/.opstruss/cache/bin"'
 exec touch offline
@@ -49,7 +49,7 @@ stdout 'binary-down-v1 resource'
 
 # A complete warm cache can execute the new version and destroy it offline.
 cp full.yaml opstruss.yaml
-exec opstruss plugins fetch
+exec opstruss uses fetch
 exec touch offline
 exec touch assets/offline
 exec opstruss up --yes

@@ -16,7 +16,7 @@ exec opstruss stop
 name: shop
 inputs:
   hook: {type: string, sensitive: true, env: HOOK}
-runtime:
+daemon:
   listen: 127.0.0.1:0
 tasks:
   token:

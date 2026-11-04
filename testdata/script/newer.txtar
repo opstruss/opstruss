@@ -91,7 +91,7 @@ requires: [jq]
 -- catalog/current.yaml --
 opstruss: "1.0"
 shared: []
--- catalog/ops/plugins/hello/opstruss.plugin.yaml --
+-- catalog/ops/hello/opstruss.plugin.yaml --
 name: hello
 tasks:
   up:

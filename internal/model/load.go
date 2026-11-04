@@ -252,7 +252,7 @@ func readProject(dir, stack string, session *sources.Session, check bool) (*Proj
 // projectOnly are the keys that a component leaves out: they belong to the
 // project, and the file keeps them for when it runs as a project of its
 // own.
-var projectOnly = []string{"stacks", "secrets", "encryption_keys", "backend", "runtime", "mcp"}
+var projectOnly = []string{"stacks", "secrets", "encryption_keys", "backend", "daemon", "mcp"}
 
 // readComponent reads the component in dir for a project in base: its
 // opstruss.yaml merged with its include files, without what only a
@@ -539,7 +539,7 @@ func (p *Project) merge(inc *document) Problems {
 }
 
 // overlay applies what a stack overrides: secrets by name, and
-// encryption_keys, runtime, mcp, and backend as a whole.
+// encryption_keys, daemon, mcp, and backend as a whole.
 func (p *Project) overlay(root *document, stack string, sd map[string]any) {
 	if sd == nil {
 		return
@@ -556,7 +556,7 @@ func (p *Project) overlay(root *document, stack string, sd map[string]any) {
 			p.origins["secrets."+name] = origin{doc: root, path: append(at("secrets"), name)}
 		}
 	}
-	for _, k := range []string{"encryption_keys", "runtime", "mcp", "backend"} {
+	for _, k := range []string{"encryption_keys", "daemon", "mcp", "backend"} {
 		if v, ok := sd[k]; ok {
 			p.doc[k] = v
 			p.origins[k] = origin{doc: root, path: at(k)}

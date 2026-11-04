@@ -120,3 +120,10 @@ A plugin is used by its path: in the project, as above, or in a checkout
 of another repository next to it, such as a git submodule. This version
 fetches only `github.com/opstruss/catalog` by itself, so the plugins of
 other repositories come in that way.
+
+A directory of several plugins and components is a catalog. Declare it
+once, as `team: ./vendor/team`, and a unit uses each subdirectory with
+`opstruss.plugin.yaml` or `opstruss.yaml` as `team.<name>`.
+`opstruss.catalog.yaml` at its root names other directories in
+[`packages`](../reference/catalog-yaml), and the paths that every package
+shares.

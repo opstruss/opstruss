@@ -56,7 +56,7 @@ assert:
 wait:
   description: Wait for a time, a port, or a URL
   inputs:
-    seconds: {type: number, minimum: 0}
+    duration: {type: string}
     tcp: {type: string}
     http: {type: string}
     timeout: {type: string}

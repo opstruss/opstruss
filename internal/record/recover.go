@@ -233,7 +233,7 @@ func lastEvent(path string) *Event {
 		buf = buf[:len(buf)-1]
 		if i := bytes.LastIndexByte(buf, '\n'); i >= 0 || from == 0 {
 			var ev Event
-			if json.Unmarshal(buf[i+1:], &ev) != nil || ev.V > EventVersion {
+			if json.Unmarshal(buf[i+1:], &ev) != nil || ev.Version > EventVersion {
 				return nil
 			}
 			return &ev

@@ -1,19 +1,19 @@
 ---
-title: opstruss plugins update
+title: opstruss uses fetch
 ---
 
 <!-- Written by go run ./internal/docgen; edit the source, not this page. -->
 
 ::: v-pre
 
-# opstruss plugins update
+# opstruss uses fetch
 
-Update all sources, or a root uses declaration and its repository/ref group.
+Prepare all project sources and binaries; repair pinned cache entries.
 
 ## Usage
 
 ```text
-opstruss plugins update [name]
+opstruss uses fetch
 ```
 
 ## Global flags

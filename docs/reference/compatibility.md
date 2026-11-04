@@ -10,9 +10,10 @@ without a change on their side.
 | Area | Promised |
 |---|---|
 | Files | The keys of `opstruss.yaml`, `opstruss.plugin.yaml`, `opstruss.catalog.yaml`, and `opstruss.lock` and what they mean; built-in tasks; the keywords and functions of expressions |
-| Command line | Commands, built-in flags, exit codes, and the JSON of `--json`: events and documents |
+| Command line | Commands, built-in flags, exit codes, the JSON of `--json`: events and documents, and the [variables](./environment) that it reads |
 | Plugins | The [program contract](./program-contract): what a program gets and gives |
 | State | Records, the `_meta` of each stack, `kv`, the file of each daemon, the shape of events, addresses, run ids, and the values of `outcome` |
+| Releases | The names of the files of a release, `checksums.txt`, and what each archive holds: `opstruss` at its root, with `LICENSE`, `README.md`, and `CHANGELOG.md` |
 
 ## What may change
 
@@ -32,7 +33,9 @@ without a change on their side.
 - **It adds.** A new key, field, variable, or command is optional, and
   without it OpsTruss behaves as before. Readers of events, plugins, and
   OpsTruss itself ignore fields and kinds of events they do not know.
-  `outcome` keeps its four values; details come in new fields.
+  `outcome`, the `status` of a run, `level`, and `stream` keep their
+  values, and details come in new fields; any other list of values may
+  grow, as [Exit codes and JSON](./exit-codes-and-json#json) says.
 - **Your names win.** A built-in task, keyword, flag, or command that a
   later version adds gives way to a name of yours: a name in `uses:`, a
   task, or an input of the same name keeps working as before, and
@@ -58,6 +61,10 @@ without a change on their side.
   `opstruss init` names on the first line of `opstruss.yaml`; a patch
   release never makes a file that was valid there invalid. A project that
   raises its `opstruss:` points that line at the schema of the new level.
+- **Links stay.** The page that the help of each command ends with, at
+  `https://opstruss.github.io/v<major>.<minor>/reference/cli/<command>`,
+  stays for as long as the site keeps that version; a page that moves
+  leaves one behind that links to its new place.
 
 A change that breaks what this page promises comes only in a new major
 version, with its upgrade in the changelog under "Upgrade notes".

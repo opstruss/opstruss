@@ -37,7 +37,7 @@ exec opstruss stop
 -- opstruss.yaml --
 opstruss: "1.0"
 name: trig
-runtime:
+daemon:
   listen: 127.0.0.1:0
 secrets:
   hook:

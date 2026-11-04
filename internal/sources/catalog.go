@@ -19,7 +19,7 @@ func (c *Cache) PackageHash(id Identity, pkg string, shared []string) (string, e
 		return "", fmt.Errorf("%s: source metadata unavailable: %w", id.Key(), err)
 	}
 	if treeHash(m.Entries) != id.Hash {
-		return "", fmt.Errorf("%s: cache integrity: source tree hash mismatch; run opstruss plugins fetch to repair", id.Key())
+		return "", fmt.Errorf("%s: cache integrity: source tree hash mismatch; run opstruss uses fetch to repair", id.Key())
 	}
 	paths := append([]string{pkg}, shared...)
 	var entries []treeEntry

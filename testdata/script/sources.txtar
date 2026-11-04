@@ -5,22 +5,22 @@ sourcerepo repo
 # Discovery and inventory neither fetch nor write pins.
 exec opstruss --help
 ! exists opstruss.lock
-exec opstruss plugins --json
+exec opstruss uses --json
 stdout '"cache": "unlocked"'
 ! exists opstruss.lock
 ! exec opstruss plan --stack alpha --locked
 stderr 'requires a pin change'
 ! exists opstruss.lock
 ! exec opstruss remote-task
-stderr 'plugins fetch first'
-! exec opstruss plugins fetch --stack alpha
+stderr 'uses fetch first'
+! exec opstruss uses fetch --stack alpha
 stderr 'whole project and all stacks'
 
-exec opstruss plugins fetch
+exec opstruss uses fetch
 exists opstruss.lock
 grep 'catalog/extra@main' opstruss.lock
 cp opstruss.lock before.lock
-exec opstruss plugins fetch --locked
+exec opstruss uses fetch --locked
 cmp opstruss.lock before.lock
 
 # Main project tasks still discover flags before sources are fetched.
@@ -41,11 +41,11 @@ cp v2.sh repo/demo/tool.sh
 exec git -C repo add .
 exec git -C repo commit -qm v2
 exec git -C repo tag -f v1
-exec opstruss plugins fetch
+exec opstruss uses fetch
 cmp opstruss.lock before.lock
-exec opstruss plugins update demo
+exec opstruss uses update demo
 ! cmp opstruss.lock before.lock
-exec opstruss plugins --json
+exec opstruss uses --json
 stdout '"kind": "plugin"'
 
 # The stored cleanup remains v1, even after removing definitions and all source bytes.
@@ -58,7 +58,7 @@ stdout 'destroy-v1 first'
 
 # A cached source executes offline across projects; a cold one fails before programs.
 cp full.yaml opstruss.yaml
-exec opstruss plugins fetch
+exec opstruss uses fetch
 exec touch offline
 exec opstruss root-task --locked --message offline
 stdout 'task-v2 offline'

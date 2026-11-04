@@ -55,7 +55,7 @@ inputs:
   debug:
     type: boolean
     env: APP_DEBUG
-runtime:
+daemon:
   listen: 127.0.0.1:7878
 stacks:
   dev:
@@ -64,7 +64,7 @@ stacks:
   prod:
     with:
       domain: example.com
-    runtime:
+    daemon:
       listen: 127.0.0.1:7879
     include: [prod/*.yaml]
 locals:

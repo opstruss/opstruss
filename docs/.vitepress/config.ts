@@ -50,11 +50,13 @@ export default defineConfig({
         items: [
           { text: 'opstruss.yaml', link: '/reference/opstruss-yaml' },
           { text: 'opstruss.plugin.yaml', link: '/reference/plugin-yaml' },
+          { text: 'opstruss.catalog.yaml', link: '/reference/catalog-yaml' },
           { text: 'CLI', link: '/reference/cli/' },
           { text: 'Expressions', link: '/reference/expressions' },
           { text: 'Built-in tasks', link: '/reference/builtin-tasks' },
           { text: 'Program contract', link: '/reference/program-contract' },
           { text: 'Exit codes and JSON', link: '/reference/exit-codes-and-json' },
+          { text: 'Environment', link: '/reference/environment' },
           { text: 'Compatibility', link: '/reference/compatibility' },
         ],
       },

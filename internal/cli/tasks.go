@@ -132,7 +132,7 @@ func (a *app) commandProject() *model.Project {
 	}
 	a.discovery = p
 	if p.Sources.Unavailable {
-		a.loadErr = errors.New("remote component task metadata may be unavailable; run opstruss plugins fetch first")
+		a.loadErr = errors.New("remote component task metadata may be unavailable; run opstruss uses fetch first")
 	}
 	return p
 }

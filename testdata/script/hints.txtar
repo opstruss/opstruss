@@ -73,6 +73,10 @@ stderr '^opstruss: unknown command "down" for "opstruss"; did you mean destroy o
 stderr '^opstruss: unknown command "preview" for "opstruss"; did you mean plan\?$'
 ! exec opstruss ps
 stderr 'did you mean .*status'
+! exec opstruss plugins
+stderr '^opstruss: unknown command "plugins" for "opstruss"; did you mean uses\?$'
+! exec opstruss deps fetch
+stderr '^opstruss: unknown command "deps" for "opstruss"; did you mean uses or deep\?$'
 exec opstruss deploy
 stdout '^deploy \| deployed$'
 

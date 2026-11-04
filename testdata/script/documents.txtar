@@ -29,7 +29,7 @@ stdout '"type": "string"'
 stdout '"type": "object"'
 ! stdout 's3cr3t|\*\*\*'
 
-exec opstruss plugins --json
+exec opstruss uses --json
 stdout '"sources": \[\]'
 
 -- opstruss.yaml --

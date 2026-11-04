@@ -210,7 +210,7 @@ retry:
 	}
 	if readOnly {
 		if _, err := os.Lstat(dir); err != nil {
-			return "", nil, fmt.Errorf("%s: binary unavailable; run opstruss plugins fetch first", name)
+			return "", nil, fmt.Errorf("%s: binary unavailable; run opstruss uses fetch first", name)
 		}
 	}
 	l, err := c.lock(ctx, key, false, !readOnly)
@@ -230,12 +230,12 @@ retry:
 		}
 		if !repair {
 			l.Close()
-			return "", nil, fmt.Errorf("%s: binary cache integrity: %w; run opstruss plugins fetch to repair", name, err)
+			return "", nil, fmt.Errorf("%s: binary cache integrity: %w; run opstruss uses fetch to repair", name, err)
 		}
 	}
 	l.Close()
 	if readOnly {
-		return "", nil, fmt.Errorf("%s: binary unavailable; run opstruss plugins fetch first", name)
+		return "", nil, fmt.Errorf("%s: binary unavailable; run opstruss uses fetch first", name)
 	}
 	l, err = c.lock(ctx, key, true, false)
 	if err != nil {

@@ -31,15 +31,23 @@ With `--json`, a command that runs something, such as `plan`, `up`,
 `destroy`, or a task, prints one event per line. A command that reads, such as `outputs`, `list`, `explain`,
 `doctor`, `runs`, and `state list`, prints one JSON document.
 
+Four fields keep the values that this page lists: `outcome`, the
+`status` of a run and its events (`running` or `finished`), `level`, and
+`stream`. A later version may add a value to any other field with a list
+of values, such as `type`, `action`, `reason`, `approval`, `kind`, and the
+`status` of a check of `doctor`, so a reader, and an expression, takes a
+value that it does not know as another case: a `reason` it does not know
+is a run for another reason.
+
 An event:
 
 ```json
-{"v":1,"seq":12,"time":"2026-10-19T03:21:07.685Z","run":"20261019T032107Z-4b2e91d0","type":"log","level":"info","address":"prod/web","task":"up","step":"build","stream":"stdout","message":"added 312 packages"}
+{"version":1,"seq":12,"time":"2026-10-19T03:21:07.685Z","run":"20261019T032107Z-4b2e91d0","type":"log","level":"info","address":"prod/web","task":"up","step":"build","stream":"stdout","message":"added 312 packages"}
 ```
 
 | Field | Is |
 |---|---|
-| `v` | The version of the shape of events, `1` |
+| `version` | The version of the shape of events, `1` |
 | `seq` | The order within the run, since two events can have the same `time` |
 | `time` | When, in RFC 3339 and UTC |
 | `run` | The id of the run |
@@ -74,7 +82,7 @@ A plan, in a `plan` event and in `units.<name>.plan`:
 
 | Field | Is |
 |---|---|
-| `changes` | What the plan of its plugin changes, each with `action` (`create`, `update`, `delete`, `replace`, or `run`) and `resource` when it names one |
+| `changes` | What the plan of its plugin changes, each with `action` (`create`, `update`, `delete`, `replace`, or `run`; `forget` for a unit that `removed:` drops from the state without destroying it) and `resource` when it names one |
 | `outputs` | The outputs that the plan of its plugin says change |
 | `exact` | Whether `up` gets this plan: `false` for a unit planned at its turn, or a plugin that does not promise one |
 | `digest` | What an approval of the plan approves; `""` for a unit planned at its turn |
@@ -104,8 +112,8 @@ events are to the millisecond.
 | `doctor` | `stack`; `checks`, each with `check`, `status`, `message`, and `path` or `name` |
 | `explain` | `project`, `stack`, `inputs` (each with its `value` and where it is `from`), `order`, `units`, `tasks`, `outputs` |
 | `state list` | `stack`; `records`, each with `address`, `id`, and `kind`; `kv` |
-| `plugins`, `plugins fetch`, `plugins update` | `sources` |
-| `plugins prune` | `removed` |
+| `uses`, `uses fetch`, `uses update` | `sources` |
+| `uses prune` | `removed` |
 | `validate` | `valid`, `problems`, and `warnings`, each problem and warning with `file`, `line`, `column`, `path`, and `message`; `file` is relative to the project, or `<repository>@<ref>/<path>` for a file of a remote plugin, component, or catalog; only problems make `valid` false |
 | `stop` | `stack`, `stopped` |
 | `init` | `wrote` |

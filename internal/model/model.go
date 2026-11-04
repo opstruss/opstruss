@@ -20,7 +20,7 @@ type File struct {
 	Backend        *Backend                  `json:"backend,omitempty"`
 	Secrets        map[string]*Secret        `json:"secrets,omitempty"`
 	EncryptionKeys []*EncryptionKey          `json:"encryption_keys,omitempty"`
-	Runtime        *Runtime                  `json:"runtime,omitempty"`
+	Daemon         *Daemon                   `json:"daemon,omitempty"`
 	MCP            *MCP                      `json:"mcp,omitempty"`
 	Units          map[string]*Unit          `json:"units,omitempty"`
 	Tasks          map[string]*Task          `json:"tasks,omitempty"`
@@ -79,7 +79,7 @@ type Stack struct {
 	With           map[string]any     `json:"with,omitempty"`
 	Secrets        map[string]*Secret `json:"secrets,omitempty"`
 	EncryptionKeys []*EncryptionKey   `json:"encryption_keys,omitempty"`
-	Runtime        *Runtime           `json:"runtime,omitempty"`
+	Daemon         *Daemon            `json:"daemon,omitempty"`
 	MCP            *MCP               `json:"mcp,omitempty"`
 	Backend        *Backend           `json:"backend,omitempty"`
 	Approval       string             `json:"approval,omitempty"`
@@ -116,8 +116,8 @@ type Secret struct {
 	Calls   Calls    `json:"-"`
 }
 
-// Runtime configures the OpsTruss that keeps running.
-type Runtime struct {
+// Daemon configures the daemon of a stack.
+type Daemon struct {
 	Listen string `json:"listen,omitempty"`
 }
 

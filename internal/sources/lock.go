@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"maps"
 	"os"
 	"path/filepath"
@@ -203,11 +204,11 @@ func (s *Session) Resolve(source string) (Identity, string, error) {
 	pin, ok := s.groups[id.Group()]
 	if !ok {
 		if s.Options.Locked && !s.Options.Update && !slices.Contains(s.Options.UpdateGroups, id.Group()) {
-			return id, "", fmt.Errorf("%s requires a pin change in %s; run plugins fetch or update without --locked", id.Key(), LockName)
+			return id, "", fmt.Errorf("%s requires a pin change in %s; run opstruss uses fetch or update without --locked", id.Key(), LockName)
 		}
 		if s.Options.Discovery {
 			s.Unavailable = true
-			return id, "", fmt.Errorf("%s: metadata unavailable; run opstruss plugins fetch first", id.Key())
+			return id, "", fmt.Errorf("%s: metadata unavailable; run opstruss uses fetch first", id.Key())
 		}
 		commit, err := s.Cache.ResolveRef(s.ctx, id)
 		if err != nil {
@@ -236,7 +237,12 @@ func (s *Session) Resolve(source string) (Identity, string, error) {
 		s.lock.Sources[id.Key()] = s.groups[id.Group()]
 	}
 	s.resolved[id.Key()] = id
+	// A path that the snapshot lacks may name a package of a catalog; the
+	// caller reads it, or says that it does not exist.
 	dir, err := Within(root, filepath.Join(root, filepath.FromSlash(id.Path)))
+	if errors.Is(err, fs.ErrNotExist) {
+		return id, filepath.Join(root, filepath.FromSlash(id.Path)), nil
+	}
 	return id, dir, err
 }
 

@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"maps"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -16,25 +17,29 @@ import (
 )
 
 // Package is what a name in uses: stands for, or a path that a unit uses
-// directly: a plugin, a component, a directory of components and plugins,
-// or a built-in task under another name.
+// directly: a plugin, a component, a catalog of them, or a built-in task
+// under another name.
 type Package struct {
 	Source     *sources.Identity
 	SourceRoot string
 	BinDirs    []string
 	Catalog    *Catalog // the catalog that holds the directory; nil outside one
 
-	Name       string  // the name in uses:, or the path that a unit wrote
-	Decl       *Uses   // the declaration, with what an alias takes from the one it names; nil for a path in a unit
-	Dir        string  // the directory of a plugin, component, or components
-	Plugin     *Plugin // opstruss.plugin.yaml, when the directory has one
-	Component  bool    // the directory is a component: it has opstruss.yaml and no plugin
-	Components []string
-	Plugins    []string // the plugins in its plugins/, for a directory that is not a plugin
-	Builtin    string   // the built-in task that the name stands for
+	Name      string  // the name in uses:, or the path that a unit wrote
+	Decl      *Uses   // the declaration, with what an alias takes from the one it names; nil for a path in a unit
+	Dir       string  // the directory of a plugin, component, or catalog
+	Plugin    *Plugin // opstruss.plugin.yaml, when the directory has one
+	Component bool    // the directory is a component: it has opstruss.yaml and no plugin
+	Builtin   string  // the built-in task that the name stands for
 
-	broken  bool                // its opstruss.plugin.yaml has problems, reported once
-	members map[string]*Package // the plugins of Plugins that units use as <name>.<plugin>, read
+	broken  bool                // its opstruss.plugin.yaml or opstruss.catalog.yaml has problems, reported once
+	members map[string]*Package // the packages of a catalog that units use as <name>.<package>, read
+}
+
+// IsCatalog reports whether the package is a catalog: a directory with no
+// manifest of its own, whose packages units use as <name>.<package>.
+func (pkg *Package) IsCatalog() bool {
+	return pkg.Dir != "" && pkg.Plugin == nil && !pkg.Component && !pkg.broken
 }
 
 // errBroken is what a name resolves to in a plugin whose file has
@@ -67,7 +72,7 @@ type Target struct {
 
 func localPath(s string) bool { return strings.HasPrefix(s, "./") || strings.HasPrefix(s, "../") }
 
-// Alias splits a source that names a plugin or component of another
+// Alias splits a source that names a package of the catalog of another
 // declaration, as tofu: ops.tofu; ok is false for any other source.
 func Alias(source string) (name, pkg string, ok bool) {
 	if localPath(source) || strings.HasPrefix(source, "opstruss.") || strings.HasPrefix(source, "github.com/") {
@@ -95,7 +100,7 @@ func (p *Project) resolve(name string, unit bool) (*Target, error) {
 	case strings.HasPrefix(name, "github.com/"):
 		return nil, fmt.Errorf("remote paths are resolved as unit sources")
 	case len(parts) > 2 && unit:
-		return nil, fmt.Errorf("names of three parts or more are reserved; to use a plugin or component of a package of %s, declare the package in uses:, as %s: %s.%s, and use %s.%s",
+		return nil, fmt.Errorf("names of three parts or more are reserved; to use a task of a package of %s, declare the package in uses:, as %s: %s.%s, and use %s.%s",
 			parts[0], parts[1], parts[0], parts[1], parts[1], strings.Join(parts[2:], "."))
 	case len(parts) > 2:
 		return nil, fmt.Errorf("names of three parts or more are reserved; to call a task of a package of %s, declare the package in uses:, as %s: %s.%s, and call %s.%s",
@@ -138,9 +143,8 @@ func (p *Project) resolve(name string, unit bool) (*Target, error) {
 	return nil, fmt.Errorf("there is no task %s%s", name, expr.DidYouMean(name, names))
 }
 
-// item finds <package>.<item>: a task of the plugin, or for a unit a
-// component in its components/. A unit that uses a plugin in its plugins/
-// is read by the checker first.
+// item finds <package>.<item>: a task of the plugin. A unit that uses a
+// package of a catalog is read by the checker first.
 func item(name string, pkg *Package, it string, unit bool) (*Target, error) {
 	if pkg.broken {
 		return nil, errBroken
@@ -161,19 +165,13 @@ func item(name string, pkg *Package, it string, unit bool) (*Target, error) {
 		}
 		return &Target{Name: name, Kind: TargetTask, Package: pkg, Task: it}, nil
 	}
-	if slices.Contains(pkg.Components, it) {
-		if !unit {
-			return nil, fmt.Errorf("%s is a component, which units use", name)
-		}
-		return &Target{Name: name, Kind: TargetComponent, Package: pkg, Dir: filepath.Join(pkg.Dir, "components", it)}, nil
+	switch {
+	case pkg.Plugin != nil:
+		return nil, fmt.Errorf("%s has no task %s%s", pkg.Name, it, expr.DidYouMean(it, slices.Collect(maps.Keys(pkg.Plugin.Tasks))))
+	case pkg.Component:
+		return nil, fmt.Errorf("%s is a component, which holds no %s; a unit uses it as uses: %s", pkg.Name, it, pkg.Name)
 	}
-	if slices.Contains(pkg.Plugins, it) {
-		return nil, fmt.Errorf("%s is a plugin, which units use; to call its tasks, name it in uses:, as <name>: %s", name, name)
-	}
-	if pkg.Plugin == nil {
-		return nil, fmt.Errorf("%s has no plugin or component %s%s", pkg.Name, it, expr.DidYouMean(it, slices.Concat(pkg.Plugins, pkg.Components)))
-	}
-	return nil, fmt.Errorf("%s has no task or component %s%s", pkg.Name, it, expr.DidYouMean(it, slices.Concat(slices.Collect(maps.Keys(pkg.Plugin.Tasks)), pkg.Components)))
+	return nil, fmt.Errorf("%s is a catalog, whose packages units use; to call a task of %s, name it in uses:, as <name>: %s, and call <name>.<task>", pkg.Name, name, name)
 }
 
 // unitTarget is what a unit that uses pkg itself runs.
@@ -191,8 +189,10 @@ func unitTarget(name string, pkg *Package) (*Target, error) {
 		return &Target{Name: name, Kind: TargetPlugin, Package: pkg}, nil
 	case pkg.Component:
 		return &Target{Name: name, Kind: TargetComponent, Package: pkg, Dir: pkg.Dir}, nil
+	case localPath(name) || strings.HasPrefix(name, "github.com/"):
+		return nil, fmt.Errorf("%s has no %s or %s", name, PluginFile, FileName)
 	}
-	return nil, fmt.Errorf("%s holds components and plugins; a unit uses one, as uses: %s.<name>", name, name)
+	return nil, fmt.Errorf("%s is a catalog, as it has no %s or %s; a unit uses one of its packages, as uses: %s.<package>", name, PluginFile, FileName, name)
 }
 
 // Inputs returns the inputs that t takes, and false when it takes any.
@@ -274,49 +274,12 @@ func (c *checker) readPackage(dir string) (*Package, error) {
 	case err != nil:
 		return nil, err
 	}
-	has := func(name string) (bool, error) {
-		_, err := os.Stat(filepath.Join(dir, name))
-		if errors.Is(err, fs.ErrNotExist) {
-			return false, nil
-		}
-		return err == nil, err
-	}
-	// holding lists the directories in sub that hold file.
-	holding := func(sub, file string) ([]string, error) {
-		entries, err := os.ReadDir(filepath.Join(dir, sub))
-		if err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return nil, err
-		}
-		var names []string
-		for _, e := range entries {
-			isDir := e.IsDir()
-			if !isDir && pkg.Source != nil && e.Type()&os.ModeSymlink != 0 {
-				info, err := os.Stat(filepath.Join(dir, sub, e.Name()))
-				if err != nil {
-					return nil, err
-				}
-				isDir = info.IsDir()
-			}
-			if !isDir {
-				continue
-			}
-			if ok, err := has(filepath.Join(sub, e.Name(), file)); err != nil {
-				return nil, err
-			} else if ok {
-				names = append(names, e.Name())
-			}
-		}
-		return names, nil
-	}
-	if pkg.Components, err = holding("components", FileName); err != nil {
-		return nil, err
-	}
-	plugin, err := has(PluginFile)
+	m, err := manifest(dir)
 	if err != nil {
 		return nil, err
 	}
-	switch {
-	case plugin:
+	switch m {
+	case PluginFile:
 		if pkg.Source != nil {
 			if _, err := sources.Within(pkg.SourceRoot, filepath.Join(dir, PluginFile)); err != nil {
 				return nil, err
@@ -353,25 +316,15 @@ func (c *checker) readPackage(dir string) (*Package, error) {
 				pkg.BinDirs = append(pkg.BinDirs, binDir)
 			}
 		}
-	default:
-		if pkg.Component, err = has(FileName); err != nil {
-			return nil, err
-		}
-		if pkg.Plugins, err = holding("plugins", PluginFile); err != nil {
-			return nil, err
-		}
-		if !pkg.Component && len(pkg.Components) == 0 && len(pkg.Plugins) == 0 {
-			return nil, fmt.Errorf("%s has no %s, %s, components/, or plugins/", c.rel(dir), PluginFile, FileName)
-		}
+	case FileName:
+		pkg.Component = true
 	}
 	return pkg, nil
 }
 
-// inner reads the plugin or component it in sub, plugins or components,
-// of the package parent, under name and decl; it comes from where parent
-// comes from.
-func (c *checker) inner(parent *Package, sub, it, name string, decl *Uses) (*Package, error) {
-	dir := filepath.Join(parent.Dir, sub, it)
+// inner reads the package in dir of the catalog parent, under name and
+// decl; it comes from where parent comes from.
+func (c *checker) inner(parent *Package, dir, name string, decl *Uses) (*Package, error) {
 	if real, err := filepath.EvalSymlinks(dir); err == nil {
 		dir = real
 	}
@@ -391,19 +344,23 @@ func (c *checker) inner(parent *Package, sub, it, name string, decl *Uses) (*Pac
 	return &pkg, nil
 }
 
-// member reads <name>.<plugin> for a unit, once for each name: a plugin in
-// plugins/ of the declaration, with the declaration's env: and pass:; nil
-// when name is no such plugin.
+// member reads <name>.<package> for a unit, once for each name: a package
+// of the catalog that the declaration stands for, with the declaration's
+// env: and pass:; nil when the declaration is no catalog.
 func (c *checker) member(name string) (*Package, error) {
 	parent, it, _ := strings.Cut(name, ".")
 	pkg := c.p.Packages[parent]
-	if pkg == nil || !slices.Contains(pkg.Plugins, it) {
+	if pkg == nil || !pkg.IsCatalog() || it == "" || strings.Contains(it, ".") {
 		return nil, nil
 	}
 	if m := pkg.members[it]; m != nil {
 		return m, nil
 	}
-	m, err := c.inner(pkg, "plugins", it, name, pkg.Decl)
+	dir, err := c.packageDir(pkg, it)
+	if err != nil {
+		return nil, err
+	}
+	m, err := c.inner(pkg, dir, name, pkg.Decl)
 	if err != nil {
 		return nil, err
 	}
@@ -414,9 +371,9 @@ func (c *checker) member(name string) (*Package, error) {
 	return m, nil
 }
 
-// alias reads the declaration name, whose source names a plugin or
-// component of another declaration: env: and pass: of that declaration
-// come along, and those of the alias go over them, key by key.
+// alias reads the declaration name, whose source names a package of the
+// catalog of another declaration: env: and pass: of that declaration come
+// along, and those of the alias go over them, key by key.
 func (c *checker) alias(name string, decl *Uses) (*Package, error) {
 	from, it, _ := Alias(decl.Source)
 	parent, fromDecl := c.p.Packages[from], c.p.Uses[from]
@@ -430,18 +387,17 @@ func (c *checker) alias(name string, decl *Uses) (*Package, error) {
 	case parent.Builtin != "":
 		return nil, fmt.Errorf("%s is the built-in task %s, which has no %s", from, parent.Builtin, it)
 	}
-	var sub string
 	switch {
-	case slices.Contains(parent.Plugins, it):
-		sub = "plugins"
-	case slices.Contains(parent.Components, it):
-		sub = "components"
 	case parent.Plugin != nil && parent.Plugin.Tasks[it] != nil:
-		return nil, fmt.Errorf("%s is a task; an alias names a plugin or component, and a task is called as %s", decl.Source, decl.Source)
+		return nil, fmt.Errorf("%s is a task; an alias names a package of a catalog, and a task is called as %s", decl.Source, decl.Source)
 	case parent.Plugin != nil:
-		return nil, fmt.Errorf("%s has no component %s", from, it)
-	default:
-		return nil, fmt.Errorf("%s has no plugin or component %s", from, it)
+		return nil, fmt.Errorf("%s is a plugin, which holds no packages; an alias names a package of a catalog", from)
+	case parent.Component:
+		return nil, fmt.Errorf("%s is a component, which holds no packages; an alias names a package of a catalog", from)
+	}
+	dir, err := c.packageDir(parent, it)
+	if err != nil {
+		return nil, err
 	}
 	env := maps.Clone(fromDecl.Env)
 	if env == nil {
@@ -452,7 +408,123 @@ func (c *checker) alias(name string, decl *Uses) (*Package, error) {
 		env = nil
 	}
 	d := &Uses{Source: decl.Source, With: decl.With, Env: env, Pass: slices.Concat(fromDecl.Pass, decl.Pass)}
-	return c.inner(parent, sub, it, name, d)
+	return c.inner(parent, dir, name, d)
+}
+
+// packageDir is the directory of the package it of the catalog pkg: the
+// one that packages: of its opstruss.catalog.yaml names it, or else its
+// subdirectory it, which needs a manifest. Only that directory is read;
+// the others only for the message when there is none.
+func (c *checker) packageDir(pkg *Package, it string) (string, error) {
+	if cat := pkg.Catalog; cat != nil && cat.Path == "." && cat.Packages != nil {
+		if p, ok := cat.Packages[it]; ok {
+			return filepath.Join(cat.Root, filepath.FromSlash(p)), nil
+		}
+	} else if isPackageName(it) {
+		dir := filepath.Join(pkg.Dir, it)
+		if m, err := manifest(dir); err != nil {
+			return "", err
+		} else if m != "" {
+			return dir, nil
+		}
+	}
+	return "", c.noPackage(pkg, it)
+}
+
+// noPackage says that the catalog pkg has no package it, with the packages
+// it has and a deeper directory it with a manifest, which packages: may
+// name.
+func (c *checker) noPackage(pkg *Package, it string) error {
+	cat := pkg.Catalog
+	listed := cat != nil && cat.Path == "." && cat.Packages != nil
+	var names []string
+	if listed {
+		names = slices.Collect(maps.Keys(cat.Packages))
+	} else {
+		entries, err := os.ReadDir(pkg.Dir)
+		if err != nil {
+			return err
+		}
+		for _, e := range entries {
+			if !isPackageName(e.Name()) {
+				continue
+			}
+			if m, err := manifest(filepath.Join(pkg.Dir, e.Name())); err != nil {
+				return err
+			} else if m != "" {
+				names = append(names, e.Name())
+			}
+		}
+	}
+	slices.Sort(names)
+	msg := fmt.Sprintf("%s has no package %s", pkg.Name, it)
+	// A package deeper down is named only by packages:.
+	var deeper string
+	err := filepath.WalkDir(pkg.Dir, func(p string, d fs.DirEntry, err error) error {
+		switch {
+		case err != nil || deeper != "":
+			return filepath.SkipAll
+		case !d.IsDir():
+			return nil
+		case p != pkg.Dir && strings.HasPrefix(d.Name(), "."):
+			return filepath.SkipDir
+		case d.Name() != it || !listed && p == filepath.Join(pkg.Dir, it):
+			return nil
+		}
+		if m, _ := manifest(p); m != "" {
+			rel, _ := filepath.Rel(pkg.Dir, p)
+			deeper = filepath.ToSlash(rel)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	near := expr.Nearest(it, names)
+	switch {
+	case deeper != "" && listed:
+		msg += fmt.Sprintf("; %s has a manifest: add it to packages: in %s", deeper, CatalogFile)
+	case deeper != "":
+		msg += fmt.Sprintf("; %s has a manifest: add packages: [%s/*] to %s", deeper, path.Dir(deeper), CatalogFile)
+	case near != "":
+		msg += "; did you mean " + near + "?"
+	case len(names) > 0:
+		msg += "; its packages are " + strings.Join(names, ", ")
+	case !listed:
+		msg += fmt.Sprintf("; %s has no subdirectory with %s or %s", c.rel(pkg.Dir), PluginFile, FileName)
+	}
+	return errors.New(msg)
+}
+
+// packageNamed is the directory of the package that the path of id names
+// in the catalog at the root of its snapshot, as <catalog>.<name> does.
+func (c *checker) packageNamed(id sources.Identity, root string) (string, error) {
+	whole := id
+	whole.Path = "."
+	cat, err := c.pkg(whole.Key(), nil, root)
+	switch {
+	case err != nil:
+		return "", err
+	case cat.broken:
+		return "", errBroken
+	case cat.Plugin != nil:
+		return "", fmt.Errorf("%s is a plugin, which holds no packages; use it as %s", whole.Key(), whole.Key())
+	case cat.Component:
+		return "", fmt.Errorf("%s is a component, which holds no packages; use it as %s", whole.Key(), whole.Key())
+	case strings.Contains(id.Path, "/"):
+		msg := fmt.Sprintf("%s names a directory; a source in a catalog names one of its packages, as %s/<package>@%s", id.Key(), id.Repository, id.Ref)
+		if ct := cat.Catalog; ct != nil {
+			for name, p := range ct.Packages {
+				if p == id.Path {
+					named := id
+					named.Path = name
+					msg += "; write " + named.Key()
+				}
+			}
+		}
+		return "", errors.New(msg)
+	}
+	return c.packageDir(cat, id.Path)
 }
 
 // rel is dir as the project names it: in a remote source by its address,
@@ -467,27 +539,6 @@ func (c *checker) rel(dir string) string {
 		return filepath.ToSlash(r)
 	}
 	return dir
-}
-
-// packageNames checks a package: the tasks, components, and plugins in it
-// have names of their own, and no component or plugin is named as a
-// standard task or hook, since <name>.<standard task> is never a call.
-func (c *checker) packageNames(path []string, pkg *Package) {
-	for _, comp := range pkg.Components {
-		switch {
-		case slices.Contains(StandardTasks, comp) || slices.Contains(Hooks, comp):
-			c.add(path, "%s has a component named %s, which is a standard task or hook; give the component another name", pkg.Name, comp)
-		case pkg.Plugin != nil && pkg.Plugin.Tasks[comp] != nil:
-			c.add(path, "%s has a task and a component named %s; give one another name", pkg.Name, comp)
-		case slices.Contains(pkg.Plugins, comp):
-			c.add(path, "%s has a plugin and a component named %s; give one another name", pkg.Name, comp)
-		}
-	}
-	for _, pl := range pkg.Plugins {
-		if slices.Contains(StandardTasks, pl) || slices.Contains(Hooks, pl) {
-			c.add(path, "%s has a plugin named %s, which is a standard task or hook; give the plugin another name", pkg.Name, pl)
-		}
-	}
 }
 
 // declaredWith checks with: of a declaration: it gives inputs of the
@@ -601,7 +652,11 @@ func (c *checker) with(path, missing []string, t *Target, with map[string]any) {
 	}
 }
 
-// sourcePackage preserves remote provenance for both declarations and direct uses.
+// sourcePackage preserves remote provenance for both declarations and direct
+// uses. In a repository with opstruss.catalog.yaml at its root, the path
+// after the repository is the name of a package, so the directories of the
+// catalog stay its own, as the exports of package.json keep the files of a
+// package: a package keeps its address when it moves.
 func (c *checker) sourcePackage(name string, decl *Uses, source string) (*Package, error) {
 	id, dir, err := c.p.Sources.Resolve(source)
 	if err != nil {
@@ -610,10 +665,30 @@ func (c *checker) sourcePackage(name string, decl *Uses, source string) (*Packag
 		}
 		return nil, err
 	}
+	root := c.p.Sources.Cache.Snapshot(id)
+	named := false
+	if id.Path != "." {
+		switch _, err := os.Stat(filepath.Join(root, CatalogFile)); {
+		case err == nil:
+			if dir, err = c.packageNamed(id, root); errors.Is(err, errBroken) {
+				return &Package{Name: name, Decl: decl, broken: true}, nil
+			} else if err != nil {
+				return nil, err
+			}
+			named = true
+		case !errors.Is(err, fs.ErrNotExist):
+			return nil, err
+		}
+	}
 	pkg, err := c.pkg(name, decl, dir)
 	if err != nil {
 		return nil, err
 	}
-	pkg.Source, pkg.SourceRoot = &id, c.p.Sources.Cache.Snapshot(id)
+	// A package found by its name has the identity of its directory, as
+	// <catalog>.<name> gives it.
+	if !named || pkg.Source == nil {
+		pkg.Source = &id
+	}
+	pkg.SourceRoot = root
 	return pkg, nil
 }

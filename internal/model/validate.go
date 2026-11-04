@@ -42,7 +42,7 @@ var BuiltinFlags = []string{"stack", "input", "json", "yes", "locked", "no-deps"
 var Hooks = []string{"watch", "exec", "migrate"}
 
 // Commands are the built-in commands, which tasks cannot be named.
-var Commands = []string{"init", "validate", "explain", "doctor", "list", "outputs", "stop", "mcp", "plugins",
+var Commands = []string{"init", "validate", "explain", "doctor", "list", "outputs", "stop", "mcp", "uses",
 	"unlock", "state", "runs", "run", "exec", "version", "help"}
 
 // ansible maps keywords of Ansible to what OpsTruss writes instead.
@@ -261,7 +261,6 @@ func (c *checker) uses() {
 				broke()
 				continue
 			}
-			c.packageNames(path, pkg)
 		case strings.HasPrefix(src, "opstruss."):
 			if Builtin(strings.TrimPrefix(src, "opstruss.")) == nil {
 				c.add(path, "there is no built-in task %s", strings.TrimPrefix(src, "opstruss."))
@@ -276,7 +275,6 @@ func (c *checker) uses() {
 				broke()
 				continue
 			}
-			c.packageNames(path, pkg)
 		case isAlias(src):
 			var err error
 			if pkg, err = c.alias(name, decl); err != nil {
@@ -286,9 +284,8 @@ func (c *checker) uses() {
 				broke()
 				continue
 			}
-			c.packageNames(path, pkg)
 		default:
-			c.add(path, "a source is ./<path>, ../<path>, github.com/opstruss/catalog[/<path>]@<ref>, opstruss.<task>, or <name>.<plugin or component>")
+			c.add(path, "a source is ./<path>, ../<path>, github.com/opstruss/catalog[/<path>]@<ref>, opstruss.<task>, or <catalog>.<package>")
 			broke()
 			continue
 		}
@@ -549,7 +546,6 @@ func (c *checker) unitUses(path []string, name string, u *Unit) {
 	} else if localPath(u.Uses) {
 		var pkg *Package
 		if pkg, err = c.pkg(u.Uses, nil, filepath.Join(c.p.DirOf("units."+name), u.Uses)); err == nil {
-			c.packageNames(at(path, "uses"), pkg)
 			t, err = unitTarget(u.Uses, pkg)
 		}
 	} else if pkg, merr := c.member(u.Uses); pkg != nil || merr != nil {
@@ -636,12 +632,12 @@ func (c *checker) tasks() {
 			webhooks[key] = name
 		}
 	}
-	if len(webhooks) > 0 && (c.p.Runtime == nil || c.p.Runtime.Listen == "") {
-		c.add([]string{"runtime", "listen"}, "a task has on: webhook, so the daemon needs runtime.listen, the address it listens on, such as 127.0.0.1:7878")
+	if len(webhooks) > 0 && (c.p.Daemon == nil || c.p.Daemon.Listen == "") {
+		c.add([]string{"daemon", "listen"}, "a task has on: webhook, so the daemon needs daemon.listen, the address it listens on, such as 127.0.0.1:7878")
 	}
-	if c.p.Runtime != nil && c.p.Runtime.Listen != "" {
-		if _, _, err := net.SplitHostPort(c.p.Runtime.Listen); err != nil {
-			c.add([]string{"runtime", "listen"}, "%s is not host:port: %v", c.p.Runtime.Listen, err)
+	if c.p.Daemon != nil && c.p.Daemon.Listen != "" {
+		if _, _, err := net.SplitHostPort(c.p.Daemon.Listen); err != nil {
+			c.add([]string{"daemon", "listen"}, "%s is not host:port: %v", c.p.Daemon.Listen, err)
 		}
 	}
 }

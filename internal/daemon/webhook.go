@@ -41,13 +41,13 @@ const idleTimeout = 60 * time.Second
 // request seen once cannot be played again later.
 const skew = 5 * time.Minute
 
-// webhooks is the HTTP server of the webhook triggers, on runtime.listen
+// webhooks is the HTTP server of the webhook triggers, on daemon.listen
 // while the triggers installed have webhooks.
 type webhooks struct {
 	t *triggers
 
 	mu     sync.Mutex
-	addr   string // as runtime.listen writes it
+	addr   string // as daemon.listen writes it
 	srv    *http.Server
 	routes map[string]*bound // by method and path
 }

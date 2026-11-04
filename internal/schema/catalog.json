@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "opstruss.catalog.yaml",
-  "description": "The root of an OpsTruss catalog: a repository of plugins and components.",
+  "description": "The root of an OpsTruss catalog: a directory of plugins and components.",
   "type": "object",
   "properties": {
     "opstruss": {
@@ -13,6 +13,29 @@
       "type": "array",
       "items": { "type": "string", "minLength": 1 },
       "uniqueItems": true
+    },
+    "packages": {
+      "description": "The packages of the catalog, which a project uses as <catalog>.<package> or alone as <repository>/<package>@<ref>, by name, wherever its directory is: a directory relative to the root, named by its last directory; a glob such as tools/*, whose * matches within one level and takes the directories with opstruss.plugin.yaml or opstruss.yaml; or a name with a path. Without it, every subdirectory of the root with opstruss.plugin.yaml or opstruss.yaml is a package, named by its directory.",
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "description": "A directory relative to the root, or a glob of directories in which * matches within one level, as tools/*; each is named by its last directory, and a glob takes only the directories with opstruss.plugin.yaml or opstruss.yaml.",
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "description": "A package with a name of its own.",
+            "type": "object",
+            "properties": {
+              "name": { "$ref": "project.json#/$defs/name", "description": "The name of the package." },
+              "path": { "description": "The directory of the package, relative to the root, without a glob.", "type": "string", "minLength": 1 }
+            },
+            "required": ["name", "path"],
+            "additionalProperties": false
+          }
+        ]
+      }
     }
   },
   "patternProperties": { "^x-": true },

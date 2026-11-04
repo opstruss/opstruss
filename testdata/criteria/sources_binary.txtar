@@ -4,11 +4,11 @@ env HOME=$WORK/home
 env OPSTRUSS_TEST_ASSETS=$WORK/assets
 env OPSTRUSS_FAILPOINT_LOG=$WORK/visited
 sourcerepo repo
-exec sh -c 'for f in binary-before-publish binary-after-publish; do for i in 1 2 3; do if test -d "$HOME/.opstruss/cache/bin"; then chmod -R u+w "$HOME/.opstruss/cache/bin"; rm -rf "$HOME/.opstruss/cache/bin"; fi; if OPSTRUSS_FAILPOINT="$f=kill" opstruss plugins fetch > /dev/null 2>&1; then echo "lived past $f"; exit 1; fi; opstruss plugins fetch > /dev/null || exit 1; opstruss up --yes --locked > /dev/null || exit 1; done; done'
+exec sh -c 'for f in binary-before-publish binary-after-publish; do for i in 1 2 3; do if test -d "$HOME/.opstruss/cache/bin"; then chmod -R u+w "$HOME/.opstruss/cache/bin"; rm -rf "$HOME/.opstruss/cache/bin"; fi; if OPSTRUSS_FAILPOINT="$f=kill" opstruss uses fetch > /dev/null 2>&1; then echo "lived past $f"; exit 1; fi; opstruss uses fetch > /dev/null || exit 1; opstruss up --yes --locked > /dev/null || exit 1; done; done'
 ! stdout 'lived past'
 grep '^binary-before-publish$' visited
 grep '^binary-after-publish$' visited
-exec opstruss plugins prune
+exec opstruss uses prune
 exec sh -c 'test -z "$(ls -A "$HOME/.opstruss/cache/tmp")"'
 exec opstruss destroy --yes --locked
 stdout 'binary-down-v1 resource'

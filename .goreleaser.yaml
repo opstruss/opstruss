@@ -17,9 +17,17 @@ builds:
       - -s -w
     mod_timestamp: "{{ .CommitTimestamp }}"
 
+# The names and the contents of the release assets stay as they are:
+# install scripts, mise, and CI download them by name.
 archives:
   - formats:
       - tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    wrap_in_directory: false
+    files:
+      - CHANGELOG.md
+      - LICENSE
+      - README.md
 
 checksum:
   name_template: checksums.txt

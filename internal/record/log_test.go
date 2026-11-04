@@ -42,7 +42,7 @@ func TestLog(t *testing.T) {
 	_ = l.Close()
 	// A crash cut the last line short.
 	f, _ := os.OpenFile(p, os.O_WRONLY|os.O_APPEND, 0)
-	_, _ = f.WriteString(`{"v":1,"seq":3,"ti`)
+	_, _ = f.WriteString(`{"version":1,"seq":3,"ti`)
 	_ = f.Close()
 	if l, err = OpenLog(p); err != nil {
 		t.Fatal(err)
@@ -50,7 +50,7 @@ func TestLog(t *testing.T) {
 	l.Emit(Event{Type: "daemon", Level: "info", Message: "three"})
 	_ = l.Close()
 	evs := readLog(t, p)
-	if len(evs) != 3 || evs[2].Seq != 3 || evs[2].Message != "three" || evs[0].V != EventVersion || evs[0].Time == "" {
+	if len(evs) != 3 || evs[2].Seq != 3 || evs[2].Message != "three" || evs[0].Version != EventVersion || evs[0].Time == "" {
 		t.Fatalf("events %+v", evs)
 	}
 	if info, _ := os.Stat(p); info.Mode().Perm() != 0o600 {

@@ -124,7 +124,7 @@ uses:
       headers:
         Authorization: Bearer ${{ secrets.itsm_token }}
 
-runtime:
+daemon:
   listen: 127.0.0.1:0
 
 secrets:

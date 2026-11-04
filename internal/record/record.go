@@ -45,7 +45,7 @@ func BinaryVersion() string {
 
 // Event is one thing that happened in a run, as every reader gets it.
 type Event struct {
-	V        int            `json:"v"`
+	Version  int            `json:"version"`
 	Seq      int64          `json:"seq"`
 	Time     string         `json:"time"`
 	Run      string         `json:"run"`
@@ -260,7 +260,7 @@ func (r *Run) Emit(ev Event) {
 // emit is Emit for a caller that holds mu.
 func (r *Run) emit(ev Event) {
 	r.seq++
-	ev.V, ev.Seq, ev.Run = EventVersion, r.seq, r.rec.Run
+	ev.Version, ev.Seq, ev.Run = EventVersion, r.seq, r.rec.Run
 	ev.Time = now()
 	if r.sink != nil {
 		r.sink(ev)
@@ -356,7 +356,7 @@ func (r *Run) Finish(update func(*Record)) error {
 	defer r.mu.Unlock()
 	if r.gone > 0 {
 		r.seq++
-		r.writeEvent(Event{V: EventVersion, Seq: r.seq, Run: r.rec.Run, Time: now(),
+		r.writeEvent(Event{Version: EventVersion, Seq: r.seq, Run: r.rec.Run, Time: now(),
 			Type: "diagnostic", Level: "warn",
 			Message: fmt.Sprintf("%d bytes of program output from the middle of the run were not stored; the run stores %d MiB", r.gone, MaxOutput>>20)})
 	}

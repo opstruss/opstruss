@@ -77,7 +77,7 @@ exec opstruss stop
 {"trigger": "webhook", "path": "/hooks/deploy", "headers": {"X-GitHub-Event": "push"}, "body": {"ref": "main"}}
 -- opstruss.yaml --
 name: shop
-runtime:
+daemon:
   listen: 127.0.0.1:0
 tasks:
   deploy:

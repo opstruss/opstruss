@@ -16,7 +16,7 @@ exec git -C repo add .
 exec git -C repo commit -qm v2
 exec opstruss up --yes --locked
 ! stdout 'task-v2'
-exec opstruss plugins update demo
+exec opstruss uses update demo
 exec opstruss up --yes --locked
 stdout 'default/direct \| task-v2'
 stdout 'default/nested: will run'

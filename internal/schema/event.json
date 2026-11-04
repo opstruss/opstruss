@@ -4,7 +4,7 @@
   "description": "One event of a run, as --json prints it and events.jsonl keeps it. Readers ignore fields and types they do not know.",
   "type": "object",
   "properties": {
-    "v": { "type": "integer", "minimum": 1 },
+    "version": { "type": "integer", "minimum": 1 },
     "seq": { "type": "integer", "minimum": 1 },
     "time": { "type": "string" },
     "run": { "type": "string" },
@@ -21,5 +21,5 @@
     "outputs": { "type": "object" },
     "plan": { "description": "Of a plan event: the plan of its unit, as units.<n>.plan has it: changes, outputs, exact, digest, summary, and reason, changed, after, and reads when they apply.", "type": "object" }
   },
-  "required": ["v", "seq", "time", "run", "type", "level", "message"]
+  "required": ["version", "seq", "time", "run", "type", "level", "message"]
 }

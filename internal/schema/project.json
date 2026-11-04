@@ -51,8 +51,8 @@
       "$ref": "#/$defs/encryptionKeys",
       "description": "What opens the data key of each stack, which encrypts sensitive values in the state."
     },
-    "runtime": {
-      "$ref": "#/$defs/runtime",
+    "daemon": {
+      "$ref": "#/$defs/daemon",
       "description": "Settings of the daemon of each stack."
     },
     "mcp": {
@@ -437,8 +437,8 @@
           "$ref": "#/$defs/encryptionKeys",
           "description": "What opens the data key of this stack, instead of those of the project."
         },
-        "runtime": {
-          "$ref": "#/$defs/runtime",
+        "daemon": {
+          "$ref": "#/$defs/daemon",
           "description": "Settings of the daemon of this stack."
         },
         "mcp": {
@@ -567,7 +567,7 @@
         ]
       }
     },
-    "runtime": {
+    "daemon": {
       "description": "Settings of the daemon of a stack.",
       "type": "object",
       "properties": {

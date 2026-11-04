@@ -62,7 +62,7 @@ opstruss stop      # stop the daemon, its runs, and its services
   them. An `up` from a shell without the `.env` of the project would make
   the next scheduled run go without those variables, so load it the same
   way every time, with mise or direnv, which load it per directory.
-- A webhook needs `runtime.listen`, and each one a `secret` and a
+- A webhook needs `daemon.listen`, and each one a `secret` and a
   `signature`: `github`, `gitlab`, `slack`, `stripe`, `standard`,
   `bearer`, or a header of your own. A request that fails the check gets
   401 and runs nothing. TLS belongs to a reverse proxy, such as Caddy.

@@ -57,7 +57,7 @@ func TestRun(t *testing.T) {
 	code := 0
 	r.Emit(Event{Type: "run", Level: "info", Message: "success", Outcome: "success", ExitCode: &code})
 	r.Close()
-	if len(got) != 3 || got[2].Seq != 3 || got[0].Run != r.ID() || got[0].V != EventVersion {
+	if len(got) != 3 || got[2].Seq != 3 || got[0].Run != r.ID() || got[0].Version != EventVersion {
 		t.Fatalf("the sink got %+v", got)
 	}
 	data, err := os.ReadFile(filepath.Join(r.Dir, "record.json"))
@@ -479,7 +479,7 @@ func TestNewerVersions(t *testing.T) {
 		t.Fatalf("Read: %v", err)
 	}
 	events := filepath.Join(dir, "events.jsonl")
-	if err := os.WriteFile(events, []byte(`{"v":999,"seq":"one","type":"log","message":"future"}`+"\n"), 0o600); err != nil {
+	if err := os.WriteFile(events, []byte(`{"version":999,"seq":"one","type":"log","message":"future"}`+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	read := false

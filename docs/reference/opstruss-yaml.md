@@ -26,7 +26,7 @@ Keys that start with x- are left for your own use.
 | `backend` | `local` or [Backend](#backend) | Where the state of the stacks is kept: local, in .opstruss/state/, the only backend of this version. |
 | `secrets` | map of [Secret](#secret) | Secrets of the project, read as secrets.&lt;name&gt; and hidden in what OpsTruss writes. |
 | `encryption_keys` | list of string or [Encryption keys](#encryption-keys) | What opens the data key of each stack, which encrypts sensitive values in the state. |
-| `runtime` | [Runtime](#runtime) | Settings of the daemon of each stack. |
+| `daemon` | [Daemon](#daemon) | Settings of the daemon of each stack. |
 | `mcp` | `false` or [MCP](#mcp) | Reserved for opstruss mcp, which a later version brings; not supported in this version, which refuses it. |
 | `units` | map of [Unit](#unit) | The units of the project, which up brings up and destroy takes away. |
 | `tasks` | map of [Task](#task) | The tasks of the project, each also a command of opstruss. |
@@ -160,7 +160,7 @@ A stack: a copy of the units of the project with its own inputs and state.
 | `with` | object | Values of the inputs of the project in this stack. |
 | `secrets` | map of [Secret](#secret) | Secrets of this stack, over those of the project. |
 | `encryption_keys` | list of string or [Encryption keys](#encryption-keys) | What opens the data key of this stack, instead of those of the project. |
-| `runtime` | [Runtime](#runtime) | Settings of the daemon of this stack. |
+| `daemon` | [Daemon](#daemon) | Settings of the daemon of this stack. |
 | `mcp` | `false` or [MCP](#mcp) | Reserved for opstruss mcp in this stack; not supported in this version, which refuses it. |
 | `backend` | `local` or [Backend](#backend) | Where the state of this stack is kept: local, the only backend of this version. |
 | `approval` | one of `ask`, `auto` | ask to wait for approval of changes in this stack, auto to apply them without asking. |
@@ -204,7 +204,7 @@ What opens the data key of each stack: age recipients (age1...), opened by OpsTr
 | `hc_vault_transit_uri` | string | A HashiCorp Vault transit key URI. |
 | `pgp` | string | A PGP key fingerprint. |
 
-## Runtime {#runtime}
+## Daemon {#daemon}
 
 Settings of the daemon of a stack.
 

@@ -1,0 +1,338 @@
+# packages: of opstruss.catalog.yaml names the packages of a catalog: a
+# path, a glob, or a name with a path. Without it, every subdirectory with
+# a manifest is a package by its name.
+env HOME=$WORK/home
+
+# A path, a glob, and a name with a path; packages: replaces the default.
+cd $WORK/listed
+exec opstruss up --yes
+stdout 'default/tofu \| tofu'
+stdout 'default/lint \| lint'
+stdout 'default/brew \| brew'
+stdout 'default/site/page \| site'
+cp unlisted.yaml opstruss.yaml
+! exec opstruss validate
+stderr 'units.extra.uses: ops has no package extra; extra has a manifest: add it to packages: in opstruss.catalog.yaml$'
+
+# Without packages:, a subdirectory with a manifest is a package, and a
+# deeper one is named only by packages:.
+cd $WORK/plain
+exec opstruss up --yes
+stdout 'default/a \| app'
+cp deeper.yaml opstruss.yaml
+! exec opstruss validate
+stderr 'units.dns.uses: ops has no package dns; components/dns has a manifest: add packages: \[components/\*\] to opstruss.catalog.yaml$'
+stderr 'units.typo.uses: ops has no package ap; did you mean app\?$'
+
+# Each entry is checked when the catalog is read, and its problems are
+# reported there once.
+cd $WORK/bad
+! exec opstruss validate
+stderr 'packages\[0\]: a package path is relative to the root of the catalog, without \./, \.\., or a leading or trailing /; write tofu$'
+stderr 'packages\[1\]: \*\* is reserved; \* matches the directories of one level, as tools/\*$'
+stderr 'packages\[2\]: a leading ! is reserved; list the packages to keep$'
+stderr 'packages\[3\].path: the path of a named package is one directory, without a glob$'
+stderr 'packages\[4\]: nope is no directory with opstruss.plugin.yaml or opstruss.yaml$'
+stderr 'packages\[5\]: empty/\* matches no directory with opstruss.plugin.yaml or opstruss.yaml$'
+stderr 'packages\[8\]: tools/homebrew is a package of packages\[7\] already; a path has one name$'
+stderr 'packages\[9\]: tofu names both tofu and other/tofu; give one another name$'
+stderr 'packages\[10\]: Big is not a package name: lowercase letters, digits, - and _, starting with a letter, and no standard task or hook; name it with \{name: <name>, path: Big\}$'
+stderr 'packages\[11\].name: up is a standard task or hook, which <catalog>.up never means; give the package another name$'
+stderr 'packages\[12\]: lib/inner is in the shared path lib; a package is not shared$'
+stderr 'packages\[13\]: holder holds the shared path holder/common; a shared path lies outside the packages$'
+stderr 'packages\[15\]: nest/plugins/inner is in the package nest of packages\[14\]; a package holds no other package$'
+! stderr 'units.t.uses'
+
+# packages: is for a root without a manifest, and without packages: a
+# shared path is no package.
+cd $WORK/rooted
+! exec opstruss validate
+stderr 'catalog/opstruss.catalog.yaml:1:1: packages: this root has opstruss.plugin.yaml, so it is a package itself and lists no packages$'
+cd $WORK/sharedpkg
+! exec opstruss validate
+stderr 'shared\[0\]: lib has opstruss.plugin.yaml, so it is a package; a shared path is no package$'
+
+# Only a catalog holds packages: a plugin holds tasks, and a component
+# nothing named.
+cd $WORK/inner
+! exec opstruss validate
+stderr 'units.box.uses: tool has no task box'
+stderr 'units.part.uses: comp is a component, which holds no part; a unit uses it as uses: comp$'
+stderr 'uses.box: tool is a plugin, which holds no packages; an alias names a package of a catalog$'
+
+# In a repository with opstruss.catalog.yaml, the path after the
+# repository names a package, as after ops.: the address of a package is
+# its name, which stays when its directory moves.
+cd $WORK/remote
+sourcerepo repo
+exec opstruss up --yes
+stdout 'default/brew \| brew'
+cp named.yaml opstruss.yaml
+exec opstruss plan
+stdout '^default/brew: unchanged$'
+cp other.yaml opstruss.yaml
+! exec opstruss validate
+stderr 'uses.dir: github.com/opstruss/catalog/tools/homebrew@v1 names a directory; a source in a catalog names one of its packages, as github.com/opstruss/catalog/<package>@v1; write github.com/opstruss/catalog/brew@v1$'
+stderr 'uses.file: github.com/opstruss/catalog/examples/file@v1 names a directory'
+stderr 'uses.tools: github.com/opstruss/catalog@v1 has no package tools; its packages are brew, tofu$'
+stderr 'units.lib.uses: github.com/opstruss/catalog@v1 has no package lib'
+
+# A package that moves keeps its address, and its units run once again,
+# as its hash covers its path.
+exec git -C repo mv tools/homebrew brew
+cp default.yaml repo/opstruss.catalog.yaml
+exec git -C repo commit -qam default
+exec git -C repo tag -f v1
+cp named.yaml opstruss.yaml
+exec opstruss uses update
+exec opstruss plan
+stdout '^default/brew: will run: definition changed'
+exec opstruss up --yes
+stdout 'default/brew \| brew'
+
+# Without opstruss.catalog.yaml, the path is a directory.
+exec git -C repo rm -q opstruss.catalog.yaml
+exec git -C repo commit -qm unmarked
+exec git -C repo tag -f v1
+cp nested.yaml opstruss.yaml
+exec opstruss uses update
+exec opstruss validate
+stdout '^valid$'
+
+-- listed/opstruss.yaml --
+name: listed
+uses:
+  ops: ./catalog
+units:
+  tofu:
+    uses: ops.tofu
+  lint:
+    uses: ops.lint
+  brew:
+    uses: ops.brew
+  site:
+    uses: ops.site
+-- listed/unlisted.yaml --
+name: listed
+uses:
+  ops: ./catalog
+units:
+  extra:
+    uses: ops.extra
+-- listed/catalog/opstruss.catalog.yaml --
+opstruss: "1.0"
+packages:
+  - tofu
+  - tools/*
+  - name: brew
+    path: vendor/homebrew
+  - components/*
+-- listed/catalog/tofu/opstruss.plugin.yaml --
+name: tofu
+tasks:
+  up:
+    run: [echo, tofu]
+-- listed/catalog/tools/lint/opstruss.plugin.yaml --
+name: lint
+tasks:
+  up:
+    run: [echo, lint]
+-- listed/catalog/tools/README.md --
+Tools.
+-- listed/catalog/tools/notes/todo.txt --
+Not a package.
+-- listed/catalog/vendor/homebrew/opstruss.plugin.yaml --
+name: brew
+tasks:
+  up:
+    run: [echo, brew]
+-- listed/catalog/components/site/opstruss.yaml --
+units:
+  page:
+    run: [echo, site]
+-- listed/catalog/extra/opstruss.plugin.yaml --
+name: extra
+tasks:
+  up:
+    run: [echo, extra]
+-- plain/opstruss.yaml --
+name: plain
+uses:
+  ops: ./catalog
+units:
+  a:
+    uses: ops.app
+-- plain/deeper.yaml --
+name: plain
+uses:
+  ops: ./catalog
+units:
+  dns:
+    uses: ops.dns
+  typo:
+    uses: ops.ap
+-- plain/catalog/app/opstruss.plugin.yaml --
+name: app
+tasks:
+  up:
+    run: [echo, app]
+-- plain/catalog/components/dns/opstruss.yaml --
+units:
+  zone:
+    run: [echo, zone]
+-- bad/opstruss.yaml --
+name: bad
+uses:
+  ops: ./catalog
+units:
+  t:
+    uses: ops.tofu
+-- bad/catalog/opstruss.catalog.yaml --
+shared: [lib, holder/common]
+packages:
+  - ./tofu
+  - tools/**
+  - "!tools/x"
+  - {name: x, path: "tools/*"}
+  - nope
+  - empty/*
+  - tofu
+  - tools/*
+  - {name: brew, path: tools/homebrew}
+  - {name: tofu, path: other/tofu}
+  - Big
+  - {name: up, path: upper}
+  - lib/inner
+  - holder
+  - nest
+  - {name: deep, path: nest/plugins/inner}
+-- bad/catalog/tofu/opstruss.plugin.yaml --
+name: tofu
+-- bad/catalog/tools/homebrew/opstruss.plugin.yaml --
+name: brew
+-- bad/catalog/empty/README.md --
+Nothing.
+-- bad/catalog/other/tofu/opstruss.plugin.yaml --
+name: tofu
+-- bad/catalog/Big/opstruss.plugin.yaml --
+name: big
+-- bad/catalog/upper/opstruss.plugin.yaml --
+name: upper
+-- bad/catalog/lib/inner/opstruss.plugin.yaml --
+name: inner
+-- bad/catalog/holder/opstruss.plugin.yaml --
+name: holder
+-- bad/catalog/holder/common/x.sh --
+-- bad/catalog/nest/opstruss.yaml --
+units:
+  x:
+    run: [echo, x]
+-- bad/catalog/nest/plugins/inner/opstruss.plugin.yaml --
+name: inner
+-- rooted/opstruss.yaml --
+name: rooted
+uses:
+  x: ./catalog
+units:
+  u:
+    uses: x
+-- rooted/catalog/opstruss.catalog.yaml --
+packages: [a]
+-- rooted/catalog/opstruss.plugin.yaml --
+name: x
+tasks:
+  up:
+    run: [echo, x]
+-- sharedpkg/opstruss.yaml --
+name: sharedpkg
+uses:
+  ops: ./catalog
+units:
+  a:
+    uses: ops.a
+-- sharedpkg/catalog/opstruss.catalog.yaml --
+shared: [lib]
+-- sharedpkg/catalog/lib/opstruss.plugin.yaml --
+name: lib
+-- sharedpkg/catalog/a/opstruss.plugin.yaml --
+name: a
+tasks:
+  up:
+    run: [echo, a]
+-- inner/opstruss.yaml --
+name: inner
+uses:
+  tool: ./tool
+  comp: ./comp
+  box: tool.box
+units:
+  box:
+    uses: tool.box
+  part:
+    uses: comp.part
+-- inner/tool/opstruss.plugin.yaml --
+name: tool
+tasks:
+  say:
+    run: [echo, said]
+-- inner/tool/components/box/opstruss.yaml --
+units:
+  page:
+    run: [echo, box]
+-- inner/comp/opstruss.yaml --
+units:
+  x:
+    run: [echo, x]
+-- inner/comp/components/part/opstruss.yaml --
+units:
+  y:
+    run: [echo, y]
+-- remote/opstruss.yaml --
+name: remote
+uses:
+  ops: github.com/opstruss/catalog@v1
+units:
+  brew:
+    uses: ops.brew
+-- remote/named.yaml --
+name: remote
+units:
+  brew:
+    uses: github.com/opstruss/catalog/brew@v1
+-- remote/other.yaml --
+name: remote
+uses:
+  dir: github.com/opstruss/catalog/tools/homebrew@v1
+  file: github.com/opstruss/catalog/examples/file@v1
+  tools: github.com/opstruss/catalog/tools@v1
+units:
+  lib:
+    uses: github.com/opstruss/catalog/lib@v1
+-- remote/nested.yaml --
+name: remote
+uses:
+  file: github.com/opstruss/catalog/examples/file@v1
+-- remote/default.yaml --
+shared: [lib]
+-- remote/repo/opstruss.catalog.yaml --
+shared: [lib]
+packages:
+  - tofu
+  - name: brew
+    path: tools/homebrew
+-- remote/repo/lib/opstruss.sh --
+-- remote/repo/tofu/opstruss.plugin.yaml --
+name: tofu
+tasks:
+  up:
+    run: [echo, tofu]
+-- remote/repo/tools/homebrew/opstruss.plugin.yaml --
+name: brew
+tasks:
+  up:
+    run: [echo, brew]
+-- remote/repo/examples/file/opstruss.plugin.yaml --
+name: file
+tasks:
+  up:
+    run: [echo, file]

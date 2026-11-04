@@ -80,21 +80,26 @@ func assert(in map[string]any) *Result {
 	return &Result{Outputs: map[string]any{}}
 }
 
-// wait waits for a number of seconds, for a TCP port to take a
-// connection, or for a URL to answer with a 2xx status, checking once a
-// second until timeout.
+// wait waits for a duration, for a TCP port to take a connection, or for
+// a URL to answer with a 2xx status, checking once a second until timeout.
 func wait(ctx context.Context, in map[string]any) *Result {
 	set := 0
-	for _, k := range []string{"seconds", "tcp", "http"} {
+	for _, k := range []string{"duration", "tcp", "http"} {
 		if in[k] != nil {
 			set++
 		}
 	}
 	if set != 1 {
-		return failed(errors.New("wait takes exactly one of seconds, tcp, or http"))
+		return failed(errors.New("wait takes exactly one of duration, tcp, or http"))
 	}
-	if s, ok := in["seconds"]; ok && s != nil {
-		d := time.Duration(toFloat(s) * float64(time.Second))
+	if s, ok := in["duration"].(string); ok {
+		d, err := time.ParseDuration(s)
+		switch {
+		case err != nil:
+			return failed(fmt.Errorf("duration: %w", err))
+		case d < 0:
+			return failed(fmt.Errorf("duration: %s is negative", s))
+		}
 		select {
 		case <-ctx.Done():
 			return failed(ctx.Err())
@@ -134,14 +139,4 @@ func wait(ctx context.Context, in map[string]any) *Result {
 		case <-time.After(time.Second):
 		}
 	}
-}
-
-func toFloat(v any) float64 {
-	switch n := v.(type) {
-	case int64:
-		return float64(n)
-	case float64:
-		return n
-	}
-	return 0
 }

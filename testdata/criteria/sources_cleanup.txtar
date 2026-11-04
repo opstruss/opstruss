@@ -3,7 +3,7 @@
 env HOME=$WORK/home
 env KEEP=same-value
 sourcerepo repo
-exec opstruss plugins fetch
+exec opstruss uses fetch
 env OPSTRUSS_FAILPOINT=up-after-program=kill
 ! exec opstruss up --yes
 exists resource-v1
@@ -19,7 +19,7 @@ exec git -C repo config user.email fixture@example.invalid
 exec git -C repo add .
 exec git -C repo commit -qm v2
 exec git -C repo tag -f v1
-exec opstruss plugins update demo
+exec opstruss uses update demo
 env OPSTRUSS_FAILPOINT=up-before-program=kill
 ! exec opstruss up --yes
 env OPSTRUSS_FAILPOINT=

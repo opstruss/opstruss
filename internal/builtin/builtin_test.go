@@ -186,10 +186,13 @@ func TestWait(t *testing.T) {
 	if res := call(t, "wait", "", map[string]any{"tcp": addr, "timeout": "1500ms"}); res.Err == nil {
 		t.Error("a closed port was taken as open")
 	}
-	if res := call(t, "wait", "", map[string]any{"seconds": int64(0)}); res.Err != nil {
+	if res := call(t, "wait", "", map[string]any{"duration": "10ms"}); res.Err != nil {
 		t.Error(res.Err)
 	}
-	if res := call(t, "wait", "", map[string]any{"seconds": int64(1), "tcp": addr}); res.Err == nil {
+	if res := call(t, "wait", "", map[string]any{"duration": "-1s"}); errText(res.Err) != "duration: -1s is negative" {
+		t.Errorf("a negative duration: %v", res.Err)
+	}
+	if res := call(t, "wait", "", map[string]any{"duration": "1s", "tcp": addr}); res.Err == nil {
 		t.Error("two things to wait for: no error")
 	}
 }

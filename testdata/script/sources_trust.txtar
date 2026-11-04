@@ -4,7 +4,7 @@ env GRANTED_A=allowed-a
 env GRANTED_B=allowed-b
 env DENIED=hidden-value
 sourcerepo repo
-exec opstruss plugins fetch
+exec opstruss uses fetch
 cp opstruss.lock before.lock
 exec opstruss up --yes
 stdout 'unit-intersection'
@@ -19,7 +19,7 @@ exec git -C repo config user.email fixture@example.invalid
 exec git -C repo add .
 exec git -C repo commit -qm invalid
 exec git -C repo tag -f v1
-! exec opstruss plugins update site
+! exec opstruss uses update site
 stderr 'remote components cannot grant approval'
 stderr 'env: of an input is for the files of the project'
 cmp opstruss.lock before.lock
@@ -29,7 +29,7 @@ cp escape.yaml repo/component/opstruss.yaml
 exec git -C repo add .
 exec git -C repo commit -qm escape
 exec git -C repo tag -f v1
-! exec opstruss plugins update site
+! exec opstruss uses update site
 stderr 'escapes repository root'
 cmp opstruss.lock before.lock
 

@@ -1,6 +1,6 @@
 opstruss: "1.0"
 name: ops
-runtime:
+daemon:
   listen: 127.0.0.1:7878
 secrets:
   github_hook:

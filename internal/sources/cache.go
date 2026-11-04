@@ -319,7 +319,7 @@ retry:
 	}
 	if readOnly {
 		if _, err := os.Lstat(c.entry(key)); err != nil {
-			return id, "", nil, fmt.Errorf("%s: source metadata unavailable; run opstruss plugins fetch first", id.Key())
+			return id, "", nil, fmt.Errorf("%s: source metadata unavailable; run opstruss uses fetch first", id.Key())
 		}
 	}
 	l, err := c.lock(ctx, key, false, !readOnly)
@@ -340,12 +340,12 @@ retry:
 		}
 		if !repair {
 			l.Close()
-			return id, "", nil, fmt.Errorf("%s: cache integrity: %w; run opstruss plugins fetch to repair", id.Key(), err)
+			return id, "", nil, fmt.Errorf("%s: cache integrity: %w; run opstruss uses fetch to repair", id.Key(), err)
 		}
 	}
 	l.Close()
 	if readOnly {
-		return id, "", nil, fmt.Errorf("%s: source metadata unavailable; run opstruss plugins fetch first", id.Key())
+		return id, "", nil, fmt.Errorf("%s: source metadata unavailable; run opstruss uses fetch first", id.Key())
 	}
 	l, err = c.lock(ctx, key, true, false)
 	if err != nil {

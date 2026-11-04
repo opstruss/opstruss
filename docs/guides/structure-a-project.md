@@ -71,7 +71,7 @@ uses:
 ```
 
 `opstruss.lock` pins the commit of `v1` for every plugin of the catalog,
-and `opstruss plugins update ops` moves them all at once. Commit the lock
+and `opstruss uses update ops` moves them all at once. Commit the lock
 file; CI runs with `--locked`, which fails rather than changing it.
 
 ## Values reach programs through env

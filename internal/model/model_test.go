@@ -33,7 +33,7 @@ func TestSchemaMatchesStructs(t *testing.T) {
 		{"stack", defs["stack"], reflect.TypeFor[Stack](), nil},
 		{"backend", pick(defs, "backend", "oneOf", 1), reflect.TypeFor[Backend](), nil},
 		{"secret", defs["secret"], reflect.TypeFor[Secret](), []string{"env"}},
-		{"runtime", defs["runtime"], reflect.TypeFor[Runtime](), nil},
+		{"daemon", defs["daemon"], reflect.TypeFor[Daemon](), nil},
 		{"mcp", pick(defs, "mcp", "oneOf", 1), reflect.TypeFor[MCP](), nil},
 		{"unit", defs["unit"], reflect.TypeFor[Unit](), nil},
 		{"ready", pick(defs, "unit", "properties", "ready"), reflect.TypeFor[Ready](), nil},
@@ -234,13 +234,13 @@ func TestStacks(t *testing.T) {
 name: app
 inputs:
   domain: {type: string}
-runtime: {listen: 127.0.0.1:7878}
+daemon: {listen: 127.0.0.1:7878}
 stacks:
   dev:
     with: {domain: example.dev}
   prod:
     with: {domain: example.com, region: eu}
-    runtime: {listen: 127.0.0.1:7879}
+    daemon: {listen: 127.0.0.1:7879}
     include: [prod/*.yaml]
 `,
 		"prod/units.yaml": "units:\n  backup:\n    run: [backup]\n",
@@ -257,13 +257,13 @@ stacks:
 name: app
 inputs:
   domain: {type: string}
-runtime: {listen: 127.0.0.1:7878}
+daemon: {listen: 127.0.0.1:7878}
 stacks:
   dev:
     with: {domain: example.dev}
   prod:
     with: {domain: example.com}
-    runtime: {listen: 127.0.0.1:7879}
+    daemon: {listen: 127.0.0.1:7879}
     include: [prod/*.yaml]
 `)
 	dev, err := Load(dir, "dev")
@@ -277,8 +277,8 @@ stacks:
 	if dev.Units["backup"] != nil || prod.Units["backup"] == nil {
 		t.Fatal("a stack's include files belong to that stack only")
 	}
-	if dev.Runtime.Listen != "127.0.0.1:7878" || prod.Runtime.Listen != "127.0.0.1:7879" {
-		t.Fatalf("runtime: dev %s, prod %s", dev.Runtime.Listen, prod.Runtime.Listen)
+	if dev.Daemon.Listen != "127.0.0.1:7878" || prod.Daemon.Listen != "127.0.0.1:7879" {
+		t.Fatalf("daemon: dev %s, prod %s", dev.Daemon.Listen, prod.Daemon.Listen)
 	}
 }
 
@@ -318,10 +318,10 @@ func TestRules(t *testing.T) {
 		{"name: app\ntasks:\n  t:\n    run: [x]\n    on: {watch: {unit: web}}\n", "there is no unit web"},
 		{"name: app\nunits:\n  web: {service: [x]}\ntasks:\n  t:\n    run: [x]\n    on: {watch: {unit: web, paths: [a], batch: 1s, debounce: 1s}}\n", "exactly one source"},
 		{"name: app\ntasks:\n  t:\n    run: [x]\n    on: {after: {task: nothing}}\n", "there is no task nothing"},
-		{"name: app\ntasks:\n  t:\n    run: [x]\n    on: {webhook: {path: /h, secret: s, signature: bearer}}\n", "the daemon needs runtime.listen"},
-		{"name: app\nruntime: {listen: '127.0.0.1:1'}\ntasks:\n  t:\n    run: [x]\n    on: {webhook: {path: /h, secret: '${{ event.body }}', signature: bearer}}\n", "event"},
-		{"name: app\nruntime: {listen: '127.0.0.1:1'}\nsecrets:\n  s: {env: S}\n  f: {sops: s.yaml, field: f}\ntasks:\n  t:\n    run: [x]\n    on: {webhook: {path: /h, secret: '${{ secrets.s + secrets.f }}', signature: bearer, if: '${{ secrets.s != \"\" }}'}}\n", ""},
-		{"name: app\nruntime: {listen: '127.0.0.1:1'}\nsecrets:\n  s: {run: [op, read, x]}\ntasks:\n  t:\n    run: [x]\n    on: {webhook: {path: /h, secret: '${{ secrets.s }}', signature: bearer}}\n", "a trigger reads only the secrets that sops and env hold, and s comes from a program"},
+		{"name: app\ntasks:\n  t:\n    run: [x]\n    on: {webhook: {path: /h, secret: s, signature: bearer}}\n", "the daemon needs daemon.listen"},
+		{"name: app\ndaemon: {listen: '127.0.0.1:1'}\ntasks:\n  t:\n    run: [x]\n    on: {webhook: {path: /h, secret: '${{ event.body }}', signature: bearer}}\n", "event"},
+		{"name: app\ndaemon: {listen: '127.0.0.1:1'}\nsecrets:\n  s: {env: S}\n  f: {sops: s.yaml, field: f}\ntasks:\n  t:\n    run: [x]\n    on: {webhook: {path: /h, secret: '${{ secrets.s + secrets.f }}', signature: bearer, if: '${{ secrets.s != \"\" }}'}}\n", ""},
+		{"name: app\ndaemon: {listen: '127.0.0.1:1'}\nsecrets:\n  s: {run: [op, read, x]}\ntasks:\n  t:\n    run: [x]\n    on: {webhook: {path: /h, secret: '${{ secrets.s }}', signature: bearer}}\n", "a trigger reads only the secrets that sops and env hold, and s comes from a program"},
 		{"name: app\nsecrets:\n  s: {run: [op, read, x]}\ntasks:\n  t:\n    run: [x]\n    on: {watch: {command: {argv: [x, '${{ secrets.s }}']}}}\n", "and s comes from a program"},
 		{"name: app\nsecrets:\n  s: {run: [op, read, x]}\nlocals:\n  l: '${{ secrets.s }}x'\ntasks:\n  t:\n    run: [x]\n    on: {schedule: {cron: '0 7 * * *', if: '${{ locals.l != \"\" }}'}}\n", "local l reads one that a program gives"},
 		{"name: app\ntasks:\n  t:\n    run: [x]\n    on: {every: 500ms}\n", "every is at least 1s"},
@@ -569,9 +569,12 @@ func TestUses(t *testing.T) {
 		{files("tasks:\n  t:\n    steps:\n      - http: {url: \"${{ inputs.nope }}\"}\n"), "there is no input nope"},
 		// declarations
 		{files("  b:\n    source: ./plugins/a\n    with: {tag: v1, nope: 1}\n"), "uses.b.with.nope: b has no input nope"},
-		{files("", "plugins/a/components/build/opstruss.yaml", "name: build\n"), "a has a task and a component named build"},
-		{files("  infra: ./vendor/infra\nunits:\n  dns:\n    uses: infra.dns\n", "vendor/infra/components/dns/opstruss.yaml", "name: dns\n"), ""},
-		{files("  empty: ./vendor/empty\n", "vendor/empty/README.md", "x"), "vendor/empty has no opstruss.plugin.yaml, opstruss.yaml, components/, or plugins/"},
+		{files("units:\n  box:\n    uses: a.box\n", "plugins/a/components/box/opstruss.yaml", "name: box\n"), "units.box.uses: a has no task box"},
+		{files("  infra: ./vendor/infra\nunits:\n  dns:\n    uses: infra.dns\n", "vendor/infra/dns/opstruss.yaml", "name: dns\n"), ""},
+		{files("  infra: ./vendor/infra\nunits:\n  dns:\n    uses: infra.dns\n", "vendor/infra/components/dns/opstruss.yaml", "name: dns\n"),
+			"units.dns.uses: infra has no package dns; components/dns has a manifest: add packages: [components/*] to opstruss.catalog.yaml"},
+		{files("  empty: ./vendor/empty\nunits:\n  e:\n    uses: empty.x\n", "vendor/empty/README.md", "x"), "empty has no package x; vendor/empty has no subdirectory with opstruss.plugin.yaml or opstruss.yaml"},
+		{files("  empty: ./vendor/empty\nunits:\n  e:\n    uses: empty\n", "vendor/empty/README.md", "x"), "empty is a catalog, as it has no opstruss.plugin.yaml or opstruss.yaml; a unit uses one of its packages, as uses: empty.<package>"},
 		// the rules of a plugin file
 		{files("  gh: ./plugins/gh\n", gh("  up:\n    steps:\n      - run: [x]\n")...), "tasks.up: up of a plugin runs one program, written as run"},
 		{files("  gh: ./plugins/gh\n", gh("  status:\n    run: [x]\n")...), "plugins/gh/opstruss.plugin.yaml:5:3: tasks.status: status runs only through a unit"},

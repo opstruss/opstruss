@@ -1,19 +1,19 @@
 ---
-title: opstruss plugins
+title: opstruss uses prune
 ---
 
 <!-- Written by go run ./internal/docgen; edit the source, not this page. -->
 
 ::: v-pre
 
-# opstruss plugins
+# opstruss uses prune
 
-List project sources and their pins without fetching.
+Remove shared cache entries unused for 30 days, skipping active entries.
 
 ## Usage
 
 ```text
-opstruss plugins
+opstruss uses prune
 ```
 
 ## Global flags
@@ -25,13 +25,5 @@ opstruss plugins
 | `--json` | print JSON |
 | `--locked` | require existing dependency pins without changing opstruss.lock |
 | `--stack string` | the stack to use; defaults to the only one, or $OPSTRUSS\_STACK |
-
-## Commands
-
-| Command | Description |
-|---|---|
-| [`opstruss plugins fetch`](./plugins-fetch) | Fetch the pinned sources and binaries |
-| [`opstruss plugins update`](./plugins-update) | Update the pins of all sources, or of one |
-| [`opstruss plugins prune`](./plugins-prune) | Remove cache entries unused for 30 days |
 
 :::

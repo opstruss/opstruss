@@ -11,7 +11,7 @@ short name, `http: {…}`, or its full name, `opstruss.http: {…}`.
 | `write` | Writes a file, only when its content differs | `path`, `content`, `format`, `mode` | `path` |
 | `set` | Shapes values without a program | any values | the same values |
 | `assert` | Stops when a condition is false | `that`, `msg` | |
-| `wait` | Waits for a time, a port, or a URL | `seconds`, `tcp`, `http`, `timeout` | |
+| `wait` | Waits for a time, a port, or a URL | `duration`, `tcp`, `http`, `timeout` | |
 | `log` | Writes a message to the log and the events of the run | `msg`, `level` | |
 | `kv` | Keeps a small value of the stack between runs | `key`, `value`, `ttl`, `expect` | `value` |
 
@@ -106,9 +106,10 @@ counter, or the list of previews that events asked for.
 
 ## wait, assert, and log
 
-- `wait` waits for exactly one of `seconds`, a `tcp` port, or an `http`
-  URL that answers `2xx`, checking once a second until `timeout`. To wait
-  for anything else, check it in a step with `retry.until`.
+- `wait` waits for exactly one of a `duration`, such as `5s`, a `tcp`
+  port, or an `http` URL that answers `2xx`, checking once a second until
+  `timeout`. To wait for anything else, check it in a step with
+  `retry.until`.
 - `assert.that` is one condition or a list, written as `if` is.
 - `log.msg` is any value, written as JSON when it is not a string, at
   `level` `debug`, `info` (the default), `warn`, or `error`.

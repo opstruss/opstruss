@@ -211,7 +211,7 @@ func TestOpenProtocolError(t *testing.T) {
 
 // TestSchemas keeps api.json in step with what the socket sends.
 func TestSchemas(t *testing.T) {
-	ev := record.Event{V: 1, Seq: 1, Time: "2026-10-22T00:00:00.000Z", Type: "log", Level: "info", Message: "m"}
+	ev := record.Event{Version: 1, Seq: 1, Time: "2026-10-22T00:00:00.000Z", Type: "log", Level: "info", Message: "m"}
 	for kind, v := range map[schema.Kind]any{
 		schema.APIInitialize: Initialize{Protocol: 1, Version: "v", Terminal: true},
 		schema.APIRequest: Request{Dir: "/p", Cwd: "/", Stack: "s", Inputs: map[string]string{"a": "b"}, Environ: []string{"A=1"},

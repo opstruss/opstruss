@@ -42,6 +42,23 @@ jobs:
           DOCS_BASE: /${{ steps.version.outputs.folder }}/
         run: make docs
       - if: steps.version.outputs.folder != ''
+        run: |
+          # The folder of a version keeps what its opstruss links: the home
+          # page, the page that the help of each command ends with, and the
+          # schema that init writes into opstruss.yaml.
+          go run ./internal/docgen -links "$RUNNER_TEMP/linked.txt"
+          while IFS= read -r p; do
+            case "$p" in
+              schema/*) f=internal/$p ;;
+              '') f=docs/.vitepress/dist/index.html ;;
+              *) f=docs/.vitepress/dist/$p.html ;;
+            esac
+            if [ ! -f "$f" ]; then
+              echo "::error::opstruss links /$p, which this build lacks"
+              exit 1
+            fi
+          done < "$RUNNER_TEMP/linked.txt"
+      - if: steps.version.outputs.folder != ''
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: opstruss/opstruss.github.io

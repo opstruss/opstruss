@@ -1,10 +1,14 @@
 // Command docgen writes the reference pages of the documentation from the
 // JSON Schemas in internal/schema and the commands of opstruss. make
 // docs-gen runs it as go run ./internal/docgen docs/reference, and CI
-// checks that the pages it writes are the ones committed.
+// checks that the pages it writes are the ones committed. With -links
+// <file>, it writes the paths of the documentation that opstruss links to
+// that file instead, one a line, which the docs workflow finds in each
+// build.
 package main
 
 import (
+	"flag"
 	"log"
 	"os"
 	"path/filepath"
@@ -19,12 +23,21 @@ const header = "<!-- Written by go run ./internal/docgen; edit the source, not t
 func main() {
 	log.SetFlags(0)
 	log.SetPrefix("docgen: ")
+	links := flag.String("links", "", "write the paths of the documentation that opstruss links to this file")
+	flag.Parse()
+	if *links != "" {
+		root, _ := cli.Reference()
+		if err := os.WriteFile(*links, []byte(strings.Join(cli.LinkedPaths(root), "\n")+"\n"), 0o644); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 	dir := "docs/reference"
-	if len(os.Args) > 1 {
-		dir = os.Args[1]
+	if flag.NArg() > 0 {
+		dir = flag.Arg(0)
 	}
 	files := map[string]*object{}
-	for _, name := range []string{"project.json", "plugin.json"} {
+	for _, name := range []string{"project.json", "plugin.json", "catalog.json"} {
 		data, err := os.ReadFile(filepath.Join("internal", "schema", name))
 		if err != nil {
 			log.Fatal(err)
@@ -38,6 +51,7 @@ func main() {
 	pages := map[string]string{
 		"opstruss-yaml.md": schemaPage(files, "project.json"),
 		"plugin-yaml.md":   schemaPage(files, "plugin.json"),
+		"catalog-yaml.md":  schemaPage(files, "catalog.json"),
 	}
 	// Every page under cli/ comes from a command, so the pages of commands
 	// that are gone go too.
@@ -61,7 +75,7 @@ func main() {
 }
 
 // pageFor is the page that a schema file is documented on.
-var pageFor = map[string]string{"project.json": "opstruss-yaml", "plugin.json": "plugin-yaml"}
+var pageFor = map[string]string{"project.json": "opstruss-yaml", "plugin.json": "plugin-yaml", "catalog.json": "catalog-yaml"}
 
 // prose is text of the schema or of help as markdown shows it as written:
 // without emphasis, HTML, or the cells of a table.

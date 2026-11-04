@@ -28,7 +28,7 @@ const maxReplay = 16 << 20
 // webhook or a flag may carry a secret that nothing marks, and the runs it
 // lives with stay on this machine too; the run it belongs to is inside.
 type replay struct {
-	V       int               `json:"v"`
+	Version int               `json:"version"`
 	Project string            `json:"project"`
 	Stack   string            `json:"stack"`
 	Run     string            `json:"run"`
@@ -53,7 +53,7 @@ func (e *engine) replayOf(command string, with map[string]any, tr *Trigger) (*re
 		return nil, nil
 	}
 	out := &record.Replay{}
-	rp := &replay{V: replayVersion, Inputs: e.opts.Inputs, Flags: e.opts.Flags, With: with}
+	rp := &replay{Version: replayVersion, Inputs: e.opts.Inputs, Flags: e.opts.Flags, With: with}
 	if ev := e.opts.Event; ev != nil && tr != nil {
 		out.Trigger, out.Time = fileKey(e, tr), ev.Time.UTC().Format(time.RFC3339Nano)
 		rp.Event = ev.Fields
@@ -125,7 +125,7 @@ func (e *engine) keepAnswer(k, text string) {
 	}
 	e.mu.Lock()
 	if e.rerun == nil {
-		e.rerun = &replay{V: replayVersion, Inputs: e.opts.Inputs, Flags: e.opts.Flags}
+		e.rerun = &replay{Version: replayVersion, Inputs: e.opts.Inputs, Flags: e.opts.Flags}
 	}
 	flags := maps.Clone(e.rerun.Flags)
 	if flags == nil {
@@ -206,8 +206,8 @@ func openReplay(dir string, rec *record.Record, lookupEnv func(string) (string, 
 	}
 	m, _ := v.(map[string]any)
 	rp := &replay{}
-	if n, _ := m["v"].(int64); n != replayVersion {
-		return nil, fmt.Errorf("its inputs and event are of version %v, which this OpsTruss does not read", m["v"])
+	if n, _ := m["version"].(int64); n != replayVersion {
+		return nil, fmt.Errorf("its inputs and event are of version %v, which this OpsTruss does not read", m["version"])
 	}
 	if m["project"] != rec.Project || m["stack"] != rec.Stack || m["run"] != rec.Run {
 		return nil, errors.New("its inputs and event belong to another run")

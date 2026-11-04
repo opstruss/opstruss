@@ -1,8 +1,8 @@
 # A remote catalog hashes each package with the shared paths: a commit
 # outside them runs nothing again, while records and cleanup keep pins.
 env HOME=$WORK/home
-chmod 755 repo/plugins/a/up.sh
-chmod 755 repo/plugins/a/destroy.sh
+chmod 755 repo/a/up.sh
+chmod 755 repo/a/destroy.sh
 sourcerepo repo
 exec git -C repo config user.name Fixture
 exec git -C repo config user.email fixture@example.invalid
@@ -20,7 +20,7 @@ cp opstruss.lock before.lock
 exec sh -c 'echo v2 > repo/README.md'
 exec git -C repo commit -qam readme
 exec git -C repo tag -f v1
-exec opstruss plugins update
+exec opstruss uses update
 ! cmp opstruss.lock before.lock
 exec opstruss plan --locked
 stdout '^default/a: unchanged$'
@@ -35,7 +35,7 @@ exec sh -c 'opstruss state pull a | grep -qF "$(grep -o "h1:[A-Za-z0-9+/=]*" ops
 exec sh -c 'echo version=v2 > repo/lib/opstruss.sh'
 exec git -C repo commit -qam lib
 exec git -C repo tag -f v1
-exec opstruss plugins update
+exec opstruss uses update
 exec opstruss plan --locked
 stdout '^default/a: will run: definition changed: plugin$'
 stdout '^default/site/page: will run: definition changed: component$'
@@ -43,11 +43,11 @@ stdout '^default/site/page: will run: definition changed: component$'
 # A package that comes to need a newer OpsTruss stops update, which keeps
 # the pins, so the project runs on them until OpsTruss is upgraded.
 cp opstruss.lock before.lock
-cp newer.yaml repo/plugins/a/opstruss.plugin.yaml
+cp newer.yaml repo/a/opstruss.plugin.yaml
 exec git -C repo commit -qam newer
 exec git -C repo tag -f v1
-! exec opstruss plugins update
-stderr '^github.com/opstruss/catalog@v1/plugins/a/opstruss.plugin.yaml:1:1: opstruss: this file is for OpsTruss 1.99 or newer; this OpsTruss reads files up to 1.0: upgrade OpsTruss$'
+! exec opstruss uses update
+stderr '^github.com/opstruss/catalog@v1/a/opstruss.plugin.yaml:1:1: opstruss: this file is for OpsTruss 1.99 or newer; this OpsTruss reads files up to 1.0: upgrade OpsTruss$'
 ! stderr 'cache/git'
 ! stderr 'unknown key'
 cmp opstruss.lock before.lock
@@ -56,13 +56,13 @@ stdout '^default/a: will run: definition changed: plugin$'
 
 # A package of the catalog that needs a newer OpsTruss stops only the
 # projects that use it.
-cp a.yaml repo/plugins/a/opstruss.plugin.yaml
-mkdir repo/plugins/c
-cp later.yaml repo/plugins/c/opstruss.plugin.yaml
-exec git -C repo add plugins/c
+cp a.yaml repo/a/opstruss.plugin.yaml
+mkdir repo/c
+cp later.yaml repo/c/opstruss.plugin.yaml
+exec git -C repo add c
 exec git -C repo commit -qam later
 exec git -C repo tag -f v1
-exec opstruss plugins update
+exec opstruss uses update
 ! cmp opstruss.lock before.lock
 exec opstruss plan --locked
 stdout '^default/a: will run: definition changed: plugin$'
@@ -77,33 +77,33 @@ stdout 'default/a \| destroy-v1'
 # The relative paths of a package stay in it and the shared paths.
 cp full.yaml opstruss.yaml
 cp opstruss.lock before.lock
-cp other.yaml repo/plugins/a/opstruss.plugin.yaml
+cp other.yaml repo/a/opstruss.plugin.yaml
 exec git -C repo commit -qam other
 exec git -C repo tag -f v1
-! exec opstruss plugins update
+! exec opstruss uses update
 stderr 'tasks.up.run\[0\]: \.\./b/up.sh leads outside its package and the shared paths of its catalog'
 cmp opstruss.lock before.lock
-cp upward.yaml repo/components/site/opstruss.yaml
+cp upward.yaml repo/site/opstruss.yaml
 exec git -C repo commit -qam upward
 exec git -C repo tag -f v1
-! exec opstruss plugins update
-stderr 'include\[0\]: \.\./\.\./plugins/b/units.yaml leads outside its package'
+! exec opstruss uses update
+stderr 'include\[0\]: \.\./b/units.yaml leads outside its package'
 cmp opstruss.lock before.lock
 
 # Without opstruss.catalog.yaml they stay in the repository.
 exec git -C repo rm -q opstruss.catalog.yaml
-cp outside.yaml repo/plugins/a/opstruss.plugin.yaml
-cp full-site.yaml repo/components/site/opstruss.yaml
+cp outside.yaml repo/a/opstruss.plugin.yaml
+cp full-site.yaml repo/site/opstruss.yaml
 exec git -C repo commit -qam outside
 exec git -C repo tag -f v1
-! exec opstruss plugins update
-stderr 'tasks.up.run\[0\]: \.\./\.\./\.\./outside.sh leads outside its repository'
+! exec opstruss uses update
+stderr 'tasks.up.run\[0\]: \.\./\.\./outside.sh leads outside its repository'
 cmp opstruss.lock before.lock
 
 -- opstruss.yaml --
 name: catalog
 uses:
-  a: github.com/opstruss/catalog/plugins/a@v1
+  a: github.com/opstruss/catalog/a@v1
   ops: github.com/opstruss/catalog@v1
 units:
   a:
@@ -113,7 +113,7 @@ units:
 -- full.yaml --
 name: catalog
 uses:
-  a: github.com/opstruss/catalog/plugins/a@v1
+  a: github.com/opstruss/catalog/a@v1
   ops: github.com/opstruss/catalog@v1
 units:
   a:
@@ -135,37 +135,37 @@ version=v1
 units:
   shared:
     run: [echo, shared-unit]
--- repo/plugins/a/opstruss.plugin.yaml --
+-- repo/a/opstruss.plugin.yaml --
 name: a
 tasks:
   up:
     run: [./up.sh]
   destroy:
     run: [./destroy.sh]
--- repo/plugins/a/up.sh --
+-- repo/a/up.sh --
 #!/bin/sh
-. "$OPSTRUSS_PLUGIN_DIR/../../lib/opstruss.sh"
+. "$OPSTRUSS_PLUGIN_DIR/../lib/opstruss.sh"
 echo "up-$version"
--- repo/plugins/a/destroy.sh --
+-- repo/a/destroy.sh --
 #!/bin/sh
-. "$OPSTRUSS_PLUGIN_DIR/../../lib/opstruss.sh"
+. "$OPSTRUSS_PLUGIN_DIR/../lib/opstruss.sh"
 echo "destroy-$version"
--- repo/plugins/b/units.yaml --
+-- repo/b/units.yaml --
 units:
   other:
     run: [echo, other]
--- repo/components/site/opstruss.yaml --
-include: [../../lib/units.yaml]
+-- repo/site/opstruss.yaml --
+include: [../lib/units.yaml]
 units:
   page:
     run: [echo, page-v1]
 -- full-site.yaml --
-include: [../../lib/units.yaml]
+include: [../lib/units.yaml]
 units:
   page:
     run: [echo, page-v1]
 -- upward.yaml --
-include: [../../plugins/b/units.yaml]
+include: [../b/units.yaml]
 units:
   page:
     run: [echo, page-v1]
@@ -180,7 +180,7 @@ tasks:
 name: a
 tasks:
   up:
-    run: [../../../outside.sh]
+    run: [../../outside.sh]
   destroy:
     run: [./destroy.sh]
 -- a.yaml --

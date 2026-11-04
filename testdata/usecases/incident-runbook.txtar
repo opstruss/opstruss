@@ -150,7 +150,7 @@ inputs:
       WorkerDown: restart-worker
       DiskAlmostFull: prune-images
 
-runtime:
+daemon:
   listen: 127.0.0.1:0                      # Caddy memegang TLS di depannya
 
 secrets:

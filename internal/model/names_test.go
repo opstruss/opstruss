@@ -19,7 +19,7 @@ func TestNames(t *testing.T) {
 		{"StandardTasks", StandardTasks, []string{"plan", "up", "destroy", "status", "logs"}},
 		{"BuiltinFlags", BuiltinFlags, []string{"stack", "input", "json", "yes", "locked", "no-deps", "completion", "help", "event"}},
 		{"Hooks", Hooks, []string{"watch", "exec", "migrate"}},
-		{"Commands", Commands, []string{"init", "validate", "explain", "doctor", "list", "outputs", "stop", "mcp", "plugins",
+		{"Commands", Commands, []string{"init", "validate", "explain", "doctor", "list", "outputs", "stop", "mcp", "uses",
 			"unlock", "state", "runs", "run", "exec", "version", "help"}},
 		{"keywords", slices.Sorted(maps.Keys(keywords)), []string{"always", "approval", "batch", "block", "changed_when",
 			"concurrency", "continue_on_error", "debounce", "description", "dir", "env", "failed_when", "field", "for_each",

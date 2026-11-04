@@ -1,7 +1,7 @@
 # A transitive closure has one root lock, with one commit per repository/ref.
 env HOME=$WORK/home
 sourcerepo repo
-exec opstruss plugins fetch
+exec opstruss uses fetch
 grep 'catalog/a@v1' opstruss.lock
 grep 'catalog/b@main' opstruss.lock
 grep 'catalog/c@main' opstruss.lock
@@ -15,7 +15,7 @@ exec git -C repo config user.name Fixture
 exec git -C repo config user.email fixture@example.invalid
 exec git -C repo add .
 exec git -C repo commit -qm cycle
-! exec opstruss plugins update
+! exec opstruss uses update
 stderr 'uses itself'
 cmp opstruss.lock before.lock
 
@@ -23,10 +23,10 @@ cmp opstruss.lock before.lock
 cp valid.yaml repo/b/opstruss.yaml
 exec git -C repo add .
 exec git -C repo commit -qm valid
-exec opstruss plugins update
-exec opstruss plugins fetch &
-exec opstruss plugins fetch &
-exec opstruss plugins fetch &
+exec opstruss uses update
+exec opstruss uses fetch &
+exec opstruss uses fetch &
+exec opstruss uses fetch &
 wait
 exec opstruss up --yes
 exec touch offline

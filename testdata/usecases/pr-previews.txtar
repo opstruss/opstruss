@@ -104,7 +104,7 @@ inputs:
     type: integer
     default: 7
 
-runtime:
+daemon:
   listen: 127.0.0.1:0
 
 secrets:
