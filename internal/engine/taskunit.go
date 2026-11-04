@@ -10,7 +10,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/opstruss/opstruss/internal/builtin"
 	"github.com/opstruss/opstruss/internal/expr"
 	"github.com/opstruss/opstruss/internal/model"
 	"github.com/opstruss/opstruss/internal/plugin"
@@ -23,7 +22,8 @@ import (
 type taskUnit struct {
 	target *model.Target
 	inputs map[string]any
-	hash   string // of the plugin's directory, for a task of a plugin
+	marks  map[string]any // of the inputs that are sensitive
+	hash   string         // of the plugin's directory, for a task of a plugin
 }
 
 // resolveTask fills r for a unit that uses a task: its inputs, and the
@@ -40,7 +40,7 @@ func (e *engine) resolveTask(inst *instance, r *resolved, s *expr.Scope) error {
 			r.inputHidden[k] = true
 		}
 	}
-	tu := &taskUnit{target: t, inputs: in}
+	tu := &taskUnit{target: t, inputs: in, marks: marks}
 	allowed := slices.Clone(u.Pass)
 	if d := t.Package; d != nil && d.Decl != nil {
 		env := map[string]model.EnvValue{}
@@ -82,6 +82,9 @@ func (e *engine) resolveTask(inst *instance, r *resolved, s *expr.Scope) error {
 	case t.Kind == model.TargetBuiltin && t.Task == "command":
 		if (in["argv"] == nil) == (in["script"] == nil) {
 			return errors.New("with: command takes exactly one of argv or script")
+		}
+		if err := e.checkArgv(in, marks); err != nil {
+			return fmt.Errorf("with: %w", err)
 		}
 		if script, ok := in["script"].(string); ok {
 			r.cmd = model.Command{Script: script}
@@ -172,7 +175,7 @@ func (e *engine) execTask(ctx context.Context, inst *instance, r *resolved, rec 
 	ur := &unitRun{env: r.env, pass: slices.Sorted(maps.Keys(r.pass)), stateKey: rec.StateKey, reason: reason,
 		workdir: e.workdir(inst.address), state: programState(rec)}
 	// The unit's approval covers what its task asks.
-	c := call{frame: inst.frame, unit: inst, yes: true, source: "unit", unitRun: ur, tty: inst.def.TTY, stop: inst.def.Stop}
+	c := call{frame: inst.frame, unit: inst, yes: true, source: "unit", unitRun: ur, marks: r.task.marks, tty: inst.def.TTY, stop: inst.def.Stop}
 	var res *taskResult
 	switch t.Kind {
 	case model.TargetProject:
@@ -186,26 +189,14 @@ func (e *engine) execTask(ctx context.Context, inst *instance, r *resolved, rec 
 		c.plugin = &pluginRun{name: t.Package.Name, dir: t.Package.Dir, requires: t.Package.Plugin.Requires, inputs: inputs}
 		res = e.callTask(ctx, t.Name, t.Package.Plugin.Tasks[t.Task], r.cwd, r.task.inputs, c)
 	default:
-		var out *builtin.Result
-		if t.Task == "kv" {
-			given := func(k string) bool {
-				_, ok := inst.def.With[k]
-				if !ok && t.Package != nil && t.Package.Decl != nil {
-					_, ok = t.Package.Decl.With[k]
-				}
-				return ok
+		given := func(k string) bool {
+			_, ok := inst.def.With[k]
+			if !ok && t.Package != nil && t.Package.Decl != nil {
+				_, ok = t.Package.Decl.With[k]
 			}
-			out, _ = e.kvCall(ctx, r.task.inputs, nil, given("value"), given("expect"))
-		} else {
-			out = builtin.Run(ctx, &builtin.Call{Task: t.Task, Inputs: r.task.inputs, Dir: r.cwd, Log: func(level, msg string) {
-				e.emit(Event{Type: "log", Level: level, Address: inst.address, Task: "up", Message: msg})
-			}})
+			return ok
 		}
-		res = &taskResult{outcome: success, changed: out.Changed, outputs: out.Outputs}
-		if out.Err != nil {
-			res.outcome = failure
-			e.emit(Event{Type: "step", Level: "error", Address: inst.address, Task: "up", Message: fmt.Sprintf("%s: %v", t.Name, out.Err)})
-		}
+		res = e.builtinCall(ctx, t.Name, t.Task, r.task.inputs, r.task.marks, r.cwd, given, Event{Address: inst.address, Task: "up"}, false)
 	}
 	out := &plugin.Result{Outputs: res.outputs, Changed: res.changed, Sensitive: slices.Sorted(maps.Keys(res.marks))}
 	if out.Outputs == nil {

@@ -1161,6 +1161,9 @@ func (c *checker) sensitiveValues() {
 				c.add(at(path, strings.Split(key, ".")...), "%s", argvMessage)
 			}
 		}
+		if t := u.Target; t != nil && t.Kind == TargetBuiltin && t.Task == "command" && reads(u.With["argv"], marks) {
+			c.add(at(path, "with", "argv"), "%s", argvMessage)
+		}
 		for _, tn := range slices.Sorted(maps.Keys(u.Tasks)) {
 			c.argvSensitive(at(path, "tasks", tn), u.Tasks[tn], marks)
 		}

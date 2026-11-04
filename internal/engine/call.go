@@ -68,33 +68,47 @@ func (e *engine) callByName(ctx context.Context, p progSpec, name string, args m
 				unitRun: p.unitRun, marks: marks, tty: p.tty, stop: p.stop})
 			return r, r.outputs, nil
 		}
-		var res *builtin.Result
-		var outMarks map[string]any
-		if t.Task == "kv" {
-			res, outMarks = e.kvCall(ctx, in, marks, given("value"), given("expect"))
-		} else {
-			res = builtin.Run(ctx, &builtin.Call{Task: t.Task, Inputs: in, Dir: dir, Sensitive: marks["content"] != nil,
-				Log: func(level, msg string) {
-					e.emit(Event{Type: "log", Level: level, Task: p.label, Step: p.step, Message: msg})
-				}})
-		}
-		if outMarks == nil {
-			outMarks = map[string]any{}
-		}
-		if t.Task == "set" {
-			// set gives its inputs as its outputs.
-			maps.Copy(outMarks, marks)
-		}
-		r := &taskResult{outcome: success, changed: res.Changed, outputs: res.Outputs,
-			marks: e.markContent(res.Outputs, outMarks, Event{Task: p.label, Step: p.step})}
-		if res.Err != nil {
-			r.outcome = failure
-			if p.failedWhen == nil {
-				e.emit(Event{Type: "step", Level: "error", Task: p.label, Step: p.step, Message: fmt.Sprintf("%s: %v", name, res.Err)})
-			}
-		}
-		return r, res.Outputs, nil
+		r := e.builtinCall(ctx, name, t.Task, in, marks, dir, given, Event{Task: p.label, Step: p.step}, p.failedWhen != nil)
+		return r, r.outputs, nil
 	})
+}
+
+// builtinCall runs a built-in task other than command with its inputs and
+// their marks, for a step that calls it and for a unit that uses it: kv
+// writes value and checks expect when given says they are written, write
+// keeps sensitive content to its owner, and set gives its inputs as its
+// outputs, marks and all. ev says whose logs and error these are; quiet
+// leaves the error to failed_when.
+func (e *engine) builtinCall(ctx context.Context, name, task string, in, marks map[string]any, dir string, given func(string) bool,
+	ev Event, quiet bool) *taskResult {
+	say := func(typ, level, msg string) {
+		out := ev
+		out.Type, out.Level, out.Message = typ, level, msg
+		e.emit(out)
+	}
+	var res *builtin.Result
+	var outMarks map[string]any
+	if task == "kv" {
+		res, outMarks = e.kvCall(ctx, in, marks, given("value"), given("expect"))
+	} else {
+		res = builtin.Run(ctx, &builtin.Call{Task: task, Inputs: in, Dir: dir, Sensitive: marks["content"] != nil,
+			Log: func(level, msg string) { say("log", level, msg) }})
+	}
+	if outMarks == nil {
+		outMarks = map[string]any{}
+	}
+	if task == "set" {
+		// set gives its inputs as its outputs.
+		maps.Copy(outMarks, marks)
+	}
+	r := &taskResult{outcome: success, changed: res.Changed, outputs: res.Outputs, marks: e.markContent(res.Outputs, outMarks, ev)}
+	if res.Err != nil {
+		r.outcome = failure
+		if !quiet {
+			say("step", "error", fmt.Sprintf("%s: %v", name, res.Err))
+		}
+	}
+	return r
 }
 
 // pluginRun is what the programs of a plugin task run with: the plugin's
@@ -223,8 +237,8 @@ func (e *engine) commandCall(ctx context.Context, p progSpec, in, marks map[stri
 	if (in["argv"] == nil) == (in["script"] == nil) {
 		return nil, nil, errors.New("command takes exactly one of argv or script")
 	}
-	if marks["argv"] != nil || e.redact.Contains(in["argv"]) {
-		return nil, nil, errArgv
+	if err := e.checkArgv(in, marks); err != nil {
+		return nil, nil, err
 	}
 	if sh, ok := in["shell"].(string); ok {
 		p.shell = sh
@@ -248,4 +262,13 @@ func (e *engine) commandCall(ctx context.Context, p progSpec, in, marks map[stri
 	}
 	p.call = true
 	return e.execProgram(ctx, p, c)
+}
+
+// checkArgv refuses the inputs of command when argv holds a sensitive
+// value, for a step that calls it and for a unit that uses it.
+func (e *engine) checkArgv(in, marks map[string]any) error {
+	if marks["argv"] != nil || e.redact.Contains(in["argv"]) {
+		return errArgv
+	}
+	return nil
 }

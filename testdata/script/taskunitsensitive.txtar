@@ -1,0 +1,57 @@
+# A unit that uses a task gives it the marks of its with:, as a step that
+# calls the task does: write keeps sensitive content to its owner, kv keeps
+# a sensitive value encrypted, outputs of kv and set that hold one are
+# sensitive, and a task of the project reads such an input as sensitive.
+# command refuses an item of argv that only up knows to be sensitive.
+
+env HOME=$WORK/home
+env XDG_CONFIG_HOME=$WORK/config
+
+exec opstruss up written remembered copied kept --yes
+exec sh -c 'ls -l written.txt kept.txt'
+stdout '^-rw-------[@+]? .*written\.txt$'
+stdout '^-rw-------[@+]? .*kept\.txt$'
+grep '"sensitive": ?true' .opstruss/state/default/_kv/flag
+grep '"value": ?"enc:v1:' .opstruss/state/default/_kv/flag
+exec opstruss state pull remembered
+stdout '"value": "enc:v1:'
+exec opstruss state pull copied
+stdout '"flag": "enc:v1:'
+exec opstruss state pull kept
+stdout '"echo": "enc:v1:'
+! exec sh -c 'grep -r fixture-secret-value .opstruss'
+
+! exec opstruss up probe --yes
+stdout '^default/probe: error: with: a sensitive value cannot be an item of argv'
+! exists received
+
+-- opstruss.yaml --
+name: app
+inputs:
+  secret: {type: string, sensitive: true, default: fixture-secret-value}
+  flag: {type: boolean, sensitive: true, default: true}
+tasks:
+  keep:
+    inputs:
+      value: {type: string}
+    steps:
+      - write: {path: kept.txt, content: '${{ inputs.value }}'}
+    outputs:
+      echo: {value: '${{ inputs.value }}'}
+units:
+  written:
+    uses: write
+    with: {path: written.txt, content: '${{ inputs.secret }}'}
+  remembered:
+    uses: kv
+    with: {key: flag, value: '${{ inputs.flag }}'}
+  copied:
+    uses: set
+    with: {flag: '${{ inputs.flag }}'}
+  kept:
+    uses: keep
+    with: {value: '${{ inputs.secret }}'}
+  probe:
+    uses: command
+    with:
+      argv: [sh, -c, 'touch received', '${{ string(units.copied.outputs.flag) }}']

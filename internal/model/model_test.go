@@ -339,6 +339,8 @@ func TestRules(t *testing.T) {
 		{"name: app\ninputs:\n  token: {type: string, sensitive: true}\nlocals:\n  auth: Bearer ${{ inputs.token }}\nunits:\n  a:\n    run: [x]\n    env: {A: '${{ locals.auth }}'}\n", ""},
 		{"name: app\ninputs:\n  token: {type: string, sensitive: true}\nlocals:\n  auth: Bearer ${{ inputs.token }}\nunits:\n  a:\n    run: [x, '${{ locals.auth }}']\n", "units.a.run: a sensitive value cannot be an item of argv"},
 		{"name: app\ninputs:\n  token: {type: string, sensitive: true}\ntasks:\n  t:\n    run: [curl, '${{ inputs.token }}']\n", "tasks.t.run: a sensitive value cannot be an item of argv"},
+		{"name: app\ninputs:\n  token: {type: string, sensitive: true}\nunits:\n  a:\n    uses: command\n    with: {argv: [curl, '${{ inputs.token }}']}\n", "units.a.with.argv: a sensitive value cannot be an item of argv"},
+		{"name: app\ninputs:\n  token: {type: string, sensitive: true}\nunits:\n  a:\n    uses: command\n    with: {argv: [curl], stdin: {value: '${{ inputs.token }}'}}\n", ""},
 		{"name: app\ntasks:\n  t:\n    inputs:\n      key: {type: string, sensitive: true}\n    steps:\n      - command: {argv: ['${{ inputs.key }}']}\n      - run: [x]\n        env: {KEY: '${{ inputs.key }}'}\n", "tasks.t.steps[0].command.argv: a sensitive value cannot be an item of argv"},
 		{"name: app\ntasks:\n  t:\n    inputs:\n      key: {type: string, sensitive: true}\n    run: [x]\n    env: {KEY: '${{ inputs.key }}'}\n    outputs:\n      o: {type: string, sensitive: true}\n", ""},
 		{"name: app\noutputs:\n  o: {value: x, sensitive: true}\n", ""},
