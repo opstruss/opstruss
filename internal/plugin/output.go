@@ -51,8 +51,8 @@ func (r *Run) collect(c *Call, dir string, res *Result, streams map[string]*stre
 		}
 		res.Outputs[name] = v
 	}
-	if n := len(expr.JSON(res.Outputs)); n > MaxOutputs {
-		errs = append(errs, fmt.Errorf("the outputs take %d bytes, more than %s", n, size(MaxOutputs)))
+	if err := CheckOutputs(res.Outputs); err != nil {
+		errs = append(errs, err)
 	}
 
 	res.Changed = true
@@ -217,6 +217,15 @@ func readMax(path string, max int) ([]byte, error) {
 		return data[:max], fmt.Errorf("holds more than %s", size(max))
 	}
 	return data, nil
+}
+
+// CheckOutputs refuses the outputs of a unit or task when they take more
+// than MaxOutputs as JSON, since state keeps them.
+func CheckOutputs(outputs map[string]any) error {
+	if n := len(expr.JSON(outputs)); n > MaxOutputs {
+		return fmt.Errorf("the outputs take %d bytes, more than %s", n, size(MaxOutputs))
+	}
+	return nil
 }
 
 func size(n int) string {

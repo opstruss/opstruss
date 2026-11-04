@@ -1,0 +1,30 @@
+# retry: of a step that calls a task runs it again as retry says, as for
+# any other step; a task: up that stops for approval is not run again.
+
+env HOME=$WORK/home
+
+exec opstruss check
+grep -count=2 attempt attempts
+
+exec sh -c 'opstruss deploy > deploy.out 2>&1; echo $? > code'
+grep '^2$' code
+! grep 'attempt 1 of 3' deploy.out
+
+-- opstruss.yaml --
+name: app
+units:
+  site:
+    run: echo site
+tasks:
+  flaky:
+    run: |
+      echo attempt >> attempts
+      test $(wc -l < attempts) -ge 2
+  check:
+    steps:
+      - task: flaky
+        retry: {attempts: 3, delay: 1ms}
+  deploy:
+    steps:
+      - task: up
+        retry: {attempts: 3, delay: 1ms}

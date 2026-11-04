@@ -197,6 +197,10 @@ func (e *engine) execTask(ctx context.Context, inst *instance, r *resolved, rec 
 			return ok
 		}
 		res = e.builtinCall(ctx, t.Name, t.Task, r.task.inputs, r.task.marks, r.cwd, given, Event{Address: inst.address, Task: "up"}, false)
+		if err := plugin.CheckOutputs(res.outputs); err != nil {
+			// A task of the project or of a plugin refused such outputs already.
+			return &plugin.Result{Outputs: map[string]any{}, Changed: res.changed, OutputErr: err}
+		}
 	}
 	out := &plugin.Result{Outputs: res.outputs, Changed: res.changed, Sensitive: slices.Sorted(maps.Keys(res.marks))}
 	if out.Outputs == nil {

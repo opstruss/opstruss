@@ -344,6 +344,8 @@ func TestRules(t *testing.T) {
 		{"name: app\ntasks:\n  t:\n    inputs:\n      key: {type: string, sensitive: true}\n    steps:\n      - command: {argv: ['${{ inputs.key }}']}\n      - run: [x]\n        env: {KEY: '${{ inputs.key }}'}\n", "tasks.t.steps[0].command.argv: a sensitive value cannot be an item of argv"},
 		{"name: app\ntasks:\n  t:\n    inputs:\n      key: {type: string, sensitive: true}\n    run: [x]\n    env: {KEY: '${{ inputs.key }}'}\n    outputs:\n      o: {type: string, sensitive: true}\n", ""},
 		{"name: app\noutputs:\n  o: {value: x, sensitive: true}\n", ""},
+		{"name: app\ntasks:\n  t:\n    steps:\n      - run: [x]\n    outputs:\n      n: {type: integer, value: wrong}\n", "tasks.t.outputs.n.value: expected integer, got string"},
+		{"name: app\ntasks:\n  t:\n    steps:\n      - run: [x]\n    outputs:\n      n: {type: integer, value: 3}\n      m: {type: integer, value: '${{ 1 + 2 }}'}\n", ""},
 		{"name: app\nsecrets:\n  s: {env: S}\nunits:\n  a:\n    run: [x]\n    env: {A: '${{ secrets.s }}'}\n", ""},
 		{"name: app\nsecrets:\n  s: {env: S, sops: a.yaml}\n", "a secret has exactly one source"},
 		{"name: app\nsecrets:\n  s: {env: S, field: a}\n", "field: reads one field of a sops file"},

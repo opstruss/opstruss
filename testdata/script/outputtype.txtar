@@ -1,0 +1,54 @@
+# The outputs of a task with steps are checked against their type, as
+# those of a program are: a value of another type fails the task and names
+# the output, and validate checks a value written out.
+
+env HOME=$WORK/home
+
+! exec opstruss check
+stderr 'output count: expected integer, got string'
+! stdout 'got wr'
+
+exec opstruss fine
+stdout '^fine: fine step 2 \| got 3$'
+
+cd literal
+! exec opstruss validate
+stderr 'tasks\.typed\.outputs\.count\.value: expected integer, got string'
+
+-- opstruss.yaml --
+name: app
+tasks:
+  typed:
+    steps:
+      - run: 'true'
+    outputs:
+      count:
+        type: integer
+        value: ${{ 'wr' + 'ong' }}
+  check:
+    steps:
+      - id: got
+        task: typed
+      - run: [echo, 'got ${{ steps.got.outputs.count }}']
+  sum:
+    steps:
+      - run: 'true'
+    outputs:
+      count:
+        type: integer
+        value: ${{ 1 + 2 }}
+  fine:
+    steps:
+      - id: got
+        task: sum
+      - run: [echo, 'got ${{ steps.got.outputs.count }}']
+-- literal/opstruss.yaml --
+name: app
+tasks:
+  typed:
+    steps:
+      - run: 'true'
+    outputs:
+      count:
+        type: integer
+        value: wrong

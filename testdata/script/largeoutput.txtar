@@ -1,0 +1,48 @@
+# The outputs of a unit or task take at most 1 MiB as JSON: more fails it,
+# and what does not fit is not kept, so the unit has room to run again.
+
+env HOME=$WORK/home
+exec sh -c 'head -c 600000 /dev/zero | tr "\000" x > chunk.txt'
+exec sh -c 'head -c 1048576 /dev/zero | tr "\000" x > big.txt'
+
+# a task with steps, a unit that uses it, a unit that uses read, and a
+# program whose outputs read two files
+! exec opstruss combine
+stderr 'the outputs take [0-9]+ bytes, more than 1 MiB'
+! exec opstruss up built --yes
+stderr 'the outputs take [0-9]+ bytes, more than 1 MiB'
+! exec opstruss up fetched --yes
+stderr '^default/fetched: the outputs take [0-9]+ bytes, more than 1 MiB$'
+! exec opstruss up read --yes
+stderr 'the outputs take [0-9]+ bytes, more than 1 MiB'
+exec opstruss state pull read
+stdout '"pending"'
+! stdout xxxxxxxxxx
+
+# each runs again once its outputs fit
+exec sh -c 'printf x > chunk.txt'
+exec sh -c 'printf x > big.txt'
+exec opstruss up built fetched read --yes
+exec opstruss state pull read
+stdout '"a": "x"'
+
+-- opstruss.yaml --
+name: app
+units:
+  built:
+    uses: combine
+  fetched:
+    uses: read
+    with: {path: big.txt}
+  read:
+    run: 'true'
+    outputs:
+      a: {from: file, path: chunk.txt}
+      b: {from: file, path: chunk.txt}
+tasks:
+  combine:
+    steps:
+      - run: 'true'
+    outputs:
+      payload:
+        value: ${{ file('chunk.txt') + file('chunk.txt') }}

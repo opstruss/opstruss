@@ -824,6 +824,12 @@ func (c *checker) task(path []string, t *Task, project bool) {
 			c.add(at(path, "outputs", name), "an output of a task with steps has value:")
 		case len(t.Steps) == 0 && o.Value != nil:
 			c.add(at(path, "outputs", name, "value"), "value: is for tasks with steps; other tasks read outputs from their program")
+		case !holdsExpr(o.Value):
+			// A value written out is checked as run checks the value of an
+			// expression.
+			if _, err := (&Input{Type: o.Type}).Conform(o.Value); err != nil {
+				c.add(at(path, "outputs", name, "value"), "%v", err)
+			}
 		}
 	}
 	for i, n := range t.Needs {

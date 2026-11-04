@@ -680,6 +680,14 @@ func (e *engine) taskOnce(ctx context.Context, name, label string, t *model.Task
 	default:
 		res = e.stepsWithRetry(ctx, name, label, t, dir, scope, c)
 	}
+	if err := plugin.CheckOutputs(res.outputs); err != nil {
+		// What state cannot keep is not given; a program said so already.
+		if res.outcome == success {
+			e.emit(Event{Type: "task", Level: "error", Address: c.address(), Task: label, Message: err.Error()})
+			res.outcome = failure
+		}
+		res.outputs, res.marks = map[string]any{}, map[string]any{}
+	}
 	if ctx.Err() != nil && res.outcome == failure && errors.Is(ctx.Err(), context.Canceled) {
 		res.outcome = cancelled
 	}
@@ -713,7 +721,11 @@ func (e *engine) stepsWithRetry(ctx context.Context, name, label string, t *mode
 		env, pass := c.envPass(t)
 		res := tc.run(ctx, t.Steps, defaults{shell: t.Shell, dir: t.Dir, env: env, pass: pass, tty: ttyOf(c.tty, t.TTY), stop: c.stop.Over(t.Stop)},
 			tc.label+" step ")
-		res.outputs, res.marks = tc.values(t.Outputs)
+		var err error
+		if res.outputs, res.marks, err = tc.values(t.Outputs); err != nil {
+			e.emit(Event{Type: "task", Level: "error", Address: c.address(), Task: label, Message: err.Error()})
+			res.outcome = failure
+		}
 		js := tc.scopeNow().WithMarks("outputs", res.outputs, anyMarks(res.marks))
 		res = judge(res, t.FailedWhen, t.ChangedWhen, js)
 		done := res.outcome == success
@@ -813,23 +825,29 @@ func (tc *taskCtx) record(id string, r *taskResult) {
 // values evaluates the outputs of a task with steps: each value: whose
 // references exist, and null for the others, so a task that failed still
 // gives what can be computed. An output that reads a sensitive value, or
-// is declared sensitive, is sensitive.
-func (tc *taskCtx) values(decl map[string]*model.Output) (map[string]any, map[string]any) {
+// is declared sensitive, is sensitive. A value of another type than the
+// output's is an error, and null.
+func (tc *taskCtx) values(decl map[string]*model.Output) (map[string]any, map[string]any, error) {
 	out, marks := map[string]any{}, map[string]any{}
+	var errs []error
 	s := tc.scopeNow()
-	for name, o := range decl {
+	for _, name := range slices.Sorted(maps.Keys(decl)) {
+		o := decl[name]
 		v, m, err := expr.EvalMarked(o.Value, s)
 		if err != nil {
 			out[name] = nil
 			continue
 		}
-		out[name] = v
 		if m != nil || o.Sensitive {
 			marks[name] = true
 			tc.e.hide(v, true)
 		}
+		if out[name], err = (&model.Input{Type: o.Type}).Conform(v); err != nil {
+			delete(marks, name)
+			errs = append(errs, fmt.Errorf("output %s: %w", name, err))
+		}
 	}
-	return out, tc.e.markContent(out, marks, Event{Task: tc.label})
+	return out, tc.e.markContent(out, marks, Event{Task: tc.label}), errors.Join(errs...)
 }
 
 // run runs steps in order: a step that fails, unless continue_on_error,
@@ -959,8 +977,11 @@ func (tc *taskCtx) stepOnce(ctx context.Context, s *model.Step, label string, d 
 				changedWhen: s.ChangedWhen, unit: tc.c.unit, plugin: tc.c.plugin, unitRun: tc.c.unitRun}, callee, args, scope)
 		}
 	case s.Task != "":
-		res = tc.callStep(ctx, s, label, scope)
-		res = judge(res, s.FailedWhen, s.ChangedWhen, scope.WithMarks("outputs", res.outputs, anyMarks(res.marks)))
+		res = tc.e.try(ctx, progSpec{frame: tc.c.where(tc.e), label: tc.label, step: label, task: tc.name, retry: s.Retry,
+			failedWhen: s.FailedWhen, changedWhen: s.ChangedWhen}, scope, func(scope *expr.Scope) (*taskResult, map[string]any, error) {
+			r := tc.callStep(ctx, s, label, scope)
+			return r, r.outputs, nil
+		})
 	case len(s.Block) > 0:
 		res = tc.block(ctx, s, label, d.with(s.Shell, s.Dir, s.Env, s.Pass, s.TTY))
 	}

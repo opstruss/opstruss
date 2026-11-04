@@ -98,7 +98,9 @@ func (e *engine) try(ctx context.Context, p progSpec, s *expr.Scope, attempt fun
 			}
 			done = ok
 		}
-		if done || i >= n || ctx.Err() != nil {
+		// What stopped for approval did not run, and asks again only in
+		// another run.
+		if done || i >= n || ctx.Err() != nil || r.approval {
 			if !done && r.outcome == success {
 				r.outcome = failure
 			}

@@ -821,6 +821,12 @@ func (e *engine) turn(ctx context.Context, inst *instance, leave func()) {
 		if res.OutputErr != nil {
 			next.Pending.RawOutput = string(res.RawOutput)
 		}
+		if len(expr.JSON(next.Pending.Outputs))+len(expr.JSON(next.Pending.RawOutput)) > plugin.MaxOutputs {
+			// pending leaves room for the outputs of the next attempt:
+			// outputs too large to keep with the raw output, which holds
+			// what the program wrote, are not kept.
+			next.Pending.Outputs, marks = nil, nil
+		}
 		next.Pending.Hidden = withHidden(next.Pending.Hidden, map[string][]string{state.PartOutputs: slices.Sorted(maps.Keys(marks))}, state.PartOutputs)
 		tag, err := e.store.Put(addr, next, etag)
 		var keyErr *state.KeyError
