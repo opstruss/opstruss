@@ -1,0 +1,38 @@
+# A step that retry runs again reads the locals of its own component at
+# each attempt, as at the first, also when a local of the project reads
+# kv(); so does a task: step.
+
+env HOME=$WORK/home
+
+exec opstruss check
+grep -count=2 '^component$' site/seen
+exec opstruss calls
+grep -count=2 '^component$' site/seen-task
+
+-- opstruss.yaml --
+name: app
+locals:
+  who: "${{ kv('missing') == null ? 'project' : 'other' }}"
+units:
+  site:
+    uses: ./site
+    approval: auto
+-- site/opstruss.yaml --
+locals:
+  who: component
+tasks:
+  check:
+    steps:
+      - run: echo "$WHO" >> seen; test $(wc -l < seen) -ge 2
+        env: {WHO: '${{ locals.who }}'}
+        retry: {attempts: 2, delay: 1ms}
+  inner:
+    internal: true
+    inputs:
+      who: {type: string, required: true}
+    run: echo "$INPUT_WHO" >> seen-task; test $(wc -l < seen-task) -ge 2
+  calls:
+    steps:
+      - task: inner
+        with: {who: '${{ locals.who }}'}
+        retry: {attempts: 2, delay: 1ms}

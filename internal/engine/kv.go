@@ -95,6 +95,19 @@ func (k *kvMemory) scope(s *expr.Scope) *expr.Scope {
 	return s.WithMarks("locals", k.localsOf(k.e.top, k.e.inputs), s.Marks["locals"])
 }
 
+// scopeIn gives s kv() of this memory and the locals that read it where a
+// program of f runs: none for a task of a plugin, those of the component
+// in one, and those of the project otherwise.
+func (k *kvMemory) scopeIn(f *frame, plugin bool, s *expr.Scope) *expr.Scope {
+	switch {
+	case plugin:
+		return s.WithKV(k.get, k.marked)
+	case f != nil && f.node != nil:
+		return s.WithMarks("locals", k.localsOf(f, k.e.inputsOf(f)), s.Marks["locals"]).WithKV(k.get, k.marked)
+	}
+	return k.scope(s)
+}
+
 // localsOf is locals.<name> in f with this memory: those of the project,
 // with the ones that read kv() evaluated with it once, or those of the
 // component, evaluated with inputs, its inputs as they are now.

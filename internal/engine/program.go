@@ -82,7 +82,7 @@ func (e *engine) try(ctx context.Context, p progSpec, s *expr.Scope, attempt fun
 	}
 	for i := 1; ; i++ {
 		if i > 1 {
-			s = e.newKV().scope(s)
+			s = e.newKV().scopeIn(p.frame, p.plugin != nil, s)
 		}
 		r, judged, err := attempt(s)
 		if err != nil {

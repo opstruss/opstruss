@@ -795,17 +795,12 @@ func (tc *taskCtx) scopeNow() *expr.Scope {
 	tc.mu.Lock()
 	defer tc.mu.Unlock()
 	s := tc.scope.WithMarks("steps", maps.Clone(tc.steps), anyMarks(maps.Clone(tc.marks)))
-	if tc.c.plugin != nil {
-		k := tc.e.newKV()
-		return s.WithKV(k.get, k.marked)
+	f := tc.c.where(tc.e)
+	if tc.c.plugin == nil {
+		units, unitMarks := tc.e.unitsView(f, slices.Sorted(maps.Keys(f.in.Units)))
+		s = s.WithMarks("units", units, anyMarks(unitMarks))
 	}
-	f, k := tc.c.where(tc.e), tc.e.newKV()
-	units, unitMarks := tc.e.unitsView(f, slices.Sorted(maps.Keys(f.in.Units)))
-	s = s.WithMarks("units", units, anyMarks(unitMarks))
-	if f.node == nil {
-		return k.scope(s)
-	}
-	return s.WithMarks("locals", k.localsOf(f, tc.e.inputsOf(f)), s.Marks["locals"]).WithKV(k.get, k.marked)
+	return tc.e.newKV().scopeIn(f, tc.c.plugin != nil, s)
 }
 
 func (tc *taskCtx) record(id string, r *taskResult) {
@@ -978,7 +973,7 @@ func (tc *taskCtx) stepOnce(ctx context.Context, s *model.Step, label string, d 
 		}
 	case s.Task != "":
 		res = tc.e.try(ctx, progSpec{frame: tc.c.where(tc.e), label: tc.label, step: label, task: tc.name, retry: s.Retry,
-			failedWhen: s.FailedWhen, changedWhen: s.ChangedWhen}, scope, func(scope *expr.Scope) (*taskResult, map[string]any, error) {
+			failedWhen: s.FailedWhen, changedWhen: s.ChangedWhen, plugin: tc.c.plugin}, scope, func(scope *expr.Scope) (*taskResult, map[string]any, error) {
 			r := tc.callStep(ctx, s, label, scope)
 			return r, r.outputs, nil
 		})
