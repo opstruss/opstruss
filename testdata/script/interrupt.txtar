@@ -37,6 +37,18 @@ stdout '"outcome": "cancelled"'
 stdout '"reason": "signal"'
 stdout '"exit_code": 143'
 
+# a program that exits 0 once interrupted did not finish: the step after
+# it does not run, and the task is cancelled
+exec sh -c 'opstruss graceful > graceful.out 2>&1 & echo $! > pid; wait $!; echo $? > code' &graceful&
+waitfile started-graceful
+exec sh -c 'kill -INT $(cat pid)'
+wait graceful
+grep '^130$' code
+grep 'graceful: graceful step 1: interrupted: the program exited with 0 after the run stopped it' graceful.out
+! exists after-graceful
+exec sh record.sh graceful
+stdout '"outcome": "cancelled"'
+
 # a run in the daemon that this process follows
 cd daemon
 exec sh -c 'opstruss -d wait > wait.out 2> wait.err & echo $! > pid; wait $!; echo $? > code' &task&
@@ -84,6 +96,13 @@ tasks:
     run: |
       touch started-quick
       exec sleep 30
+  graceful:
+    steps:
+      - run: |
+          trap 'exit 0' INT
+          touch started-graceful
+          while :; do sleep 0.01; done
+      - write: {path: after-graceful, content: x}
 -- daemon/opstruss.yaml --
 name: shop
 units:

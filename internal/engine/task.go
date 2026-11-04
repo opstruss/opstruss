@@ -658,7 +658,7 @@ func (e *engine) taskOnce(ctx context.Context, name, label string, t *model.Task
 		}
 		timeout = d
 	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	ctx, cancel := withTimeout(ctx, timeout)
 	defer cancel()
 	e.startTask(c.address(), label, "")
 	var res *taskResult
@@ -926,13 +926,22 @@ func (tc *taskCtx) failEnded(label string, err error) *taskResult {
 // stepOnce runs the body of one step and judges it with failed_when,
 // changed_when, and retry.
 func (tc *taskCtx) stepOnce(ctx context.Context, s *model.Step, label string, d defaults, scope *expr.Scope) *taskResult {
+	if len(s.Block) == 0 && ctx.Err() != nil {
+		// Nothing starts once the time of the task ran out or the run was
+		// cancelled; a block still runs its always:, with a context of its
+		// own.
+		if errors.Is(ctx.Err(), context.Canceled) {
+			return &taskResult{outcome: cancelled, outputs: map[string]any{}}
+		}
+		return tc.fail(label, fmt.Errorf("not started: %w", context.Cause(ctx)))
+	}
 	if s.Timeout != "" {
 		t, err := time.ParseDuration(s.Timeout)
 		if err != nil {
 			return tc.fail(label, err)
 		}
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, t)
+		ctx, cancel = withTimeout(ctx, t)
 		defer cancel()
 	}
 	var res *taskResult
@@ -1026,11 +1035,16 @@ func (tc *taskCtx) callStep(ctx context.Context, s *model.Step, label string, sc
 		for _, v := range got {
 			u := v.(map[string]any)
 			res.changed = res.changed || u["changed"] == true
-			if o := u["outcome"]; o == failure || o == skipped {
-				res.outcome = failure
-			}
-			if u["outcome"] == failure {
-				res.approval = false
+			switch u["outcome"] {
+			case failure:
+				res.outcome, res.approval = failure, false
+			case skipped:
+				// What stopped for approval did not run; plan skips only what
+				// another run holds or what comes after a unit it cannot plan,
+				// and the plan command does not fail for the first.
+				if s.Task != "plan" {
+					res.outcome = failure
+				}
 			}
 		}
 		if res.outcome == success {

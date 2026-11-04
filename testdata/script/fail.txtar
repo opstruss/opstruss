@@ -34,7 +34,7 @@ stderr '^default/needs-tool: cannot be planned$'
 
 # timeout stops the program with stop.signal, then kills it
 ! exec opstruss up slow --yes
-stderr '^default/slow: the program exited with 143$'
+stderr '^default/slow: the program timed out after 300ms$'
 
 # a run nested in a program of this one fails at once on a lock it holds
 ! exec opstruss up nested --yes

@@ -49,7 +49,10 @@ list.
 - `id` names a step, whose outputs a later step reads as
   `steps.<id>.outputs.<name>`.
 - `if` skips a step, `retry` runs it again, `timeout` stops it, and
-  `continue_on_error` goes on after it fails.
+  `continue_on_error` goes on after it fails. A step that a timeout or a
+  cancel stops fails, also when its program exits 0 once stopped; once
+  the time of the task runs out or the run is cancelled, no other step
+  starts, except those of `always:`.
 - `needs` runs other tasks first, once per run.
 - `shell`, `dir`, `env`, `pass`, and `tty` of a task or a `block` are the
   defaults of the steps in it; a step writes its own to change one.

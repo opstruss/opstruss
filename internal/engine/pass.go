@@ -94,7 +94,7 @@ func (e *engine) unitPass(ctx context.Context, op string, p pass) (map[string]an
 					digest = inst.plan.approval()
 				}
 				e.read[inst.address] = digest
-				out[e.short(inst.address)] = map[string]any{"outcome": success, "changed": false, "outputs": inst.outputsNow(),
+				out[e.short(inst.address)] = map[string]any{"outcome": inst.plan.outcome(), "changed": false, "outputs": inst.outputsNow(),
 					"plan": inst.plan.view(exact)}
 				if m := inst.viewMarks(); m != nil {
 					marks[e.short(inst.address)] = m

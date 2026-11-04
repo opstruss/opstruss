@@ -1,0 +1,58 @@
+# task: plan fails when a unit cannot be planned, as the plan command
+# does: the steps after it do not run, rescue: does, and a unit after the
+# one that fails is skipped. A unit that another run holds is skipped
+# without failing the step.
+
+env HOME=$WORK/home
+
+! exec opstruss check
+stdout '^default/build: error: requires: no-such-tool-x is not in PATH$'
+! exists continued
+
+exec opstruss guarded
+grep '^failure skipped$' rescued
+
+exec opstruss up slow --yes &slow&
+waitfile started
+exec opstruss look
+stdout '^look: look step 2 \| slow skipped$'
+exec touch release
+wait slow
+
+-- opstruss.yaml --
+name: app
+units:
+  build:
+    run: 'true'
+    requires: [no-such-tool-x]
+  after:
+    run: 'true'
+    needs: [build]
+  slow:
+    run: touch started; while [ ! -f release ]; do sleep 0.05; done
+tasks:
+  check:
+    steps:
+      - id: preview
+        task: plan
+        units: [build, after]
+      - run: touch continued
+  guarded:
+    steps:
+      - block:
+          - id: preview
+            task: plan
+            units: [build, after]
+        rescue:
+          - run: echo "$B $A" > rescued
+            env:
+              B: ${{ steps.preview.units['build'].outcome }}
+              A: ${{ steps.preview.units['after'].outcome }}
+  look:
+    steps:
+      - id: preview
+        task: plan
+        units: [slow]
+      - run: echo "slow $S"
+        env:
+          S: ${{ steps.preview.units['slow'].outcome }}

@@ -394,8 +394,8 @@ func (e *engine) planPlugin(ctx context.Context, inst *instance, r *resolved, re
 	for _, w := range res.Warnings {
 		e.warn(inst.address, "%s", w)
 	}
-	if res.ExitCode != 0 {
-		return nil, fmt.Errorf("plan exited with %d", res.ExitCode)
+	if err := exitErr(res, "plan"); err != nil {
+		return nil, err
 	}
 	pp := &pluginPlan{}
 	if len(strings.TrimSpace(string(res.Plan))) == 0 {

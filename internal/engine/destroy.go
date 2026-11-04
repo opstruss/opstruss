@@ -396,7 +396,7 @@ func (e *engine) destroyOne(ctx context.Context, l *leftover) string {
 		}
 	}
 	parent := ctx
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	ctx, cancel := withTimeout(ctx, timeout)
 	defer cancel()
 	token, err := e.lock(ctx, addr)
 	if err != nil {
@@ -652,10 +652,7 @@ func (e *engine) runDestroy(ctx context.Context, addr, stateKey string, c *state
 	for _, w := range res.Warnings {
 		e.warn(addr, "%s", w)
 	}
-	if res.ExitCode != 0 {
-		return fmt.Errorf("destroy exited with %d", res.ExitCode)
-	}
-	return nil
+	return exitErr(res, "destroy")
 }
 
 // destroyCommand reads the program of a destroy contract: a script, or argv.

@@ -646,7 +646,7 @@ func (e *engine) turn(ctx context.Context, inst *instance, leave func()) {
 		timeout = d
 	}
 	parent := ctx
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	ctx, cancel := withTimeout(ctx, timeout)
 	defer cancel()
 	token, err := e.lock(ctx, addr)
 	if err != nil {
@@ -1001,13 +1001,36 @@ func (e *engine) attempts(ctx context.Context, inst *instance, r *resolved, rec 
 
 // outcomeErr says why a program's result is a failure, or nil.
 func outcomeErr(res *plugin.Result) error {
+	if err := exitErr(res, "the program"); err != nil {
+		return err
+	}
+	return res.OutputErr
+}
+
+// exitErr says why what, a program that ended with res, failed: its timeout
+// stopped it, it exited with a code other than 0, or the run stopped it,
+// which leaves it unfinished whatever it exited with.
+func exitErr(res *plugin.Result, what string) error {
+	var t timedOut
 	switch {
+	case errors.As(res.Stopped, &t):
+		return fmt.Errorf("%s %w", what, t)
 	case res.ExitCode != 0:
-		return fmt.Errorf("the program exited with %d", res.ExitCode)
-	case res.OutputErr != nil:
-		return res.OutputErr
+		return fmt.Errorf("%s exited with %d", what, res.ExitCode)
+	case res.Stopped != nil:
+		return fmt.Errorf("%s exited with 0 after the run stopped it", what)
 	}
 	return nil
+}
+
+// timedOut is the cause of a context that a timeout of d ended.
+type timedOut time.Duration
+
+func (d timedOut) Error() string { return "timed out after " + time.Duration(d).String() }
+
+// withTimeout is context.WithTimeout whose cause names the timeout.
+func withTimeout(ctx context.Context, d time.Duration) (context.Context, context.CancelFunc) {
+	return context.WithTimeoutCause(ctx, d, timedOut(d))
 }
 
 // exec runs the program of up for inst, the task of a unit that uses one,

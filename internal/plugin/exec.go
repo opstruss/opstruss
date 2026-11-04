@@ -89,6 +89,7 @@ type Result struct {
 	Stderr    string
 	Read      map[string][]byte // each stream that an output reads, at most MaxOutputs, which the caller logs once it knows whether that output is sensitive
 	Warnings  []string
+	Stopped   error // the cause of the context that stopped the program before it ended, whatever it exited with
 }
 
 // shells run a script by shell:. sh and bash stop at the first command
@@ -370,6 +371,7 @@ func (r *Run) Exec(ctx context.Context, c *Call) (*Result, error) {
 	select {
 	case <-exited:
 	case <-ctx.Done():
+		res.Stopped = context.Cause(ctx)
 		if err := g.Stop(stop.Signal, stop.Grace, kill); err != nil {
 			res.Warnings = append(res.Warnings, err.Error())
 		}

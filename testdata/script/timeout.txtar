@@ -1,0 +1,60 @@
+# A program that its timeout stops fails, also when it exits 0 once
+# stopped: the steps after it do not run, rescue: and always: do, and a
+# unit keeps the attempt pending rather than taking its digest. Nothing
+# starts once the time of a task ran out, not even after a step with
+# continue_on_error. The programs here trap SIGTERM and exit 0.
+
+env HOME=$WORK/home
+
+! exec opstruss check
+stderr 'the program timed out after 300ms'
+! exists continued
+
+! exec opstruss onward
+stderr 'not started: timed out after 300ms'
+! exists continued
+
+exec opstruss guarded
+exists rescued
+exists always
+! exists continued
+
+! exec opstruss up timed --yes
+stderr '^default/timed: the program timed out after 300ms$'
+exec opstruss state pull timed
+stdout '"pending"'
+exec opstruss plan timed
+stdout '^default/timed: will run'
+
+-- opstruss.yaml --
+name: app
+units:
+  timed:
+    timeout: 300ms
+    stop: {signal: SIGTERM, grace: 2s}
+    run: trap 'exit 0' TERM; while :; do sleep 0.01; done
+tasks:
+  check:
+    timeout: 300ms
+    stop: {signal: SIGTERM, grace: 2s}
+    steps:
+      - run: trap 'exit 0' TERM; while :; do sleep 0.01; done
+      - write: {path: continued, content: x}
+  onward:
+    timeout: 300ms
+    stop: {signal: SIGTERM, grace: 2s}
+    steps:
+      - run: trap 'exit 0' TERM; while :; do sleep 0.01; done
+        continue_on_error: true
+      - write: {path: continued, content: x}
+  guarded:
+    stop: {signal: SIGTERM, grace: 2s}
+    steps:
+      - block:
+          - run: trap 'exit 0' TERM; while :; do sleep 0.01; done
+            timeout: 300ms
+          - write: {path: continued, content: x}
+        rescue:
+          - write: {path: rescued, content: x}
+        always:
+          - write: {path: always, content: x}
