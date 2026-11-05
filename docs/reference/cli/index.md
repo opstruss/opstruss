@@ -32,7 +32,7 @@ opstruss [flags]
 
 | Command | Description |
 |---|---|
-| [`opstruss init`](./init) | Set up a project in this directory |
+| [`opstruss init`](./init) | Set up the project here and fetch what it uses |
 | [`opstruss validate`](./validate) | Check the project's files without running anything |
 | [`opstruss plan`](./plan) | Show what up would do and why, without changing anything |
 | [`opstruss up`](./up) | Bring the units up: each runs when its definition changed |

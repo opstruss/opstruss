@@ -103,8 +103,8 @@ the file:
 Each command that reads the project writes that file again when what
 the project uses changes, so each `with:` and each call of a task
 completes the inputs of the plugin, component, or task it names, with
-their descriptions. In a fresh clone, `opstruss uses fetch`, or any
-command that reads the project, writes it. An include file in a
+their descriptions. In a fresh clone, `opstruss init`, or any command
+that reads the project, writes it. An include file in a
 subdirectory names it from there, as `$schema=../.opstruss/schema.json`.
 
 The schema without what a project uses is

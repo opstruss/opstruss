@@ -1,8 +1,9 @@
 # opstruss init sets up a project, adding only what is missing:
 # opstruss.yaml, whose first line names the schema for editors that init
-# writes in .opstruss/, and .opstruss/ in .gitignore. It makes no key: the
-# first command that needs the age key of this machine or the data key of
-# a stack makes it.
+# writes in .opstruss/, and .opstruss/ in .gitignore. Then it checks every
+# stack as validate does and fetches what the project uses, so a fresh
+# clone is ready to plan. It makes no key: the first command that needs the
+# age key of this machine or the data key of a stack makes it.
 
 env HOME=$WORK/home
 
@@ -21,7 +22,8 @@ exists 'My_App 2/.opstruss/schema.json'
 
 # init again changes nothing, and --name only names a new project
 exec opstruss -C 'My_App 2' init
-stdout '^nothing to do: the project is set up$'
+! stdout 'wrote'
+stdout '^next: run opstruss plan$'
 cmp 'My_App 2/opstruss.yaml' want/opstruss.yaml
 ! exec opstruss -C 'My_App 2' init --name other
 stderr 'already has opstruss.yaml'
@@ -54,15 +56,35 @@ cp stacks.yaml stacks/opstruss.yaml
 exec opstruss -C stacks init --stack dev --json
 stdout '"wrote": \['
 stdout '"dev/_meta"'
+stdout '"sources": \[\]'
 ! stdout 'age'
 exec opstruss -C stacks state pull _meta --stack dev
 stdout '"project": "stacks"'
 ! stdout '"key"'
 ! exists stacks/.opstruss/state/prod/_meta
 exec opstruss -C stacks init --stack dev
-stdout 'nothing to do'
+! stdout 'wrote'
 ! exec opstruss -C stacks init --stack qa
 stderr 'qa'
+
+# in a clone, init writes the schema that the first line names, and says
+# what comes next
+mkdir clone
+cp clone.yaml clone/opstruss.yaml
+exec opstruss -C clone init
+stdout '^wrote .gitignore$'
+stdout '^next: run opstruss plan$'
+exists clone/.opstruss/schema.json
+
+# a project with problems gets all of them, as validate gives them, and no
+# schema
+mkdir broken
+cp broken.yaml broken/opstruss.yaml
+! exec opstruss -C broken init
+stderr '^opstruss.yaml:3:1: unit: unknown key; did you mean units\?$'
+stderr '^opstruss.yaml:4:1: task: unknown key'
+! stdout .
+! exists broken/.opstruss/schema.json
 
 -- want/opstruss.yaml --
 # yaml-language-server: $schema=.opstruss/schema.json
@@ -81,3 +103,15 @@ name: stacks
 stacks:
   dev: {}
   prod: {}
+-- clone.yaml --
+# yaml-language-server: $schema=.opstruss/schema.json
+opstruss: "1.0"
+name: clone
+units:
+  hello:
+    run: echo hello
+-- broken.yaml --
+# yaml-language-server: $schema=.opstruss/schema.json
+name: broken
+unit: {}
+task: {}

@@ -18,8 +18,11 @@ cp broken.yaml opstruss.yaml
 ! exec opstruss validate
 grep '"description": "The database it makes"' .opstruss/schema.json
 
-# uses fetch, which a clone runs first, writes it too
+# init, which a clone runs first, writes it too, and so does uses fetch
 cp more.yaml opstruss.yaml
+rm .opstruss/schema.json
+exec opstruss init
+grep '"description": "The database it makes"' .opstruss/schema.json
 rm .opstruss/schema.json
 exec opstruss uses fetch
 grep '"description": "The database it makes"' .opstruss/schema.json

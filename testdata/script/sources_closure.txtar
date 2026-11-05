@@ -1,7 +1,11 @@
 # A transitive closure has one root lock, with one commit per repository/ref.
 env HOME=$WORK/home
 sourcerepo repo
-exec opstruss uses fetch
+# init in a clone fetches the closure and says that it wrote the lock
+exec opstruss init
+stdout '^wrote opstruss.lock$'
+stdout '^github.com/opstruss/catalog/b@main +[0-9a-f]{7} +ready$'
+stdout '^next: run opstruss plan$'
 grep 'catalog/a@v1' opstruss.lock
 grep 'catalog/b@main' opstruss.lock
 grep 'catalog/c@main' opstruss.lock

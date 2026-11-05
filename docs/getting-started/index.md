@@ -206,6 +206,11 @@ project, so that every machine and CI run the same plugins until
 gets `.terraform.lock.hcl` next to it at its first `up`, the providers
 that OpenTofu chose, which is committed too; this one has none.
 
+In a clone of the project, `opstruss init` fetches the same commits, with
+the binaries for that machine, and checks every stack, so the clone is
+ready to plan. `opstruss uses fetch` does only the fetching, for CI and
+scripts.
+
 ## A task
 
 A task is a command of the project, with its inputs as flags:

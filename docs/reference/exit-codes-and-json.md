@@ -119,7 +119,7 @@ events are to the millisecond.
 | `uses prune` | `removed` |
 | `validate` | `valid`, `problems`, and `warnings`, each problem and warning with `file`, `line`, `column`, `path`, and `message`; `line` and `column` start at 1, and `column` counts characters, not bytes; `file` is relative to the project, or `<repository>@<ref>/<path>` for a file of a remote plugin, component, or catalog; only problems make `valid` false |
 | `stop` | `stack`, `stopped` |
-| `init` | `wrote` |
+| `init` | `wrote`, the files it wrote, and `sources`, the pins it made ready |
 | `version` | `version`, `os`, `arch` |
 | A command that fails before it reads | `error` |
 

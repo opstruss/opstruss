@@ -100,9 +100,9 @@ without a change on their side.
   at `https://opstruss.github.io/v<major>.<minor>/schema/`; a patch
   release never makes a file that was valid there invalid. The first line
   that `opstruss init` writes in `opstruss.yaml` names
-  `.opstruss/schema.json`, which stays at that path, and which `validate`,
-  `uses fetch`, and `uses update` write again; what it holds may change,
-  since it only helps an editor and `validate` decides.
+  `.opstruss/schema.json`, which stays at that path, and which `init`,
+  `validate`, `uses fetch`, and `uses update` write again; what it holds
+  may change, since it only helps an editor and `validate` decides.
 - **Links stay.** The page that the help of each command ends with, at
   `https://opstruss.github.io/v<major>.<minor>/reference/cli/<command>`,
   stays for as long as the site keeps that version; a page that moves
