@@ -25,7 +25,8 @@
     },
     "state": {
       "description": "Where the state of a unit is: opstruss, the outputs of up in its record, or tool, the files of the tool in the tool directory of the unit; opstruss by default.",
-      "enum": ["opstruss", "tool"]
+      "enum": ["opstruss", "tool"],
+      "default": "opstruss"
     },
     "inputs": {
       "$ref": "project.json#/$defs/inputs",

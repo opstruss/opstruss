@@ -190,7 +190,8 @@
         "value": { "description": "The value: text, or data that format writes." },
         "format": {
           "$ref": "#/$defs/format",
-          "description": "How the value is written; text by default."
+          "description": "How the value is written; text by default.",
+          "default": "text"
         }
       },
       "required": ["value"],
@@ -340,7 +341,8 @@
         },
         "from": {
           "description": "Where the value comes from: stdout, stderr, the file at path, or output, the lines name=value written to $OPSTRUSS_OUTPUT; output by default.",
-          "enum": ["stdout", "stderr", "file", "output"]
+          "enum": ["stdout", "stderr", "file", "output"],
+          "default": "output"
         },
         "path": {
           "description": "The file that from: file reads, relative to the directory of the program.",
@@ -629,7 +631,8 @@
         },
         "shell": {
           "$ref": "#/$defs/shell",
-          "description": "The shell that runs a script; sh by default."
+          "description": "The shell that runs a script; sh by default.",
+          "default": "sh"
         },
         "dir": {
           "description": "The directory that the programs start in, relative to this file.",
@@ -673,7 +676,8 @@
         },
         "restart": {
           "description": "When the daemon starts the service again after it exits: no, on-failure, or always; on-failure by default.",
-          "enum": ["no", "on-failure", "always"]
+          "enum": ["no", "on-failure", "always"],
+          "default": "on-failure"
         },
         "stop": { "$ref": "#/$defs/stop", "description": "How each program of the unit is stopped; each key it gives wins over the stop of what the unit uses." },
         "ready": {
@@ -694,10 +698,11 @@
               "$ref": "#/$defs/command",
               "description": "A program that exits with 0 once the service is ready."
             },
-            "interval": { "$ref": "#/$defs/duration", "description": "How often the check runs." },
+            "interval": { "$ref": "#/$defs/duration", "description": "How often the check runs; 1s by default.", "default": "1s" },
             "timeout": {
               "$ref": "#/$defs/duration",
-              "description": "How long up waits for the service to be ready."
+              "description": "How long up waits for the service to be ready; 1m by default.",
+              "default": "1m"
             }
           },
           "patternProperties": { "^x-": true },
@@ -721,7 +726,8 @@
         },
         "timeout": {
           "$ref": "#/$defs/duration",
-          "description": "How long a program of the unit may run."
+          "description": "How long a program of the unit may run; 6h by default.",
+          "default": "6h"
         },
         "protect": { "description": "Refuse to destroy the unit, and a plan of its plugin that deletes or replaces it.", "type": "boolean" },
         "retry": {
@@ -756,7 +762,8 @@
         "steps": { "$ref": "#/$defs/steps", "description": "The steps of the task." },
         "shell": {
           "$ref": "#/$defs/shell",
-          "description": "The shell that runs a script, also for each step; sh by default."
+          "description": "The shell that runs a script, also for each step; sh by default.",
+          "default": "sh"
         },
         "dir": {
           "description": "The directory that the programs start in, relative to this file, also for each step.",
@@ -802,10 +809,12 @@
         },
         "approval": {
           "$ref": "#/$defs/approval",
-          "description": "ask to wait for approval of the changes that the task makes, auto to apply them without asking."
+          "description": "ask to wait for approval of the changes that the task makes, auto to apply them without asking; auto by default.",
+          "default": "auto"
         },
         "concurrency": {
-          "description": "What a new run of the task does while another goes on, also across the tasks of one group.",
+          "description": "What a new run of the task does while another goes on, also across the tasks of one group; queue by default.",
+          "default": "queue",
           "oneOf": [
             { "$ref": "#/$defs/concurrencyMode" },
             {
@@ -827,7 +836,7 @@
             }
           ]
         },
-        "timeout": { "$ref": "#/$defs/duration", "description": "How long the task may run." },
+        "timeout": { "$ref": "#/$defs/duration", "description": "How long the task may run; 6h by default.", "default": "6h" },
         "stop": { "$ref": "#/$defs/stop", "description": "How the program is stopped, also each step's program and the task a step calls by name; each key it gives wins over the stop of the task it calls. always: has its grace after a cancel." },
         "retry": {
           "$ref": "#/$defs/retry",
@@ -851,8 +860,9 @@
       "additionalProperties": { "$ref": "#/$defs/call" }
     },
     "concurrencyMode": {
-      "description": "What a new run does while another run of the task goes on: queue, cancel the other, skip, or run in parallel.",
-      "enum": ["queue", "cancel", "skip", "parallel"]
+      "description": "What a new run does while another run of the task goes on: queue, cancel the other, skip, or run in parallel; queue by default.",
+      "enum": ["queue", "cancel", "skip", "parallel"],
+      "default": "queue"
     },
     "steps": {
       "description": "Steps that run one after another.",
@@ -1058,7 +1068,8 @@
         },
         "method": {
           "description": "The HTTP method; POST by default.",
-          "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"],
+          "default": "POST"
         },
         "secret": {
           "description": "The secret that signs the requests, as ${{ secrets.<name> }}.",
@@ -1096,8 +1107,9 @@
           ]
         },
         "respond": {
-          "description": "accepted to answer 202 with the id of the run at once, or wait to answer with the outputs of the task.",
-          "enum": ["accepted", "wait"]
+          "description": "accepted to answer 202 with the id of the run at once, or wait to answer with the outputs of the task; accepted by default.",
+          "enum": ["accepted", "wait"],
+          "default": "accepted"
         },
         "if": {
           "$ref": "#/$defs/condition",
@@ -1124,7 +1136,8 @@
         },
         "stream": {
           "description": "Which output of the service: stdout, stderr, or both; both by default.",
-          "enum": ["stdout", "stderr", "both"]
+          "enum": ["stdout", "stderr", "both"],
+          "default": "both"
         },
         "if": {
           "$ref": "#/$defs/condition",
@@ -1159,7 +1172,8 @@
         },
         "outcome": {
           "description": "Which runs: success, failure, or any; success by default.",
-          "enum": ["success", "failure", "any"]
+          "enum": ["success", "failure", "any"],
+          "default": "success"
         },
         "if": {
           "$ref": "#/$defs/condition",

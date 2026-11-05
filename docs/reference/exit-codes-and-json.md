@@ -13,6 +13,9 @@
   approval exits with 1.
 - `plan` exits with 1 when a unit cannot be planned, and with 0 when a
   unit is held by another run.
+- `doctor` exits with 1 only when a check is `error`, which is what fails
+  a run. A later version may add checks, so it fails only where a run
+  would.
 - A run that a signal stops ends `cancelled`: its record and its last
   event have `reason` `signal` and the same `exit_code` as the process. A
   run that ended before the signal stopped anything keeps its outcome.
@@ -109,12 +112,12 @@ events are to the millisecond.
 | `list` | `stack`; `tasks`, each with `name`, `description`, `internal`, `triggers`, `next`, and of its last run `run`, `via`, `outcome`, and `ended`; `units`, each with `address`, `kind`, `state` (`up`, `pending`, `absent`, or the state of a service), `run`, and `outputs`; `triggers`, with `daemon` and `error`, when a task has triggers |
 | `runs` | `stack`; `runs`, newest first, each a record of a run (below): the 20 newest, or as many as `--limit` says, and every one with `--limit 0` |
 | `outputs` | `stack`; `outputs`, by name |
-| `doctor` | `stack`; `checks`, each with `check`, `status`, `message`, and `path` or `name` |
-| `explain` | `project`, `stack`, `inputs` (each with its `value` and where it is `from`), `order`, `units`, `tasks`, `outputs` |
+| `doctor` | `stack`; `checks`, each with `check`, `status`, `message`, and when they apply `name`, `path`, and `for`, what needs it |
+| `explain` | `project`, `stack`, `inputs` (each with its `value` and where it is `from`), `order`, and `units`, `tasks`, `outputs`, and the other keys of the project, as its files have them with the stack applied |
 | `state list` | `stack`; `records`, each with `address`, `id`, and `kind`; `kv` |
 | `uses`, `uses fetch`, `uses update` | `sources` |
 | `uses prune` | `removed` |
-| `validate` | `valid`, `problems`, and `warnings`, each problem and warning with `file`, `line`, `column`, `path`, and `message`; `file` is relative to the project, or `<repository>@<ref>/<path>` for a file of a remote plugin, component, or catalog; only problems make `valid` false |
+| `validate` | `valid`, `problems`, and `warnings`, each problem and warning with `file`, `line`, `column`, `path`, and `message`; `line` and `column` start at 1, and `column` counts characters, not bytes; `file` is relative to the project, or `<repository>@<ref>/<path>` for a file of a remote plugin, component, or catalog; only problems make `valid` false |
 | `stop` | `stack`, `stopped` |
 | `init` | `wrote` |
 | `version` | `version`, `os`, `arch` |

@@ -251,7 +251,7 @@ A unit: something that up brings up and destroy takes away, with exactly one of 
 | `if` | string or boolean | A condition that decides whether the unit is in the stack; one that leaves it is destroyed. |
 | `for_each` | array or object or string | A list or a map: one instance of the unit per item, read as each.key and each.value. A key is part of the address of its instance: lowercase letters, digits, ., -, and \_; a list holds strings, each its own key. |
 | `approval` | one of `ask`, `auto` | ask to wait for approval of changes to this unit, auto to apply them without asking. |
-| `timeout` | string | How long a program of the unit may run. |
+| `timeout` | string | How long a program of the unit may run; 6h by default. |
 | `protect` | boolean | Refuse to destroy the unit, and a plan of its plugin that deletes or replaces it. |
 | `retry` | [Retry](#retry) | Running the program again when it fails. |
 
@@ -264,8 +264,8 @@ When the service counts as started: a URL, a port, or a program; up waits for it
 | `http` | string | A URL that answers with a 2xx status once the service is ready. |
 | `tcp` | string | A host:port that accepts a connection once the service is ready. |
 | `run` | string or list of string | A program that exits with 0 once the service is ready. |
-| `interval` | string | How often the check runs. |
-| `timeout` | string | How long up waits for the service to be ready. |
+| `interval` | string | How often the check runs; 1s by default. |
+| `timeout` | string | How long up waits for the service to be ready; 1m by default. |
 
 ## Task {#task}
 
@@ -290,9 +290,9 @@ Exactly one of run, steps, or one call of a task.
 | `for_each` | array or object or string | A list or a map: the task runs once per item, read as each.key and each.value; a string of a list is its own key, and another item has its index. |
 | `max_parallel` | integer | How many items of for\_each run at once; OPSTRUSS\_PARALLEL by default. |
 | `on` | [Triggers](#triggers) | Triggers that run the task from the daemon of the stack. |
-| `approval` | one of `ask`, `auto` | ask to wait for approval of the changes that the task makes, auto to apply them without asking. |
-| `concurrency` | one of `queue`, `cancel`, `skip`, `parallel` or [Task › concurrency](#task-concurrency) | What a new run of the task does while another goes on, also across the tasks of one group. |
-| `timeout` | string | How long the task may run. |
+| `approval` | one of `ask`, `auto` | ask to wait for approval of the changes that the task makes, auto to apply them without asking; auto by default. |
+| `concurrency` | one of `queue`, `cancel`, `skip`, `parallel` or [Task › concurrency](#task-concurrency) | What a new run of the task does while another goes on, also across the tasks of one group; queue by default. |
+| `timeout` | string | How long the task may run; 6h by default. |
 | `stop` | [Stop](#stop) | How the program is stopped, also each step's program and the task a step calls by name; each key it gives wins over the stop of the task it calls. always: has its grace after a cancel. |
 | `retry` | [Retry](#retry) | Running the task again when it fails. |
 | `failed_when` | string or boolean | A condition on the outputs that marks the task failed. |
@@ -304,7 +304,7 @@ Any other key is a call of a task by that name, with its inputs as the value.
 
 ## Task › concurrency {#task-concurrency}
 
-What a new run of the task does while another goes on, also across the tasks of one group.
+What a new run of the task does while another goes on, also across the tasks of one group; queue by default.
 
 | Key | Type | Description |
 |---|---|---|
@@ -379,7 +379,7 @@ An HTTP request to the daemon that runs the task, checked by its signature.
 | `method` | one of `GET`, `POST`, `PUT`, `PATCH`, `DELETE` | The HTTP method; POST by default. |
 | `secret` (required) | string | The secret that signs the requests, as ${{ secrets.&lt;name&gt; }}. |
 | `signature` (required) | one of `github`, `gitlab`, `slack`, `stripe`, `standard`, `bearer` or [Webhook › signature](#webhook-signature) | How a request is checked: the scheme of github, gitlab, slack, stripe, standard webhooks, or bearer, or a header of your own. |
-| `respond` | one of `accepted`, `wait` | accepted to answer 202 with the id of the run at once, or wait to answer with the outputs of the task. |
+| `respond` | one of `accepted`, `wait` | accepted to answer 202 with the id of the run at once, or wait to answer with the outputs of the task; accepted by default. |
 | `if` | string or boolean | A condition on the event that skips the run when false. |
 | `with` | object | Inputs of the task for runs of this trigger. |
 

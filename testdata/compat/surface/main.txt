@@ -1,0 +1,3723 @@
+builtin assert
+builtin assert input msg
+builtin assert input msg type string
+builtin assert input that
+builtin assert input that type any
+builtin command
+builtin command input argv
+builtin command input argv type array
+builtin command input argv[]
+builtin command input argv[] type string
+builtin command input script
+builtin command input script type string
+builtin command input shell
+builtin command input shell type string
+builtin command input stdin
+builtin command input stdin type object
+builtin command input stdin.format
+builtin command input stdin.format type string
+builtin command input stdin.format value "dotenv"
+builtin command input stdin.format value "json"
+builtin command input stdin.format value "lines"
+builtin command input stdin.format value "text"
+builtin command input stdin.format value "yaml"
+builtin command input stdin.value
+builtin command input stdin.value type any
+builtin command output exit_code
+builtin command output exit_code type integer
+builtin command output stderr
+builtin command output stderr type string
+builtin command output stdout
+builtin command output stdout type string
+builtin http
+builtin http input body
+builtin http input body type any
+builtin http input ca
+builtin http input ca type string
+builtin http input headers
+builtin http input headers type object
+builtin http input method
+builtin http input method default "GET"
+builtin http input method type string
+builtin http input status_code
+builtin http input status_code default "2xx"
+builtin http input status_code type any
+builtin http input timeout
+builtin http input timeout type string
+builtin http input url
+builtin http input url type string
+builtin http output body
+builtin http output body type any
+builtin http output headers
+builtin http output headers type object
+builtin http output status
+builtin http output status type integer
+builtin http output tls
+builtin http output tls type object
+builtin kv
+builtin kv input expect
+builtin kv input expect type any
+builtin kv input key
+builtin kv input key type string
+builtin kv input ttl
+builtin kv input ttl type string
+builtin kv input value
+builtin kv input value type any
+builtin kv output value
+builtin kv output value type any
+builtin log
+builtin log input level
+builtin log input level default "info"
+builtin log input level type string
+builtin log input level value "debug"
+builtin log input level value "error"
+builtin log input level value "info"
+builtin log input level value "warn"
+builtin log input msg
+builtin log input msg type any
+builtin read
+builtin read input format
+builtin read input format default "text"
+builtin read input format type string
+builtin read input format value "dotenv"
+builtin read input format value "json"
+builtin read input format value "lines"
+builtin read input format value "text"
+builtin read input format value "yaml"
+builtin read input path
+builtin read input path type string
+builtin read output content
+builtin read output content type any
+builtin set
+builtin wait
+builtin wait input duration
+builtin wait input duration type string
+builtin wait input http
+builtin wait input http type string
+builtin wait input tcp
+builtin wait input tcp type string
+builtin wait input timeout
+builtin wait input timeout type string
+builtin write
+builtin write input content
+builtin write input content type any
+builtin write input format
+builtin write input format default "text"
+builtin write input format type string
+builtin write input format value "dotenv"
+builtin write input format value "json"
+builtin write input format value "lines"
+builtin write input format value "text"
+builtin write input format value "yaml"
+builtin write input mode
+builtin write input mode type string
+builtin write input path
+builtin write input path type string
+builtin write output path
+builtin write output path type string
+command opstruss
+command opstruss destroy
+command opstruss doctor
+command opstruss exec
+command opstruss explain
+command opstruss init
+command opstruss list
+command opstruss logs
+command opstruss outputs
+command opstruss plan
+command opstruss run
+command opstruss runs
+command opstruss runs cancel
+command opstruss runs rerun
+command opstruss state
+command opstruss state list
+command opstruss state pull
+command opstruss state push
+command opstruss state rm
+command opstruss status
+command opstruss stop
+command opstruss unlock
+command opstruss up
+command opstruss uses
+command opstruss uses fetch
+command opstruss uses prune
+command opstruss uses update
+command opstruss validate
+command opstruss version
+contract INPUT_<NAME>
+contract OPSTRUSS_ADDRESS
+contract OPSTRUSS_ARTIFACTS
+contract OPSTRUSS_CONTRACT
+contract OPSTRUSS_DIGEST
+contract OPSTRUSS_INPUTS
+contract OPSTRUSS_OUTPUT
+contract OPSTRUSS_PLAN
+contract OPSTRUSS_PLUGIN_DIR
+contract OPSTRUSS_PROJECT
+contract OPSTRUSS_REASON
+contract OPSTRUSS_RESULT
+contract OPSTRUSS_RUN
+contract OPSTRUSS_RUN_PARENTS
+contract OPSTRUSS_SERVICE_ID
+contract OPSTRUSS_STACK
+contract OPSTRUSS_STATE
+contract OPSTRUSS_STATE_DIR
+contract OPSTRUSS_STATE_KEY
+contract OPSTRUSS_TASK
+contract OPSTRUSS_TEMP
+contract OPSTRUSS_WORKDIR
+env CLICOLOR_FORCE
+env FORCE_COLOR
+env GITHUB_ACTIONS
+env GITHUB_TOKEN
+env NO_COLOR
+env OPSTRUSS_AGE_KEY
+env OPSTRUSS_AGE_KEY_FILE
+env OPSTRUSS_PARALLEL
+env OPSTRUSS_RUN
+env OPSTRUSS_RUN_PARENTS
+env OPSTRUSS_STACK
+env SOPS_AGE_KEY
+env SOPS_AGE_KEY_FILE
+env TERM
+env XDG_CONFIG_HOME
+event after outcome
+event after outputs
+event after task
+event after time
+event after trigger
+event after unit
+event every time
+event every trigger
+event schedule time
+event schedule trigger
+event watch count
+event watch data
+event watch line
+event watch lines
+event watch paths
+event watch stream
+event watch time
+event watch trigger
+event watch truncated
+event watch unit
+event webhook body
+event webhook headers
+event webhook method
+event webhook path
+event webhook query
+event webhook time
+event webhook trigger
+exit 0
+exit 1
+exit 130
+exit 143
+exit 2
+flag opstruss --completion
+flag opstruss --completion type string
+flag opstruss --input
+flag opstruss --input type stringArray
+flag opstruss --json
+flag opstruss --json type bool
+flag opstruss --locked
+flag opstruss --locked type bool
+flag opstruss --stack
+flag opstruss --stack type string
+flag opstruss --version
+flag opstruss --version short -v
+flag opstruss --version type bool
+flag opstruss -C
+flag opstruss destroy --force
+flag opstruss destroy --force type bool
+flag opstruss destroy --no-deps
+flag opstruss destroy --no-deps type bool
+flag opstruss destroy --yes
+flag opstruss destroy --yes short -y
+flag opstruss destroy --yes type bool
+flag opstruss destroy -C
+flag opstruss doctor -C
+flag opstruss exec -C
+flag opstruss explain -C
+flag opstruss init --name
+flag opstruss init --name type string
+flag opstruss init -C
+flag opstruss list -C
+flag opstruss logs --follow
+flag opstruss logs --follow type bool
+flag opstruss logs -C
+flag opstruss logs -f
+flag opstruss outputs --show-sensitive
+flag opstruss outputs --show-sensitive type bool
+flag opstruss outputs -C
+flag opstruss plan --no-deps
+flag opstruss plan --no-deps type bool
+flag opstruss plan -C
+flag opstruss run -C
+flag opstruss runs --follow
+flag opstruss runs --follow type bool
+flag opstruss runs --limit
+flag opstruss runs --limit default 20
+flag opstruss runs --limit type int
+flag opstruss runs -C
+flag opstruss runs -f
+flag opstruss runs cancel --force
+flag opstruss runs cancel --force type bool
+flag opstruss runs cancel -C
+flag opstruss runs rerun --force
+flag opstruss runs rerun --force type bool
+flag opstruss runs rerun --yes
+flag opstruss runs rerun --yes short -y
+flag opstruss runs rerun --yes type bool
+flag opstruss runs rerun -C
+flag opstruss state -C
+flag opstruss state list -C
+flag opstruss state pull -C
+flag opstruss state push --force
+flag opstruss state push --force type bool
+flag opstruss state push --if-match
+flag opstruss state push --if-match type string
+flag opstruss state push -C
+flag opstruss state rm --force
+flag opstruss state rm --force type bool
+flag opstruss state rm --if-match
+flag opstruss state rm --if-match type string
+flag opstruss state rm --tool
+flag opstruss state rm --tool type bool
+flag opstruss state rm -C
+flag opstruss status --no-deps
+flag opstruss status --no-deps type bool
+flag opstruss status -C
+flag opstruss stop -C
+flag opstruss unlock -C
+flag opstruss up --force
+flag opstruss up --force type bool
+flag opstruss up --no-deps
+flag opstruss up --no-deps type bool
+flag opstruss up --yes
+flag opstruss up --yes short -y
+flag opstruss up --yes type bool
+flag opstruss up -C
+flag opstruss up -d
+flag opstruss uses -C
+flag opstruss uses fetch -C
+flag opstruss uses prune -C
+flag opstruss uses update -C
+flag opstruss validate -C
+flag opstruss version -C
+function !_ logical_not
+function -_ negate_double
+function -_ negate_int64
+function @in in_list
+function @in in_map
+function @not_strictly_false not_strictly_false
+function @sortByAssociatedKeys list_bool_sortByAssociatedKeys
+function @sortByAssociatedKeys list_bytes_sortByAssociatedKeys
+function @sortByAssociatedKeys list_double_sortByAssociatedKeys
+function @sortByAssociatedKeys list_google.protobuf.Duration_sortByAssociatedKeys
+function @sortByAssociatedKeys list_google.protobuf.Timestamp_sortByAssociatedKeys
+function @sortByAssociatedKeys list_int_sortByAssociatedKeys
+function @sortByAssociatedKeys list_string_sortByAssociatedKeys
+function @sortByAssociatedKeys list_uint_sortByAssociatedKeys
+function _!=_ not_equals
+function _%_ modulo_int64
+function _%_ modulo_uint64
+function _&&_ logical_and
+function _*_ multiply_double
+function _*_ multiply_int64
+function _*_ multiply_uint64
+function _+_ add_bytes
+function _+_ add_double
+function _+_ add_duration_duration
+function _+_ add_duration_timestamp
+function _+_ add_int64
+function _+_ add_list
+function _+_ add_string
+function _+_ add_timestamp_duration
+function _+_ add_uint64
+function _-_ subtract_double
+function _-_ subtract_duration_duration
+function _-_ subtract_int64
+function _-_ subtract_timestamp_duration
+function _-_ subtract_timestamp_timestamp
+function _-_ subtract_uint64
+function _/_ divide_double
+function _/_ divide_int64
+function _/_ divide_uint64
+function _<=_ less_equals_bool
+function _<=_ less_equals_bytes
+function _<=_ less_equals_double
+function _<=_ less_equals_double_int64
+function _<=_ less_equals_double_uint64
+function _<=_ less_equals_duration
+function _<=_ less_equals_int64
+function _<=_ less_equals_int64_double
+function _<=_ less_equals_int64_uint64
+function _<=_ less_equals_string
+function _<=_ less_equals_timestamp
+function _<=_ less_equals_uint64
+function _<=_ less_equals_uint64_double
+function _<=_ less_equals_uint64_int64
+function _<_ less_bool
+function _<_ less_bytes
+function _<_ less_double
+function _<_ less_double_int64
+function _<_ less_double_uint64
+function _<_ less_duration
+function _<_ less_int64
+function _<_ less_int64_double
+function _<_ less_int64_uint64
+function _<_ less_string
+function _<_ less_timestamp
+function _<_ less_uint64
+function _<_ less_uint64_double
+function _<_ less_uint64_int64
+function _==_ equals
+function _>=_ greater_equals_bool
+function _>=_ greater_equals_bytes
+function _>=_ greater_equals_double
+function _>=_ greater_equals_double_int64
+function _>=_ greater_equals_double_uint64
+function _>=_ greater_equals_duration
+function _>=_ greater_equals_int64
+function _>=_ greater_equals_int64_double
+function _>=_ greater_equals_int64_uint64
+function _>=_ greater_equals_string
+function _>=_ greater_equals_timestamp
+function _>=_ greater_equals_uint64
+function _>=_ greater_equals_uint64_double
+function _>=_ greater_equals_uint64_int64
+function _>_ greater_bool
+function _>_ greater_bytes
+function _>_ greater_double
+function _>_ greater_double_int64
+function _>_ greater_double_uint64
+function _>_ greater_duration
+function _>_ greater_int64
+function _>_ greater_int64_double
+function _>_ greater_int64_uint64
+function _>_ greater_string
+function _>_ greater_timestamp
+function _>_ greater_uint64
+function _>_ greater_uint64_double
+function _>_ greater_uint64_int64
+function _?._ select_optional_field
+function _?_:_ conditional
+function _[?_] list_optindex_optional_int
+function _[?_] map_optindex_optional_value
+function _[?_] optional_list_optindex_optional_int
+function _[?_] optional_map_optindex_optional_value
+function _[_] index_list
+function _[_] index_map
+function _[_] optional_list_index_int
+function _[_] optional_map_index_value
+function __not_strictly_false__ __not_strictly_false__
+function _in_ in_list
+function _in_ in_map
+function _||_ logical_or
+function base64.decode base64_decode_string
+function base64.encode base64_encode_bytes
+function bool bool_to_bool
+function bool string_to_bool
+function bytes bytes_to_bytes
+function bytes string_to_bytes
+function cel.@block cel_block_list
+function cel.@mapInsert @mapInsert_map_key_value
+function cel.@mapInsert @mapInsert_map_map
+function charAt string_char_at_int
+function contains contains_string
+function distinct list_distinct
+function double double_to_double
+function double int64_to_double
+function double string_to_double
+function double uint64_to_double
+function duration duration_to_duration
+function duration string_to_duration
+function dyn to_dyn
+function endsWith ends_with_string
+function file file_string
+function first list_first
+function flatten list_flatten
+function flatten list_flatten_int
+function format string_format
+function fromJSON fromJSON_string
+function fromYAML fromYAML_string
+function getDate timestamp_to_day_of_month_1_based
+function getDate timestamp_to_day_of_month_1_based_with_tz
+function getDayOfMonth timestamp_to_day_of_month
+function getDayOfMonth timestamp_to_day_of_month_with_tz
+function getDayOfWeek timestamp_to_day_of_week
+function getDayOfWeek timestamp_to_day_of_week_with_tz
+function getDayOfYear timestamp_to_day_of_year
+function getDayOfYear timestamp_to_day_of_year_with_tz
+function getFullYear timestamp_to_year
+function getFullYear timestamp_to_year_with_tz
+function getHours duration_to_hours
+function getHours timestamp_to_hours
+function getHours timestamp_to_hours_with_tz
+function getMilliseconds duration_to_milliseconds
+function getMilliseconds timestamp_to_milliseconds
+function getMilliseconds timestamp_to_milliseconds_with_tz
+function getMinutes duration_to_minutes
+function getMinutes timestamp_to_minutes
+function getMinutes timestamp_to_minutes_with_tz
+function getMonth timestamp_to_month
+function getMonth timestamp_to_month_with_tz
+function getSeconds duration_to_seconds
+function getSeconds timestamp_to_seconds
+function getSeconds timestamp_to_seconds_tz
+function hasValue optional_hasValue
+function in in_list
+function in in_map
+function indexOf string_index_of_string
+function indexOf string_index_of_string_int
+function int double_to_int64
+function int duration_to_int64
+function int int64_to_int64
+function int string_to_int64
+function int timestamp_to_int64
+function int uint64_to_int64
+function join list_join
+function join list_join_string
+function json.encode json_encode_dyn
+function last list_last
+function lastIndexOf string_last_index_of_string
+function lastIndexOf string_last_index_of_string_int
+function lists.range lists_range
+function lowerAscii string_lower_ascii
+function matches matches
+function matches matches_string
+function math.@max math_@max_double
+function math.@max math_@max_double_double
+function math.@max math_@max_double_int
+function math.@max math_@max_double_uint
+function math.@max math_@max_int
+function math.@max math_@max_int_double
+function math.@max math_@max_int_int
+function math.@max math_@max_int_uint
+function math.@max math_@max_list_double
+function math.@max math_@max_list_int
+function math.@max math_@max_list_uint
+function math.@max math_@max_uint
+function math.@max math_@max_uint_double
+function math.@max math_@max_uint_int
+function math.@max math_@max_uint_uint
+function math.@min math_@min_double
+function math.@min math_@min_double_double
+function math.@min math_@min_double_int
+function math.@min math_@min_double_uint
+function math.@min math_@min_int
+function math.@min math_@min_int_double
+function math.@min math_@min_int_int
+function math.@min math_@min_int_uint
+function math.@min math_@min_list_double
+function math.@min math_@min_list_int
+function math.@min math_@min_list_uint
+function math.@min math_@min_uint
+function math.@min math_@min_uint_double
+function math.@min math_@min_uint_int
+function math.@min math_@min_uint_uint
+function math.abs math_abs_double
+function math.abs math_abs_int
+function math.abs math_abs_uint
+function math.bitAnd math_bitAnd_int_int
+function math.bitAnd math_bitAnd_uint_uint
+function math.bitNot math_bitNot_int_int
+function math.bitNot math_bitNot_uint_uint
+function math.bitOr math_bitOr_int_int
+function math.bitOr math_bitOr_uint_uint
+function math.bitShiftLeft math_bitShiftLeft_int_int
+function math.bitShiftLeft math_bitShiftLeft_uint_int
+function math.bitShiftRight math_bitShiftRight_int_int
+function math.bitShiftRight math_bitShiftRight_uint_int
+function math.bitXor math_bitXor_int_int
+function math.bitXor math_bitXor_uint_uint
+function math.ceil math_ceil_double
+function math.floor math_floor_double
+function math.isFinite math_isFinite_double
+function math.isInf math_isInf_double
+function math.isNaN math_isNaN_double
+function math.round math_round_double
+function math.sign math_sign_double
+function math.sign math_sign_int
+function math.sign math_sign_uint
+function math.sqrt math_sqrt_double
+function math.sqrt math_sqrt_int
+function math.sqrt math_sqrt_uint
+function math.trunc math_trunc_double
+function optional.none optional_none
+function optional.of optional_of
+function optional.ofNonZeroValue optional_ofNonZeroValue
+function optional.unwrap optional_unwrap
+function or optional_or_optional
+function orValue optional_orValue_value
+function replace string_replace_string_string
+function replace string_replace_string_string_int
+function reverse list_reverse
+function reverse string_reverse
+function sets.contains list_sets_contains_list
+function sets.equivalent list_sets_equivalent_list
+function sets.intersects list_sets_intersects_list
+function sha256 sha256_string
+function size bytes_size
+function size list_size
+function size map_size
+function size size_bytes
+function size size_list
+function size size_map
+function size size_string
+function size string_size
+function slice list_slice
+function sort list_bool_sort
+function sort list_bytes_sort
+function sort list_double_sort
+function sort list_google.protobuf.Duration_sort
+function sort list_google.protobuf.Timestamp_sort
+function sort list_int_sort
+function sort list_string_sort
+function sort list_uint_sort
+function split string_split_string
+function split string_split_string_int
+function startsWith starts_with_string
+function strftime timestamp_strftime
+function strftime timestamp_strftime_zone
+function string bool_to_string
+function string bytes_to_string
+function string double_to_string
+function string duration_to_string
+function string int64_to_string
+function string string_to_string
+function string timestamp_to_string
+function string uint64_to_string
+function strings.quote strings_quote
+function substring string_substring_int
+function substring string_substring_int_int
+function timestamp int64_to_timestamp
+function timestamp string_to_timestamp
+function timestamp timestamp_to_timestamp
+function toJSON toJSON_dyn
+function toYAML toYAML_dyn
+function trim string_trim
+function type type
+function uint double_to_uint64
+function uint int64_to_uint64
+function uint string_to_uint64
+function uint uint64_to_uint64
+function unwrapOpt optional_unwrapOpt
+function upperAscii string_upper_ascii
+function value optional_value
+json * error
+json doctor check
+json doctor checks
+json doctor for
+json doctor message
+json doctor name
+json doctor path
+json doctor stack
+json doctor status
+json explain from
+json explain inputs
+json explain order
+json explain outputs
+json explain project
+json explain stack
+json explain tasks
+json explain units
+json explain value
+json init wrote
+json list absent
+json list address
+json list daemon
+json list description
+json list ended
+json list error
+json list internal
+json list kind
+json list name
+json list next
+json list outcome
+json list outputs
+json list pending
+json list run
+json list stack
+json list state
+json list tasks
+json list triggers
+json list units
+json list up
+json list via
+json outputs outputs
+json outputs stack
+json runs runs
+json runs stack
+json state list address
+json state list id
+json state list kind
+json state list kv
+json state list records
+json state list stack
+json stop stack
+json stop stopped
+json uses fetch sources
+json uses prune removed
+json uses sources
+json uses update sources
+json validate column
+json validate file
+json validate line
+json validate message
+json validate path
+json validate problems
+json validate valid
+json validate warnings
+json version arch
+json version os
+json version version
+macro all:2:true
+macro all:3:true
+macro bind:3:true
+macro exists:2:true
+macro exists:3:true
+macro existsOne:3:true
+macro exists_one:2:true
+macro exists_one:3:true
+macro filter:2:true
+macro greatest:*:true
+macro has:1:false
+macro kv:1:false
+macro kv:2:false
+macro least:*:true
+macro map:2:true
+macro map:3:true
+macro optFlatMap:2:true
+macro optMap:2:true
+macro sortBy:2:true
+macro transformList:3:true
+macro transformList:4:true
+macro transformMap:3:true
+macro transformMap:4:true
+macro transformMapEntry:3:true
+macro transformMapEntry:4:true
+name builtin-flag completion
+name builtin-flag event
+name builtin-flag help
+name builtin-flag input
+name builtin-flag json
+name builtin-flag locked
+name builtin-flag no-deps
+name builtin-flag stack
+name builtin-flag yes
+name builtin-task assert
+name builtin-task command
+name builtin-task http
+name builtin-task kv
+name builtin-task log
+name builtin-task read
+name builtin-task set
+name builtin-task wait
+name builtin-task write
+name command doctor
+name command exec
+name command explain
+name command help
+name command init
+name command list
+name command mcp
+name command outputs
+name command run
+name command runs
+name command state
+name command stop
+name command unlock
+name command uses
+name command validate
+name command version
+name hook exec
+name hook migrate
+name hook watch
+name standard-task destroy
+name standard-task logs
+name standard-task plan
+name standard-task status
+name standard-task up
+schema catalog opstruss
+schema catalog opstruss type string
+schema catalog packages
+schema catalog packages type array
+schema catalog packages[]
+schema catalog packages[] type object
+schema catalog packages[] type string
+schema catalog packages[].name
+schema catalog packages[].name type string
+schema catalog packages[].path
+schema catalog packages[].path type string
+schema catalog shared
+schema catalog shared type array
+schema catalog shared[]
+schema catalog shared[] type string
+schema catalog x-*
+schema catalog x-* type any
+schema daemon listen
+schema daemon listen type string
+schema daemon opstruss
+schema daemon opstruss type string
+schema daemon pid
+schema daemon pid type integer
+schema daemon processes
+schema daemon processes type array
+schema daemon processes[]
+schema daemon processes[] type object
+schema daemon processes[].address
+schema daemon processes[].address type string
+schema daemon processes[].grace
+schema daemon processes[].grace type string
+schema daemon processes[].id
+schema daemon processes[].id type string
+schema daemon processes[].lock
+schema daemon processes[].lock type string
+schema daemon processes[].pid
+schema daemon processes[].pid type integer
+schema daemon processes[].signal
+schema daemon processes[].signal type string
+schema daemon processes[].start
+schema daemon processes[].start type string
+schema daemon processes[].started
+schema daemon processes[].started type string
+schema daemon schedules
+schema daemon schedules type array
+schema daemon schedules[]
+schema daemon schedules[] type object
+schema daemon schedules[].key
+schema daemon schedules[].key type string
+schema daemon schedules[].kind
+schema daemon schedules[].kind value "every"
+schema daemon schedules[].kind value "schedule"
+schema daemon schedules[].last
+schema daemon schedules[].last type string
+schema daemon schedules[].next
+schema daemon schedules[].next type string
+schema daemon schedules[].task
+schema daemon schedules[].task type string
+schema daemon socket
+schema daemon socket type string
+schema daemon start
+schema daemon start type string
+schema daemon started
+schema daemon started type string
+schema daemon version
+schema daemon version type integer
+schema event address
+schema event address type string
+schema event exit_code
+schema event exit_code type integer
+schema event level
+schema event level value "debug"
+schema event level value "error"
+schema event level value "info"
+schema event level value "warn"
+schema event message
+schema event message type string
+schema event outcome
+schema event outcome value "cancelled"
+schema event outcome value "failure"
+schema event outcome value "skipped"
+schema event outcome value "success"
+schema event outputs
+schema event outputs type object
+schema event plan
+schema event plan type object
+schema event run
+schema event run type string
+schema event seq
+schema event seq type integer
+schema event status
+schema event status value "finished"
+schema event status value "running"
+schema event step
+schema event step type string
+schema event stream
+schema event stream value "stderr"
+schema event stream value "stdout"
+schema event task
+schema event task type string
+schema event time
+schema event time type string
+schema event type
+schema event type type string
+schema event version
+schema event version type integer
+schema lock sources
+schema lock sources type object
+schema lock sources.<name>
+schema lock sources.<name> type object
+schema lock sources.<name>.commit
+schema lock sources.<name>.commit type string
+schema lock sources.<name>.hash
+schema lock sources.<name>.hash type string
+schema lock version
+schema lock version value 1
+schema meta key
+schema meta key type object
+schema meta key.age
+schema meta key.age type object
+schema meta key.age.data
+schema meta key.age.data type string
+schema meta key.age.to
+schema meta key.age.to type array
+schema meta key.age.to[]
+schema meta key.age.to[] type string
+schema meta key.sops
+schema meta key.sops type object
+schema meta key.sops.data
+schema meta key.sops.data type object
+schema meta key.sops.to
+schema meta key.sops.to type array
+schema meta key.sops.to[]
+schema meta key.sops.to[] type object
+schema meta key.sops.to[].<name>
+schema meta key.sops.to[].<name> type string
+schema meta project
+schema meta project type string
+schema meta version
+schema meta version type integer
+schema plugin backend
+schema plugin backend type object
+schema plugin backend.run
+schema plugin backend.run type array
+schema plugin backend.run type string
+schema plugin backend.run[]
+schema plugin backend.run[] type string
+schema plugin backend.x-*
+schema plugin backend.x-* type any
+schema plugin bin
+schema plugin bin type object
+schema plugin bin.<name>
+schema plugin bin.<name> type object
+schema plugin bin.<name>.<name>
+schema plugin bin.<name>.<name> type object
+schema plugin bin.<name>.<name>.sha256
+schema plugin bin.<name>.<name>.sha256 type string
+schema plugin bin.<name>.<name>.url
+schema plugin bin.<name>.<name>.url type string
+schema plugin description
+schema plugin description type string
+schema plugin env
+schema plugin env type array
+schema plugin env[]
+schema plugin env[] type string
+schema plugin inputs
+schema plugin inputs type object
+schema plugin inputs.<name>
+schema plugin inputs.<name> type object
+schema plugin inputs.<name>.args
+schema plugin inputs.<name>.args type boolean
+schema plugin inputs.<name>.default
+schema plugin inputs.<name>.default type any
+schema plugin inputs.<name>.description
+schema plugin inputs.<name>.description type string
+schema plugin inputs.<name>.enum
+schema plugin inputs.<name>.enum type array
+schema plugin inputs.<name>.env
+schema plugin inputs.<name>.env type string
+schema plugin inputs.<name>.items
+schema plugin inputs.<name>.literal
+schema plugin inputs.<name>.literal type boolean
+schema plugin inputs.<name>.maximum
+schema plugin inputs.<name>.maximum type number
+schema plugin inputs.<name>.minimum
+schema plugin inputs.<name>.minimum type number
+schema plugin inputs.<name>.pattern
+schema plugin inputs.<name>.pattern type string
+schema plugin inputs.<name>.properties
+schema plugin inputs.<name>.properties type object
+schema plugin inputs.<name>.properties.<name>
+schema plugin inputs.<name>.required
+schema plugin inputs.<name>.required type boolean
+schema plugin inputs.<name>.sensitive
+schema plugin inputs.<name>.sensitive type boolean
+schema plugin inputs.<name>.type
+schema plugin inputs.<name>.type value "array"
+schema plugin inputs.<name>.type value "boolean"
+schema plugin inputs.<name>.type value "integer"
+schema plugin inputs.<name>.type value "number"
+schema plugin inputs.<name>.type value "object"
+schema plugin inputs.<name>.type value "string"
+schema plugin inputs.<name>.x-*
+schema plugin inputs.<name>.x-* type any
+schema plugin name
+schema plugin name type string
+schema plugin opstruss
+schema plugin opstruss type string
+schema plugin outputs
+schema plugin outputs type object
+schema plugin outputs value "tool"
+schema plugin outputs.<name>
+schema plugin outputs.<name> type object
+schema plugin outputs.<name>.description
+schema plugin outputs.<name>.description type string
+schema plugin outputs.<name>.format
+schema plugin outputs.<name>.format value "dotenv"
+schema plugin outputs.<name>.format value "json"
+schema plugin outputs.<name>.format value "lines"
+schema plugin outputs.<name>.format value "text"
+schema plugin outputs.<name>.format value "yaml"
+schema plugin outputs.<name>.from
+schema plugin outputs.<name>.from default "output"
+schema plugin outputs.<name>.from value "file"
+schema plugin outputs.<name>.from value "output"
+schema plugin outputs.<name>.from value "stderr"
+schema plugin outputs.<name>.from value "stdout"
+schema plugin outputs.<name>.path
+schema plugin outputs.<name>.path type string
+schema plugin outputs.<name>.sensitive
+schema plugin outputs.<name>.sensitive type boolean
+schema plugin outputs.<name>.type
+schema plugin outputs.<name>.type value "array"
+schema plugin outputs.<name>.type value "boolean"
+schema plugin outputs.<name>.type value "integer"
+schema plugin outputs.<name>.type value "number"
+schema plugin outputs.<name>.type value "object"
+schema plugin outputs.<name>.type value "string"
+schema plugin outputs.<name>.value
+schema plugin outputs.<name>.value type any
+schema plugin outputs.<name>.x-*
+schema plugin outputs.<name>.x-* type any
+schema plugin requires
+schema plugin requires type array
+schema plugin requires[]
+schema plugin requires[] type string
+schema plugin state
+schema plugin state default "opstruss"
+schema plugin state value "opstruss"
+schema plugin state value "tool"
+schema plugin tasks
+schema plugin tasks type object
+schema plugin tasks.<name>
+schema plugin tasks.<name> type object
+schema plugin tasks.<name>.<name>
+schema plugin tasks.<name>.<name> type object
+schema plugin tasks.<name>.approval
+schema plugin tasks.<name>.approval default "auto"
+schema plugin tasks.<name>.approval value "ask"
+schema plugin tasks.<name>.approval value "auto"
+schema plugin tasks.<name>.changed_when
+schema plugin tasks.<name>.changed_when type boolean
+schema plugin tasks.<name>.changed_when type string
+schema plugin tasks.<name>.concurrency
+schema plugin tasks.<name>.concurrency default "queue"
+schema plugin tasks.<name>.concurrency type object
+schema plugin tasks.<name>.concurrency value "cancel"
+schema plugin tasks.<name>.concurrency value "parallel"
+schema plugin tasks.<name>.concurrency value "queue"
+schema plugin tasks.<name>.concurrency value "skip"
+schema plugin tasks.<name>.concurrency.group
+schema plugin tasks.<name>.concurrency.group type string
+schema plugin tasks.<name>.concurrency.mode
+schema plugin tasks.<name>.concurrency.mode default "queue"
+schema plugin tasks.<name>.concurrency.mode value "cancel"
+schema plugin tasks.<name>.concurrency.mode value "parallel"
+schema plugin tasks.<name>.concurrency.mode value "queue"
+schema plugin tasks.<name>.concurrency.mode value "skip"
+schema plugin tasks.<name>.concurrency.x-*
+schema plugin tasks.<name>.concurrency.x-* type any
+schema plugin tasks.<name>.continue_on_error
+schema plugin tasks.<name>.continue_on_error type boolean
+schema plugin tasks.<name>.description
+schema plugin tasks.<name>.description type string
+schema plugin tasks.<name>.dir
+schema plugin tasks.<name>.dir type string
+schema plugin tasks.<name>.env
+schema plugin tasks.<name>.env type object
+schema plugin tasks.<name>.env.<name>
+schema plugin tasks.<name>.env.<name> type object
+schema plugin tasks.<name>.env.<name> type string
+schema plugin tasks.<name>.env.<name>.file
+schema plugin tasks.<name>.env.<name>.file type string
+schema plugin tasks.<name>.failed_when
+schema plugin tasks.<name>.failed_when type boolean
+schema plugin tasks.<name>.failed_when type string
+schema plugin tasks.<name>.for_each
+schema plugin tasks.<name>.for_each type array
+schema plugin tasks.<name>.for_each type object
+schema plugin tasks.<name>.for_each type string
+schema plugin tasks.<name>.if
+schema plugin tasks.<name>.if type boolean
+schema plugin tasks.<name>.if type string
+schema plugin tasks.<name>.inputs
+schema plugin tasks.<name>.inputs type object
+schema plugin tasks.<name>.inputs.<name>
+schema plugin tasks.<name>.inputs.<name> type object
+schema plugin tasks.<name>.inputs.<name>.args
+schema plugin tasks.<name>.inputs.<name>.args type boolean
+schema plugin tasks.<name>.inputs.<name>.default
+schema plugin tasks.<name>.inputs.<name>.default type any
+schema plugin tasks.<name>.inputs.<name>.description
+schema plugin tasks.<name>.inputs.<name>.description type string
+schema plugin tasks.<name>.inputs.<name>.enum
+schema plugin tasks.<name>.inputs.<name>.enum type array
+schema plugin tasks.<name>.inputs.<name>.env
+schema plugin tasks.<name>.inputs.<name>.env type string
+schema plugin tasks.<name>.inputs.<name>.items
+schema plugin tasks.<name>.inputs.<name>.literal
+schema plugin tasks.<name>.inputs.<name>.literal type boolean
+schema plugin tasks.<name>.inputs.<name>.maximum
+schema plugin tasks.<name>.inputs.<name>.maximum type number
+schema plugin tasks.<name>.inputs.<name>.minimum
+schema plugin tasks.<name>.inputs.<name>.minimum type number
+schema plugin tasks.<name>.inputs.<name>.pattern
+schema plugin tasks.<name>.inputs.<name>.pattern type string
+schema plugin tasks.<name>.inputs.<name>.properties
+schema plugin tasks.<name>.inputs.<name>.properties type object
+schema plugin tasks.<name>.inputs.<name>.properties.<name>
+schema plugin tasks.<name>.inputs.<name>.required
+schema plugin tasks.<name>.inputs.<name>.required type boolean
+schema plugin tasks.<name>.inputs.<name>.sensitive
+schema plugin tasks.<name>.inputs.<name>.sensitive type boolean
+schema plugin tasks.<name>.inputs.<name>.type
+schema plugin tasks.<name>.inputs.<name>.type value "array"
+schema plugin tasks.<name>.inputs.<name>.type value "boolean"
+schema plugin tasks.<name>.inputs.<name>.type value "integer"
+schema plugin tasks.<name>.inputs.<name>.type value "number"
+schema plugin tasks.<name>.inputs.<name>.type value "object"
+schema plugin tasks.<name>.inputs.<name>.type value "string"
+schema plugin tasks.<name>.inputs.<name>.x-*
+schema plugin tasks.<name>.inputs.<name>.x-* type any
+schema plugin tasks.<name>.internal
+schema plugin tasks.<name>.internal type boolean
+schema plugin tasks.<name>.max_parallel
+schema plugin tasks.<name>.max_parallel type integer
+schema plugin tasks.<name>.needs
+schema plugin tasks.<name>.needs type array
+schema plugin tasks.<name>.needs[]
+schema plugin tasks.<name>.needs[] type string
+schema plugin tasks.<name>.on
+schema plugin tasks.<name>.on type object
+schema plugin tasks.<name>.on.after
+schema plugin tasks.<name>.on.after type array
+schema plugin tasks.<name>.on.after type object
+schema plugin tasks.<name>.on.after.if
+schema plugin tasks.<name>.on.after.if type boolean
+schema plugin tasks.<name>.on.after.if type string
+schema plugin tasks.<name>.on.after.outcome
+schema plugin tasks.<name>.on.after.outcome default "success"
+schema plugin tasks.<name>.on.after.outcome value "any"
+schema plugin tasks.<name>.on.after.outcome value "failure"
+schema plugin tasks.<name>.on.after.outcome value "success"
+schema plugin tasks.<name>.on.after.task
+schema plugin tasks.<name>.on.after.task type string
+schema plugin tasks.<name>.on.after.unit
+schema plugin tasks.<name>.on.after.unit type string
+schema plugin tasks.<name>.on.after.with
+schema plugin tasks.<name>.on.after.with type object
+schema plugin tasks.<name>.on.after.x-*
+schema plugin tasks.<name>.on.after.x-* type any
+schema plugin tasks.<name>.on.after[]
+schema plugin tasks.<name>.on.after[] type object
+schema plugin tasks.<name>.on.after[].if
+schema plugin tasks.<name>.on.after[].if type boolean
+schema plugin tasks.<name>.on.after[].if type string
+schema plugin tasks.<name>.on.after[].outcome
+schema plugin tasks.<name>.on.after[].outcome default "success"
+schema plugin tasks.<name>.on.after[].outcome value "any"
+schema plugin tasks.<name>.on.after[].outcome value "failure"
+schema plugin tasks.<name>.on.after[].outcome value "success"
+schema plugin tasks.<name>.on.after[].task
+schema plugin tasks.<name>.on.after[].task type string
+schema plugin tasks.<name>.on.after[].unit
+schema plugin tasks.<name>.on.after[].unit type string
+schema plugin tasks.<name>.on.after[].with
+schema plugin tasks.<name>.on.after[].with type object
+schema plugin tasks.<name>.on.after[].x-*
+schema plugin tasks.<name>.on.after[].x-* type any
+schema plugin tasks.<name>.on.every
+schema plugin tasks.<name>.on.every type array
+schema plugin tasks.<name>.on.every type string
+schema plugin tasks.<name>.on.every[]
+schema plugin tasks.<name>.on.every[] type string
+schema plugin tasks.<name>.on.schedule
+schema plugin tasks.<name>.on.schedule type array
+schema plugin tasks.<name>.on.schedule type object
+schema plugin tasks.<name>.on.schedule type string
+schema plugin tasks.<name>.on.schedule.cron
+schema plugin tasks.<name>.on.schedule.cron type string
+schema plugin tasks.<name>.on.schedule.if
+schema plugin tasks.<name>.on.schedule.if type boolean
+schema plugin tasks.<name>.on.schedule.if type string
+schema plugin tasks.<name>.on.schedule.persistent
+schema plugin tasks.<name>.on.schedule.persistent type boolean
+schema plugin tasks.<name>.on.schedule.timezone
+schema plugin tasks.<name>.on.schedule.timezone type string
+schema plugin tasks.<name>.on.schedule.with
+schema plugin tasks.<name>.on.schedule.with type object
+schema plugin tasks.<name>.on.schedule.x-*
+schema plugin tasks.<name>.on.schedule.x-* type any
+schema plugin tasks.<name>.on.schedule[]
+schema plugin tasks.<name>.on.schedule[] type object
+schema plugin tasks.<name>.on.schedule[] type string
+schema plugin tasks.<name>.on.schedule[].cron
+schema plugin tasks.<name>.on.schedule[].cron type string
+schema plugin tasks.<name>.on.schedule[].if
+schema plugin tasks.<name>.on.schedule[].if type boolean
+schema plugin tasks.<name>.on.schedule[].if type string
+schema plugin tasks.<name>.on.schedule[].persistent
+schema plugin tasks.<name>.on.schedule[].persistent type boolean
+schema plugin tasks.<name>.on.schedule[].timezone
+schema plugin tasks.<name>.on.schedule[].timezone type string
+schema plugin tasks.<name>.on.schedule[].with
+schema plugin tasks.<name>.on.schedule[].with type object
+schema plugin tasks.<name>.on.schedule[].x-*
+schema plugin tasks.<name>.on.schedule[].x-* type any
+schema plugin tasks.<name>.on.watch
+schema plugin tasks.<name>.on.watch type array
+schema plugin tasks.<name>.on.watch type object
+schema plugin tasks.<name>.on.watch.<name>
+schema plugin tasks.<name>.on.watch.<name> type object
+schema plugin tasks.<name>.on.watch.batch
+schema plugin tasks.<name>.on.watch.batch type string
+schema plugin tasks.<name>.on.watch.debounce
+schema plugin tasks.<name>.on.watch.debounce type string
+schema plugin tasks.<name>.on.watch.if
+schema plugin tasks.<name>.on.watch.if type boolean
+schema plugin tasks.<name>.on.watch.if type string
+schema plugin tasks.<name>.on.watch.paths
+schema plugin tasks.<name>.on.watch.paths type array
+schema plugin tasks.<name>.on.watch.paths[]
+schema plugin tasks.<name>.on.watch.paths[] type object
+schema plugin tasks.<name>.on.watch.paths[] type string
+schema plugin tasks.<name>.on.watch.paths[].exclude
+schema plugin tasks.<name>.on.watch.paths[].exclude type string
+schema plugin tasks.<name>.on.watch.stream
+schema plugin tasks.<name>.on.watch.stream default "both"
+schema plugin tasks.<name>.on.watch.stream value "both"
+schema plugin tasks.<name>.on.watch.stream value "stderr"
+schema plugin tasks.<name>.on.watch.stream value "stdout"
+schema plugin tasks.<name>.on.watch.unit
+schema plugin tasks.<name>.on.watch.unit type string
+schema plugin tasks.<name>.on.watch.with
+schema plugin tasks.<name>.on.watch.with type object
+schema plugin tasks.<name>.on.watch.x-*
+schema plugin tasks.<name>.on.watch.x-* type any
+schema plugin tasks.<name>.on.watch[]
+schema plugin tasks.<name>.on.watch[] type object
+schema plugin tasks.<name>.on.watch[].<name>
+schema plugin tasks.<name>.on.watch[].<name> type object
+schema plugin tasks.<name>.on.watch[].batch
+schema plugin tasks.<name>.on.watch[].batch type string
+schema plugin tasks.<name>.on.watch[].debounce
+schema plugin tasks.<name>.on.watch[].debounce type string
+schema plugin tasks.<name>.on.watch[].if
+schema plugin tasks.<name>.on.watch[].if type boolean
+schema plugin tasks.<name>.on.watch[].if type string
+schema plugin tasks.<name>.on.watch[].paths
+schema plugin tasks.<name>.on.watch[].paths type array
+schema plugin tasks.<name>.on.watch[].paths[]
+schema plugin tasks.<name>.on.watch[].paths[] type object
+schema plugin tasks.<name>.on.watch[].paths[] type string
+schema plugin tasks.<name>.on.watch[].paths[].exclude
+schema plugin tasks.<name>.on.watch[].paths[].exclude type string
+schema plugin tasks.<name>.on.watch[].stream
+schema plugin tasks.<name>.on.watch[].stream default "both"
+schema plugin tasks.<name>.on.watch[].stream value "both"
+schema plugin tasks.<name>.on.watch[].stream value "stderr"
+schema plugin tasks.<name>.on.watch[].stream value "stdout"
+schema plugin tasks.<name>.on.watch[].unit
+schema plugin tasks.<name>.on.watch[].unit type string
+schema plugin tasks.<name>.on.watch[].with
+schema plugin tasks.<name>.on.watch[].with type object
+schema plugin tasks.<name>.on.watch[].x-*
+schema plugin tasks.<name>.on.watch[].x-* type any
+schema plugin tasks.<name>.on.webhook
+schema plugin tasks.<name>.on.webhook type array
+schema plugin tasks.<name>.on.webhook type object
+schema plugin tasks.<name>.on.webhook.if
+schema plugin tasks.<name>.on.webhook.if type boolean
+schema plugin tasks.<name>.on.webhook.if type string
+schema plugin tasks.<name>.on.webhook.method
+schema plugin tasks.<name>.on.webhook.method default "POST"
+schema plugin tasks.<name>.on.webhook.method value "DELETE"
+schema plugin tasks.<name>.on.webhook.method value "GET"
+schema plugin tasks.<name>.on.webhook.method value "PATCH"
+schema plugin tasks.<name>.on.webhook.method value "POST"
+schema plugin tasks.<name>.on.webhook.method value "PUT"
+schema plugin tasks.<name>.on.webhook.path
+schema plugin tasks.<name>.on.webhook.path type string
+schema plugin tasks.<name>.on.webhook.respond
+schema plugin tasks.<name>.on.webhook.respond default "accepted"
+schema plugin tasks.<name>.on.webhook.respond value "accepted"
+schema plugin tasks.<name>.on.webhook.respond value "wait"
+schema plugin tasks.<name>.on.webhook.secret
+schema plugin tasks.<name>.on.webhook.secret type string
+schema plugin tasks.<name>.on.webhook.signature
+schema plugin tasks.<name>.on.webhook.signature type object
+schema plugin tasks.<name>.on.webhook.signature value "bearer"
+schema plugin tasks.<name>.on.webhook.signature value "github"
+schema plugin tasks.<name>.on.webhook.signature value "gitlab"
+schema plugin tasks.<name>.on.webhook.signature value "slack"
+schema plugin tasks.<name>.on.webhook.signature value "standard"
+schema plugin tasks.<name>.on.webhook.signature value "stripe"
+schema plugin tasks.<name>.on.webhook.signature.algorithm
+schema plugin tasks.<name>.on.webhook.signature.algorithm value "sha256"
+schema plugin tasks.<name>.on.webhook.signature.algorithm value "sha512"
+schema plugin tasks.<name>.on.webhook.signature.encoding
+schema plugin tasks.<name>.on.webhook.signature.encoding value "base64"
+schema plugin tasks.<name>.on.webhook.signature.encoding value "hex"
+schema plugin tasks.<name>.on.webhook.signature.header
+schema plugin tasks.<name>.on.webhook.signature.header type string
+schema plugin tasks.<name>.on.webhook.signature.prefix
+schema plugin tasks.<name>.on.webhook.signature.prefix type string
+schema plugin tasks.<name>.on.webhook.with
+schema plugin tasks.<name>.on.webhook.with type object
+schema plugin tasks.<name>.on.webhook.x-*
+schema plugin tasks.<name>.on.webhook.x-* type any
+schema plugin tasks.<name>.on.webhook[]
+schema plugin tasks.<name>.on.webhook[] type object
+schema plugin tasks.<name>.on.webhook[].if
+schema plugin tasks.<name>.on.webhook[].if type boolean
+schema plugin tasks.<name>.on.webhook[].if type string
+schema plugin tasks.<name>.on.webhook[].method
+schema plugin tasks.<name>.on.webhook[].method default "POST"
+schema plugin tasks.<name>.on.webhook[].method value "DELETE"
+schema plugin tasks.<name>.on.webhook[].method value "GET"
+schema plugin tasks.<name>.on.webhook[].method value "PATCH"
+schema plugin tasks.<name>.on.webhook[].method value "POST"
+schema plugin tasks.<name>.on.webhook[].method value "PUT"
+schema plugin tasks.<name>.on.webhook[].path
+schema plugin tasks.<name>.on.webhook[].path type string
+schema plugin tasks.<name>.on.webhook[].respond
+schema plugin tasks.<name>.on.webhook[].respond default "accepted"
+schema plugin tasks.<name>.on.webhook[].respond value "accepted"
+schema plugin tasks.<name>.on.webhook[].respond value "wait"
+schema plugin tasks.<name>.on.webhook[].secret
+schema plugin tasks.<name>.on.webhook[].secret type string
+schema plugin tasks.<name>.on.webhook[].signature
+schema plugin tasks.<name>.on.webhook[].signature type object
+schema plugin tasks.<name>.on.webhook[].signature value "bearer"
+schema plugin tasks.<name>.on.webhook[].signature value "github"
+schema plugin tasks.<name>.on.webhook[].signature value "gitlab"
+schema plugin tasks.<name>.on.webhook[].signature value "slack"
+schema plugin tasks.<name>.on.webhook[].signature value "standard"
+schema plugin tasks.<name>.on.webhook[].signature value "stripe"
+schema plugin tasks.<name>.on.webhook[].signature.algorithm
+schema plugin tasks.<name>.on.webhook[].signature.algorithm value "sha256"
+schema plugin tasks.<name>.on.webhook[].signature.algorithm value "sha512"
+schema plugin tasks.<name>.on.webhook[].signature.encoding
+schema plugin tasks.<name>.on.webhook[].signature.encoding value "base64"
+schema plugin tasks.<name>.on.webhook[].signature.encoding value "hex"
+schema plugin tasks.<name>.on.webhook[].signature.header
+schema plugin tasks.<name>.on.webhook[].signature.header type string
+schema plugin tasks.<name>.on.webhook[].signature.prefix
+schema plugin tasks.<name>.on.webhook[].signature.prefix type string
+schema plugin tasks.<name>.on.webhook[].with
+schema plugin tasks.<name>.on.webhook[].with type object
+schema plugin tasks.<name>.on.webhook[].x-*
+schema plugin tasks.<name>.on.webhook[].x-* type any
+schema plugin tasks.<name>.on.x-*
+schema plugin tasks.<name>.on.x-* type any
+schema plugin tasks.<name>.outputs
+schema plugin tasks.<name>.outputs type object
+schema plugin tasks.<name>.outputs.<name>
+schema plugin tasks.<name>.outputs.<name> type object
+schema plugin tasks.<name>.outputs.<name>.description
+schema plugin tasks.<name>.outputs.<name>.description type string
+schema plugin tasks.<name>.outputs.<name>.format
+schema plugin tasks.<name>.outputs.<name>.format value "dotenv"
+schema plugin tasks.<name>.outputs.<name>.format value "json"
+schema plugin tasks.<name>.outputs.<name>.format value "lines"
+schema plugin tasks.<name>.outputs.<name>.format value "text"
+schema plugin tasks.<name>.outputs.<name>.format value "yaml"
+schema plugin tasks.<name>.outputs.<name>.from
+schema plugin tasks.<name>.outputs.<name>.from default "output"
+schema plugin tasks.<name>.outputs.<name>.from value "file"
+schema plugin tasks.<name>.outputs.<name>.from value "output"
+schema plugin tasks.<name>.outputs.<name>.from value "stderr"
+schema plugin tasks.<name>.outputs.<name>.from value "stdout"
+schema plugin tasks.<name>.outputs.<name>.path
+schema plugin tasks.<name>.outputs.<name>.path type string
+schema plugin tasks.<name>.outputs.<name>.sensitive
+schema plugin tasks.<name>.outputs.<name>.sensitive type boolean
+schema plugin tasks.<name>.outputs.<name>.type
+schema plugin tasks.<name>.outputs.<name>.type value "array"
+schema plugin tasks.<name>.outputs.<name>.type value "boolean"
+schema plugin tasks.<name>.outputs.<name>.type value "integer"
+schema plugin tasks.<name>.outputs.<name>.type value "number"
+schema plugin tasks.<name>.outputs.<name>.type value "object"
+schema plugin tasks.<name>.outputs.<name>.type value "string"
+schema plugin tasks.<name>.outputs.<name>.value
+schema plugin tasks.<name>.outputs.<name>.value type any
+schema plugin tasks.<name>.outputs.<name>.x-*
+schema plugin tasks.<name>.outputs.<name>.x-* type any
+schema plugin tasks.<name>.pass
+schema plugin tasks.<name>.pass type array
+schema plugin tasks.<name>.pass[]
+schema plugin tasks.<name>.pass[] type string
+schema plugin tasks.<name>.requires
+schema plugin tasks.<name>.requires type array
+schema plugin tasks.<name>.requires type string
+schema plugin tasks.<name>.requires[]
+schema plugin tasks.<name>.requires[] type string
+schema plugin tasks.<name>.retry
+schema plugin tasks.<name>.retry type object
+schema plugin tasks.<name>.retry.attempts
+schema plugin tasks.<name>.retry.attempts type integer
+schema plugin tasks.<name>.retry.backoff
+schema plugin tasks.<name>.retry.backoff type number
+schema plugin tasks.<name>.retry.delay
+schema plugin tasks.<name>.retry.delay type string
+schema plugin tasks.<name>.retry.until
+schema plugin tasks.<name>.retry.until type boolean
+schema plugin tasks.<name>.retry.until type string
+schema plugin tasks.<name>.retry.x-*
+schema plugin tasks.<name>.retry.x-* type any
+schema plugin tasks.<name>.run
+schema plugin tasks.<name>.run type array
+schema plugin tasks.<name>.run type string
+schema plugin tasks.<name>.run[]
+schema plugin tasks.<name>.run[] type string
+schema plugin tasks.<name>.shell
+schema plugin tasks.<name>.shell default "sh"
+schema plugin tasks.<name>.shell value "bash"
+schema plugin tasks.<name>.shell value "node"
+schema plugin tasks.<name>.shell value "pwsh"
+schema plugin tasks.<name>.shell value "python"
+schema plugin tasks.<name>.shell value "sh"
+schema plugin tasks.<name>.stdin
+schema plugin tasks.<name>.stdin type object
+schema plugin tasks.<name>.stdin.format
+schema plugin tasks.<name>.stdin.format default "text"
+schema plugin tasks.<name>.stdin.format value "dotenv"
+schema plugin tasks.<name>.stdin.format value "json"
+schema plugin tasks.<name>.stdin.format value "lines"
+schema plugin tasks.<name>.stdin.format value "text"
+schema plugin tasks.<name>.stdin.format value "yaml"
+schema plugin tasks.<name>.stdin.value
+schema plugin tasks.<name>.stdin.value type any
+schema plugin tasks.<name>.stdin.x-*
+schema plugin tasks.<name>.stdin.x-* type any
+schema plugin tasks.<name>.steps
+schema plugin tasks.<name>.steps type array
+schema plugin tasks.<name>.steps[]
+schema plugin tasks.<name>.steps[] type object
+schema plugin tasks.<name>.steps[].<name>
+schema plugin tasks.<name>.steps[].<name> type object
+schema plugin tasks.<name>.steps[].always
+schema plugin tasks.<name>.steps[].block
+schema plugin tasks.<name>.steps[].changed_when
+schema plugin tasks.<name>.steps[].changed_when type boolean
+schema plugin tasks.<name>.steps[].changed_when type string
+schema plugin tasks.<name>.steps[].continue_on_error
+schema plugin tasks.<name>.steps[].continue_on_error type boolean
+schema plugin tasks.<name>.steps[].dir
+schema plugin tasks.<name>.steps[].dir type string
+schema plugin tasks.<name>.steps[].env
+schema plugin tasks.<name>.steps[].env type object
+schema plugin tasks.<name>.steps[].env.<name>
+schema plugin tasks.<name>.steps[].env.<name> type object
+schema plugin tasks.<name>.steps[].env.<name> type string
+schema plugin tasks.<name>.steps[].env.<name>.file
+schema plugin tasks.<name>.steps[].env.<name>.file type string
+schema plugin tasks.<name>.steps[].failed_when
+schema plugin tasks.<name>.steps[].failed_when type boolean
+schema plugin tasks.<name>.steps[].failed_when type string
+schema plugin tasks.<name>.steps[].for_each
+schema plugin tasks.<name>.steps[].for_each type array
+schema plugin tasks.<name>.steps[].for_each type object
+schema plugin tasks.<name>.steps[].for_each type string
+schema plugin tasks.<name>.steps[].force
+schema plugin tasks.<name>.steps[].force type boolean
+schema plugin tasks.<name>.steps[].id
+schema plugin tasks.<name>.steps[].id type string
+schema plugin tasks.<name>.steps[].if
+schema plugin tasks.<name>.steps[].if type boolean
+schema plugin tasks.<name>.steps[].if type string
+schema plugin tasks.<name>.steps[].name
+schema plugin tasks.<name>.steps[].name type string
+schema plugin tasks.<name>.steps[].outputs
+schema plugin tasks.<name>.steps[].outputs type object
+schema plugin tasks.<name>.steps[].outputs.<name>
+schema plugin tasks.<name>.steps[].outputs.<name> type object
+schema plugin tasks.<name>.steps[].outputs.<name>.description
+schema plugin tasks.<name>.steps[].outputs.<name>.description type string
+schema plugin tasks.<name>.steps[].outputs.<name>.format
+schema plugin tasks.<name>.steps[].outputs.<name>.format value "dotenv"
+schema plugin tasks.<name>.steps[].outputs.<name>.format value "json"
+schema plugin tasks.<name>.steps[].outputs.<name>.format value "lines"
+schema plugin tasks.<name>.steps[].outputs.<name>.format value "text"
+schema plugin tasks.<name>.steps[].outputs.<name>.format value "yaml"
+schema plugin tasks.<name>.steps[].outputs.<name>.from
+schema plugin tasks.<name>.steps[].outputs.<name>.from default "output"
+schema plugin tasks.<name>.steps[].outputs.<name>.from value "file"
+schema plugin tasks.<name>.steps[].outputs.<name>.from value "output"
+schema plugin tasks.<name>.steps[].outputs.<name>.from value "stderr"
+schema plugin tasks.<name>.steps[].outputs.<name>.from value "stdout"
+schema plugin tasks.<name>.steps[].outputs.<name>.path
+schema plugin tasks.<name>.steps[].outputs.<name>.path type string
+schema plugin tasks.<name>.steps[].outputs.<name>.sensitive
+schema plugin tasks.<name>.steps[].outputs.<name>.sensitive type boolean
+schema plugin tasks.<name>.steps[].outputs.<name>.type
+schema plugin tasks.<name>.steps[].outputs.<name>.type value "array"
+schema plugin tasks.<name>.steps[].outputs.<name>.type value "boolean"
+schema plugin tasks.<name>.steps[].outputs.<name>.type value "integer"
+schema plugin tasks.<name>.steps[].outputs.<name>.type value "number"
+schema plugin tasks.<name>.steps[].outputs.<name>.type value "object"
+schema plugin tasks.<name>.steps[].outputs.<name>.type value "string"
+schema plugin tasks.<name>.steps[].outputs.<name>.value
+schema plugin tasks.<name>.steps[].outputs.<name>.value type any
+schema plugin tasks.<name>.steps[].outputs.<name>.x-*
+schema plugin tasks.<name>.steps[].outputs.<name>.x-* type any
+schema plugin tasks.<name>.steps[].pass
+schema plugin tasks.<name>.steps[].pass type array
+schema plugin tasks.<name>.steps[].pass[]
+schema plugin tasks.<name>.steps[].pass[] type string
+schema plugin tasks.<name>.steps[].rescue
+schema plugin tasks.<name>.steps[].retry
+schema plugin tasks.<name>.steps[].retry type object
+schema plugin tasks.<name>.steps[].retry.attempts
+schema plugin tasks.<name>.steps[].retry.attempts type integer
+schema plugin tasks.<name>.steps[].retry.backoff
+schema plugin tasks.<name>.steps[].retry.backoff type number
+schema plugin tasks.<name>.steps[].retry.delay
+schema plugin tasks.<name>.steps[].retry.delay type string
+schema plugin tasks.<name>.steps[].retry.until
+schema plugin tasks.<name>.steps[].retry.until type boolean
+schema plugin tasks.<name>.steps[].retry.until type string
+schema plugin tasks.<name>.steps[].retry.x-*
+schema plugin tasks.<name>.steps[].retry.x-* type any
+schema plugin tasks.<name>.steps[].run
+schema plugin tasks.<name>.steps[].run type array
+schema plugin tasks.<name>.steps[].run type string
+schema plugin tasks.<name>.steps[].run[]
+schema plugin tasks.<name>.steps[].run[] type string
+schema plugin tasks.<name>.steps[].shell
+schema plugin tasks.<name>.steps[].shell value "bash"
+schema plugin tasks.<name>.steps[].shell value "node"
+schema plugin tasks.<name>.steps[].shell value "pwsh"
+schema plugin tasks.<name>.steps[].shell value "python"
+schema plugin tasks.<name>.steps[].shell value "sh"
+schema plugin tasks.<name>.steps[].stdin
+schema plugin tasks.<name>.steps[].stdin type object
+schema plugin tasks.<name>.steps[].stdin.format
+schema plugin tasks.<name>.steps[].stdin.format default "text"
+schema plugin tasks.<name>.steps[].stdin.format value "dotenv"
+schema plugin tasks.<name>.steps[].stdin.format value "json"
+schema plugin tasks.<name>.steps[].stdin.format value "lines"
+schema plugin tasks.<name>.steps[].stdin.format value "text"
+schema plugin tasks.<name>.steps[].stdin.format value "yaml"
+schema plugin tasks.<name>.steps[].stdin.value
+schema plugin tasks.<name>.steps[].stdin.value type any
+schema plugin tasks.<name>.steps[].stdin.x-*
+schema plugin tasks.<name>.steps[].stdin.x-* type any
+schema plugin tasks.<name>.steps[].task
+schema plugin tasks.<name>.steps[].task type string
+schema plugin tasks.<name>.steps[].timeout
+schema plugin tasks.<name>.steps[].timeout type string
+schema plugin tasks.<name>.steps[].tty
+schema plugin tasks.<name>.steps[].tty type boolean
+schema plugin tasks.<name>.steps[].units
+schema plugin tasks.<name>.steps[].units type array
+schema plugin tasks.<name>.steps[].units[]
+schema plugin tasks.<name>.steps[].units[] type string
+schema plugin tasks.<name>.steps[].with
+schema plugin tasks.<name>.steps[].with type object
+schema plugin tasks.<name>.steps[].x-*
+schema plugin tasks.<name>.steps[].x-* type any
+schema plugin tasks.<name>.steps[].yes
+schema plugin tasks.<name>.steps[].yes type boolean
+schema plugin tasks.<name>.stop
+schema plugin tasks.<name>.stop type object
+schema plugin tasks.<name>.stop.grace
+schema plugin tasks.<name>.stop.grace type string
+schema plugin tasks.<name>.stop.run
+schema plugin tasks.<name>.stop.run type array
+schema plugin tasks.<name>.stop.run type string
+schema plugin tasks.<name>.stop.run[]
+schema plugin tasks.<name>.stop.run[] type string
+schema plugin tasks.<name>.stop.signal
+schema plugin tasks.<name>.stop.signal type string
+schema plugin tasks.<name>.stop.x-*
+schema plugin tasks.<name>.stop.x-* type any
+schema plugin tasks.<name>.timeout
+schema plugin tasks.<name>.timeout default "6h"
+schema plugin tasks.<name>.timeout type string
+schema plugin tasks.<name>.tty
+schema plugin tasks.<name>.tty type boolean
+schema plugin tasks.<name>.x-*
+schema plugin tasks.<name>.x-* type any
+schema plugin x-*
+schema plugin x-* type any
+schema project backend
+schema project backend type object
+schema project backend value "local"
+schema project backend.pass
+schema project backend.pass type array
+schema project backend.pass[]
+schema project backend.pass[] type string
+schema project backend.uses
+schema project backend.uses type string
+schema project backend.with
+schema project backend.with type object
+schema project backend.x-*
+schema project backend.x-* type any
+schema project daemon
+schema project daemon type object
+schema project daemon.listen
+schema project daemon.listen type string
+schema project daemon.x-*
+schema project daemon.x-* type any
+schema project description
+schema project description type string
+schema project encryption_keys
+schema project encryption_keys type array
+schema project encryption_keys[]
+schema project encryption_keys[] type object
+schema project encryption_keys[] type string
+schema project encryption_keys[].azure_keyvault
+schema project encryption_keys[].azure_keyvault type string
+schema project encryption_keys[].gcp_kms
+schema project encryption_keys[].gcp_kms type string
+schema project encryption_keys[].hc_vault_transit_uri
+schema project encryption_keys[].hc_vault_transit_uri type string
+schema project encryption_keys[].kms
+schema project encryption_keys[].kms type string
+schema project encryption_keys[].pgp
+schema project encryption_keys[].pgp type string
+schema project include
+schema project include type array
+schema project include[]
+schema project include[] type string
+schema project inputs
+schema project inputs type object
+schema project inputs.<name>
+schema project inputs.<name> type object
+schema project inputs.<name>.args
+schema project inputs.<name>.args type boolean
+schema project inputs.<name>.default
+schema project inputs.<name>.default type any
+schema project inputs.<name>.description
+schema project inputs.<name>.description type string
+schema project inputs.<name>.enum
+schema project inputs.<name>.enum type array
+schema project inputs.<name>.env
+schema project inputs.<name>.env type string
+schema project inputs.<name>.items
+schema project inputs.<name>.literal
+schema project inputs.<name>.literal type boolean
+schema project inputs.<name>.maximum
+schema project inputs.<name>.maximum type number
+schema project inputs.<name>.minimum
+schema project inputs.<name>.minimum type number
+schema project inputs.<name>.pattern
+schema project inputs.<name>.pattern type string
+schema project inputs.<name>.properties
+schema project inputs.<name>.properties type object
+schema project inputs.<name>.properties.<name>
+schema project inputs.<name>.required
+schema project inputs.<name>.required type boolean
+schema project inputs.<name>.sensitive
+schema project inputs.<name>.sensitive type boolean
+schema project inputs.<name>.type
+schema project inputs.<name>.type value "array"
+schema project inputs.<name>.type value "boolean"
+schema project inputs.<name>.type value "integer"
+schema project inputs.<name>.type value "number"
+schema project inputs.<name>.type value "object"
+schema project inputs.<name>.type value "string"
+schema project inputs.<name>.x-*
+schema project inputs.<name>.x-* type any
+schema project locals
+schema project locals type object
+schema project mcp
+schema project mcp type object
+schema project mcp value false
+schema project mcp.tasks
+schema project mcp.tasks type array
+schema project mcp.tasks[]
+schema project mcp.tasks[] type string
+schema project mcp.x-*
+schema project mcp.x-* type any
+schema project moved
+schema project moved type array
+schema project moved[]
+schema project moved[] type object
+schema project moved[].from
+schema project moved[].from type string
+schema project moved[].to
+schema project moved[].to type string
+schema project moved[].x-*
+schema project moved[].x-* type any
+schema project name
+schema project name type string
+schema project opstruss
+schema project opstruss type string
+schema project outputs
+schema project outputs type object
+schema project outputs.<name>
+schema project outputs.<name> type object
+schema project outputs.<name> type string
+schema project outputs.<name>.description
+schema project outputs.<name>.description type string
+schema project outputs.<name>.sensitive
+schema project outputs.<name>.sensitive type boolean
+schema project outputs.<name>.value
+schema project outputs.<name>.value type any
+schema project outputs.<name>.x-*
+schema project outputs.<name>.x-* type any
+schema project removed
+schema project removed type array
+schema project removed[]
+schema project removed[] type object
+schema project removed[].destroy
+schema project removed[].destroy type boolean
+schema project removed[].from
+schema project removed[].from type string
+schema project removed[].x-*
+schema project removed[].x-* type any
+schema project secrets
+schema project secrets type object
+schema project secrets.<name>
+schema project secrets.<name> type object
+schema project secrets.<name>.<name>
+schema project secrets.<name>.<name> type object
+schema project secrets.<name>.dir
+schema project secrets.<name>.dir type string
+schema project secrets.<name>.env
+schema project secrets.<name>.env type object
+schema project secrets.<name>.env type string
+schema project secrets.<name>.env.<name>
+schema project secrets.<name>.env.<name> type object
+schema project secrets.<name>.env.<name> type string
+schema project secrets.<name>.env.<name>.file
+schema project secrets.<name>.env.<name>.file type string
+schema project secrets.<name>.field
+schema project secrets.<name>.field type string
+schema project secrets.<name>.pass
+schema project secrets.<name>.pass type array
+schema project secrets.<name>.pass[]
+schema project secrets.<name>.pass[] type string
+schema project secrets.<name>.run
+schema project secrets.<name>.run type array
+schema project secrets.<name>.run type string
+schema project secrets.<name>.run[]
+schema project secrets.<name>.run[] type string
+schema project secrets.<name>.shell
+schema project secrets.<name>.shell value "bash"
+schema project secrets.<name>.shell value "node"
+schema project secrets.<name>.shell value "pwsh"
+schema project secrets.<name>.shell value "python"
+schema project secrets.<name>.shell value "sh"
+schema project secrets.<name>.sops
+schema project secrets.<name>.sops type string
+schema project secrets.<name>.x-*
+schema project secrets.<name>.x-* type any
+schema project stacks
+schema project stacks type object
+schema project stacks.<name>
+schema project stacks.<name> type object
+schema project stacks.<name>.approval
+schema project stacks.<name>.approval value "ask"
+schema project stacks.<name>.approval value "auto"
+schema project stacks.<name>.backend
+schema project stacks.<name>.backend type object
+schema project stacks.<name>.backend value "local"
+schema project stacks.<name>.backend.pass
+schema project stacks.<name>.backend.pass type array
+schema project stacks.<name>.backend.pass[]
+schema project stacks.<name>.backend.pass[] type string
+schema project stacks.<name>.backend.uses
+schema project stacks.<name>.backend.uses type string
+schema project stacks.<name>.backend.with
+schema project stacks.<name>.backend.with type object
+schema project stacks.<name>.backend.x-*
+schema project stacks.<name>.backend.x-* type any
+schema project stacks.<name>.daemon
+schema project stacks.<name>.daemon type object
+schema project stacks.<name>.daemon.listen
+schema project stacks.<name>.daemon.listen type string
+schema project stacks.<name>.daemon.x-*
+schema project stacks.<name>.daemon.x-* type any
+schema project stacks.<name>.description
+schema project stacks.<name>.description type string
+schema project stacks.<name>.encryption_keys
+schema project stacks.<name>.encryption_keys type array
+schema project stacks.<name>.encryption_keys[]
+schema project stacks.<name>.encryption_keys[] type object
+schema project stacks.<name>.encryption_keys[] type string
+schema project stacks.<name>.encryption_keys[].azure_keyvault
+schema project stacks.<name>.encryption_keys[].azure_keyvault type string
+schema project stacks.<name>.encryption_keys[].gcp_kms
+schema project stacks.<name>.encryption_keys[].gcp_kms type string
+schema project stacks.<name>.encryption_keys[].hc_vault_transit_uri
+schema project stacks.<name>.encryption_keys[].hc_vault_transit_uri type string
+schema project stacks.<name>.encryption_keys[].kms
+schema project stacks.<name>.encryption_keys[].kms type string
+schema project stacks.<name>.encryption_keys[].pgp
+schema project stacks.<name>.encryption_keys[].pgp type string
+schema project stacks.<name>.include
+schema project stacks.<name>.include type array
+schema project stacks.<name>.include[]
+schema project stacks.<name>.include[] type string
+schema project stacks.<name>.mcp
+schema project stacks.<name>.mcp type object
+schema project stacks.<name>.mcp value false
+schema project stacks.<name>.mcp.tasks
+schema project stacks.<name>.mcp.tasks type array
+schema project stacks.<name>.mcp.tasks[]
+schema project stacks.<name>.mcp.tasks[] type string
+schema project stacks.<name>.mcp.x-*
+schema project stacks.<name>.mcp.x-* type any
+schema project stacks.<name>.secrets
+schema project stacks.<name>.secrets type object
+schema project stacks.<name>.secrets.<name>
+schema project stacks.<name>.secrets.<name> type object
+schema project stacks.<name>.secrets.<name>.<name>
+schema project stacks.<name>.secrets.<name>.<name> type object
+schema project stacks.<name>.secrets.<name>.dir
+schema project stacks.<name>.secrets.<name>.dir type string
+schema project stacks.<name>.secrets.<name>.env
+schema project stacks.<name>.secrets.<name>.env type object
+schema project stacks.<name>.secrets.<name>.env type string
+schema project stacks.<name>.secrets.<name>.env.<name>
+schema project stacks.<name>.secrets.<name>.env.<name> type object
+schema project stacks.<name>.secrets.<name>.env.<name> type string
+schema project stacks.<name>.secrets.<name>.env.<name>.file
+schema project stacks.<name>.secrets.<name>.env.<name>.file type string
+schema project stacks.<name>.secrets.<name>.field
+schema project stacks.<name>.secrets.<name>.field type string
+schema project stacks.<name>.secrets.<name>.pass
+schema project stacks.<name>.secrets.<name>.pass type array
+schema project stacks.<name>.secrets.<name>.pass[]
+schema project stacks.<name>.secrets.<name>.pass[] type string
+schema project stacks.<name>.secrets.<name>.run
+schema project stacks.<name>.secrets.<name>.run type array
+schema project stacks.<name>.secrets.<name>.run type string
+schema project stacks.<name>.secrets.<name>.run[]
+schema project stacks.<name>.secrets.<name>.run[] type string
+schema project stacks.<name>.secrets.<name>.shell
+schema project stacks.<name>.secrets.<name>.shell value "bash"
+schema project stacks.<name>.secrets.<name>.shell value "node"
+schema project stacks.<name>.secrets.<name>.shell value "pwsh"
+schema project stacks.<name>.secrets.<name>.shell value "python"
+schema project stacks.<name>.secrets.<name>.shell value "sh"
+schema project stacks.<name>.secrets.<name>.sops
+schema project stacks.<name>.secrets.<name>.sops type string
+schema project stacks.<name>.secrets.<name>.x-*
+schema project stacks.<name>.secrets.<name>.x-* type any
+schema project stacks.<name>.with
+schema project stacks.<name>.with type object
+schema project stacks.<name>.x-*
+schema project stacks.<name>.x-* type any
+schema project tasks
+schema project tasks type object
+schema project tasks.<name>
+schema project tasks.<name> type object
+schema project tasks.<name>.<name>
+schema project tasks.<name>.<name> type object
+schema project tasks.<name>.approval
+schema project tasks.<name>.approval default "auto"
+schema project tasks.<name>.approval value "ask"
+schema project tasks.<name>.approval value "auto"
+schema project tasks.<name>.changed_when
+schema project tasks.<name>.changed_when type boolean
+schema project tasks.<name>.changed_when type string
+schema project tasks.<name>.concurrency
+schema project tasks.<name>.concurrency default "queue"
+schema project tasks.<name>.concurrency type object
+schema project tasks.<name>.concurrency value "cancel"
+schema project tasks.<name>.concurrency value "parallel"
+schema project tasks.<name>.concurrency value "queue"
+schema project tasks.<name>.concurrency value "skip"
+schema project tasks.<name>.concurrency.group
+schema project tasks.<name>.concurrency.group type string
+schema project tasks.<name>.concurrency.mode
+schema project tasks.<name>.concurrency.mode default "queue"
+schema project tasks.<name>.concurrency.mode value "cancel"
+schema project tasks.<name>.concurrency.mode value "parallel"
+schema project tasks.<name>.concurrency.mode value "queue"
+schema project tasks.<name>.concurrency.mode value "skip"
+schema project tasks.<name>.concurrency.x-*
+schema project tasks.<name>.concurrency.x-* type any
+schema project tasks.<name>.continue_on_error
+schema project tasks.<name>.continue_on_error type boolean
+schema project tasks.<name>.description
+schema project tasks.<name>.description type string
+schema project tasks.<name>.dir
+schema project tasks.<name>.dir type string
+schema project tasks.<name>.env
+schema project tasks.<name>.env type object
+schema project tasks.<name>.env.<name>
+schema project tasks.<name>.env.<name> type object
+schema project tasks.<name>.env.<name> type string
+schema project tasks.<name>.env.<name>.file
+schema project tasks.<name>.env.<name>.file type string
+schema project tasks.<name>.failed_when
+schema project tasks.<name>.failed_when type boolean
+schema project tasks.<name>.failed_when type string
+schema project tasks.<name>.for_each
+schema project tasks.<name>.for_each type array
+schema project tasks.<name>.for_each type object
+schema project tasks.<name>.for_each type string
+schema project tasks.<name>.if
+schema project tasks.<name>.if type boolean
+schema project tasks.<name>.if type string
+schema project tasks.<name>.inputs
+schema project tasks.<name>.inputs type object
+schema project tasks.<name>.inputs.<name>
+schema project tasks.<name>.inputs.<name> type object
+schema project tasks.<name>.inputs.<name>.args
+schema project tasks.<name>.inputs.<name>.args type boolean
+schema project tasks.<name>.inputs.<name>.default
+schema project tasks.<name>.inputs.<name>.default type any
+schema project tasks.<name>.inputs.<name>.description
+schema project tasks.<name>.inputs.<name>.description type string
+schema project tasks.<name>.inputs.<name>.enum
+schema project tasks.<name>.inputs.<name>.enum type array
+schema project tasks.<name>.inputs.<name>.env
+schema project tasks.<name>.inputs.<name>.env type string
+schema project tasks.<name>.inputs.<name>.items
+schema project tasks.<name>.inputs.<name>.literal
+schema project tasks.<name>.inputs.<name>.literal type boolean
+schema project tasks.<name>.inputs.<name>.maximum
+schema project tasks.<name>.inputs.<name>.maximum type number
+schema project tasks.<name>.inputs.<name>.minimum
+schema project tasks.<name>.inputs.<name>.minimum type number
+schema project tasks.<name>.inputs.<name>.pattern
+schema project tasks.<name>.inputs.<name>.pattern type string
+schema project tasks.<name>.inputs.<name>.properties
+schema project tasks.<name>.inputs.<name>.properties type object
+schema project tasks.<name>.inputs.<name>.properties.<name>
+schema project tasks.<name>.inputs.<name>.required
+schema project tasks.<name>.inputs.<name>.required type boolean
+schema project tasks.<name>.inputs.<name>.sensitive
+schema project tasks.<name>.inputs.<name>.sensitive type boolean
+schema project tasks.<name>.inputs.<name>.type
+schema project tasks.<name>.inputs.<name>.type value "array"
+schema project tasks.<name>.inputs.<name>.type value "boolean"
+schema project tasks.<name>.inputs.<name>.type value "integer"
+schema project tasks.<name>.inputs.<name>.type value "number"
+schema project tasks.<name>.inputs.<name>.type value "object"
+schema project tasks.<name>.inputs.<name>.type value "string"
+schema project tasks.<name>.inputs.<name>.x-*
+schema project tasks.<name>.inputs.<name>.x-* type any
+schema project tasks.<name>.internal
+schema project tasks.<name>.internal type boolean
+schema project tasks.<name>.max_parallel
+schema project tasks.<name>.max_parallel type integer
+schema project tasks.<name>.needs
+schema project tasks.<name>.needs type array
+schema project tasks.<name>.needs[]
+schema project tasks.<name>.needs[] type string
+schema project tasks.<name>.on
+schema project tasks.<name>.on type object
+schema project tasks.<name>.on.after
+schema project tasks.<name>.on.after type array
+schema project tasks.<name>.on.after type object
+schema project tasks.<name>.on.after.if
+schema project tasks.<name>.on.after.if type boolean
+schema project tasks.<name>.on.after.if type string
+schema project tasks.<name>.on.after.outcome
+schema project tasks.<name>.on.after.outcome default "success"
+schema project tasks.<name>.on.after.outcome value "any"
+schema project tasks.<name>.on.after.outcome value "failure"
+schema project tasks.<name>.on.after.outcome value "success"
+schema project tasks.<name>.on.after.task
+schema project tasks.<name>.on.after.task type string
+schema project tasks.<name>.on.after.unit
+schema project tasks.<name>.on.after.unit type string
+schema project tasks.<name>.on.after.with
+schema project tasks.<name>.on.after.with type object
+schema project tasks.<name>.on.after.x-*
+schema project tasks.<name>.on.after.x-* type any
+schema project tasks.<name>.on.after[]
+schema project tasks.<name>.on.after[] type object
+schema project tasks.<name>.on.after[].if
+schema project tasks.<name>.on.after[].if type boolean
+schema project tasks.<name>.on.after[].if type string
+schema project tasks.<name>.on.after[].outcome
+schema project tasks.<name>.on.after[].outcome default "success"
+schema project tasks.<name>.on.after[].outcome value "any"
+schema project tasks.<name>.on.after[].outcome value "failure"
+schema project tasks.<name>.on.after[].outcome value "success"
+schema project tasks.<name>.on.after[].task
+schema project tasks.<name>.on.after[].task type string
+schema project tasks.<name>.on.after[].unit
+schema project tasks.<name>.on.after[].unit type string
+schema project tasks.<name>.on.after[].with
+schema project tasks.<name>.on.after[].with type object
+schema project tasks.<name>.on.after[].x-*
+schema project tasks.<name>.on.after[].x-* type any
+schema project tasks.<name>.on.every
+schema project tasks.<name>.on.every type array
+schema project tasks.<name>.on.every type string
+schema project tasks.<name>.on.every[]
+schema project tasks.<name>.on.every[] type string
+schema project tasks.<name>.on.schedule
+schema project tasks.<name>.on.schedule type array
+schema project tasks.<name>.on.schedule type object
+schema project tasks.<name>.on.schedule type string
+schema project tasks.<name>.on.schedule.cron
+schema project tasks.<name>.on.schedule.cron type string
+schema project tasks.<name>.on.schedule.if
+schema project tasks.<name>.on.schedule.if type boolean
+schema project tasks.<name>.on.schedule.if type string
+schema project tasks.<name>.on.schedule.persistent
+schema project tasks.<name>.on.schedule.persistent type boolean
+schema project tasks.<name>.on.schedule.timezone
+schema project tasks.<name>.on.schedule.timezone type string
+schema project tasks.<name>.on.schedule.with
+schema project tasks.<name>.on.schedule.with type object
+schema project tasks.<name>.on.schedule.x-*
+schema project tasks.<name>.on.schedule.x-* type any
+schema project tasks.<name>.on.schedule[]
+schema project tasks.<name>.on.schedule[] type object
+schema project tasks.<name>.on.schedule[] type string
+schema project tasks.<name>.on.schedule[].cron
+schema project tasks.<name>.on.schedule[].cron type string
+schema project tasks.<name>.on.schedule[].if
+schema project tasks.<name>.on.schedule[].if type boolean
+schema project tasks.<name>.on.schedule[].if type string
+schema project tasks.<name>.on.schedule[].persistent
+schema project tasks.<name>.on.schedule[].persistent type boolean
+schema project tasks.<name>.on.schedule[].timezone
+schema project tasks.<name>.on.schedule[].timezone type string
+schema project tasks.<name>.on.schedule[].with
+schema project tasks.<name>.on.schedule[].with type object
+schema project tasks.<name>.on.schedule[].x-*
+schema project tasks.<name>.on.schedule[].x-* type any
+schema project tasks.<name>.on.watch
+schema project tasks.<name>.on.watch type array
+schema project tasks.<name>.on.watch type object
+schema project tasks.<name>.on.watch.<name>
+schema project tasks.<name>.on.watch.<name> type object
+schema project tasks.<name>.on.watch.batch
+schema project tasks.<name>.on.watch.batch type string
+schema project tasks.<name>.on.watch.debounce
+schema project tasks.<name>.on.watch.debounce type string
+schema project tasks.<name>.on.watch.if
+schema project tasks.<name>.on.watch.if type boolean
+schema project tasks.<name>.on.watch.if type string
+schema project tasks.<name>.on.watch.paths
+schema project tasks.<name>.on.watch.paths type array
+schema project tasks.<name>.on.watch.paths[]
+schema project tasks.<name>.on.watch.paths[] type object
+schema project tasks.<name>.on.watch.paths[] type string
+schema project tasks.<name>.on.watch.paths[].exclude
+schema project tasks.<name>.on.watch.paths[].exclude type string
+schema project tasks.<name>.on.watch.stream
+schema project tasks.<name>.on.watch.stream default "both"
+schema project tasks.<name>.on.watch.stream value "both"
+schema project tasks.<name>.on.watch.stream value "stderr"
+schema project tasks.<name>.on.watch.stream value "stdout"
+schema project tasks.<name>.on.watch.unit
+schema project tasks.<name>.on.watch.unit type string
+schema project tasks.<name>.on.watch.with
+schema project tasks.<name>.on.watch.with type object
+schema project tasks.<name>.on.watch.x-*
+schema project tasks.<name>.on.watch.x-* type any
+schema project tasks.<name>.on.watch[]
+schema project tasks.<name>.on.watch[] type object
+schema project tasks.<name>.on.watch[].<name>
+schema project tasks.<name>.on.watch[].<name> type object
+schema project tasks.<name>.on.watch[].batch
+schema project tasks.<name>.on.watch[].batch type string
+schema project tasks.<name>.on.watch[].debounce
+schema project tasks.<name>.on.watch[].debounce type string
+schema project tasks.<name>.on.watch[].if
+schema project tasks.<name>.on.watch[].if type boolean
+schema project tasks.<name>.on.watch[].if type string
+schema project tasks.<name>.on.watch[].paths
+schema project tasks.<name>.on.watch[].paths type array
+schema project tasks.<name>.on.watch[].paths[]
+schema project tasks.<name>.on.watch[].paths[] type object
+schema project tasks.<name>.on.watch[].paths[] type string
+schema project tasks.<name>.on.watch[].paths[].exclude
+schema project tasks.<name>.on.watch[].paths[].exclude type string
+schema project tasks.<name>.on.watch[].stream
+schema project tasks.<name>.on.watch[].stream default "both"
+schema project tasks.<name>.on.watch[].stream value "both"
+schema project tasks.<name>.on.watch[].stream value "stderr"
+schema project tasks.<name>.on.watch[].stream value "stdout"
+schema project tasks.<name>.on.watch[].unit
+schema project tasks.<name>.on.watch[].unit type string
+schema project tasks.<name>.on.watch[].with
+schema project tasks.<name>.on.watch[].with type object
+schema project tasks.<name>.on.watch[].x-*
+schema project tasks.<name>.on.watch[].x-* type any
+schema project tasks.<name>.on.webhook
+schema project tasks.<name>.on.webhook type array
+schema project tasks.<name>.on.webhook type object
+schema project tasks.<name>.on.webhook.if
+schema project tasks.<name>.on.webhook.if type boolean
+schema project tasks.<name>.on.webhook.if type string
+schema project tasks.<name>.on.webhook.method
+schema project tasks.<name>.on.webhook.method default "POST"
+schema project tasks.<name>.on.webhook.method value "DELETE"
+schema project tasks.<name>.on.webhook.method value "GET"
+schema project tasks.<name>.on.webhook.method value "PATCH"
+schema project tasks.<name>.on.webhook.method value "POST"
+schema project tasks.<name>.on.webhook.method value "PUT"
+schema project tasks.<name>.on.webhook.path
+schema project tasks.<name>.on.webhook.path type string
+schema project tasks.<name>.on.webhook.respond
+schema project tasks.<name>.on.webhook.respond default "accepted"
+schema project tasks.<name>.on.webhook.respond value "accepted"
+schema project tasks.<name>.on.webhook.respond value "wait"
+schema project tasks.<name>.on.webhook.secret
+schema project tasks.<name>.on.webhook.secret type string
+schema project tasks.<name>.on.webhook.signature
+schema project tasks.<name>.on.webhook.signature type object
+schema project tasks.<name>.on.webhook.signature value "bearer"
+schema project tasks.<name>.on.webhook.signature value "github"
+schema project tasks.<name>.on.webhook.signature value "gitlab"
+schema project tasks.<name>.on.webhook.signature value "slack"
+schema project tasks.<name>.on.webhook.signature value "standard"
+schema project tasks.<name>.on.webhook.signature value "stripe"
+schema project tasks.<name>.on.webhook.signature.algorithm
+schema project tasks.<name>.on.webhook.signature.algorithm value "sha256"
+schema project tasks.<name>.on.webhook.signature.algorithm value "sha512"
+schema project tasks.<name>.on.webhook.signature.encoding
+schema project tasks.<name>.on.webhook.signature.encoding value "base64"
+schema project tasks.<name>.on.webhook.signature.encoding value "hex"
+schema project tasks.<name>.on.webhook.signature.header
+schema project tasks.<name>.on.webhook.signature.header type string
+schema project tasks.<name>.on.webhook.signature.prefix
+schema project tasks.<name>.on.webhook.signature.prefix type string
+schema project tasks.<name>.on.webhook.with
+schema project tasks.<name>.on.webhook.with type object
+schema project tasks.<name>.on.webhook.x-*
+schema project tasks.<name>.on.webhook.x-* type any
+schema project tasks.<name>.on.webhook[]
+schema project tasks.<name>.on.webhook[] type object
+schema project tasks.<name>.on.webhook[].if
+schema project tasks.<name>.on.webhook[].if type boolean
+schema project tasks.<name>.on.webhook[].if type string
+schema project tasks.<name>.on.webhook[].method
+schema project tasks.<name>.on.webhook[].method default "POST"
+schema project tasks.<name>.on.webhook[].method value "DELETE"
+schema project tasks.<name>.on.webhook[].method value "GET"
+schema project tasks.<name>.on.webhook[].method value "PATCH"
+schema project tasks.<name>.on.webhook[].method value "POST"
+schema project tasks.<name>.on.webhook[].method value "PUT"
+schema project tasks.<name>.on.webhook[].path
+schema project tasks.<name>.on.webhook[].path type string
+schema project tasks.<name>.on.webhook[].respond
+schema project tasks.<name>.on.webhook[].respond default "accepted"
+schema project tasks.<name>.on.webhook[].respond value "accepted"
+schema project tasks.<name>.on.webhook[].respond value "wait"
+schema project tasks.<name>.on.webhook[].secret
+schema project tasks.<name>.on.webhook[].secret type string
+schema project tasks.<name>.on.webhook[].signature
+schema project tasks.<name>.on.webhook[].signature type object
+schema project tasks.<name>.on.webhook[].signature value "bearer"
+schema project tasks.<name>.on.webhook[].signature value "github"
+schema project tasks.<name>.on.webhook[].signature value "gitlab"
+schema project tasks.<name>.on.webhook[].signature value "slack"
+schema project tasks.<name>.on.webhook[].signature value "standard"
+schema project tasks.<name>.on.webhook[].signature value "stripe"
+schema project tasks.<name>.on.webhook[].signature.algorithm
+schema project tasks.<name>.on.webhook[].signature.algorithm value "sha256"
+schema project tasks.<name>.on.webhook[].signature.algorithm value "sha512"
+schema project tasks.<name>.on.webhook[].signature.encoding
+schema project tasks.<name>.on.webhook[].signature.encoding value "base64"
+schema project tasks.<name>.on.webhook[].signature.encoding value "hex"
+schema project tasks.<name>.on.webhook[].signature.header
+schema project tasks.<name>.on.webhook[].signature.header type string
+schema project tasks.<name>.on.webhook[].signature.prefix
+schema project tasks.<name>.on.webhook[].signature.prefix type string
+schema project tasks.<name>.on.webhook[].with
+schema project tasks.<name>.on.webhook[].with type object
+schema project tasks.<name>.on.webhook[].x-*
+schema project tasks.<name>.on.webhook[].x-* type any
+schema project tasks.<name>.on.x-*
+schema project tasks.<name>.on.x-* type any
+schema project tasks.<name>.outputs
+schema project tasks.<name>.outputs type object
+schema project tasks.<name>.outputs.<name>
+schema project tasks.<name>.outputs.<name> type object
+schema project tasks.<name>.outputs.<name>.description
+schema project tasks.<name>.outputs.<name>.description type string
+schema project tasks.<name>.outputs.<name>.format
+schema project tasks.<name>.outputs.<name>.format value "dotenv"
+schema project tasks.<name>.outputs.<name>.format value "json"
+schema project tasks.<name>.outputs.<name>.format value "lines"
+schema project tasks.<name>.outputs.<name>.format value "text"
+schema project tasks.<name>.outputs.<name>.format value "yaml"
+schema project tasks.<name>.outputs.<name>.from
+schema project tasks.<name>.outputs.<name>.from default "output"
+schema project tasks.<name>.outputs.<name>.from value "file"
+schema project tasks.<name>.outputs.<name>.from value "output"
+schema project tasks.<name>.outputs.<name>.from value "stderr"
+schema project tasks.<name>.outputs.<name>.from value "stdout"
+schema project tasks.<name>.outputs.<name>.path
+schema project tasks.<name>.outputs.<name>.path type string
+schema project tasks.<name>.outputs.<name>.sensitive
+schema project tasks.<name>.outputs.<name>.sensitive type boolean
+schema project tasks.<name>.outputs.<name>.type
+schema project tasks.<name>.outputs.<name>.type value "array"
+schema project tasks.<name>.outputs.<name>.type value "boolean"
+schema project tasks.<name>.outputs.<name>.type value "integer"
+schema project tasks.<name>.outputs.<name>.type value "number"
+schema project tasks.<name>.outputs.<name>.type value "object"
+schema project tasks.<name>.outputs.<name>.type value "string"
+schema project tasks.<name>.outputs.<name>.value
+schema project tasks.<name>.outputs.<name>.value type any
+schema project tasks.<name>.outputs.<name>.x-*
+schema project tasks.<name>.outputs.<name>.x-* type any
+schema project tasks.<name>.pass
+schema project tasks.<name>.pass type array
+schema project tasks.<name>.pass[]
+schema project tasks.<name>.pass[] type string
+schema project tasks.<name>.requires
+schema project tasks.<name>.requires type array
+schema project tasks.<name>.requires type string
+schema project tasks.<name>.requires[]
+schema project tasks.<name>.requires[] type string
+schema project tasks.<name>.retry
+schema project tasks.<name>.retry type object
+schema project tasks.<name>.retry.attempts
+schema project tasks.<name>.retry.attempts type integer
+schema project tasks.<name>.retry.backoff
+schema project tasks.<name>.retry.backoff type number
+schema project tasks.<name>.retry.delay
+schema project tasks.<name>.retry.delay type string
+schema project tasks.<name>.retry.until
+schema project tasks.<name>.retry.until type boolean
+schema project tasks.<name>.retry.until type string
+schema project tasks.<name>.retry.x-*
+schema project tasks.<name>.retry.x-* type any
+schema project tasks.<name>.run
+schema project tasks.<name>.run type array
+schema project tasks.<name>.run type string
+schema project tasks.<name>.run[]
+schema project tasks.<name>.run[] type string
+schema project tasks.<name>.shell
+schema project tasks.<name>.shell default "sh"
+schema project tasks.<name>.shell value "bash"
+schema project tasks.<name>.shell value "node"
+schema project tasks.<name>.shell value "pwsh"
+schema project tasks.<name>.shell value "python"
+schema project tasks.<name>.shell value "sh"
+schema project tasks.<name>.stdin
+schema project tasks.<name>.stdin type object
+schema project tasks.<name>.stdin.format
+schema project tasks.<name>.stdin.format default "text"
+schema project tasks.<name>.stdin.format value "dotenv"
+schema project tasks.<name>.stdin.format value "json"
+schema project tasks.<name>.stdin.format value "lines"
+schema project tasks.<name>.stdin.format value "text"
+schema project tasks.<name>.stdin.format value "yaml"
+schema project tasks.<name>.stdin.value
+schema project tasks.<name>.stdin.value type any
+schema project tasks.<name>.stdin.x-*
+schema project tasks.<name>.stdin.x-* type any
+schema project tasks.<name>.steps
+schema project tasks.<name>.steps type array
+schema project tasks.<name>.steps[]
+schema project tasks.<name>.steps[] type object
+schema project tasks.<name>.steps[].<name>
+schema project tasks.<name>.steps[].<name> type object
+schema project tasks.<name>.steps[].always
+schema project tasks.<name>.steps[].block
+schema project tasks.<name>.steps[].changed_when
+schema project tasks.<name>.steps[].changed_when type boolean
+schema project tasks.<name>.steps[].changed_when type string
+schema project tasks.<name>.steps[].continue_on_error
+schema project tasks.<name>.steps[].continue_on_error type boolean
+schema project tasks.<name>.steps[].dir
+schema project tasks.<name>.steps[].dir type string
+schema project tasks.<name>.steps[].env
+schema project tasks.<name>.steps[].env type object
+schema project tasks.<name>.steps[].env.<name>
+schema project tasks.<name>.steps[].env.<name> type object
+schema project tasks.<name>.steps[].env.<name> type string
+schema project tasks.<name>.steps[].env.<name>.file
+schema project tasks.<name>.steps[].env.<name>.file type string
+schema project tasks.<name>.steps[].failed_when
+schema project tasks.<name>.steps[].failed_when type boolean
+schema project tasks.<name>.steps[].failed_when type string
+schema project tasks.<name>.steps[].for_each
+schema project tasks.<name>.steps[].for_each type array
+schema project tasks.<name>.steps[].for_each type object
+schema project tasks.<name>.steps[].for_each type string
+schema project tasks.<name>.steps[].force
+schema project tasks.<name>.steps[].force type boolean
+schema project tasks.<name>.steps[].id
+schema project tasks.<name>.steps[].id type string
+schema project tasks.<name>.steps[].if
+schema project tasks.<name>.steps[].if type boolean
+schema project tasks.<name>.steps[].if type string
+schema project tasks.<name>.steps[].name
+schema project tasks.<name>.steps[].name type string
+schema project tasks.<name>.steps[].outputs
+schema project tasks.<name>.steps[].outputs type object
+schema project tasks.<name>.steps[].outputs.<name>
+schema project tasks.<name>.steps[].outputs.<name> type object
+schema project tasks.<name>.steps[].outputs.<name>.description
+schema project tasks.<name>.steps[].outputs.<name>.description type string
+schema project tasks.<name>.steps[].outputs.<name>.format
+schema project tasks.<name>.steps[].outputs.<name>.format value "dotenv"
+schema project tasks.<name>.steps[].outputs.<name>.format value "json"
+schema project tasks.<name>.steps[].outputs.<name>.format value "lines"
+schema project tasks.<name>.steps[].outputs.<name>.format value "text"
+schema project tasks.<name>.steps[].outputs.<name>.format value "yaml"
+schema project tasks.<name>.steps[].outputs.<name>.from
+schema project tasks.<name>.steps[].outputs.<name>.from default "output"
+schema project tasks.<name>.steps[].outputs.<name>.from value "file"
+schema project tasks.<name>.steps[].outputs.<name>.from value "output"
+schema project tasks.<name>.steps[].outputs.<name>.from value "stderr"
+schema project tasks.<name>.steps[].outputs.<name>.from value "stdout"
+schema project tasks.<name>.steps[].outputs.<name>.path
+schema project tasks.<name>.steps[].outputs.<name>.path type string
+schema project tasks.<name>.steps[].outputs.<name>.sensitive
+schema project tasks.<name>.steps[].outputs.<name>.sensitive type boolean
+schema project tasks.<name>.steps[].outputs.<name>.type
+schema project tasks.<name>.steps[].outputs.<name>.type value "array"
+schema project tasks.<name>.steps[].outputs.<name>.type value "boolean"
+schema project tasks.<name>.steps[].outputs.<name>.type value "integer"
+schema project tasks.<name>.steps[].outputs.<name>.type value "number"
+schema project tasks.<name>.steps[].outputs.<name>.type value "object"
+schema project tasks.<name>.steps[].outputs.<name>.type value "string"
+schema project tasks.<name>.steps[].outputs.<name>.value
+schema project tasks.<name>.steps[].outputs.<name>.value type any
+schema project tasks.<name>.steps[].outputs.<name>.x-*
+schema project tasks.<name>.steps[].outputs.<name>.x-* type any
+schema project tasks.<name>.steps[].pass
+schema project tasks.<name>.steps[].pass type array
+schema project tasks.<name>.steps[].pass[]
+schema project tasks.<name>.steps[].pass[] type string
+schema project tasks.<name>.steps[].rescue
+schema project tasks.<name>.steps[].retry
+schema project tasks.<name>.steps[].retry type object
+schema project tasks.<name>.steps[].retry.attempts
+schema project tasks.<name>.steps[].retry.attempts type integer
+schema project tasks.<name>.steps[].retry.backoff
+schema project tasks.<name>.steps[].retry.backoff type number
+schema project tasks.<name>.steps[].retry.delay
+schema project tasks.<name>.steps[].retry.delay type string
+schema project tasks.<name>.steps[].retry.until
+schema project tasks.<name>.steps[].retry.until type boolean
+schema project tasks.<name>.steps[].retry.until type string
+schema project tasks.<name>.steps[].retry.x-*
+schema project tasks.<name>.steps[].retry.x-* type any
+schema project tasks.<name>.steps[].run
+schema project tasks.<name>.steps[].run type array
+schema project tasks.<name>.steps[].run type string
+schema project tasks.<name>.steps[].run[]
+schema project tasks.<name>.steps[].run[] type string
+schema project tasks.<name>.steps[].shell
+schema project tasks.<name>.steps[].shell value "bash"
+schema project tasks.<name>.steps[].shell value "node"
+schema project tasks.<name>.steps[].shell value "pwsh"
+schema project tasks.<name>.steps[].shell value "python"
+schema project tasks.<name>.steps[].shell value "sh"
+schema project tasks.<name>.steps[].stdin
+schema project tasks.<name>.steps[].stdin type object
+schema project tasks.<name>.steps[].stdin.format
+schema project tasks.<name>.steps[].stdin.format default "text"
+schema project tasks.<name>.steps[].stdin.format value "dotenv"
+schema project tasks.<name>.steps[].stdin.format value "json"
+schema project tasks.<name>.steps[].stdin.format value "lines"
+schema project tasks.<name>.steps[].stdin.format value "text"
+schema project tasks.<name>.steps[].stdin.format value "yaml"
+schema project tasks.<name>.steps[].stdin.value
+schema project tasks.<name>.steps[].stdin.value type any
+schema project tasks.<name>.steps[].stdin.x-*
+schema project tasks.<name>.steps[].stdin.x-* type any
+schema project tasks.<name>.steps[].task
+schema project tasks.<name>.steps[].task type string
+schema project tasks.<name>.steps[].timeout
+schema project tasks.<name>.steps[].timeout type string
+schema project tasks.<name>.steps[].tty
+schema project tasks.<name>.steps[].tty type boolean
+schema project tasks.<name>.steps[].units
+schema project tasks.<name>.steps[].units type array
+schema project tasks.<name>.steps[].units[]
+schema project tasks.<name>.steps[].units[] type string
+schema project tasks.<name>.steps[].with
+schema project tasks.<name>.steps[].with type object
+schema project tasks.<name>.steps[].x-*
+schema project tasks.<name>.steps[].x-* type any
+schema project tasks.<name>.steps[].yes
+schema project tasks.<name>.steps[].yes type boolean
+schema project tasks.<name>.stop
+schema project tasks.<name>.stop type object
+schema project tasks.<name>.stop.grace
+schema project tasks.<name>.stop.grace type string
+schema project tasks.<name>.stop.run
+schema project tasks.<name>.stop.run type array
+schema project tasks.<name>.stop.run type string
+schema project tasks.<name>.stop.run[]
+schema project tasks.<name>.stop.run[] type string
+schema project tasks.<name>.stop.signal
+schema project tasks.<name>.stop.signal type string
+schema project tasks.<name>.stop.x-*
+schema project tasks.<name>.stop.x-* type any
+schema project tasks.<name>.timeout
+schema project tasks.<name>.timeout default "6h"
+schema project tasks.<name>.timeout type string
+schema project tasks.<name>.tty
+schema project tasks.<name>.tty type boolean
+schema project tasks.<name>.x-*
+schema project tasks.<name>.x-* type any
+schema project units
+schema project units type object
+schema project units.<name>
+schema project units.<name> type object
+schema project units.<name>.approval
+schema project units.<name>.approval value "ask"
+schema project units.<name>.approval value "auto"
+schema project units.<name>.description
+schema project units.<name>.description type string
+schema project units.<name>.destroy
+schema project units.<name>.destroy type array
+schema project units.<name>.destroy type string
+schema project units.<name>.destroy[]
+schema project units.<name>.destroy[] type string
+schema project units.<name>.dir
+schema project units.<name>.dir type string
+schema project units.<name>.env
+schema project units.<name>.env type object
+schema project units.<name>.env.<name>
+schema project units.<name>.env.<name> type object
+schema project units.<name>.env.<name> type string
+schema project units.<name>.env.<name>.file
+schema project units.<name>.env.<name>.file type string
+schema project units.<name>.for_each
+schema project units.<name>.for_each type array
+schema project units.<name>.for_each type object
+schema project units.<name>.for_each type string
+schema project units.<name>.generates
+schema project units.<name>.generates type array
+schema project units.<name>.generates[]
+schema project units.<name>.generates[] type string
+schema project units.<name>.if
+schema project units.<name>.if type boolean
+schema project units.<name>.if type string
+schema project units.<name>.needs
+schema project units.<name>.needs type array
+schema project units.<name>.needs[]
+schema project units.<name>.needs[] type string
+schema project units.<name>.outputs
+schema project units.<name>.outputs type object
+schema project units.<name>.outputs.<name>
+schema project units.<name>.outputs.<name> type object
+schema project units.<name>.outputs.<name>.description
+schema project units.<name>.outputs.<name>.description type string
+schema project units.<name>.outputs.<name>.format
+schema project units.<name>.outputs.<name>.format value "dotenv"
+schema project units.<name>.outputs.<name>.format value "json"
+schema project units.<name>.outputs.<name>.format value "lines"
+schema project units.<name>.outputs.<name>.format value "text"
+schema project units.<name>.outputs.<name>.format value "yaml"
+schema project units.<name>.outputs.<name>.from
+schema project units.<name>.outputs.<name>.from default "output"
+schema project units.<name>.outputs.<name>.from value "file"
+schema project units.<name>.outputs.<name>.from value "output"
+schema project units.<name>.outputs.<name>.from value "stderr"
+schema project units.<name>.outputs.<name>.from value "stdout"
+schema project units.<name>.outputs.<name>.path
+schema project units.<name>.outputs.<name>.path type string
+schema project units.<name>.outputs.<name>.sensitive
+schema project units.<name>.outputs.<name>.sensitive type boolean
+schema project units.<name>.outputs.<name>.type
+schema project units.<name>.outputs.<name>.type value "array"
+schema project units.<name>.outputs.<name>.type value "boolean"
+schema project units.<name>.outputs.<name>.type value "integer"
+schema project units.<name>.outputs.<name>.type value "number"
+schema project units.<name>.outputs.<name>.type value "object"
+schema project units.<name>.outputs.<name>.type value "string"
+schema project units.<name>.outputs.<name>.value
+schema project units.<name>.outputs.<name>.value type any
+schema project units.<name>.outputs.<name>.x-*
+schema project units.<name>.outputs.<name>.x-* type any
+schema project units.<name>.pass
+schema project units.<name>.pass type array
+schema project units.<name>.pass[]
+schema project units.<name>.pass[] type string
+schema project units.<name>.protect
+schema project units.<name>.protect type boolean
+schema project units.<name>.ready
+schema project units.<name>.ready type object
+schema project units.<name>.ready.http
+schema project units.<name>.ready.http type string
+schema project units.<name>.ready.interval
+schema project units.<name>.ready.interval default "1s"
+schema project units.<name>.ready.interval type string
+schema project units.<name>.ready.run
+schema project units.<name>.ready.run type array
+schema project units.<name>.ready.run type string
+schema project units.<name>.ready.run[]
+schema project units.<name>.ready.run[] type string
+schema project units.<name>.ready.tcp
+schema project units.<name>.ready.tcp type string
+schema project units.<name>.ready.timeout
+schema project units.<name>.ready.timeout default "1m"
+schema project units.<name>.ready.timeout type string
+schema project units.<name>.ready.x-*
+schema project units.<name>.ready.x-* type any
+schema project units.<name>.requires
+schema project units.<name>.requires type array
+schema project units.<name>.requires type string
+schema project units.<name>.requires[]
+schema project units.<name>.requires[] type string
+schema project units.<name>.restart
+schema project units.<name>.restart default "on-failure"
+schema project units.<name>.restart value "always"
+schema project units.<name>.restart value "no"
+schema project units.<name>.restart value "on-failure"
+schema project units.<name>.retry
+schema project units.<name>.retry type object
+schema project units.<name>.retry.attempts
+schema project units.<name>.retry.attempts type integer
+schema project units.<name>.retry.backoff
+schema project units.<name>.retry.backoff type number
+schema project units.<name>.retry.delay
+schema project units.<name>.retry.delay type string
+schema project units.<name>.retry.until
+schema project units.<name>.retry.until type boolean
+schema project units.<name>.retry.until type string
+schema project units.<name>.retry.x-*
+schema project units.<name>.retry.x-* type any
+schema project units.<name>.revision
+schema project units.<name>.revision type string
+schema project units.<name>.run
+schema project units.<name>.run type array
+schema project units.<name>.run type string
+schema project units.<name>.run[]
+schema project units.<name>.run[] type string
+schema project units.<name>.service
+schema project units.<name>.service type array
+schema project units.<name>.service type string
+schema project units.<name>.service[]
+schema project units.<name>.service[] type string
+schema project units.<name>.shell
+schema project units.<name>.shell default "sh"
+schema project units.<name>.shell value "bash"
+schema project units.<name>.shell value "node"
+schema project units.<name>.shell value "pwsh"
+schema project units.<name>.shell value "python"
+schema project units.<name>.shell value "sh"
+schema project units.<name>.sources
+schema project units.<name>.sources type array
+schema project units.<name>.sources[]
+schema project units.<name>.sources[] type object
+schema project units.<name>.sources[] type string
+schema project units.<name>.sources[].exclude
+schema project units.<name>.sources[].exclude type string
+schema project units.<name>.stdin
+schema project units.<name>.stdin type object
+schema project units.<name>.stdin.format
+schema project units.<name>.stdin.format default "text"
+schema project units.<name>.stdin.format value "dotenv"
+schema project units.<name>.stdin.format value "json"
+schema project units.<name>.stdin.format value "lines"
+schema project units.<name>.stdin.format value "text"
+schema project units.<name>.stdin.format value "yaml"
+schema project units.<name>.stdin.value
+schema project units.<name>.stdin.value type any
+schema project units.<name>.stdin.x-*
+schema project units.<name>.stdin.x-* type any
+schema project units.<name>.stop
+schema project units.<name>.stop type object
+schema project units.<name>.stop.grace
+schema project units.<name>.stop.grace type string
+schema project units.<name>.stop.run
+schema project units.<name>.stop.run type array
+schema project units.<name>.stop.run type string
+schema project units.<name>.stop.run[]
+schema project units.<name>.stop.run[] type string
+schema project units.<name>.stop.signal
+schema project units.<name>.stop.signal type string
+schema project units.<name>.stop.x-*
+schema project units.<name>.stop.x-* type any
+schema project units.<name>.tasks
+schema project units.<name>.tasks type object
+schema project units.<name>.tasks.<name>
+schema project units.<name>.tasks.<name> type object
+schema project units.<name>.tasks.<name>.<name>
+schema project units.<name>.tasks.<name>.<name> type object
+schema project units.<name>.tasks.<name>.approval
+schema project units.<name>.tasks.<name>.approval default "auto"
+schema project units.<name>.tasks.<name>.approval value "ask"
+schema project units.<name>.tasks.<name>.approval value "auto"
+schema project units.<name>.tasks.<name>.changed_when
+schema project units.<name>.tasks.<name>.changed_when type boolean
+schema project units.<name>.tasks.<name>.changed_when type string
+schema project units.<name>.tasks.<name>.concurrency
+schema project units.<name>.tasks.<name>.concurrency default "queue"
+schema project units.<name>.tasks.<name>.concurrency type object
+schema project units.<name>.tasks.<name>.concurrency value "cancel"
+schema project units.<name>.tasks.<name>.concurrency value "parallel"
+schema project units.<name>.tasks.<name>.concurrency value "queue"
+schema project units.<name>.tasks.<name>.concurrency value "skip"
+schema project units.<name>.tasks.<name>.concurrency.group
+schema project units.<name>.tasks.<name>.concurrency.group type string
+schema project units.<name>.tasks.<name>.concurrency.mode
+schema project units.<name>.tasks.<name>.concurrency.mode default "queue"
+schema project units.<name>.tasks.<name>.concurrency.mode value "cancel"
+schema project units.<name>.tasks.<name>.concurrency.mode value "parallel"
+schema project units.<name>.tasks.<name>.concurrency.mode value "queue"
+schema project units.<name>.tasks.<name>.concurrency.mode value "skip"
+schema project units.<name>.tasks.<name>.concurrency.x-*
+schema project units.<name>.tasks.<name>.concurrency.x-* type any
+schema project units.<name>.tasks.<name>.continue_on_error
+schema project units.<name>.tasks.<name>.continue_on_error type boolean
+schema project units.<name>.tasks.<name>.description
+schema project units.<name>.tasks.<name>.description type string
+schema project units.<name>.tasks.<name>.dir
+schema project units.<name>.tasks.<name>.dir type string
+schema project units.<name>.tasks.<name>.env
+schema project units.<name>.tasks.<name>.env type object
+schema project units.<name>.tasks.<name>.env.<name>
+schema project units.<name>.tasks.<name>.env.<name> type object
+schema project units.<name>.tasks.<name>.env.<name> type string
+schema project units.<name>.tasks.<name>.env.<name>.file
+schema project units.<name>.tasks.<name>.env.<name>.file type string
+schema project units.<name>.tasks.<name>.failed_when
+schema project units.<name>.tasks.<name>.failed_when type boolean
+schema project units.<name>.tasks.<name>.failed_when type string
+schema project units.<name>.tasks.<name>.for_each
+schema project units.<name>.tasks.<name>.for_each type array
+schema project units.<name>.tasks.<name>.for_each type object
+schema project units.<name>.tasks.<name>.for_each type string
+schema project units.<name>.tasks.<name>.if
+schema project units.<name>.tasks.<name>.if type boolean
+schema project units.<name>.tasks.<name>.if type string
+schema project units.<name>.tasks.<name>.inputs
+schema project units.<name>.tasks.<name>.inputs type object
+schema project units.<name>.tasks.<name>.inputs.<name>
+schema project units.<name>.tasks.<name>.inputs.<name> type object
+schema project units.<name>.tasks.<name>.inputs.<name>.args
+schema project units.<name>.tasks.<name>.inputs.<name>.args type boolean
+schema project units.<name>.tasks.<name>.inputs.<name>.default
+schema project units.<name>.tasks.<name>.inputs.<name>.default type any
+schema project units.<name>.tasks.<name>.inputs.<name>.description
+schema project units.<name>.tasks.<name>.inputs.<name>.description type string
+schema project units.<name>.tasks.<name>.inputs.<name>.enum
+schema project units.<name>.tasks.<name>.inputs.<name>.enum type array
+schema project units.<name>.tasks.<name>.inputs.<name>.env
+schema project units.<name>.tasks.<name>.inputs.<name>.env type string
+schema project units.<name>.tasks.<name>.inputs.<name>.items
+schema project units.<name>.tasks.<name>.inputs.<name>.literal
+schema project units.<name>.tasks.<name>.inputs.<name>.literal type boolean
+schema project units.<name>.tasks.<name>.inputs.<name>.maximum
+schema project units.<name>.tasks.<name>.inputs.<name>.maximum type number
+schema project units.<name>.tasks.<name>.inputs.<name>.minimum
+schema project units.<name>.tasks.<name>.inputs.<name>.minimum type number
+schema project units.<name>.tasks.<name>.inputs.<name>.pattern
+schema project units.<name>.tasks.<name>.inputs.<name>.pattern type string
+schema project units.<name>.tasks.<name>.inputs.<name>.properties
+schema project units.<name>.tasks.<name>.inputs.<name>.properties type object
+schema project units.<name>.tasks.<name>.inputs.<name>.properties.<name>
+schema project units.<name>.tasks.<name>.inputs.<name>.required
+schema project units.<name>.tasks.<name>.inputs.<name>.required type boolean
+schema project units.<name>.tasks.<name>.inputs.<name>.sensitive
+schema project units.<name>.tasks.<name>.inputs.<name>.sensitive type boolean
+schema project units.<name>.tasks.<name>.inputs.<name>.type
+schema project units.<name>.tasks.<name>.inputs.<name>.type value "array"
+schema project units.<name>.tasks.<name>.inputs.<name>.type value "boolean"
+schema project units.<name>.tasks.<name>.inputs.<name>.type value "integer"
+schema project units.<name>.tasks.<name>.inputs.<name>.type value "number"
+schema project units.<name>.tasks.<name>.inputs.<name>.type value "object"
+schema project units.<name>.tasks.<name>.inputs.<name>.type value "string"
+schema project units.<name>.tasks.<name>.inputs.<name>.x-*
+schema project units.<name>.tasks.<name>.inputs.<name>.x-* type any
+schema project units.<name>.tasks.<name>.internal
+schema project units.<name>.tasks.<name>.internal type boolean
+schema project units.<name>.tasks.<name>.max_parallel
+schema project units.<name>.tasks.<name>.max_parallel type integer
+schema project units.<name>.tasks.<name>.needs
+schema project units.<name>.tasks.<name>.needs type array
+schema project units.<name>.tasks.<name>.needs[]
+schema project units.<name>.tasks.<name>.needs[] type string
+schema project units.<name>.tasks.<name>.on
+schema project units.<name>.tasks.<name>.on type object
+schema project units.<name>.tasks.<name>.on.after
+schema project units.<name>.tasks.<name>.on.after type array
+schema project units.<name>.tasks.<name>.on.after type object
+schema project units.<name>.tasks.<name>.on.after.if
+schema project units.<name>.tasks.<name>.on.after.if type boolean
+schema project units.<name>.tasks.<name>.on.after.if type string
+schema project units.<name>.tasks.<name>.on.after.outcome
+schema project units.<name>.tasks.<name>.on.after.outcome default "success"
+schema project units.<name>.tasks.<name>.on.after.outcome value "any"
+schema project units.<name>.tasks.<name>.on.after.outcome value "failure"
+schema project units.<name>.tasks.<name>.on.after.outcome value "success"
+schema project units.<name>.tasks.<name>.on.after.task
+schema project units.<name>.tasks.<name>.on.after.task type string
+schema project units.<name>.tasks.<name>.on.after.unit
+schema project units.<name>.tasks.<name>.on.after.unit type string
+schema project units.<name>.tasks.<name>.on.after.with
+schema project units.<name>.tasks.<name>.on.after.with type object
+schema project units.<name>.tasks.<name>.on.after.x-*
+schema project units.<name>.tasks.<name>.on.after.x-* type any
+schema project units.<name>.tasks.<name>.on.after[]
+schema project units.<name>.tasks.<name>.on.after[] type object
+schema project units.<name>.tasks.<name>.on.after[].if
+schema project units.<name>.tasks.<name>.on.after[].if type boolean
+schema project units.<name>.tasks.<name>.on.after[].if type string
+schema project units.<name>.tasks.<name>.on.after[].outcome
+schema project units.<name>.tasks.<name>.on.after[].outcome default "success"
+schema project units.<name>.tasks.<name>.on.after[].outcome value "any"
+schema project units.<name>.tasks.<name>.on.after[].outcome value "failure"
+schema project units.<name>.tasks.<name>.on.after[].outcome value "success"
+schema project units.<name>.tasks.<name>.on.after[].task
+schema project units.<name>.tasks.<name>.on.after[].task type string
+schema project units.<name>.tasks.<name>.on.after[].unit
+schema project units.<name>.tasks.<name>.on.after[].unit type string
+schema project units.<name>.tasks.<name>.on.after[].with
+schema project units.<name>.tasks.<name>.on.after[].with type object
+schema project units.<name>.tasks.<name>.on.after[].x-*
+schema project units.<name>.tasks.<name>.on.after[].x-* type any
+schema project units.<name>.tasks.<name>.on.every
+schema project units.<name>.tasks.<name>.on.every type array
+schema project units.<name>.tasks.<name>.on.every type string
+schema project units.<name>.tasks.<name>.on.every[]
+schema project units.<name>.tasks.<name>.on.every[] type string
+schema project units.<name>.tasks.<name>.on.schedule
+schema project units.<name>.tasks.<name>.on.schedule type array
+schema project units.<name>.tasks.<name>.on.schedule type object
+schema project units.<name>.tasks.<name>.on.schedule type string
+schema project units.<name>.tasks.<name>.on.schedule.cron
+schema project units.<name>.tasks.<name>.on.schedule.cron type string
+schema project units.<name>.tasks.<name>.on.schedule.if
+schema project units.<name>.tasks.<name>.on.schedule.if type boolean
+schema project units.<name>.tasks.<name>.on.schedule.if type string
+schema project units.<name>.tasks.<name>.on.schedule.persistent
+schema project units.<name>.tasks.<name>.on.schedule.persistent type boolean
+schema project units.<name>.tasks.<name>.on.schedule.timezone
+schema project units.<name>.tasks.<name>.on.schedule.timezone type string
+schema project units.<name>.tasks.<name>.on.schedule.with
+schema project units.<name>.tasks.<name>.on.schedule.with type object
+schema project units.<name>.tasks.<name>.on.schedule.x-*
+schema project units.<name>.tasks.<name>.on.schedule.x-* type any
+schema project units.<name>.tasks.<name>.on.schedule[]
+schema project units.<name>.tasks.<name>.on.schedule[] type object
+schema project units.<name>.tasks.<name>.on.schedule[] type string
+schema project units.<name>.tasks.<name>.on.schedule[].cron
+schema project units.<name>.tasks.<name>.on.schedule[].cron type string
+schema project units.<name>.tasks.<name>.on.schedule[].if
+schema project units.<name>.tasks.<name>.on.schedule[].if type boolean
+schema project units.<name>.tasks.<name>.on.schedule[].if type string
+schema project units.<name>.tasks.<name>.on.schedule[].persistent
+schema project units.<name>.tasks.<name>.on.schedule[].persistent type boolean
+schema project units.<name>.tasks.<name>.on.schedule[].timezone
+schema project units.<name>.tasks.<name>.on.schedule[].timezone type string
+schema project units.<name>.tasks.<name>.on.schedule[].with
+schema project units.<name>.tasks.<name>.on.schedule[].with type object
+schema project units.<name>.tasks.<name>.on.schedule[].x-*
+schema project units.<name>.tasks.<name>.on.schedule[].x-* type any
+schema project units.<name>.tasks.<name>.on.watch
+schema project units.<name>.tasks.<name>.on.watch type array
+schema project units.<name>.tasks.<name>.on.watch type object
+schema project units.<name>.tasks.<name>.on.watch.<name>
+schema project units.<name>.tasks.<name>.on.watch.<name> type object
+schema project units.<name>.tasks.<name>.on.watch.batch
+schema project units.<name>.tasks.<name>.on.watch.batch type string
+schema project units.<name>.tasks.<name>.on.watch.debounce
+schema project units.<name>.tasks.<name>.on.watch.debounce type string
+schema project units.<name>.tasks.<name>.on.watch.if
+schema project units.<name>.tasks.<name>.on.watch.if type boolean
+schema project units.<name>.tasks.<name>.on.watch.if type string
+schema project units.<name>.tasks.<name>.on.watch.paths
+schema project units.<name>.tasks.<name>.on.watch.paths type array
+schema project units.<name>.tasks.<name>.on.watch.paths[]
+schema project units.<name>.tasks.<name>.on.watch.paths[] type object
+schema project units.<name>.tasks.<name>.on.watch.paths[] type string
+schema project units.<name>.tasks.<name>.on.watch.paths[].exclude
+schema project units.<name>.tasks.<name>.on.watch.paths[].exclude type string
+schema project units.<name>.tasks.<name>.on.watch.stream
+schema project units.<name>.tasks.<name>.on.watch.stream default "both"
+schema project units.<name>.tasks.<name>.on.watch.stream value "both"
+schema project units.<name>.tasks.<name>.on.watch.stream value "stderr"
+schema project units.<name>.tasks.<name>.on.watch.stream value "stdout"
+schema project units.<name>.tasks.<name>.on.watch.unit
+schema project units.<name>.tasks.<name>.on.watch.unit type string
+schema project units.<name>.tasks.<name>.on.watch.with
+schema project units.<name>.tasks.<name>.on.watch.with type object
+schema project units.<name>.tasks.<name>.on.watch.x-*
+schema project units.<name>.tasks.<name>.on.watch.x-* type any
+schema project units.<name>.tasks.<name>.on.watch[]
+schema project units.<name>.tasks.<name>.on.watch[] type object
+schema project units.<name>.tasks.<name>.on.watch[].<name>
+schema project units.<name>.tasks.<name>.on.watch[].<name> type object
+schema project units.<name>.tasks.<name>.on.watch[].batch
+schema project units.<name>.tasks.<name>.on.watch[].batch type string
+schema project units.<name>.tasks.<name>.on.watch[].debounce
+schema project units.<name>.tasks.<name>.on.watch[].debounce type string
+schema project units.<name>.tasks.<name>.on.watch[].if
+schema project units.<name>.tasks.<name>.on.watch[].if type boolean
+schema project units.<name>.tasks.<name>.on.watch[].if type string
+schema project units.<name>.tasks.<name>.on.watch[].paths
+schema project units.<name>.tasks.<name>.on.watch[].paths type array
+schema project units.<name>.tasks.<name>.on.watch[].paths[]
+schema project units.<name>.tasks.<name>.on.watch[].paths[] type object
+schema project units.<name>.tasks.<name>.on.watch[].paths[] type string
+schema project units.<name>.tasks.<name>.on.watch[].paths[].exclude
+schema project units.<name>.tasks.<name>.on.watch[].paths[].exclude type string
+schema project units.<name>.tasks.<name>.on.watch[].stream
+schema project units.<name>.tasks.<name>.on.watch[].stream default "both"
+schema project units.<name>.tasks.<name>.on.watch[].stream value "both"
+schema project units.<name>.tasks.<name>.on.watch[].stream value "stderr"
+schema project units.<name>.tasks.<name>.on.watch[].stream value "stdout"
+schema project units.<name>.tasks.<name>.on.watch[].unit
+schema project units.<name>.tasks.<name>.on.watch[].unit type string
+schema project units.<name>.tasks.<name>.on.watch[].with
+schema project units.<name>.tasks.<name>.on.watch[].with type object
+schema project units.<name>.tasks.<name>.on.watch[].x-*
+schema project units.<name>.tasks.<name>.on.watch[].x-* type any
+schema project units.<name>.tasks.<name>.on.webhook
+schema project units.<name>.tasks.<name>.on.webhook type array
+schema project units.<name>.tasks.<name>.on.webhook type object
+schema project units.<name>.tasks.<name>.on.webhook.if
+schema project units.<name>.tasks.<name>.on.webhook.if type boolean
+schema project units.<name>.tasks.<name>.on.webhook.if type string
+schema project units.<name>.tasks.<name>.on.webhook.method
+schema project units.<name>.tasks.<name>.on.webhook.method default "POST"
+schema project units.<name>.tasks.<name>.on.webhook.method value "DELETE"
+schema project units.<name>.tasks.<name>.on.webhook.method value "GET"
+schema project units.<name>.tasks.<name>.on.webhook.method value "PATCH"
+schema project units.<name>.tasks.<name>.on.webhook.method value "POST"
+schema project units.<name>.tasks.<name>.on.webhook.method value "PUT"
+schema project units.<name>.tasks.<name>.on.webhook.path
+schema project units.<name>.tasks.<name>.on.webhook.path type string
+schema project units.<name>.tasks.<name>.on.webhook.respond
+schema project units.<name>.tasks.<name>.on.webhook.respond default "accepted"
+schema project units.<name>.tasks.<name>.on.webhook.respond value "accepted"
+schema project units.<name>.tasks.<name>.on.webhook.respond value "wait"
+schema project units.<name>.tasks.<name>.on.webhook.secret
+schema project units.<name>.tasks.<name>.on.webhook.secret type string
+schema project units.<name>.tasks.<name>.on.webhook.signature
+schema project units.<name>.tasks.<name>.on.webhook.signature type object
+schema project units.<name>.tasks.<name>.on.webhook.signature value "bearer"
+schema project units.<name>.tasks.<name>.on.webhook.signature value "github"
+schema project units.<name>.tasks.<name>.on.webhook.signature value "gitlab"
+schema project units.<name>.tasks.<name>.on.webhook.signature value "slack"
+schema project units.<name>.tasks.<name>.on.webhook.signature value "standard"
+schema project units.<name>.tasks.<name>.on.webhook.signature value "stripe"
+schema project units.<name>.tasks.<name>.on.webhook.signature.algorithm
+schema project units.<name>.tasks.<name>.on.webhook.signature.algorithm value "sha256"
+schema project units.<name>.tasks.<name>.on.webhook.signature.algorithm value "sha512"
+schema project units.<name>.tasks.<name>.on.webhook.signature.encoding
+schema project units.<name>.tasks.<name>.on.webhook.signature.encoding value "base64"
+schema project units.<name>.tasks.<name>.on.webhook.signature.encoding value "hex"
+schema project units.<name>.tasks.<name>.on.webhook.signature.header
+schema project units.<name>.tasks.<name>.on.webhook.signature.header type string
+schema project units.<name>.tasks.<name>.on.webhook.signature.prefix
+schema project units.<name>.tasks.<name>.on.webhook.signature.prefix type string
+schema project units.<name>.tasks.<name>.on.webhook.with
+schema project units.<name>.tasks.<name>.on.webhook.with type object
+schema project units.<name>.tasks.<name>.on.webhook.x-*
+schema project units.<name>.tasks.<name>.on.webhook.x-* type any
+schema project units.<name>.tasks.<name>.on.webhook[]
+schema project units.<name>.tasks.<name>.on.webhook[] type object
+schema project units.<name>.tasks.<name>.on.webhook[].if
+schema project units.<name>.tasks.<name>.on.webhook[].if type boolean
+schema project units.<name>.tasks.<name>.on.webhook[].if type string
+schema project units.<name>.tasks.<name>.on.webhook[].method
+schema project units.<name>.tasks.<name>.on.webhook[].method default "POST"
+schema project units.<name>.tasks.<name>.on.webhook[].method value "DELETE"
+schema project units.<name>.tasks.<name>.on.webhook[].method value "GET"
+schema project units.<name>.tasks.<name>.on.webhook[].method value "PATCH"
+schema project units.<name>.tasks.<name>.on.webhook[].method value "POST"
+schema project units.<name>.tasks.<name>.on.webhook[].method value "PUT"
+schema project units.<name>.tasks.<name>.on.webhook[].path
+schema project units.<name>.tasks.<name>.on.webhook[].path type string
+schema project units.<name>.tasks.<name>.on.webhook[].respond
+schema project units.<name>.tasks.<name>.on.webhook[].respond default "accepted"
+schema project units.<name>.tasks.<name>.on.webhook[].respond value "accepted"
+schema project units.<name>.tasks.<name>.on.webhook[].respond value "wait"
+schema project units.<name>.tasks.<name>.on.webhook[].secret
+schema project units.<name>.tasks.<name>.on.webhook[].secret type string
+schema project units.<name>.tasks.<name>.on.webhook[].signature
+schema project units.<name>.tasks.<name>.on.webhook[].signature type object
+schema project units.<name>.tasks.<name>.on.webhook[].signature value "bearer"
+schema project units.<name>.tasks.<name>.on.webhook[].signature value "github"
+schema project units.<name>.tasks.<name>.on.webhook[].signature value "gitlab"
+schema project units.<name>.tasks.<name>.on.webhook[].signature value "slack"
+schema project units.<name>.tasks.<name>.on.webhook[].signature value "standard"
+schema project units.<name>.tasks.<name>.on.webhook[].signature value "stripe"
+schema project units.<name>.tasks.<name>.on.webhook[].signature.algorithm
+schema project units.<name>.tasks.<name>.on.webhook[].signature.algorithm value "sha256"
+schema project units.<name>.tasks.<name>.on.webhook[].signature.algorithm value "sha512"
+schema project units.<name>.tasks.<name>.on.webhook[].signature.encoding
+schema project units.<name>.tasks.<name>.on.webhook[].signature.encoding value "base64"
+schema project units.<name>.tasks.<name>.on.webhook[].signature.encoding value "hex"
+schema project units.<name>.tasks.<name>.on.webhook[].signature.header
+schema project units.<name>.tasks.<name>.on.webhook[].signature.header type string
+schema project units.<name>.tasks.<name>.on.webhook[].signature.prefix
+schema project units.<name>.tasks.<name>.on.webhook[].signature.prefix type string
+schema project units.<name>.tasks.<name>.on.webhook[].with
+schema project units.<name>.tasks.<name>.on.webhook[].with type object
+schema project units.<name>.tasks.<name>.on.webhook[].x-*
+schema project units.<name>.tasks.<name>.on.webhook[].x-* type any
+schema project units.<name>.tasks.<name>.on.x-*
+schema project units.<name>.tasks.<name>.on.x-* type any
+schema project units.<name>.tasks.<name>.outputs
+schema project units.<name>.tasks.<name>.outputs type object
+schema project units.<name>.tasks.<name>.outputs.<name>
+schema project units.<name>.tasks.<name>.outputs.<name> type object
+schema project units.<name>.tasks.<name>.outputs.<name>.description
+schema project units.<name>.tasks.<name>.outputs.<name>.description type string
+schema project units.<name>.tasks.<name>.outputs.<name>.format
+schema project units.<name>.tasks.<name>.outputs.<name>.format value "dotenv"
+schema project units.<name>.tasks.<name>.outputs.<name>.format value "json"
+schema project units.<name>.tasks.<name>.outputs.<name>.format value "lines"
+schema project units.<name>.tasks.<name>.outputs.<name>.format value "text"
+schema project units.<name>.tasks.<name>.outputs.<name>.format value "yaml"
+schema project units.<name>.tasks.<name>.outputs.<name>.from
+schema project units.<name>.tasks.<name>.outputs.<name>.from default "output"
+schema project units.<name>.tasks.<name>.outputs.<name>.from value "file"
+schema project units.<name>.tasks.<name>.outputs.<name>.from value "output"
+schema project units.<name>.tasks.<name>.outputs.<name>.from value "stderr"
+schema project units.<name>.tasks.<name>.outputs.<name>.from value "stdout"
+schema project units.<name>.tasks.<name>.outputs.<name>.path
+schema project units.<name>.tasks.<name>.outputs.<name>.path type string
+schema project units.<name>.tasks.<name>.outputs.<name>.sensitive
+schema project units.<name>.tasks.<name>.outputs.<name>.sensitive type boolean
+schema project units.<name>.tasks.<name>.outputs.<name>.type
+schema project units.<name>.tasks.<name>.outputs.<name>.type value "array"
+schema project units.<name>.tasks.<name>.outputs.<name>.type value "boolean"
+schema project units.<name>.tasks.<name>.outputs.<name>.type value "integer"
+schema project units.<name>.tasks.<name>.outputs.<name>.type value "number"
+schema project units.<name>.tasks.<name>.outputs.<name>.type value "object"
+schema project units.<name>.tasks.<name>.outputs.<name>.type value "string"
+schema project units.<name>.tasks.<name>.outputs.<name>.value
+schema project units.<name>.tasks.<name>.outputs.<name>.value type any
+schema project units.<name>.tasks.<name>.outputs.<name>.x-*
+schema project units.<name>.tasks.<name>.outputs.<name>.x-* type any
+schema project units.<name>.tasks.<name>.pass
+schema project units.<name>.tasks.<name>.pass type array
+schema project units.<name>.tasks.<name>.pass[]
+schema project units.<name>.tasks.<name>.pass[] type string
+schema project units.<name>.tasks.<name>.requires
+schema project units.<name>.tasks.<name>.requires type array
+schema project units.<name>.tasks.<name>.requires type string
+schema project units.<name>.tasks.<name>.requires[]
+schema project units.<name>.tasks.<name>.requires[] type string
+schema project units.<name>.tasks.<name>.retry
+schema project units.<name>.tasks.<name>.retry type object
+schema project units.<name>.tasks.<name>.retry.attempts
+schema project units.<name>.tasks.<name>.retry.attempts type integer
+schema project units.<name>.tasks.<name>.retry.backoff
+schema project units.<name>.tasks.<name>.retry.backoff type number
+schema project units.<name>.tasks.<name>.retry.delay
+schema project units.<name>.tasks.<name>.retry.delay type string
+schema project units.<name>.tasks.<name>.retry.until
+schema project units.<name>.tasks.<name>.retry.until type boolean
+schema project units.<name>.tasks.<name>.retry.until type string
+schema project units.<name>.tasks.<name>.retry.x-*
+schema project units.<name>.tasks.<name>.retry.x-* type any
+schema project units.<name>.tasks.<name>.run
+schema project units.<name>.tasks.<name>.run type array
+schema project units.<name>.tasks.<name>.run type string
+schema project units.<name>.tasks.<name>.run[]
+schema project units.<name>.tasks.<name>.run[] type string
+schema project units.<name>.tasks.<name>.shell
+schema project units.<name>.tasks.<name>.shell default "sh"
+schema project units.<name>.tasks.<name>.shell value "bash"
+schema project units.<name>.tasks.<name>.shell value "node"
+schema project units.<name>.tasks.<name>.shell value "pwsh"
+schema project units.<name>.tasks.<name>.shell value "python"
+schema project units.<name>.tasks.<name>.shell value "sh"
+schema project units.<name>.tasks.<name>.stdin
+schema project units.<name>.tasks.<name>.stdin type object
+schema project units.<name>.tasks.<name>.stdin.format
+schema project units.<name>.tasks.<name>.stdin.format default "text"
+schema project units.<name>.tasks.<name>.stdin.format value "dotenv"
+schema project units.<name>.tasks.<name>.stdin.format value "json"
+schema project units.<name>.tasks.<name>.stdin.format value "lines"
+schema project units.<name>.tasks.<name>.stdin.format value "text"
+schema project units.<name>.tasks.<name>.stdin.format value "yaml"
+schema project units.<name>.tasks.<name>.stdin.value
+schema project units.<name>.tasks.<name>.stdin.value type any
+schema project units.<name>.tasks.<name>.stdin.x-*
+schema project units.<name>.tasks.<name>.stdin.x-* type any
+schema project units.<name>.tasks.<name>.steps
+schema project units.<name>.tasks.<name>.steps type array
+schema project units.<name>.tasks.<name>.steps[]
+schema project units.<name>.tasks.<name>.steps[] type object
+schema project units.<name>.tasks.<name>.steps[].<name>
+schema project units.<name>.tasks.<name>.steps[].<name> type object
+schema project units.<name>.tasks.<name>.steps[].always
+schema project units.<name>.tasks.<name>.steps[].block
+schema project units.<name>.tasks.<name>.steps[].changed_when
+schema project units.<name>.tasks.<name>.steps[].changed_when type boolean
+schema project units.<name>.tasks.<name>.steps[].changed_when type string
+schema project units.<name>.tasks.<name>.steps[].continue_on_error
+schema project units.<name>.tasks.<name>.steps[].continue_on_error type boolean
+schema project units.<name>.tasks.<name>.steps[].dir
+schema project units.<name>.tasks.<name>.steps[].dir type string
+schema project units.<name>.tasks.<name>.steps[].env
+schema project units.<name>.tasks.<name>.steps[].env type object
+schema project units.<name>.tasks.<name>.steps[].env.<name>
+schema project units.<name>.tasks.<name>.steps[].env.<name> type object
+schema project units.<name>.tasks.<name>.steps[].env.<name> type string
+schema project units.<name>.tasks.<name>.steps[].env.<name>.file
+schema project units.<name>.tasks.<name>.steps[].env.<name>.file type string
+schema project units.<name>.tasks.<name>.steps[].failed_when
+schema project units.<name>.tasks.<name>.steps[].failed_when type boolean
+schema project units.<name>.tasks.<name>.steps[].failed_when type string
+schema project units.<name>.tasks.<name>.steps[].for_each
+schema project units.<name>.tasks.<name>.steps[].for_each type array
+schema project units.<name>.tasks.<name>.steps[].for_each type object
+schema project units.<name>.tasks.<name>.steps[].for_each type string
+schema project units.<name>.tasks.<name>.steps[].force
+schema project units.<name>.tasks.<name>.steps[].force type boolean
+schema project units.<name>.tasks.<name>.steps[].id
+schema project units.<name>.tasks.<name>.steps[].id type string
+schema project units.<name>.tasks.<name>.steps[].if
+schema project units.<name>.tasks.<name>.steps[].if type boolean
+schema project units.<name>.tasks.<name>.steps[].if type string
+schema project units.<name>.tasks.<name>.steps[].name
+schema project units.<name>.tasks.<name>.steps[].name type string
+schema project units.<name>.tasks.<name>.steps[].outputs
+schema project units.<name>.tasks.<name>.steps[].outputs type object
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>
+schema project units.<name>.tasks.<name>.steps[].outputs.<name> type object
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.description
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.description type string
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.format
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.format value "dotenv"
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.format value "json"
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.format value "lines"
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.format value "text"
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.format value "yaml"
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.from
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.from default "output"
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.from value "file"
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.from value "output"
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.from value "stderr"
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.from value "stdout"
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.path
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.path type string
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.sensitive
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.sensitive type boolean
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.type
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.type value "array"
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.type value "boolean"
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.type value "integer"
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.type value "number"
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.type value "object"
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.type value "string"
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.value
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.value type any
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.x-*
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.x-* type any
+schema project units.<name>.tasks.<name>.steps[].pass
+schema project units.<name>.tasks.<name>.steps[].pass type array
+schema project units.<name>.tasks.<name>.steps[].pass[]
+schema project units.<name>.tasks.<name>.steps[].pass[] type string
+schema project units.<name>.tasks.<name>.steps[].rescue
+schema project units.<name>.tasks.<name>.steps[].retry
+schema project units.<name>.tasks.<name>.steps[].retry type object
+schema project units.<name>.tasks.<name>.steps[].retry.attempts
+schema project units.<name>.tasks.<name>.steps[].retry.attempts type integer
+schema project units.<name>.tasks.<name>.steps[].retry.backoff
+schema project units.<name>.tasks.<name>.steps[].retry.backoff type number
+schema project units.<name>.tasks.<name>.steps[].retry.delay
+schema project units.<name>.tasks.<name>.steps[].retry.delay type string
+schema project units.<name>.tasks.<name>.steps[].retry.until
+schema project units.<name>.tasks.<name>.steps[].retry.until type boolean
+schema project units.<name>.tasks.<name>.steps[].retry.until type string
+schema project units.<name>.tasks.<name>.steps[].retry.x-*
+schema project units.<name>.tasks.<name>.steps[].retry.x-* type any
+schema project units.<name>.tasks.<name>.steps[].run
+schema project units.<name>.tasks.<name>.steps[].run type array
+schema project units.<name>.tasks.<name>.steps[].run type string
+schema project units.<name>.tasks.<name>.steps[].run[]
+schema project units.<name>.tasks.<name>.steps[].run[] type string
+schema project units.<name>.tasks.<name>.steps[].shell
+schema project units.<name>.tasks.<name>.steps[].shell value "bash"
+schema project units.<name>.tasks.<name>.steps[].shell value "node"
+schema project units.<name>.tasks.<name>.steps[].shell value "pwsh"
+schema project units.<name>.tasks.<name>.steps[].shell value "python"
+schema project units.<name>.tasks.<name>.steps[].shell value "sh"
+schema project units.<name>.tasks.<name>.steps[].stdin
+schema project units.<name>.tasks.<name>.steps[].stdin type object
+schema project units.<name>.tasks.<name>.steps[].stdin.format
+schema project units.<name>.tasks.<name>.steps[].stdin.format default "text"
+schema project units.<name>.tasks.<name>.steps[].stdin.format value "dotenv"
+schema project units.<name>.tasks.<name>.steps[].stdin.format value "json"
+schema project units.<name>.tasks.<name>.steps[].stdin.format value "lines"
+schema project units.<name>.tasks.<name>.steps[].stdin.format value "text"
+schema project units.<name>.tasks.<name>.steps[].stdin.format value "yaml"
+schema project units.<name>.tasks.<name>.steps[].stdin.value
+schema project units.<name>.tasks.<name>.steps[].stdin.value type any
+schema project units.<name>.tasks.<name>.steps[].stdin.x-*
+schema project units.<name>.tasks.<name>.steps[].stdin.x-* type any
+schema project units.<name>.tasks.<name>.steps[].task
+schema project units.<name>.tasks.<name>.steps[].task type string
+schema project units.<name>.tasks.<name>.steps[].timeout
+schema project units.<name>.tasks.<name>.steps[].timeout type string
+schema project units.<name>.tasks.<name>.steps[].tty
+schema project units.<name>.tasks.<name>.steps[].tty type boolean
+schema project units.<name>.tasks.<name>.steps[].units
+schema project units.<name>.tasks.<name>.steps[].units type array
+schema project units.<name>.tasks.<name>.steps[].units[]
+schema project units.<name>.tasks.<name>.steps[].units[] type string
+schema project units.<name>.tasks.<name>.steps[].with
+schema project units.<name>.tasks.<name>.steps[].with type object
+schema project units.<name>.tasks.<name>.steps[].x-*
+schema project units.<name>.tasks.<name>.steps[].x-* type any
+schema project units.<name>.tasks.<name>.steps[].yes
+schema project units.<name>.tasks.<name>.steps[].yes type boolean
+schema project units.<name>.tasks.<name>.stop
+schema project units.<name>.tasks.<name>.stop type object
+schema project units.<name>.tasks.<name>.stop.grace
+schema project units.<name>.tasks.<name>.stop.grace type string
+schema project units.<name>.tasks.<name>.stop.run
+schema project units.<name>.tasks.<name>.stop.run type array
+schema project units.<name>.tasks.<name>.stop.run type string
+schema project units.<name>.tasks.<name>.stop.run[]
+schema project units.<name>.tasks.<name>.stop.run[] type string
+schema project units.<name>.tasks.<name>.stop.signal
+schema project units.<name>.tasks.<name>.stop.signal type string
+schema project units.<name>.tasks.<name>.stop.x-*
+schema project units.<name>.tasks.<name>.stop.x-* type any
+schema project units.<name>.tasks.<name>.timeout
+schema project units.<name>.tasks.<name>.timeout default "6h"
+schema project units.<name>.tasks.<name>.timeout type string
+schema project units.<name>.tasks.<name>.tty
+schema project units.<name>.tasks.<name>.tty type boolean
+schema project units.<name>.tasks.<name>.x-*
+schema project units.<name>.tasks.<name>.x-* type any
+schema project units.<name>.timeout
+schema project units.<name>.timeout default "6h"
+schema project units.<name>.timeout type string
+schema project units.<name>.tty
+schema project units.<name>.tty type boolean
+schema project units.<name>.uses
+schema project units.<name>.uses type string
+schema project units.<name>.with
+schema project units.<name>.with type object
+schema project units.<name>.x-*
+schema project units.<name>.x-* type any
+schema project uses
+schema project uses type object
+schema project uses.<name>
+schema project uses.<name> type object
+schema project uses.<name> type string
+schema project uses.<name>.env
+schema project uses.<name>.env type object
+schema project uses.<name>.env.<name>
+schema project uses.<name>.env.<name> type object
+schema project uses.<name>.env.<name> type string
+schema project uses.<name>.env.<name>.file
+schema project uses.<name>.env.<name>.file type string
+schema project uses.<name>.pass
+schema project uses.<name>.pass type array
+schema project uses.<name>.pass[]
+schema project uses.<name>.pass[] type string
+schema project uses.<name>.source
+schema project uses.<name>.source type string
+schema project uses.<name>.with
+schema project uses.<name>.with type object
+schema project uses.<name>.x-*
+schema project uses.<name>.x-* type any
+schema project x-*
+schema project x-* type any
+schema record abandoned
+schema record abandoned type array
+schema record abandoned[]
+schema record abandoned[] type object
+schema record abandoned[].approval
+schema record abandoned[].approval type string
+schema record abandoned[].destroy
+schema record abandoned[].destroy type object
+schema record abandoned[].destroy.binaries
+schema record abandoned[].destroy.binaries type object
+schema record abandoned[].destroy.binaries.<name>
+schema record abandoned[].destroy.binaries.<name> type object
+schema record abandoned[].destroy.binaries.<name>.sha256
+schema record abandoned[].destroy.binaries.<name>.sha256 type string
+schema record abandoned[].destroy.binaries.<name>.url
+schema record abandoned[].destroy.binaries.<name>.url type string
+schema record abandoned[].destroy.dir
+schema record abandoned[].destroy.dir type string
+schema record abandoned[].destroy.dir_source
+schema record abandoned[].destroy.dir_source type object
+schema record abandoned[].destroy.dir_source.commit
+schema record abandoned[].destroy.dir_source.commit type string
+schema record abandoned[].destroy.dir_source.hash
+schema record abandoned[].destroy.dir_source.hash type string
+schema record abandoned[].destroy.dir_source.path
+schema record abandoned[].destroy.dir_source.path type string
+schema record abandoned[].destroy.dir_source.ref
+schema record abandoned[].destroy.dir_source.ref type string
+schema record abandoned[].destroy.dir_source.repository
+schema record abandoned[].destroy.dir_source.repository value "github.com/opstruss/catalog"
+schema record abandoned[].destroy.env
+schema record abandoned[].destroy.env type object
+schema record abandoned[].destroy.env.<name>
+schema record abandoned[].destroy.env.<name> type string
+schema record abandoned[].destroy.env_files
+schema record abandoned[].destroy.env_files type object
+schema record abandoned[].destroy.env_files.<name>
+schema record abandoned[].destroy.env_files.<name> type string
+schema record abandoned[].destroy.pass
+schema record abandoned[].destroy.pass type object
+schema record abandoned[].destroy.pass.<name>
+schema record abandoned[].destroy.pass.<name> type string
+schema record abandoned[].destroy.plugin
+schema record abandoned[].destroy.plugin type string
+schema record abandoned[].destroy.plugin_source
+schema record abandoned[].destroy.plugin_source type object
+schema record abandoned[].destroy.plugin_source.commit
+schema record abandoned[].destroy.plugin_source.commit type string
+schema record abandoned[].destroy.plugin_source.hash
+schema record abandoned[].destroy.plugin_source.hash type string
+schema record abandoned[].destroy.plugin_source.path
+schema record abandoned[].destroy.plugin_source.path type string
+schema record abandoned[].destroy.plugin_source.ref
+schema record abandoned[].destroy.plugin_source.ref type string
+schema record abandoned[].destroy.plugin_source.repository
+schema record abandoned[].destroy.plugin_source.repository value "github.com/opstruss/catalog"
+schema record abandoned[].destroy.run
+schema record abandoned[].destroy.run type array
+schema record abandoned[].destroy.run type string
+schema record abandoned[].destroy.run[]
+schema record abandoned[].destroy.run[] type string
+schema record abandoned[].destroy.shell
+schema record abandoned[].destroy.shell type string
+schema record abandoned[].destroy.sources
+schema record abandoned[].destroy.sources type array
+schema record abandoned[].destroy.sources[]
+schema record abandoned[].destroy.sources[] type object
+schema record abandoned[].destroy.sources[].root
+schema record abandoned[].destroy.sources[].root type string
+schema record abandoned[].destroy.sources[].source
+schema record abandoned[].destroy.sources[].source type object
+schema record abandoned[].destroy.sources[].source.commit
+schema record abandoned[].destroy.sources[].source.commit type string
+schema record abandoned[].destroy.sources[].source.hash
+schema record abandoned[].destroy.sources[].source.hash type string
+schema record abandoned[].destroy.sources[].source.path
+schema record abandoned[].destroy.sources[].source.path type string
+schema record abandoned[].destroy.sources[].source.ref
+schema record abandoned[].destroy.sources[].source.ref type string
+schema record abandoned[].destroy.sources[].source.repository
+schema record abandoned[].destroy.sources[].source.repository value "github.com/opstruss/catalog"
+schema record abandoned[].destroy.stop
+schema record abandoned[].destroy.stop type object
+schema record abandoned[].destroy.stop.grace
+schema record abandoned[].destroy.stop.grace type string
+schema record abandoned[].destroy.stop.run
+schema record abandoned[].destroy.stop.run type array
+schema record abandoned[].destroy.stop.run type string
+schema record abandoned[].destroy.stop.run[]
+schema record abandoned[].destroy.stop.run[] type string
+schema record abandoned[].destroy.stop.signal
+schema record abandoned[].destroy.stop.signal type string
+schema record abandoned[].destroy.timeout
+schema record abandoned[].destroy.timeout type string
+schema record abandoned[].destroy.tool
+schema record abandoned[].destroy.tool type boolean
+schema record abandoned[].destroy.tty
+schema record abandoned[].destroy.tty type boolean
+schema record abandoned[].digest
+schema record abandoned[].digest type string
+schema record abandoned[].ended
+schema record abandoned[].ended type string
+schema record abandoned[].holder
+schema record abandoned[].holder type object
+schema record abandoned[].holder.host
+schema record abandoned[].holder.host type string
+schema record abandoned[].holder.hostname
+schema record abandoned[].holder.hostname type string
+schema record abandoned[].holder.pid
+schema record abandoned[].holder.pid type integer
+schema record abandoned[].holder.run
+schema record abandoned[].holder.run type string
+schema record abandoned[].holder.since
+schema record abandoned[].holder.since type string
+schema record abandoned[].holder.started
+schema record abandoned[].holder.started type string
+schema record abandoned[].holder.user
+schema record abandoned[].holder.user type string
+schema record abandoned[].holder.version
+schema record abandoned[].holder.version type integer
+schema record abandoned[].inputs
+schema record abandoned[].inputs type object
+schema record abandoned[].needs
+schema record abandoned[].needs type array
+schema record abandoned[].needs[]
+schema record abandoned[].needs[] type string
+schema record abandoned[].op
+schema record abandoned[].op value "destroy"
+schema record abandoned[].op value "moved"
+schema record abandoned[].op value "up"
+schema record abandoned[].outcome
+schema record abandoned[].outcome value "cancelled"
+schema record abandoned[].outcome value "failure"
+schema record abandoned[].outputs
+schema record abandoned[].outputs type object
+schema record abandoned[].peer
+schema record abandoned[].peer type string
+schema record abandoned[].raw_output
+schema record abandoned[].raw_output type string
+schema record abandoned[].run
+schema record abandoned[].run type string
+schema record abandoned[].sensitive
+schema record abandoned[].sensitive type object
+schema record abandoned[].sensitive.<name>
+schema record abandoned[].sensitive.<name> type object
+schema record abandoned[].sensitive.<name>.<name>
+schema record abandoned[].sensitive.<name>.<name> type string
+schema record abandoned[].source
+schema record abandoned[].source type object
+schema record abandoned[].source.commit
+schema record abandoned[].source.commit type string
+schema record abandoned[].source.hash
+schema record abandoned[].source.hash type string
+schema record abandoned[].source.remote
+schema record abandoned[].source.remote type object
+schema record abandoned[].source.remote.commit
+schema record abandoned[].source.remote.commit type string
+schema record abandoned[].source.remote.hash
+schema record abandoned[].source.remote.hash type string
+schema record abandoned[].source.remote.path
+schema record abandoned[].source.remote.path type string
+schema record abandoned[].source.remote.ref
+schema record abandoned[].source.remote.ref type string
+schema record abandoned[].source.remote.repository
+schema record abandoned[].source.remote.repository value "github.com/opstruss/catalog"
+schema record abandoned[].source.uses
+schema record abandoned[].source.uses type string
+schema record address
+schema record address type string
+schema record destroy
+schema record destroy type object
+schema record destroy.binaries
+schema record destroy.binaries type object
+schema record destroy.binaries.<name>
+schema record destroy.binaries.<name> type object
+schema record destroy.binaries.<name>.sha256
+schema record destroy.binaries.<name>.sha256 type string
+schema record destroy.binaries.<name>.url
+schema record destroy.binaries.<name>.url type string
+schema record destroy.dir
+schema record destroy.dir type string
+schema record destroy.dir_source
+schema record destroy.dir_source type object
+schema record destroy.dir_source.commit
+schema record destroy.dir_source.commit type string
+schema record destroy.dir_source.hash
+schema record destroy.dir_source.hash type string
+schema record destroy.dir_source.path
+schema record destroy.dir_source.path type string
+schema record destroy.dir_source.ref
+schema record destroy.dir_source.ref type string
+schema record destroy.dir_source.repository
+schema record destroy.dir_source.repository value "github.com/opstruss/catalog"
+schema record destroy.env
+schema record destroy.env type object
+schema record destroy.env.<name>
+schema record destroy.env.<name> type string
+schema record destroy.env_files
+schema record destroy.env_files type object
+schema record destroy.env_files.<name>
+schema record destroy.env_files.<name> type string
+schema record destroy.pass
+schema record destroy.pass type object
+schema record destroy.pass.<name>
+schema record destroy.pass.<name> type string
+schema record destroy.plugin
+schema record destroy.plugin type string
+schema record destroy.plugin_source
+schema record destroy.plugin_source type object
+schema record destroy.plugin_source.commit
+schema record destroy.plugin_source.commit type string
+schema record destroy.plugin_source.hash
+schema record destroy.plugin_source.hash type string
+schema record destroy.plugin_source.path
+schema record destroy.plugin_source.path type string
+schema record destroy.plugin_source.ref
+schema record destroy.plugin_source.ref type string
+schema record destroy.plugin_source.repository
+schema record destroy.plugin_source.repository value "github.com/opstruss/catalog"
+schema record destroy.run
+schema record destroy.run type array
+schema record destroy.run type string
+schema record destroy.run[]
+schema record destroy.run[] type string
+schema record destroy.shell
+schema record destroy.shell type string
+schema record destroy.sources
+schema record destroy.sources type array
+schema record destroy.sources[]
+schema record destroy.sources[] type object
+schema record destroy.sources[].root
+schema record destroy.sources[].root type string
+schema record destroy.sources[].source
+schema record destroy.sources[].source type object
+schema record destroy.sources[].source.commit
+schema record destroy.sources[].source.commit type string
+schema record destroy.sources[].source.hash
+schema record destroy.sources[].source.hash type string
+schema record destroy.sources[].source.path
+schema record destroy.sources[].source.path type string
+schema record destroy.sources[].source.ref
+schema record destroy.sources[].source.ref type string
+schema record destroy.sources[].source.repository
+schema record destroy.sources[].source.repository value "github.com/opstruss/catalog"
+schema record destroy.stop
+schema record destroy.stop type object
+schema record destroy.stop.grace
+schema record destroy.stop.grace type string
+schema record destroy.stop.run
+schema record destroy.stop.run type array
+schema record destroy.stop.run type string
+schema record destroy.stop.run[]
+schema record destroy.stop.run[] type string
+schema record destroy.stop.signal
+schema record destroy.stop.signal type string
+schema record destroy.timeout
+schema record destroy.timeout type string
+schema record destroy.tool
+schema record destroy.tool type boolean
+schema record destroy.tty
+schema record destroy.tty type boolean
+schema record digest
+schema record digest type string
+schema record id
+schema record id type string
+schema record inputs
+schema record inputs type object
+schema record kind
+schema record kind value "component"
+schema record kind value "run"
+schema record kind value "service"
+schema record kind value "uses"
+schema record needs
+schema record needs type array
+schema record needs[]
+schema record needs[] type string
+schema record outputs
+schema record outputs type object
+schema record parts
+schema record parts type object
+schema record parts.<name>
+schema record parts.<name> type string
+schema record pending
+schema record pending type object
+schema record pending.approval
+schema record pending.approval type string
+schema record pending.destroy
+schema record pending.destroy type object
+schema record pending.destroy.binaries
+schema record pending.destroy.binaries type object
+schema record pending.destroy.binaries.<name>
+schema record pending.destroy.binaries.<name> type object
+schema record pending.destroy.binaries.<name>.sha256
+schema record pending.destroy.binaries.<name>.sha256 type string
+schema record pending.destroy.binaries.<name>.url
+schema record pending.destroy.binaries.<name>.url type string
+schema record pending.destroy.dir
+schema record pending.destroy.dir type string
+schema record pending.destroy.dir_source
+schema record pending.destroy.dir_source type object
+schema record pending.destroy.dir_source.commit
+schema record pending.destroy.dir_source.commit type string
+schema record pending.destroy.dir_source.hash
+schema record pending.destroy.dir_source.hash type string
+schema record pending.destroy.dir_source.path
+schema record pending.destroy.dir_source.path type string
+schema record pending.destroy.dir_source.ref
+schema record pending.destroy.dir_source.ref type string
+schema record pending.destroy.dir_source.repository
+schema record pending.destroy.dir_source.repository value "github.com/opstruss/catalog"
+schema record pending.destroy.env
+schema record pending.destroy.env type object
+schema record pending.destroy.env.<name>
+schema record pending.destroy.env.<name> type string
+schema record pending.destroy.env_files
+schema record pending.destroy.env_files type object
+schema record pending.destroy.env_files.<name>
+schema record pending.destroy.env_files.<name> type string
+schema record pending.destroy.pass
+schema record pending.destroy.pass type object
+schema record pending.destroy.pass.<name>
+schema record pending.destroy.pass.<name> type string
+schema record pending.destroy.plugin
+schema record pending.destroy.plugin type string
+schema record pending.destroy.plugin_source
+schema record pending.destroy.plugin_source type object
+schema record pending.destroy.plugin_source.commit
+schema record pending.destroy.plugin_source.commit type string
+schema record pending.destroy.plugin_source.hash
+schema record pending.destroy.plugin_source.hash type string
+schema record pending.destroy.plugin_source.path
+schema record pending.destroy.plugin_source.path type string
+schema record pending.destroy.plugin_source.ref
+schema record pending.destroy.plugin_source.ref type string
+schema record pending.destroy.plugin_source.repository
+schema record pending.destroy.plugin_source.repository value "github.com/opstruss/catalog"
+schema record pending.destroy.run
+schema record pending.destroy.run type array
+schema record pending.destroy.run type string
+schema record pending.destroy.run[]
+schema record pending.destroy.run[] type string
+schema record pending.destroy.shell
+schema record pending.destroy.shell type string
+schema record pending.destroy.sources
+schema record pending.destroy.sources type array
+schema record pending.destroy.sources[]
+schema record pending.destroy.sources[] type object
+schema record pending.destroy.sources[].root
+schema record pending.destroy.sources[].root type string
+schema record pending.destroy.sources[].source
+schema record pending.destroy.sources[].source type object
+schema record pending.destroy.sources[].source.commit
+schema record pending.destroy.sources[].source.commit type string
+schema record pending.destroy.sources[].source.hash
+schema record pending.destroy.sources[].source.hash type string
+schema record pending.destroy.sources[].source.path
+schema record pending.destroy.sources[].source.path type string
+schema record pending.destroy.sources[].source.ref
+schema record pending.destroy.sources[].source.ref type string
+schema record pending.destroy.sources[].source.repository
+schema record pending.destroy.sources[].source.repository value "github.com/opstruss/catalog"
+schema record pending.destroy.stop
+schema record pending.destroy.stop type object
+schema record pending.destroy.stop.grace
+schema record pending.destroy.stop.grace type string
+schema record pending.destroy.stop.run
+schema record pending.destroy.stop.run type array
+schema record pending.destroy.stop.run type string
+schema record pending.destroy.stop.run[]
+schema record pending.destroy.stop.run[] type string
+schema record pending.destroy.stop.signal
+schema record pending.destroy.stop.signal type string
+schema record pending.destroy.timeout
+schema record pending.destroy.timeout type string
+schema record pending.destroy.tool
+schema record pending.destroy.tool type boolean
+schema record pending.destroy.tty
+schema record pending.destroy.tty type boolean
+schema record pending.digest
+schema record pending.digest type string
+schema record pending.ended
+schema record pending.ended type string
+schema record pending.holder
+schema record pending.holder type object
+schema record pending.holder.host
+schema record pending.holder.host type string
+schema record pending.holder.hostname
+schema record pending.holder.hostname type string
+schema record pending.holder.pid
+schema record pending.holder.pid type integer
+schema record pending.holder.run
+schema record pending.holder.run type string
+schema record pending.holder.since
+schema record pending.holder.since type string
+schema record pending.holder.started
+schema record pending.holder.started type string
+schema record pending.holder.user
+schema record pending.holder.user type string
+schema record pending.holder.version
+schema record pending.holder.version type integer
+schema record pending.inputs
+schema record pending.inputs type object
+schema record pending.needs
+schema record pending.needs type array
+schema record pending.needs[]
+schema record pending.needs[] type string
+schema record pending.op
+schema record pending.op value "destroy"
+schema record pending.op value "moved"
+schema record pending.op value "up"
+schema record pending.outcome
+schema record pending.outcome value "cancelled"
+schema record pending.outcome value "failure"
+schema record pending.outputs
+schema record pending.outputs type object
+schema record pending.peer
+schema record pending.peer type string
+schema record pending.raw_output
+schema record pending.raw_output type string
+schema record pending.run
+schema record pending.run type string
+schema record pending.sensitive
+schema record pending.sensitive type object
+schema record pending.sensitive.<name>
+schema record pending.sensitive.<name> type object
+schema record pending.sensitive.<name>.<name>
+schema record pending.sensitive.<name>.<name> type string
+schema record pending.source
+schema record pending.source type object
+schema record pending.source.commit
+schema record pending.source.commit type string
+schema record pending.source.hash
+schema record pending.source.hash type string
+schema record pending.source.remote
+schema record pending.source.remote type object
+schema record pending.source.remote.commit
+schema record pending.source.remote.commit type string
+schema record pending.source.remote.hash
+schema record pending.source.remote.hash type string
+schema record pending.source.remote.path
+schema record pending.source.remote.path type string
+schema record pending.source.remote.ref
+schema record pending.source.remote.ref type string
+schema record pending.source.remote.repository
+schema record pending.source.remote.repository value "github.com/opstruss/catalog"
+schema record pending.source.uses
+schema record pending.source.uses type string
+schema record run
+schema record run type string
+schema record sensitive
+schema record sensitive type object
+schema record sensitive.<name>
+schema record sensitive.<name> type object
+schema record sensitive.<name>.<name>
+schema record sensitive.<name>.<name> type string
+schema record source
+schema record source type object
+schema record source.commit
+schema record source.commit type string
+schema record source.hash
+schema record source.hash type string
+schema record source.remote
+schema record source.remote type object
+schema record source.remote.commit
+schema record source.remote.commit type string
+schema record source.remote.hash
+schema record source.remote.hash type string
+schema record source.remote.path
+schema record source.remote.path type string
+schema record source.remote.ref
+schema record source.remote.ref type string
+schema record source.remote.repository
+schema record source.remote.repository value "github.com/opstruss/catalog"
+schema record source.uses
+schema record source.uses type string
+schema record state_key
+schema record state_key type string
+schema record tombstone
+schema record tombstone type object
+schema record tombstone.forgotten
+schema record tombstone.forgotten type boolean
+schema record tombstone.moved_to
+schema record tombstone.moved_to type string
+schema record tombstone.run
+schema record tombstone.run type string
+schema record tombstone.time
+schema record tombstone.time type string
+schema record updated
+schema record updated type string
+schema record version
+schema record version type integer
+schema run args
+schema run args type array
+schema run args[]
+schema run args[] type string
+schema run command
+schema run command type string
+schema run ended
+schema run ended type string
+schema run events_incomplete
+schema run events_incomplete type boolean
+schema run exit_code
+schema run exit_code type integer
+schema run host
+schema run host type string
+schema run hostname
+schema run hostname type string
+schema run no_deps
+schema run no_deps type boolean
+schema run opstruss
+schema run opstruss type string
+schema run outcome
+schema run outcome value "cancelled"
+schema run outcome value "failure"
+schema run outcome value "skipped"
+schema run outcome value "success"
+schema run outputs
+schema run outputs type object
+schema run parent
+schema run parent type string
+schema run pid
+schema run pid type integer
+schema run project
+schema run project type string
+schema run reason
+schema run reason type string
+schema run replay
+schema run replay type object
+schema run replay.error
+schema run replay.error type string
+schema run replay.payload
+schema run replay.payload value "sealed"
+schema run replay.payload value "unavailable"
+schema run replay.time
+schema run replay.time type string
+schema run replay.trigger
+schema run replay.trigger type string
+schema run rerun_of
+schema run rerun_of type string
+schema run run
+schema run run type string
+schema run simulated
+schema run simulated type string
+schema run stack
+schema run stack type string
+schema run started
+schema run started type string
+schema run status
+schema run status value "finished"
+schema run status value "running"
+schema run task
+schema run task type string
+schema run tasks
+schema run tasks type object
+schema run tasks.<name>
+schema run tasks.<name> type object
+schema run tasks.<name>.outcome
+schema run tasks.<name>.outcome value "cancelled"
+schema run tasks.<name>.outcome value "failure"
+schema run tasks.<name>.outcome value "skipped"
+schema run tasks.<name>.outcome value "success"
+schema run trigger
+schema run trigger type string
+schema run units
+schema run units type object
+schema run units.<name>
+schema run units.<name> type object
+schema run units.<name>.approval
+schema run units.<name>.approval type string
+schema run units.<name>.changed
+schema run units.<name>.changed type boolean
+schema run units.<name>.outcome
+schema run units.<name>.outcome type string
+schema run units.<name>.plan
+schema run units.<name>.plan type string
+schema run user
+schema run user type string
+schema run version
+schema run version type integer
+variable each
+variable event
+variable inputs
+variable locals
+variable opstruss
+variable opstruss.address
+variable opstruss.arch
+variable opstruss.artifacts
+variable opstruss.cwd
+variable opstruss.dir
+variable opstruss.host
+variable opstruss.os
+variable opstruss.project
+variable opstruss.reason
+variable opstruss.run
+variable opstruss.state_key
+variable opstruss.temp
+variable opstruss.time
+variable outputs
+variable secrets
+variable stack
+variable steps
+variable steps.<id>.changed
+variable steps.<id>.outcome
+variable steps.<id>.outputs
+variable steps.<id>.units
+variable tasks
+variable units

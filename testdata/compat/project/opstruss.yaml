@@ -4,7 +4,9 @@
 # and sensitive. changing.yaml is what generate.sh changes between its
 # runs, so the data also holds a pending attempt, an abandoned one, a
 # tombstone, and an orphan. Each unit writes its name to ran when it runs,
-# so a check counts what runs again.
+# so a check counts what runs again. exprs writes what each function,
+# macro, and variable of expressions gives, which a check compares with
+# what this version gave.
 opstruss: "1.0"
 name: compat
 include: [changing.yaml]
@@ -40,3 +42,37 @@ tasks:
   recall:
     steps:
       - log: {msg: "count=${{ kv('last').count }} ratio=${{ units.ratio.outputs.ratio / 4.0 }} size=${{ units.build.outputs.size }}"}
+  exprs:
+    steps:
+      - id: corpus
+        set:
+          to_json: '${{ toJSON({"b": 1, "a": [true, null, 2.5, "x"]}) }}'
+          from_json: '${{ fromJSON("{\"a\": [1, 2.5, \"x\", null]}") }}'
+          to_yaml: '${{ toYAML({"a": [1, 2], "b": "c"}) }}'
+          from_yaml: '${{ fromYAML("a: [1, two]") }}'
+          sha256: '${{ sha256("abc") }}'
+          strftime: '${{ timestamp("2026-01-02T03:04:05Z").strftime("%Y-%m-%d %H:%M:%S %a %b %j", "UTC") }}'
+          file: '${{ file("src/app.txt") }}'
+          kv: '${{ kv("last").count }}'
+          kv_default: '${{ kv("missing", 7) }}'
+          kv_prefix: '${{ size(kv("t*")) }}'
+          size: '${{ [size("héllo"), size([1, 2]), size({"a": 1})] }}'
+          contains: '${{ ["abc".contains("b"), "abc".startsWith("a"), "abc".endsWith("c"), "abc".matches("^a.c$")] }}'
+          conversions: '${{ [int("42"), string(42), double(2), string(2.5), int(2.9), string(true)] }}'
+          has: '${{ [has({"a": 1}.a), has({"a": 1}.b)] }}'
+          macros: '${{ [[1, 2, 3].map(x, x * 10), [1, 2, 3].filter(x, x > 1), [1, 2].all(x, x > 0), [1, 2].exists(x, x == 1), [1, 2].exists_one(x, x == 1)] }}'
+          time: '${{ [timestamp("2026-01-02T03:04:05Z").getFullYear(), timestamp("2026-01-02T03:04:05Z").getDayOfWeek(), duration("90m").getMinutes(), string(timestamp("2026-01-02T03:04:05Z") + duration("1h30m")), string(duration("1h30m"))] }}'
+          operators: '${{ [7 / 2, 7 % 3, 2.5 * 2.0, "a" + "b", [1] + [2], "b" in ["a", "b"], "a" in {"a": 1}, 1 < 2 ? "y" : "n", !false && true || false] }}'
+          strings: '${{ ["abc".charAt(1), "hello".indexOf("l"), "hello".lastIndexOf("l"), "ABC".lowerAscii(), "abc".upperAscii(), "a-b-c".replace("-", "+"), "a-b-c".replace("-", "+", 1), "a,b,c".split(","), "a,b,c".split(",", 2), "hello".substring(1, 3), "  x ".trim(), ["a", "b"].join("-"), strings.quote("a\tb"), "%s-%d-%.2f".format(["a", 1, 2.5]), "abc".reverse()] }}'
+          lists: '${{ [lists.range(3), [1, 2, 3, 4].slice(1, 3), [[1], [2, [3]]].flatten(), [[1], [2, [3]]].flatten(2), [1, 1, 2].distinct(), [3, 1, 2].sort(), [{"n": 2}, {"n": 1}].sortBy(e, e.n), [1, 2].first().orValue(0), [1, 2].last().orValue(0)] }}'
+          math: '${{ [math.greatest(1, 5, 3), math.least(2.5, 1.5), math.ceil(1.2), math.floor(1.8), math.round(1.5), math.trunc(-1.5), math.abs(-3), math.sign(-2), math.isNaN(1.0), math.isInf(1.0), math.isFinite(1.0), math.bitAnd(6, 3), math.bitOr(6, 3), math.bitXor(6, 3), math.bitNot(0), math.bitShiftLeft(1, 3), math.bitShiftRight(8, 2), math.sqrt(16.0)] }}'
+          sets: '${{ [sets.contains([1, 2, 3], [2]), sets.equivalent([1, 2], [2, 1]), sets.intersects([1], [1, 2])] }}'
+          two_var: '${{ [{"a": 1, "b": 2}.all(k, v, v > 0), [1, 2].exists(i, v, v == 2), [1, 2, 3].existsOne(i, v, v > 2), [1, 2].transformList(i, v, v * 2), [1, 2].transformList(i, v, v > 1, v * 2), {"a": 1}.transformMap(k, v, v + 1), {"a": 1}.transformMapEntry(k, v, {k + "x": v})] }}'
+          bind: '${{ cel.bind(x, 2, x * x) }}'
+          base64: '${{ [base64.encode(b"hi"), string(base64.decode("aGk="))] }}'
+          optional: '${{ [optional.of(1).orValue(0), optional.none().orValue(5), {"a": 1}.?a.orValue(0), {"a": 1}.?b.hasValue(), optional.of(2).optMap(x, x + 1).value(), [1, 2][?5].orValue(9)] }}'
+          variables: '${{ [inputs.greeting, stack, opstruss.project, units.build.outputs.size, units.ratio.outputs.ratio, units.ratio.outputs.count] }}'
+      - write:
+          path: exprs.out
+          content: ${{ steps.corpus.outputs }}
+          format: yaml

@@ -1,10 +1,11 @@
 // Command docgen writes the reference pages of the documentation from the
-// JSON Schemas in internal/schema and the commands of opstruss. make
-// docs-gen runs it as go run ./internal/docgen docs/reference, and CI
-// checks that the pages it writes are the ones committed. With -links
-// <file>, it writes the paths of the documentation that opstruss links to
-// that file instead, one a line, which the docs workflow finds in each
-// build.
+// JSON Schemas in internal/schema and the commands of opstruss, and the
+// surface of the contract to testdata/compat/surface/main.txt. make
+// docs-gen runs it as go run ./internal/docgen docs/reference; CI checks
+// that the pages it writes are the ones committed, and TestSurface that
+// the surface is. With -links <file>, it writes the paths of the
+// documentation that opstruss links to that file instead, one a line,
+// which the docs workflow finds in each build.
 package main
 
 import (
@@ -71,6 +72,13 @@ func main() {
 		if err := os.WriteFile(path, []byte(page), 0o644); err != nil {
 			log.Fatal(err)
 		}
+	}
+	lines, err := surface(".")
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err := os.WriteFile(surfaceFile, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+		log.Fatal(err)
 	}
 }
 

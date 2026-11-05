@@ -1,6 +1,9 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -89,4 +92,71 @@ func TestCommandPages(t *testing.T) {
 	if strings.Contains(pages["state-list.md"], "`-d`") {
 		t.Error("-d is on a command that cannot run in the daemon")
 	}
+}
+
+// TestSurface checks that testdata/compat/surface/main.txt is what make
+// docs-gen writes, and that no line of a frozen copy beside it is gone, but
+// those that except.txt there lets go, each with the reason in a comment
+// above it.
+func TestSurface(t *testing.T) {
+	lines, err := surface("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := os.ReadFile(filepath.Join("../..", surfaceFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(lines, "\n") + "\n"; got != string(want) {
+		t.Errorf("%s is not what make docs-gen writes; run it and read the difference", surfaceFile)
+	}
+	dir := filepath.Join("../..", filepath.Dir(surfaceFile))
+	frozen, err := filepath.Glob(filepath.Join(dir, "[0-9]*.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	except := readLines(t, filepath.Join(dir, "except.txt"))
+	for _, f := range frozen {
+		for _, line := range gone(lines, readLines(t, f), except) {
+			t.Errorf("%s: %q is gone", filepath.Base(f), line)
+		}
+	}
+}
+
+func TestGone(t *testing.T) {
+	got := gone([]string{"a", "d"}, []string{"a", "b", "c"}, []string{"c"})
+	if !slices.Equal(got, []string{"b"}) {
+		t.Fatalf("got %q", got)
+	}
+}
+
+// gone is each line of frozen that lines no longer has and except does not
+// let go.
+func gone(lines, frozen, except []string) []string {
+	var out []string
+	for _, l := range frozen {
+		if !slices.Contains(lines, l) && !slices.Contains(except, l) {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
+// readLines is the lines of file without comments and blank lines, or none
+// when file is missing.
+func readLines(t *testing.T, file string) []string {
+	data, err := os.ReadFile(file)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for l := range strings.SplitSeq(string(data), "\n") {
+		if l != "" && !strings.HasPrefix(l, "#") {
+			out = append(out, l)
+		}
+	}
+	return out
 }

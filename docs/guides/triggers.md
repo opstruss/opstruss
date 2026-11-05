@@ -65,7 +65,10 @@ opstruss stop      # stop the daemon, its runs, and its services
 - A webhook needs `daemon.listen`, and each one a `secret` and a
   `signature`: `github`, `gitlab`, `slack`, `stripe`, `standard`,
   `bearer`, or a header of your own. A request that fails the check gets
-  401 and runs nothing. TLS belongs to a reverse proxy, such as Caddy.
+  401 and runs nothing; before the check, a path that no webhook serves
+  gets 404, another method at its path 405, a body over 1 MiB 413, a body
+  that does not come within 10 seconds 408, and a body that cannot be
+  read 400. TLS belongs to a reverse proxy, such as Caddy.
   The answer to a request that checks out:
 
   | When | Status and body |
@@ -74,7 +77,9 @@ opstruss stop      # stop the daemon, its runs, and its services
   | `respond: wait` | 200, or 500 when the run fails: `{"run", "outcome", "exit_code", "outputs"}` |
   | `if:` is false | 202, `{}`, and no run |
   | `with:` gives an input that the task refuses | 422, `{"error": "<why>"}` |
-  | The task has too many runs waiting | 503 |
+  | Another error before the run | 500, `{"error": "<why>"}` |
+  | The task has 100 runs that have not ended | 503, with `Retry-After: 1` |
+  | The daemon is stopping | 503 |
 
 ## After a reboot
 

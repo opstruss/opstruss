@@ -26,7 +26,8 @@ run() { HOME="$work/.home" OPSTRUSS_AGE_KEY_FILE="$work/key.txt" USER=fixture "$
 # old and leaves gone an orphan. flaky fails in both, as ready is
 # missing, with a destroy that changes between them, so its record keeps
 # a pending attempt and an abandoned one; that failure is why up exits
-# with 1.
+# with 1. exprs writes what each function, macro, and variable of
+# expressions gives, which stays as exprs.want for the check.
 mv changing.yaml last.yaml
 cat >changing.yaml <<'EOF'
 units:
@@ -42,6 +43,7 @@ EOF
 run up --yes || true
 run remember
 run recall
+run exprs
 cat >changing.yaml <<'EOF'
 units:
   flaky:
@@ -52,6 +54,7 @@ removed:
 EOF
 run up --yes || true
 mv last.yaml changing.yaml
+mv exprs.out exprs.want
 
 # What OpsTruss builds again, and the names and paths of this machine.
 rm -r .home .opstruss/runs/default/.index
@@ -66,7 +69,8 @@ version=$("$bin" version)
 {
 	cat <<EOF
 # What $version wrote reads with this version: no unit that finished runs
-# again, and its runs, records, kv, and sensitive values read. up runs the
+# again, its runs, records, kv, and sensitive values read, and each
+# expression gives what it gave. up runs the
 # attempt it left pending, then destroys the attempt it abandoned and its
 # orphan, and destroy takes away the units of its plugin and component,
 # each by the destroy that its record keeps. generate.sh wrote this file;
@@ -91,6 +95,8 @@ stdout '"orphan":\s*true'
 stdout '"forgotten":\s*true'
 exec opstruss recall
 stdout 'count=2 ratio=0.5 size=6'
+exec opstruss exprs
+cmp exprs.out exprs.want
 exec opstruss logs build
 stdout 'built'
 

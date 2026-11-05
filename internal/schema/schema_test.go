@@ -1,6 +1,8 @@
 package schema
 
 import (
+	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -69,5 +71,50 @@ func TestNameAtKey(t *testing.T) {
 			!strings.HasPrefix(probs[0].Message, `"Café" is not a name`) {
 			t.Fatalf("got %+v, %v", probs, err)
 		}
+	}
+}
+
+// TestDefaults checks that the default of each key is the one that its
+// description names, as "<value> by default", so the two never part.
+func TestDefaults(t *testing.T) {
+	for _, k := range []Kind{Project, Plugin, Catalog} {
+		raw, err := Raw(k)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var doc map[string]any
+		if err := json.Unmarshal(raw, &doc); err != nil {
+			t.Fatal(err)
+		}
+		var walk func(path string, n map[string]any)
+		walk = func(path string, n map[string]any) {
+			if d, ok := n["default"]; ok {
+				desc, _ := n["description"].(string)
+				if want := fmt.Sprint(d) + " by default"; !strings.Contains(desc, want) {
+					t.Errorf("%s %s: the description does not say %q", k, path, want)
+				}
+			}
+			for key, v := range n {
+				switch v := v.(type) {
+				case map[string]any:
+					if key == "properties" || key == "patternProperties" || key == "$defs" {
+						for name, sub := range v {
+							if sub, ok := sub.(map[string]any); ok {
+								walk(path+"/"+name, sub)
+							}
+						}
+					} else if key != "default" && key != "const" {
+						walk(path+"/"+key, v)
+					}
+				case []any:
+					for i, sub := range v {
+						if sub, ok := sub.(map[string]any); ok {
+							walk(fmt.Sprintf("%s/%s/%d", path, key, i), sub)
+						}
+					}
+				}
+			}
+		}
+		walk("", doc)
 	}
 }
