@@ -2,11 +2,13 @@ name: docs
 
 # Each build writes one version of the documentation to the gh-pages branch
 # of opstruss/opstruss.github.io: main to /dev/, a release tag to
-# /v<major>.<minor>/, and the newest release also to / and /schema/. Other
-# folders stay as they were, and versions.json lists them all.
+# /v<major>.<minor>/, and the newest release also to / and /schema/. A
+# release/v<major>.<minor> branch rebuilds the folder of its minor, so a fix
+# reaches the documentation of a release without a new tag. Other folders
+# stay as they were, and versions.json lists them all.
 on:
   push:
-    branches: [main]
+    branches: [main, 'release/v*.*']
     tags: ['v*']
     paths: ['docs/**', 'internal/schema/**', 'internal/cli/**', 'internal/docgen/**']
   workflow_dispatch:
@@ -29,10 +31,14 @@ jobs:
         env:
           REF: ${{ github.ref }}
         run: |
-          # A release tag names its minor; a pre-release and main are dev.
+          # A release tag names its minor, and so does a release/v<major>.<minor>
+          # branch; a pre-release and main are dev.
           if [[ "$REF" =~ ^refs/tags/v([0-9]+)\.([0-9]+)\.[0-9]+$ ]]; then
             echo "folder=v${BASH_REMATCH[1]}.${BASH_REMATCH[2]}" >> "$GITHUB_OUTPUT"
-          elif [[ "$REF" == refs/tags/* ]]; then
+          elif [[ "$REF" =~ ^refs/heads/release/(v[0-9]+\.[0-9]+)$ ]]; then
+            echo "folder=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+            echo "rebuild=true" >> "$GITHUB_OUTPUT"
+          elif [[ "$REF" == refs/tags/* || "$REF" == refs/heads/release/* ]]; then
             echo "folder=" >> "$GITHUB_OUTPUT"
           else
             echo "folder=dev" >> "$GITHUB_OUTPUT"
@@ -66,8 +72,15 @@ jobs:
       - if: steps.version.outputs.folder != ''
         env:
           FOLDER: ${{ steps.version.outputs.folder }}
+          REBUILD: ${{ steps.version.outputs.rebuild }}
         working-directory: site
         run: |
+          # Only a release tag publishes a minor, so / and /schema/ move with
+          # releases alone.
+          if [ "$REBUILD" = true ] && [ ! -d "$FOLDER" ]; then
+            echo "::notice::$FOLDER has no release yet; its first tag publishes it"
+            exit 0
+          fi
           rm -rf "$FOLDER"
           cp -R ../docs/.vitepress/dist "$FOLDER"
           mkdir -p "$FOLDER/schema"
