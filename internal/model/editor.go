@@ -369,11 +369,15 @@ func (e *editorDefs) with(t accepts) map[string]any {
 	return map[string]any{"$ref": "#/$defs/" + name}
 }
 
+// The titles of expression and null tell the alternatives of an input
+// apart: on hover, the YAML language server takes a match of an
+// alternative with no title, description, or properties as a match of
+// each such alternative, and shows the title of the schema once for each.
 var (
 	// expression is a value that a run knows, and checks then.
-	expression = map[string]any{"type": "string", "pattern": `\$\{\{`}
+	expression = map[string]any{"title": "expression", "type": "string", "pattern": `\$\{\{`}
 	// null gives an input its default, as Conform does.
-	null = map[string]any{"type": "null"}
+	null = map[string]any{"title": "null", "type": "null"}
 )
 
 // inputSchema is the JSON Schema of a value of in as written: what

@@ -179,6 +179,33 @@ tasks:
 		t.Errorf("descriptions of the names: %v", got)
 	}
 
+	// Each input offers its value, ${{ }}, or null, and the last two have
+	// titles, which keep an editor from repeating the title on hover.
+	inputs := 0
+	var walk func(v any)
+	walk = func(v any) {
+		switch v := v.(type) {
+		case map[string]any:
+			if alts, ok := v["anyOf"].([]any); ok && len(alts) == 3 && pick(alts[2], "type") == "null" {
+				inputs++
+				if pick(alts[1], "title") != "expression" || pick(alts[2], "title") != "null" {
+					t.Errorf("the alternatives of an input have no titles: %v", alts)
+				}
+			}
+			for _, x := range v {
+				walk(x)
+			}
+		case []any:
+			for _, x := range v {
+				walk(x)
+			}
+		}
+	}
+	walk(doc.value)
+	if inputs == 0 {
+		t.Error("no input offers ${{ }} or null")
+	}
+
 	// Each load writes the file again only when it changes.
 	info, err := os.Stat(filepath.Join(dir, EditorSchemaFile))
 	if err != nil {
