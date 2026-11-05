@@ -62,14 +62,19 @@ An event:
 | `status` | `running` on the first event of a run, a unit operation, a task, or a step, and `finished` on the last |
 | `outcome` | On a `finished` event: `success`, `failure`, `skipped`, or `cancelled` |
 | `exit_code` | On the last event of a run: the exit code of the command |
-| `outputs` | On the last event of a run: the outputs of the task |
+| `outputs` | On the last event of a run: the outputs of the task, each an output as [below](#documents) |
 | `plan` | On a `plan` event: the plan of its unit, as `units.<name>.plan` reads it (below) |
 
 - A reader ignores the fields and types it does not know: a new version
   may add some, and `message` is there to show any event.
 - The last event of a run is its `run` event with `outcome`, `exit_code`,
   and `outputs`, so a script that runs `opstruss <task> --json` reads the
-  result from one line.
+  result from one line:
+
+  ```sh
+  opstruss build --json | tail -n 1 | jq -r .outputs.image.value
+  ```
+
 - A unit that is not run, such as one that is unchanged, gets only its
   last event.
 - Secrets and sensitive values are hidden in every event, as they are at
@@ -123,7 +128,8 @@ events are to the millisecond.
 | `version` | `version`, `os`, `arch` |
 | A command that fails before it reads | `error` |
 
-An output, in `outputs` and in the units of `list`:
+An output, in `outputs`, in the units of `list`, and in the last event and
+the record of a run:
 
 ```json
 {"value": "https://example.com", "sensitive": false, "type": "string"}
@@ -131,7 +137,8 @@ An output, in `outputs` and in the units of `list`:
 
 - `value` is missing from a sensitive output, unless `outputs
   --show-sensitive` shows it.
-- `type` is the type that the unit or its plugin declares, when it does.
+- `type` is the type that the unit, its plugin, or the task declares, when
+  it does.
 
 A record of a run has `version`; `opstruss`, the version of OpsTruss that
 ran it; `run`; `parent`, the run it ran inside; `project`, `stack`,
@@ -141,7 +148,7 @@ for `--event`; `user`, `host`, `hostname`, and `pid`; `started` and
 `outcome`, `reason` (why it ended `cancelled`: `signal`, `requested` by
 `opstruss runs cancel`, `concurrency` for a call with `concurrency:
 cancel`, or `interrupted` when its process died), and `exit_code`; `units`
-and `tasks`, what ran inside it; `outputs`;
+and `tasks`, what ran inside it; `outputs`, those of its task;
 `events_incomplete` when its events could not all be written; `no_deps`;
 `rerun_of`; and `replay`, what `runs rerun` needs.
 

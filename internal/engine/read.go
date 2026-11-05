@@ -101,6 +101,19 @@ func outputTypes(u *model.Unit) map[string]string {
 	return types
 }
 
+// taskTypes are the types that the task t declares for its outputs; none
+// without a task.
+func taskTypes(t *model.Task) map[string]string {
+	if t == nil {
+		return nil
+	}
+	types := map[string]string{}
+	for k, o := range t.Outputs {
+		types[k] = o.Type
+	}
+	return types
+}
+
 // e0 reads the project with the instances of its units and their records,
 // for a command that only reads.
 func e0(opts Options) (*engine, error) {

@@ -20,7 +20,7 @@ stdout '^  plain: hello$'
 ! stdout 's3cr3t|k-key-value|czNjcjN0'
 ! stderr 's3cr3t|k-key-value|czNjcjN0'
 exec opstruss show --json
-stdout '"url":"\*\*\*"'
+stdout '"url":\{"sensitive":true\}'
 ! stdout 's3cr3t|k-key-value|czNjcjN0'
 ! exec sh -c 'grep -r -e s3cr3t -e k-key-value -e czNjcjN0 .opstruss'
 

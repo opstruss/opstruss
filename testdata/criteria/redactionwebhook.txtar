@@ -7,7 +7,7 @@ env HOOK=w4it-token-secret
 exec opstruss up -d --yes
 waitgrep 'webhooks listen on' .opstruss/logs/default/_daemon.jsonl
 webhook POST /token '{}' -bearer w4it-token-secret
-stdout '^200 .*"outputs":\{"token":"\*\*\*"\}'
+stdout '^200 .*"outputs":\{"token":\{"sensitive":true\}\}'
 ! stdout w4it
 exec opstruss stop
 ! exec sh -c 'grep -r w4it-token-secret .opstruss'

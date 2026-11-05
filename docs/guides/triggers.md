@@ -32,7 +32,7 @@ Every run has `event.time`, when it was due or its event came, and
 | `watch` of a service (`unit:`) | `unit`, `stream`, and `line`; with `batch` or `debounce`, `lines`, `count`, and `truncated` instead of `line` |
 | `watch` of `paths` | `paths`, each `{path, op}` with `op` `create`, `write`, `remove`, or `rename`, and `count`; with `batch` or `debounce`, also `truncated` |
 | `watch` of a program | `line`, and `data` when the line is JSON |
-| `after` | `task`, `unit`, `outcome`, and `outputs` of the run it follows |
+| `after` | `task`, `unit`, `outcome`, and `outputs` of the run it follows: the value of each output, and none of a sensitive one |
 
 `validate` refuses a field that no trigger of the task gives, such as
 `event.run`. A task that also runs from the command line reads a field
@@ -74,7 +74,7 @@ opstruss stop      # stop the daemon, its runs, and its services
   | When | Status and body |
   |---|---|
   | `respond: accepted`, the default | 202, `{"run": "<id>"}` once the run starts |
-  | `respond: wait` | 200, or 500 when the run fails: `{"run", "outcome", "exit_code", "outputs"}` |
+  | `respond: wait` | 200, or 500 when the run fails: `{"run", "outcome", "exit_code", "outputs"}`, each output [as the last event of the run has it](../reference/exit-codes-and-json#documents) |
   | `if:` is false | 202, `{}`, and no run |
   | `with:` gives an input that the task refuses | 422, `{"error": "<why>"}` |
   | Another error before the run | 500, `{"error": "<why>"}` |

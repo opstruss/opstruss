@@ -28,7 +28,7 @@ webhook POST /nowhere '' -bearer t0ken-for-hooks
 stdout '^404 '
 
 webhook POST /hooks/hello '{"who":"ana"}' -github gh-secret
-stdout '^200 \{"exit_code":0,"outcome":"success","outputs":\{"greeting":"hi ana"\},"run":"[0-9]'
+stdout '^200 \{"exit_code":0,"outcome":"success","outputs":\{"greeting":\{"sensitive":false,"value":"hi ana"\}\},"run":"[0-9]'
 
 # an up with another secret keeps the server on its port, and checks the
 # new secret

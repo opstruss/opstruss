@@ -120,7 +120,7 @@ type Result struct {
 	Run      string
 	ExitCode int // 0 success, 1 failure, 2 stopped at plan for approval
 	Outcome  string
-	Outputs  map[string]any    // of a task, with sensitive values as secret.Mask
+	Outputs  map[string]any    // of a task, as written gives them
 	Record   *record.Record    // as the run finished it, also when its directory went
 	Inputs   map[string]string // --input of the run, which a rerun takes from the run it runs again
 }
@@ -431,15 +431,17 @@ func (e *engine) debug(addr, format string, args ...any) {
 // close ends the run: its record, then the runs that a crash left running
 // marked and old runs dropped, then the last event, of type run, whose
 // exit code says whether the record was written; the run's temporary
-// files go first. The outputs that marks
-// marks are written out as secret.Mask.
+// files go first. The outputs, of the task of the run, are written out
+// as written gives them.
 func (e *engine) close(outcome string, outputs, marks map[string]any) {
 	if e.run != nil {
 		if err := e.run.Close(); err != nil {
 			e.warn("", "removing the run's temporary files: %v", err)
 		}
 	}
-	outputs = e.shown(outputs, marks)
+	if outputs != nil {
+		outputs = e.written(outputs, marks, taskTypes(e.p.Tasks[e.rootTask]))
+	}
 	e.mu.Lock()
 	touched, ran, code := e.touched, e.ran, e.exit
 	e.mu.Unlock()
@@ -667,6 +669,24 @@ func (e *engine) shown(outputs, marks map[string]any) map[string]any {
 			continue
 		}
 		out[k] = e.redact.Value(v)
+	}
+	return out
+}
+
+// written is outputs as a run writes them out, in its last event and its
+// record: each as record.OutputOf gives it, with no value when marks marks
+// it, and the sensitive values the run knows hidden in the others.
+func (e *engine) written(outputs, marks map[string]any, types map[string]string) map[string]any {
+	if outputs == nil {
+		return nil
+	}
+	out := make(map[string]any, len(outputs))
+	for k, o := range e.outputList(outputs, marks, types, false) {
+		var v any
+		if o.Value != nil {
+			v = *o.Value
+		}
+		out[k] = record.OutputOf(v, o.Sensitive, o.Type)
 	}
 	return out
 }

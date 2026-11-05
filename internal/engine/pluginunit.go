@@ -307,6 +307,7 @@ func (e *engine) statusPass(ctx context.Context, patterns []string) (map[string]
 func (e *engine) recordStatus(inst *instance) map[string]any {
 	outputs := map[string]any{"state": "absent", "run": "", "updated": "", "outputs": map[string]any{}}
 	ev := Event{Type: "unit", Level: "info", Address: inst.address}
+	var written map[string]any
 	switch rec := inst.record; {
 	case inst.def.Service != nil:
 		outputs = e.serviceStatus(inst)
@@ -318,8 +319,10 @@ func (e *engine) recordStatus(inst *instance) map[string]any {
 		ev.Message = "absent"
 	default:
 		outputs["state"], outputs["run"], outputs["updated"] = "up", rec.Run, rec.Updated
-		if shown := e.shown(rec.Outputs, hiddenMarks(rec.Hidden[state.PartOutputs])); shown != nil {
+		marks := hiddenMarks(rec.Hidden[state.PartOutputs])
+		if shown := e.shown(rec.Outputs, marks); shown != nil {
 			outputs["outputs"] = shown
+			written = e.written(rec.Outputs, marks, outputTypes(inst.def))
 		}
 		ev.Message = fmt.Sprintf("up, from run %s at %s", rec.Run, rec.Updated)
 		if rec.Pending != nil {
@@ -327,7 +330,13 @@ func (e *engine) recordStatus(inst *instance) map[string]any {
 			ev.Message = "pending: " + pendingReason(rec.Pending)
 		}
 	}
+	// The event writes each output as the last event of a run does; what
+	// this returns keeps the values, which a task: status step reads.
 	ev.Outputs = outputs
+	if written != nil {
+		ev.Outputs = maps.Clone(outputs)
+		ev.Outputs["outputs"] = written
+	}
 	e.emit(ev)
 	if o, _ := outputs["outputs"].(map[string]any); len(o) > 0 && outputs["state"] == "up" {
 		e.say("unit", inst.address, "outputs: %s", expr.JSON(o))

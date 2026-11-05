@@ -49,7 +49,19 @@
         "required": ["outcome"]
       }
     },
-    "outputs": { "type": "object" },
+    "outputs": {
+      "type": "object",
+      "description": "The outputs of the task of the run, each as opstruss outputs --json gives one: value, which a sensitive output does not have; sensitive; and type, when the task declares one.",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "value": {},
+          "sensitive": { "type": "boolean" },
+          "type": { "type": "string" }
+        },
+        "required": ["sensitive"]
+      }
+    },
     "events_incomplete": { "type": "boolean", "description": "events.jsonl lacks events that could not be written, as on a full disk." },
     "no_deps": { "type": "boolean" },
     "rerun_of": { "type": "string", "description": "The run that opstruss runs rerun ran again." },

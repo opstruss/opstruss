@@ -70,7 +70,7 @@ tasks:
 		Ask: func(_ context.Context, name string, in *model.Input) (string, error) { return "Ana", nil }})
 	req.Task = "greet"
 	res, err := a.Run(context.Background(), req)
-	if err != nil || res.ExitCode != 0 || last.Type != "run" || last.Outputs["msg"] != "hi Ana" {
+	if msg, _ := record.OutputValue(last.Outputs["msg"]); err != nil || res.ExitCode != 0 || last.Type != "run" || msg != "hi Ana" {
 		t.Fatalf("%+v %v %+v", res, err, last)
 	}
 }

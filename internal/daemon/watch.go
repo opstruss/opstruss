@@ -351,9 +351,13 @@ func (t *triggers) ended(rec *record.Record, depth int) {
 			t.d.event("trigger", "warn", tr.Task, "%s: run %s is %d deep in a chain of after, so it makes no run", tr, run, depth)
 			continue
 		}
-		outputs := rec.Outputs
-		if outputs == nil {
-			outputs = map[string]any{}
+		// event.outputs has the value of each output; a sensitive one has
+		// none in the record, so the run after it gets none.
+		outputs := map[string]any{}
+		for k, o := range rec.Outputs {
+			if v, ok := record.OutputValue(o); ok {
+				outputs[k] = v
+			}
 		}
 		t.fireEvent(&bound{tr: tr, snap: snap}, map[string]any{"task": name, "unit": tr.Unit, "outcome": rec.Outcome, "outputs": outputs}, depth+1)
 	}

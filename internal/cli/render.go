@@ -14,6 +14,7 @@ import (
 	"github.com/opstruss/opstruss/internal/engine"
 	"github.com/opstruss/opstruss/internal/expr"
 	"github.com/opstruss/opstruss/internal/record"
+	"github.com/opstruss/opstruss/internal/secret"
 )
 
 // renderer turns the events of one command into what it prints. With
@@ -219,7 +220,7 @@ func (r *renderer) line(ev engine.Event) []piece {
 	case ev.Type == "run":
 		delete(r.planned, ev.Run)
 		for _, k := range slices.Sorted(maps.Keys(ev.Outputs)) {
-			fmt.Fprintf(&b, "  %s: %s\n", k, expr.Text(ev.Outputs[k]))
+			fmt.Fprintf(&b, "  %s: %s\n", k, outputText(ev.Outputs[k]))
 		}
 	case who(ev) != "":
 		fmt.Fprintf(&b, "%s: %s\n", who(ev), r.endText(ev, ev.Message))
@@ -412,7 +413,7 @@ func (r *renderer) blockEvent(ev engine.Event) []piece {
 		var b strings.Builder
 		b.WriteString(r.summary(color))
 		for _, k := range slices.Sorted(maps.Keys(ev.Outputs)) {
-			fmt.Fprintf(&b, "  %s: %s\n", k, text(expr.Text(ev.Outputs[k]), color))
+			fmt.Fprintf(&b, "  %s: %s\n", k, text(outputText(ev.Outputs[k]), color))
 		}
 		return []piece{{w, b.String()}}
 	case ev.Type == "plan":
@@ -919,4 +920,13 @@ func shorten(s string, n int) string {
 	}
 	half := (n - 1) / 2
 	return string(runes[:half]) + "…" + string(runes[len(runes)-(n-1-half):])
+}
+
+// outputText is an output of the last event of a run as people read it:
+// its value, or *** for a sensitive one, as outputs prints it.
+func outputText(o any) string {
+	if v, ok := record.OutputValue(o); ok {
+		return expr.Text(v)
+	}
+	return secret.Mask
 }

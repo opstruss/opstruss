@@ -3669,6 +3669,14 @@ schema run outcome value "skipped"
 schema run outcome value "success"
 schema run outputs
 schema run outputs type object
+schema run outputs.<name>
+schema run outputs.<name> type object
+schema run outputs.<name>.sensitive
+schema run outputs.<name>.sensitive type boolean
+schema run outputs.<name>.type
+schema run outputs.<name>.type type string
+schema run outputs.<name>.value
+schema run outputs.<name>.value type any
 schema run parent
 schema run parent type string
 schema run pid

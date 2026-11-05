@@ -18,7 +18,7 @@
     "status": { "description": "Of the first event of a run, a unit operation, a task, or a step: running; of the last one, which also has outcome: finished.", "enum": ["running", "finished"] },
     "outcome": { "enum": ["success", "failure", "skipped", "cancelled"] },
     "exit_code": { "type": "integer" },
-    "outputs": { "type": "object" },
+    "outputs": { "description": "Of the last event of a run: the outputs of its task, each with value, sensitive, and type, as the record of the run has them.", "type": "object" },
     "plan": { "description": "Of a plan event: the plan of its unit, as units.<n>.plan has it: changes, outputs, exact, digest, summary, and reason, changed, after, and reads when they apply.", "type": "object" }
   },
   "required": ["version", "seq", "time", "run", "type", "level", "message"]

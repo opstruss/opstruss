@@ -51,6 +51,7 @@ func TestRun(t *testing.T) {
 	if err := r.Finish(func(rec *Record) {
 		rec.Outcome, rec.Units = "success", map[string]*Unit{"web": {Outcome: "success", Changed: true}}
 		rec.Tasks = map[string]*Task{"build": {Outcome: "success"}}
+		rec.Outputs = map[string]any{"url": OutputOf("https://example.com", false, "string"), "token": OutputOf("t0k", true, "")}
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -65,6 +66,9 @@ func TestRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	valid(t, schema.Run, data)
+	if bytes.Contains(data, []byte("t0k")) {
+		t.Fatalf("record.json has the value of a sensitive output:\n%s", data)
+	}
 	f, err := os.Open(filepath.Join(r.Dir, "events.jsonl"))
 	if err != nil {
 		t.Fatal(err)

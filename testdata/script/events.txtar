@@ -16,12 +16,20 @@ stdout '"approval": "--yes"'
 exec sh -c 'cat .opstruss/runs/default/*/events.jsonl'
 stdout '"message":"hello"'
 
-# a task records its outputs in the last event and in record.json
+# a task records its outputs in the last event and in record.json, each as
+# outputs --json gives one: a sensitive one has no value, not ***
 exec opstruss greet --json
-stdout '"type":"run",.*"outputs":\{"msg":"hi"\}'
+stdout '"type":"run",.*"outputs":\{"msg":\{"sensitive":false,"value":"hi"\},"token":\{"sensitive":true,"type":"string"\}\}'
+! stdout 't0k'
+! stdout '\*\*\*'
 exec sh -c 'grep -l greet .opstruss/runs/default/*/record.json | xargs cat'
 stdout '"task": "greet"'
-stdout '"msg": "hi"'
+stdout '"value": "hi"'
+! stdout 't0k'
+! stdout '\*\*\*'
+exec opstruss greet
+stdout '^  msg: hi$'
+stdout '^  token: \*\*\*$'
 
 # a stream that an output reads goes to the log once it is parsed: one
 # line says what it became, and the record keeps it whole at debug level;
@@ -38,6 +46,14 @@ exec sh -c 'cat .opstruss/runs/default/*/events.jsonl'
 stdout -count=2 '"level":"debug".*name.*shop'
 ! stdout 'key-from-stdout'
 
+# the event of a unit that status gives writes its outputs as the last
+# event of a run does
+cd ../status
+exec opstruss up --yes
+exec opstruss status --json
+stdout '"address":"default/db",.*"outputs":\{"outputs":\{"port":\{"sensitive":false,"type":"integer","value":5432\},"pw":\{"sensitive":true,"type":"string"\}\}'
+! stdout 's3cret'
+
 -- opstruss.yaml --
 name: shop
 units:
@@ -45,9 +61,10 @@ units:
     run: echo hello
 tasks:
   greet:
-    run: echo "msg=hi" >> "$OPSTRUSS_OUTPUT"
+    run: printf 'msg=hi\ntoken=t0k\n' >> "$OPSTRUSS_OUTPUT"
     outputs:
       msg: {}
+      token: {type: string, sensitive: true}
 -- parse/opstruss.yaml --
 name: parse
 units:
@@ -66,3 +83,11 @@ tasks:
         run: echo key-from-stdout
         outputs:
           key: {from: stdout, sensitive: true}
+-- status/opstruss.yaml --
+name: status
+units:
+  db:
+    run: printf 'port=5432\npw=s3cret\n' >> "$OPSTRUSS_OUTPUT"
+    outputs:
+      port: {type: integer}
+      pw: {type: string, sensitive: true}
