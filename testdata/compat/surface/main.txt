@@ -11,7 +11,7 @@ builtin command input argv[] type string
 builtin command input script
 builtin command input script type string
 builtin command input shell
-builtin command input shell type string
+builtin command input shell type any
 builtin command input stdin
 builtin command input stdin type object
 builtin command input stdin.format
@@ -1375,11 +1375,14 @@ schema plugin tasks.<name>.run[]
 schema plugin tasks.<name>.run[] type string
 schema plugin tasks.<name>.shell
 schema plugin tasks.<name>.shell default "sh"
+schema plugin tasks.<name>.shell type array
 schema plugin tasks.<name>.shell value "bash"
 schema plugin tasks.<name>.shell value "node"
 schema plugin tasks.<name>.shell value "pwsh"
 schema plugin tasks.<name>.shell value "python"
 schema plugin tasks.<name>.shell value "sh"
+schema plugin tasks.<name>.shell[]
+schema plugin tasks.<name>.shell[] type string
 schema plugin tasks.<name>.stdin
 schema plugin tasks.<name>.stdin type object
 schema plugin tasks.<name>.stdin.format
@@ -1488,11 +1491,14 @@ schema plugin tasks.<name>.steps[].run type string
 schema plugin tasks.<name>.steps[].run[]
 schema plugin tasks.<name>.steps[].run[] type string
 schema plugin tasks.<name>.steps[].shell
+schema plugin tasks.<name>.steps[].shell type array
 schema plugin tasks.<name>.steps[].shell value "bash"
 schema plugin tasks.<name>.steps[].shell value "node"
 schema plugin tasks.<name>.steps[].shell value "pwsh"
 schema plugin tasks.<name>.steps[].shell value "python"
 schema plugin tasks.<name>.steps[].shell value "sh"
+schema plugin tasks.<name>.steps[].shell[]
+schema plugin tasks.<name>.steps[].shell[] type string
 schema plugin tasks.<name>.steps[].stdin
 schema plugin tasks.<name>.steps[].stdin type object
 schema plugin tasks.<name>.steps[].stdin.format
@@ -1699,11 +1705,14 @@ schema project secrets.<name>.run type string
 schema project secrets.<name>.run[]
 schema project secrets.<name>.run[] type string
 schema project secrets.<name>.shell
+schema project secrets.<name>.shell type array
 schema project secrets.<name>.shell value "bash"
 schema project secrets.<name>.shell value "node"
 schema project secrets.<name>.shell value "pwsh"
 schema project secrets.<name>.shell value "python"
 schema project secrets.<name>.shell value "sh"
+schema project secrets.<name>.shell[]
+schema project secrets.<name>.shell[] type string
 schema project secrets.<name>.sops
 schema project secrets.<name>.sops type string
 schema project secrets.<name>.x-*
@@ -1792,11 +1801,14 @@ schema project stacks.<name>.secrets.<name>.run type string
 schema project stacks.<name>.secrets.<name>.run[]
 schema project stacks.<name>.secrets.<name>.run[] type string
 schema project stacks.<name>.secrets.<name>.shell
+schema project stacks.<name>.secrets.<name>.shell type array
 schema project stacks.<name>.secrets.<name>.shell value "bash"
 schema project stacks.<name>.secrets.<name>.shell value "node"
 schema project stacks.<name>.secrets.<name>.shell value "pwsh"
 schema project stacks.<name>.secrets.<name>.shell value "python"
 schema project stacks.<name>.secrets.<name>.shell value "sh"
+schema project stacks.<name>.secrets.<name>.shell[]
+schema project stacks.<name>.secrets.<name>.shell[] type string
 schema project stacks.<name>.secrets.<name>.sops
 schema project stacks.<name>.secrets.<name>.sops type string
 schema project stacks.<name>.secrets.<name>.x-*
@@ -2190,11 +2202,14 @@ schema project tasks.<name>.run[]
 schema project tasks.<name>.run[] type string
 schema project tasks.<name>.shell
 schema project tasks.<name>.shell default "sh"
+schema project tasks.<name>.shell type array
 schema project tasks.<name>.shell value "bash"
 schema project tasks.<name>.shell value "node"
 schema project tasks.<name>.shell value "pwsh"
 schema project tasks.<name>.shell value "python"
 schema project tasks.<name>.shell value "sh"
+schema project tasks.<name>.shell[]
+schema project tasks.<name>.shell[] type string
 schema project tasks.<name>.stdin
 schema project tasks.<name>.stdin type object
 schema project tasks.<name>.stdin.format
@@ -2303,11 +2318,14 @@ schema project tasks.<name>.steps[].run type string
 schema project tasks.<name>.steps[].run[]
 schema project tasks.<name>.steps[].run[] type string
 schema project tasks.<name>.steps[].shell
+schema project tasks.<name>.steps[].shell type array
 schema project tasks.<name>.steps[].shell value "bash"
 schema project tasks.<name>.steps[].shell value "node"
 schema project tasks.<name>.steps[].shell value "pwsh"
 schema project tasks.<name>.steps[].shell value "python"
 schema project tasks.<name>.steps[].shell value "sh"
+schema project tasks.<name>.steps[].shell[]
+schema project tasks.<name>.steps[].shell[] type string
 schema project tasks.<name>.steps[].stdin
 schema project tasks.<name>.steps[].stdin type object
 schema project tasks.<name>.steps[].stdin.format
@@ -2490,11 +2508,14 @@ schema project units.<name>.service[]
 schema project units.<name>.service[] type string
 schema project units.<name>.shell
 schema project units.<name>.shell default "sh"
+schema project units.<name>.shell type array
 schema project units.<name>.shell value "bash"
 schema project units.<name>.shell value "node"
 schema project units.<name>.shell value "pwsh"
 schema project units.<name>.shell value "python"
 schema project units.<name>.shell value "sh"
+schema project units.<name>.shell[]
+schema project units.<name>.shell[] type string
 schema project units.<name>.sources
 schema project units.<name>.sources type array
 schema project units.<name>.sources[]
@@ -2913,11 +2934,14 @@ schema project units.<name>.tasks.<name>.run[]
 schema project units.<name>.tasks.<name>.run[] type string
 schema project units.<name>.tasks.<name>.shell
 schema project units.<name>.tasks.<name>.shell default "sh"
+schema project units.<name>.tasks.<name>.shell type array
 schema project units.<name>.tasks.<name>.shell value "bash"
 schema project units.<name>.tasks.<name>.shell value "node"
 schema project units.<name>.tasks.<name>.shell value "pwsh"
 schema project units.<name>.tasks.<name>.shell value "python"
 schema project units.<name>.tasks.<name>.shell value "sh"
+schema project units.<name>.tasks.<name>.shell[]
+schema project units.<name>.tasks.<name>.shell[] type string
 schema project units.<name>.tasks.<name>.stdin
 schema project units.<name>.tasks.<name>.stdin type object
 schema project units.<name>.tasks.<name>.stdin.format
@@ -3026,11 +3050,14 @@ schema project units.<name>.tasks.<name>.steps[].run type string
 schema project units.<name>.tasks.<name>.steps[].run[]
 schema project units.<name>.tasks.<name>.steps[].run[] type string
 schema project units.<name>.tasks.<name>.steps[].shell
+schema project units.<name>.tasks.<name>.steps[].shell type array
 schema project units.<name>.tasks.<name>.steps[].shell value "bash"
 schema project units.<name>.tasks.<name>.steps[].shell value "node"
 schema project units.<name>.tasks.<name>.steps[].shell value "pwsh"
 schema project units.<name>.tasks.<name>.steps[].shell value "python"
 schema project units.<name>.tasks.<name>.steps[].shell value "sh"
+schema project units.<name>.tasks.<name>.steps[].shell[]
+schema project units.<name>.tasks.<name>.steps[].shell[] type string
 schema project units.<name>.tasks.<name>.steps[].stdin
 schema project units.<name>.tasks.<name>.steps[].stdin type object
 schema project units.<name>.tasks.<name>.steps[].stdin.format
@@ -3177,7 +3204,10 @@ schema record abandoned[].destroy.run type string
 schema record abandoned[].destroy.run[]
 schema record abandoned[].destroy.run[] type string
 schema record abandoned[].destroy.shell
+schema record abandoned[].destroy.shell type array
 schema record abandoned[].destroy.shell type string
+schema record abandoned[].destroy.shell[]
+schema record abandoned[].destroy.shell[] type string
 schema record abandoned[].destroy.sources
 schema record abandoned[].destroy.sources type array
 schema record abandoned[].destroy.sources[]
@@ -3340,7 +3370,10 @@ schema record destroy.run type string
 schema record destroy.run[]
 schema record destroy.run[] type string
 schema record destroy.shell
+schema record destroy.shell type array
 schema record destroy.shell type string
+schema record destroy.shell[]
+schema record destroy.shell[] type string
 schema record destroy.sources
 schema record destroy.sources type array
 schema record destroy.sources[]
@@ -3457,7 +3490,10 @@ schema record pending.destroy.run type string
 schema record pending.destroy.run[]
 schema record pending.destroy.run[] type string
 schema record pending.destroy.shell
+schema record pending.destroy.shell type array
 schema record pending.destroy.shell type string
+schema record pending.destroy.shell[]
+schema record pending.destroy.shell[] type string
 schema record pending.destroy.sources
 schema record pending.destroy.sources type array
 schema record pending.destroy.sources[]

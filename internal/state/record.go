@@ -78,7 +78,7 @@ type Destroy struct {
 	Binaries     map[string]sources.Binary `json:"binaries,omitempty"`
 
 	Run      any               `json:"run,omitempty"`
-	Shell    string            `json:"shell,omitempty"`
+	Shell    any               `json:"shell,omitempty"` // a name or a list, as model.Shell
 	Dir      string            `json:"dir,omitempty"`
 	Plugin   string            `json:"plugin,omitempty"` // the plugin's directory, relative to the project root
 	Tool     bool              `json:"tool,omitempty"`   // the tool keeps its state in tool/, OPSTRUSS_STATE_DIR

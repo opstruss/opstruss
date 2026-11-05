@@ -93,8 +93,10 @@ func (e *engine) resolveTask(inst *instance, r *resolved, s *expr.Scope) error {
 				r.cmd.Argv = append(r.cmd.Argv, a.(string))
 			}
 		}
-		if sh, ok := in["shell"].(string); ok {
-			r.shell = sh
+		if in["shell"] != nil {
+			if r.shell, err = model.ShellOf(in["shell"]); err != nil {
+				return fmt.Errorf("with: %w", err)
+			}
 		}
 		if st, ok := in["stdin"].(map[string]any); ok {
 			format, _ := st["format"].(string)

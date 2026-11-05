@@ -757,15 +757,19 @@ func (e *engine) stepsWithRetry(ctx context.Context, name, label string, t *mode
 // each step inside overrides key by key, and the stop of the task, which
 // steps do not write.
 type defaults struct {
-	shell, dir string
-	env        model.Env
-	pass       []string
-	tty        *bool
-	stop       *model.Stop
+	shell model.Shell
+	dir   string
+	env   model.Env
+	pass  []string
+	tty   *bool
+	stop  *model.Stop
 }
 
-func (d defaults) with(shell, dir string, env model.Env, pass []string, tty *bool) defaults {
-	out := defaults{shell: cmp.Or(shell, d.shell), dir: cmp.Or(dir, d.dir), env: maps.Clone(d.env), pass: d.pass, tty: ttyOf(tty, d.tty),
+func (d defaults) with(shell model.Shell, dir string, env model.Env, pass []string, tty *bool) defaults {
+	if shell.IsZero() {
+		shell = d.shell
+	}
+	out := defaults{shell: shell, dir: cmp.Or(dir, d.dir), env: maps.Clone(d.env), pass: d.pass, tty: ttyOf(tty, d.tty),
 		stop: d.stop}
 	if out.env == nil {
 		out.env = model.Env{}

@@ -168,8 +168,15 @@
       ]
     },
     "shell": {
-      "description": "The shell that runs a script: sh, bash, python, node, or pwsh; sh by default.",
-      "enum": ["sh", "bash", "python", "node", "pwsh"]
+      "description": "The shell that runs a script: sh, bash, python, node, or pwsh, or a program and its arguments that get the script after them; sh by default.",
+      "oneOf": [
+        { "enum": ["sh", "bash", "python", "node", "pwsh"] },
+        {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1
+        }
+      ]
     },
     "approval": {
       "description": "ask to wait for approval of changes, auto to apply them without asking.",

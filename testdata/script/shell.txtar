@@ -1,0 +1,52 @@
+# shell: as a list is a program that gets the script as its last
+# argument: the default of a task and its steps, the command task too,
+# unless a step or with: names another; a unit runs it and so does its
+# destroy. ${{ }} in the list is refused, as in a script.
+
+env HOME=$WORK/home
+
+exec opstruss report
+stdout 'step 1 \| list 1$'
+stdout 'step 2 \| name 2$'
+stdout 'step 3 \| list 3$'
+stdout 'step 4 \| with 4$'
+
+exec opstruss up --yes
+grep '^unit$' app.txt
+exec opstruss destroy --yes
+grep '^unit$' gone.txt
+
+cp expr.yaml opstruss.yaml
+! exec opstruss validate
+stderr 'tasks.t.shell\[1\]: \$\{\{ \}\} is not allowed in shell:; pass values through env:'
+
+-- opstruss.yaml --
+opstruss: "1.0"
+name: shells
+tasks:
+  report:
+    shell: [env, MARK=list, sh, -c]
+    steps:
+      - run: echo "$MARK 1"
+      - run: echo "${MARK:-name} 2"
+        shell: sh
+      - command:
+          script: echo "$MARK 3"
+      - command:
+          script: echo "$MARK 4"
+          shell: [env, MARK=with, sh, -c]
+units:
+  app:
+    shell: [env, MARK=unit, sh, -c]
+    run: echo "$MARK" > app.txt
+    destroy: echo "$MARK" > gone.txt
+    generates: [app.txt]
+-- expr.yaml --
+opstruss: "1.0"
+name: shells
+inputs:
+  x: {type: string, default: y}
+tasks:
+  t:
+    shell: [env, "X=${{ inputs.x }}", sh, -c]
+    run: echo "$X"

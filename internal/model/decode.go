@@ -3,6 +3,7 @@ package model
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -154,6 +155,42 @@ func (c *Command) UnmarshalJSON(b []byte) error {
 		return json.Unmarshal(b, &c.Script)
 	}
 	return json.Unmarshal(b, &c.Argv)
+}
+
+func (s *Shell) UnmarshalJSON(b []byte) error {
+	if isString(b) {
+		return json.Unmarshal(b, &s.Name)
+	}
+	return json.Unmarshal(b, &s.Argv)
+}
+
+func (s Shell) MarshalJSON() ([]byte, error) { return json.Marshal(s.Value()) }
+
+// ShellOf reads a shell from a value, such as an input or a record: a
+// name, a list of strings, or nil.
+func ShellOf(v any) (Shell, error) {
+	switch x := v.(type) {
+	case nil:
+		return Shell{}, nil
+	case string:
+		return Shell{Name: x}, nil
+	case []string:
+		return Shell{Argv: x}, nil
+	case []any:
+		argv := make([]string, len(x))
+		for i, a := range x {
+			s, ok := a.(string)
+			if !ok || s == "" {
+				return Shell{}, fmt.Errorf("shell has %v, not a program or its argument", a)
+			}
+			argv[i] = s
+		}
+		if len(argv) == 0 {
+			return Shell{}, errors.New("shell is an empty list")
+		}
+		return Shell{Argv: argv}, nil
+	}
+	return Shell{}, fmt.Errorf("shell is %T, not a name or a list", v)
 }
 
 func (e *EnvValue) UnmarshalJSON(b []byte) error {

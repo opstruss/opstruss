@@ -5,7 +5,7 @@ command:
   inputs:
     argv: {type: array, items: {type: string}}
     script: {type: string, literal: true}
-    shell: {type: string}
+    shell: {}                   # a name or a list, as shell:
     stdin:
       type: object
       properties:

@@ -27,7 +27,7 @@ import (
 type Call struct {
 	Command model.Command
 	Args    []string // after the arguments of Command, for the exec hook: the argv of opstruss exec
-	Shell   string
+	Shell   model.Shell
 	Base    string                    // directory of the file that defines the program
 	Dir     string                    // working directory, relative to Base
 	Env     map[string]model.EnvValue // env: of the unit, task, and step, resolved
@@ -92,9 +92,9 @@ type Result struct {
 	Stopped   error // the cause of the context that stopped the program before it ended, whatever it exited with
 }
 
-// shells run a script by shell:. sh and bash stop at the first command
-// that fails, as GitHub Actions runs them; python, node, and pwsh run it
-// as written.
+// shells run a script by the name of shell:. sh and bash stop at the
+// first command that fails, as GitHub Actions runs them; python, node, and
+// pwsh run it as written, as a shell: list does.
 var shells = map[string][]string{
 	"":       {"sh", "-e", "-c"},
 	"sh":     {"sh", "-e", "-c"},
@@ -106,19 +106,22 @@ var shells = map[string][]string{
 
 // argv is the program of cmd with args after its own arguments: for a
 // script of sh or bash, they are its "$@".
-func argv(cmd model.Command, shell string, args []string) ([]string, error) {
+func argv(cmd model.Command, shell model.Shell, args []string) ([]string, error) {
 	if cmd.Script == "" {
 		if len(cmd.Argv) == 0 {
 			return nil, errors.New("there is no program to run")
 		}
 		return append(slices.Clone(cmd.Argv), args...), nil
 	}
-	s, ok := shells[shell]
-	if !ok {
-		return nil, fmt.Errorf("unknown shell %s", shell)
+	s := shell.Argv
+	if s == nil {
+		var ok bool
+		if s, ok = shells[shell.Name]; !ok {
+			return nil, fmt.Errorf("unknown shell %s", shell.Name)
+		}
 	}
 	out := append(slices.Clone(s), cmd.Script)
-	if len(args) > 0 && (shell == "" || shell == "sh" || shell == "bash") {
+	if len(args) > 0 && shell.Argv == nil && (shell.Name == "" || shell.Name == "sh" || shell.Name == "bash") {
 		out = append(out, "opstruss") // $0
 	}
 	return append(out, args...), nil

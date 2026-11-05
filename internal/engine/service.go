@@ -177,7 +177,7 @@ func (d *serviceDef) destroy(r *resolved) *state.Destroy {
 	if d.stopRun != nil {
 		stop.Run = cmdValue(*d.stopRun)
 		if d.stopRun.Script != "" {
-			destroy.Shell = r.shell
+			destroy.Shell = r.shell.Value()
 		}
 	}
 	return destroy

@@ -614,6 +614,10 @@ func (e *engine) runDestroy(ctx context.Context, addr, stateKey string, c *state
 	if err != nil {
 		return err
 	}
+	shell, err := model.ShellOf(d.Shell)
+	if err != nil {
+		return fmt.Errorf("the record's destroy program: %w", err)
+	}
 	env := map[string]model.EnvValue{}
 	for k, v := range d.Env {
 		env[k] = model.EnvValue{Text: v}
@@ -627,7 +631,7 @@ func (e *engine) runDestroy(ctx context.Context, addr, stateKey string, c *state
 			return err
 		}
 	}
-	call := &plugin.Call{Command: cmd, Shell: d.Shell, Base: e.p.Dir, Dir: dir, BinDirs: bins, LeaseFiles: files, Env: env,
+	call := &plugin.Call{Command: cmd, Shell: shell, Base: e.p.Dir, Dir: dir, BinDirs: bins, LeaseFiles: files, Env: env,
 		Pass: slices.Sorted(maps.Keys(d.Pass)), Stop: stop, Task: "destroy", Reason: "requested",
 		Unit: &plugin.Unit{Address: addr, StateKey: stateKey, Workdir: e.workdir(addr), State: map[string]any{"inputs": c.Inputs, "outputs": c.Outputs}}}
 	if d.Plugin != "" {

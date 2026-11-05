@@ -24,7 +24,8 @@ type progSpec struct {
 	label, task string
 	step        string // the label of a step: its outputs have stdout, stderr, and exit_code too
 	cmd         *model.Command
-	shell, dir  string
+	shell       model.Shell
+	dir         string
 	base        string
 	env         model.Env
 	pass        []string

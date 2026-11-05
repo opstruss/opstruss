@@ -26,7 +26,7 @@ import (
 // resolved is a run unit with every expression evaluated.
 type resolved struct {
 	cmd      model.Command
-	shell    string
+	shell    model.Shell
 	dir      string // working directory relative to the unit's file, as written
 	cwd      string
 	env      map[string]model.EnvValue
@@ -423,7 +423,7 @@ func (e *engine) destroyContract(inst *instance, r *resolved) *state.Destroy {
 	if err != nil {
 		rel = r.cwd
 	}
-	d := &state.Destroy{Run: cmdValue(*r.destroy), Shell: r.shell, Dir: filepath.ToSlash(rel), Plugin: e.pluginOf(r),
+	d := &state.Destroy{Run: cmdValue(*r.destroy), Shell: r.shell.Value(), Dir: filepath.ToSlash(rel), Plugin: e.pluginOf(r),
 		Tool: r.plugin != nil && r.plugin.tool != "", Pass: r.fingerprints(), Timeout: inst.def.Timeout, TTY: r.ttyDown}
 	for k, v := range r.env {
 		if v.File {
@@ -493,8 +493,8 @@ func (e *engine) digest(inst *instance, r *resolved) (digested, error) {
 			def[k] = v
 		}
 	}
-	shell := r.shell
-	if r.cmd.Script != "" && shell == "" {
+	shell := r.shell.Value()
+	if r.cmd.Script != "" && shell == nil {
 		shell = "sh"
 	}
 	rel, _ := filepath.Rel(e.p.Dir, r.cwd)

@@ -240,7 +240,11 @@ func (e *engine) commandCall(ctx context.Context, p progSpec, in, marks map[stri
 	if err := e.checkArgv(in, marks); err != nil {
 		return nil, nil, err
 	}
-	if sh, ok := in["shell"].(string); ok {
+	if in["shell"] != nil {
+		sh, err := model.ShellOf(in["shell"])
+		if err != nil {
+			return nil, nil, fmt.Errorf("with: %w", err)
+		}
 		p.shell = sh
 	}
 	c, err := e.programCall(p, s)

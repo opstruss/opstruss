@@ -63,7 +63,12 @@
             { "type": "array", "items": { "type": "string" } }
           ]
         },
-        "shell": { "type": "string" },
+        "shell": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "array", "items": { "type": "string" } }
+          ]
+        },
         "dir": { "type": "string" },
         "env": { "type": "object", "additionalProperties": { "type": "string" } },
         "plugin": {

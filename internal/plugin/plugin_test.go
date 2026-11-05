@@ -357,7 +357,7 @@ func TestProgram(t *testing.T) {
 	for _, c := range []*Call{
 		{Base: base, Command: model.Command{Argv: []string{"no-such-program"}}},
 		{Base: base, Dir: "missing", Command: model.Command{Argv: []string{"true"}}},
-		{Base: base, Shell: "fish", Command: script("true")},
+		{Base: base, Shell: model.Shell{Name: "fish"}, Command: script("true")},
 	} {
 		if _, err := r.Exec(context.Background(), c); err == nil {
 			t.Errorf("%+v: want an error", c)
@@ -376,16 +376,21 @@ func TestShells(t *testing.T) {
 		"node":   {"node", "-e", "x"},
 		"pwsh":   {"pwsh", "-NoProfile", "-NonInteractive", "-Command", "x"},
 	} {
-		if got, err := argv(script("x"), shell, nil); err != nil || !slices.Equal(got, want) {
+		if got, err := argv(script("x"), model.Shell{Name: shell}, nil); err != nil || !slices.Equal(got, want) {
 			t.Errorf("%s: %q %v", shell, got, err)
 		}
 	}
+	// A list is a program that gets the script, then the arguments, as
+	// written: no $0, as python and node get none.
+	if got, _ := argv(script("x"), model.Shell{Argv: []string{"nu", "-c"}}, []string{"b"}); !slices.Equal(got, []string{"nu", "-c", "x", "b"}) {
+		t.Errorf("list: %q", got)
+	}
 	// The argv of opstruss exec follows the program's own arguments; a
 	// script of sh gets it as "$@".
-	if got, _ := argv(model.Command{Argv: []string{"./x", "a"}}, "", []string{"b"}); !slices.Equal(got, []string{"./x", "a", "b"}) {
+	if got, _ := argv(model.Command{Argv: []string{"./x", "a"}}, model.Shell{}, []string{"b"}); !slices.Equal(got, []string{"./x", "a", "b"}) {
 		t.Errorf("argv: %q", got)
 	}
-	if got, _ := argv(script("x"), "", []string{"b"}); !slices.Equal(got, []string{"sh", "-e", "-c", "x", "opstruss", "b"}) {
+	if got, _ := argv(script("x"), model.Shell{}, []string{"b"}); !slices.Equal(got, []string{"sh", "-e", "-c", "x", "opstruss", "b"}) {
 		t.Errorf("script: %q", got)
 	}
 	r := newRun(t)
@@ -395,7 +400,7 @@ func TestShells(t *testing.T) {
 		t.Fatalf("sh: exit %d, outputs %v", res.ExitCode, res.Outputs)
 	}
 	if _, err := LookPath("bash", os.Getenv("PATH")); err == nil {
-		if res := run(t, r, &Call{Shell: "bash", Command: script("false | true")}); res.ExitCode != 1 {
+		if res := run(t, r, &Call{Shell: model.Shell{Name: "bash"}, Command: script("false | true")}); res.ExitCode != 1 {
 			t.Fatalf("bash pipefail: exit %d", res.ExitCode)
 		}
 	}

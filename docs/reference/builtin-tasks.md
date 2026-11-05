@@ -38,6 +38,9 @@ $ opstruss report
   it; `set +e` in the script turns that off. `python`, `node`, and `pwsh`
   run it as it is, through `python3 -c`, `node -e`, and
   `pwsh -NoProfile -NonInteractive -Command`.
+- Any other shell is a list: the program and its arguments, which get the
+  script after them and run it as it is, such as `shell: [nu, -c]` for
+  Nushell. `${{ }}` is refused in the list, as in a script.
 - `script` is a literal input: `${{ }}` is refused in it, as in a string
   of `run`. A value goes in through `env:`, and the script reads `$NAME`.
 - `stdout` and `stderr` show as the program writes them, and keep their

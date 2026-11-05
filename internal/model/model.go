@@ -112,7 +112,7 @@ type Secret struct {
 	Run     *Command `json:"run,omitempty"`
 	Pass    []string `json:"pass,omitempty"`
 	Dir     string   `json:"dir,omitempty"`
-	Shell   string   `json:"shell,omitempty"`
+	Shell   Shell    `json:"shell,omitzero"`
 	Calls   Calls    `json:"-"`
 }
 
@@ -131,6 +131,27 @@ type MCP struct {
 type Command struct {
 	Script string
 	Argv   []string
+}
+
+// Shell runs a script: a name is a shell that opstruss knows, sh by
+// default, and a list is a program that gets the script as its last
+// argument.
+type Shell struct {
+	Name string
+	Argv []string
+}
+
+func (s Shell) IsZero() bool { return s.Name == "" && s.Argv == nil }
+
+// Value is the shell as it is written: its name, its list, or nil.
+func (s Shell) Value() any {
+	if s.Argv != nil {
+		return s.Argv
+	}
+	if s.Name != "" {
+		return s.Name
+	}
+	return nil
 }
 
 // Env maps variable names to values.
@@ -194,7 +215,7 @@ type Unit struct {
 	With        map[string]any     `json:"with,omitempty"`
 	Tasks       map[string]*Task   `json:"tasks,omitempty"`
 	Requires    *Requires          `json:"requires,omitempty"`
-	Shell       string             `json:"shell,omitempty"`
+	Shell       Shell              `json:"shell,omitzero"`
 	Dir         string             `json:"dir,omitempty"`
 	Env         Env                `json:"env,omitempty"`
 	Pass        []string           `json:"pass,omitempty"`
@@ -232,7 +253,7 @@ type Task struct {
 	Outputs         map[string]*Output `json:"outputs,omitempty"`
 	Run             *Command           `json:"run,omitempty"`
 	Steps           []*Step            `json:"steps,omitempty"`
-	Shell           string             `json:"shell,omitempty"`
+	Shell           Shell              `json:"shell,omitzero"`
 	Dir             string             `json:"dir,omitempty"`
 	Env             Env                `json:"env,omitempty"`
 	Pass            []string           `json:"pass,omitempty"`
@@ -278,7 +299,7 @@ type Step struct {
 	Force           bool               `json:"force,omitempty"`
 	Env             Env                `json:"env,omitempty"`
 	Pass            []string           `json:"pass,omitempty"`
-	Shell           string             `json:"shell,omitempty"`
+	Shell           Shell              `json:"shell,omitzero"`
 	Dir             string             `json:"dir,omitempty"`
 	Stdin           *Stdin             `json:"stdin,omitempty"`
 	TTY             *bool              `json:"tty,omitempty"`

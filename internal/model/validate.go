@@ -364,6 +364,16 @@ func scriptExpr(cmd *Command) string {
 	return fmt.Sprintf("%s; pass it through env: {%s: \"${{ %s }}\"}, then write $%s in the script", msg, name, e, name)
 }
 
+// shellList rejects ${{ }} in a shell: list, which runs as written, as a
+// script does.
+func (c *checker) shellList(path []string, sh Shell) {
+	for i, a := range sh.Argv {
+		if !literal(a) {
+			c.add(at(path, "shell", strconv.Itoa(i)), "${{ }} is not allowed in shell:; pass values through env:")
+		}
+	}
+}
+
 // environment rejects env: and pass: on the variables of the program
 // contract.
 func (c *checker) environment(path []string, env Env, pass []string) {
@@ -518,6 +528,7 @@ func (c *checker) units() {
 			}
 		}
 		c.environment(path, u.Env, u.Pass)
+		c.shellList(path, u.Shell)
 		c.wholeShell(path, u.Pass, "of the unit")
 		c.stop(path, u.Stop)
 		c.paths(at(path, "sources"), u.Sources, "unit", "write the path relative to that file, or the absolute path")
@@ -588,7 +599,7 @@ func (c *checker) componentKeys(path []string, u *Unit) {
 	for _, k := range []struct {
 		key string
 		set bool
-	}{{"requires", u.Requires != nil}, {"shell", u.Shell != ""}, {"dir", u.Dir != ""}, {"stdin", u.Stdin != nil},
+	}{{"requires", u.Requires != nil}, {"shell", !u.Shell.IsZero()}, {"dir", u.Dir != ""}, {"stdin", u.Stdin != nil},
 		{"sources", len(u.Sources) > 0}, {"generates", len(u.Generates) > 0}, {"revision", u.Revision != ""}, {"destroy", u.Destroy != nil}} {
 		if k.set {
 			c.add(at(path, k.key), "%s is not for a unit that uses a component; the units inside have their own", k.key)
@@ -799,6 +810,7 @@ func (c *checker) task(path []string, t *Task, project bool) {
 		c.add(at(path, "run"), "%s", scriptExpr(t.Run))
 	}
 	c.environment(path, t.Env, t.Pass)
+	c.shellList(path, t.Shell)
 	c.stop(path, t.Stop)
 	c.flags(path, t.Inputs)
 	vars := map[string]string{}
@@ -993,7 +1005,7 @@ func (c *checker) steps(path []string, steps []*Step, ids map[string]bool) {
 				}
 			}
 		} else {
-			for k, set := range map[string]bool{"env": len(s.Env) > 0, "pass": len(s.Pass) > 0, "shell": s.Shell != "", "dir": s.Dir != "", "stdin": s.Stdin != nil, "tty": s.TTY != nil} {
+			for k, set := range map[string]bool{"env": len(s.Env) > 0, "pass": len(s.Pass) > 0, "shell": !s.Shell.IsZero(), "dir": s.Dir != "", "stdin": s.Stdin != nil, "tty": s.TTY != nil} {
 				if set {
 					c.add(at(sp, k), "a task: step passes data through with:; the task keeps its own %s", k)
 				}
@@ -1015,6 +1027,7 @@ func (c *checker) steps(path []string, steps []*Step, ids map[string]bool) {
 			c.add(at(sp, "run"), "%s", scriptExpr(s.Run))
 		}
 		c.environment(sp, s.Env, s.Pass)
+		c.shellList(sp, s.Shell)
 		c.steps(at(sp, "block"), s.Block, ids)
 		c.steps(at(sp, "rescue"), s.Rescue, ids)
 		c.steps(at(sp, "always"), s.Always, ids)
@@ -1051,13 +1064,14 @@ func (c *checker) secrets() {
 				c.add(at(path, "pass"), "pass: is for the program of run or of a call")
 			}
 		}
-		if s.Run == nil && (s.Dir != "" || s.Shell != "") {
+		if s.Run == nil && (s.Dir != "" || !s.Shell.IsZero()) {
 			c.add(path, "dir: and shell: are for run")
 		}
 		if hasExpr(s.Run) {
 			c.add(at(path, "run"), "%s", scriptExpr(s.Run))
 		}
 		c.environment(path, s.Env, s.Pass)
+		c.shellList(path, s.Shell)
 		for _, callee := range slices.Sorted(maps.Keys(s.Calls)) {
 			t, err := c.call(callee)
 			if err != nil {
