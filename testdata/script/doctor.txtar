@@ -20,7 +20,7 @@ stdout '^ok     stack default has no data key yet; the first value that needs on
 ! stdout sops
 ! stdout TOOL_TOKEN
 ! stdout TOOL_REGION
-stdout '^ok     the project is on a local filesystem'
+stdout '^ok     \.opstruss is on a local filesystem'
 ! exists ran-secret
 ! exists config
 

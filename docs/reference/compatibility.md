@@ -57,10 +57,12 @@ without a change on their side.
   which a team shares, keeps its version unless what it holds needs a
   newer one.
 - **Schemas stay where they are.** The schema of each minor version stays
-  at `https://opstruss.github.io/v<major>.<minor>/schema/`, which
-  `opstruss init` names on the first line of `opstruss.yaml`; a patch
-  release never makes a file that was valid there invalid. A project that
-  raises its `opstruss:` points that line at the schema of the new level.
+  at `https://opstruss.github.io/v<major>.<minor>/schema/`; a patch
+  release never makes a file that was valid there invalid. The first line
+  that `opstruss init` writes in `opstruss.yaml` names
+  `.opstruss/schema.json`, which each command that reads the project
+  writes from the schema of its version and what the project uses, and
+  stays at that path.
 - **Links stay.** The page that the help of each command ends with, at
   `https://opstruss.github.io/v<major>.<minor>/reference/cli/<command>`,
   stays for as long as the site keeps that version; a page that moves

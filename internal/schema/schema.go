@@ -120,6 +120,9 @@ func Validate(k Kind, doc any) ([]Problem, error) {
 	}), nil
 }
 
+// Raw returns the JSON Schema of k as written; k names a whole file.
+func Raw(k Kind) ([]byte, error) { return files.ReadFile(string(k)) }
+
 var printer = message.NewPrinter(language.English)
 
 // collect reports the errors that say what is wrong: leaves, and for a

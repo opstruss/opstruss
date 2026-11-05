@@ -28,7 +28,7 @@ with the YAML language server completes and checks it
 ([Editor support](./install#editor-support)):
 
 ```yaml
-# yaml-language-server: $schema=https://opstruss.github.io/v1.0/schema/project.json
+# yaml-language-server: $schema=.opstruss/schema.json
 opstruss: "1.0"
 name: shop
 ```
@@ -52,7 +52,7 @@ and add the unit under a new key `units:` of `opstruss.yaml`:
 
 ::: details opstruss.yaml so far
 ```yaml
-# yaml-language-server: $schema=https://opstruss.github.io/v1.0/schema/project.json
+# yaml-language-server: $schema=.opstruss/schema.json
 opstruss: "1.0"
 name: shop
 units:
@@ -141,7 +141,7 @@ Add a unit that reads the outputs of the other two:
 
 ::: details opstruss.yaml so far
 ```yaml
-# yaml-language-server: $schema=https://opstruss.github.io/v1.0/schema/project.json
+# yaml-language-server: $schema=.opstruss/schema.json
 opstruss: "1.0"
 name: shop
 uses:

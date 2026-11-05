@@ -1,7 +1,8 @@
 # opstruss init sets up a project, adding only what is missing:
-# opstruss.yaml and .opstruss/ in .gitignore. It makes no key: the first
-# command that needs the age key of this machine or the data key of a
-# stack makes it.
+# opstruss.yaml, whose first line names the schema for editors that init
+# writes in .opstruss/, and .opstruss/ in .gitignore. It makes no key: the
+# first command that needs the age key of this machine or the data key of
+# a stack makes it.
 
 env HOME=$WORK/home
 
@@ -14,6 +15,7 @@ stdout '^next: add units or tasks to opstruss.yaml, then run opstruss plan$'
 ! stdout 'age|sops'
 cmp 'My_App 2/opstruss.yaml' want/opstruss.yaml
 cmp 'My_App 2/.gitignore' want/gitignore
+exists 'My_App 2/.opstruss/schema.json'
 ! exists 'My_App 2/.sops.yaml'
 ! exists home
 
@@ -63,7 +65,7 @@ stdout 'nothing to do'
 stderr 'qa'
 
 -- want/opstruss.yaml --
-# yaml-language-server: $schema=https://opstruss.github.io/dev/schema/project.json
+# yaml-language-server: $schema=.opstruss/schema.json
 opstruss: "1.0"
 name: my_app-2
 -- want/gitignore --

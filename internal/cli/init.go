@@ -50,6 +50,14 @@ func (a *app) initCommand() *cobra.Command {
 				if err := initMeta(dir, a.stack, &res); err != nil {
 					return err
 				}
+			} else if slices.Contains(res.Wrote, model.FileName) {
+				// Reading the new project writes the schema that its first
+				// line names, as every command that reads it does.
+				p, err := model.Load(dir, "")
+				if err != nil {
+					return err
+				}
+				p.Close()
 			}
 			if a.json {
 				return a.printJSON(res)
@@ -71,8 +79,9 @@ func (a *app) initCommand() *cobra.Command {
 }
 
 // initProject writes a minimal opstruss.yaml, at the level of this
-// OpsTruss, when dir has none. Its first line names the schema of this
-// version for editors that use the YAML language server.
+// OpsTruss, when dir has none. Its first line names the schema that each
+// command that reads the project writes, for editors that use the YAML
+// language server.
 func initProject(dir, name string, res *initResult) error {
 	p := filepath.Join(dir, model.FileName)
 	_, err := os.Stat(p)
@@ -101,7 +110,7 @@ func initProject(dir, name string, res *initResult) error {
 	if err != nil {
 		return err
 	}
-	modeline := "# yaml-language-server: $schema=" + docsURL(version(), schemaPath)
+	modeline := "# yaml-language-server: $schema=" + model.EditorSchemaFile
 	if _, err := fmt.Fprintf(f, "%s\nopstruss: %q\nname: %s\n", modeline, model.Level, name); err != nil {
 		_ = f.Close()
 		return err

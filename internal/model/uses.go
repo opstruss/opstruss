@@ -431,36 +431,50 @@ func (c *checker) packageDir(pkg *Package, it string) (string, error) {
 	return "", c.noPackage(pkg, it)
 }
 
+// packagesOf is the directory of each package of the catalog pkg, by name,
+// as packageDir finds them: those that packages: of its
+// opstruss.catalog.yaml names, or else each subdirectory with a manifest.
+func packagesOf(pkg *Package) (map[string]string, error) {
+	out := map[string]string{}
+	if cat := pkg.Catalog; cat != nil && cat.Path == "." && cat.Packages != nil {
+		for name, p := range cat.Packages {
+			out[name] = filepath.Join(cat.Root, filepath.FromSlash(p))
+		}
+		return out, nil
+	}
+	entries, err := os.ReadDir(pkg.Dir)
+	if err != nil {
+		return nil, err
+	}
+	for _, e := range entries {
+		if !isPackageName(e.Name()) {
+			continue
+		}
+		dir := filepath.Join(pkg.Dir, e.Name())
+		if m, err := manifest(dir); err != nil {
+			return nil, err
+		} else if m != "" {
+			out[e.Name()] = dir
+		}
+	}
+	return out, nil
+}
+
 // noPackage says that the catalog pkg has no package it, with the packages
 // it has and a deeper directory it with a manifest, which packages: may
 // name.
 func (c *checker) noPackage(pkg *Package, it string) error {
 	cat := pkg.Catalog
 	listed := cat != nil && cat.Path == "." && cat.Packages != nil
-	var names []string
-	if listed {
-		names = slices.Collect(maps.Keys(cat.Packages))
-	} else {
-		entries, err := os.ReadDir(pkg.Dir)
-		if err != nil {
-			return err
-		}
-		for _, e := range entries {
-			if !isPackageName(e.Name()) {
-				continue
-			}
-			if m, err := manifest(filepath.Join(pkg.Dir, e.Name())); err != nil {
-				return err
-			} else if m != "" {
-				names = append(names, e.Name())
-			}
-		}
+	pkgs, err := packagesOf(pkg)
+	if err != nil {
+		return err
 	}
-	slices.Sort(names)
+	names := slices.Sorted(maps.Keys(pkgs))
 	msg := fmt.Sprintf("%s has no package %s", pkg.Name, it)
 	// A package deeper down is named only by packages:.
 	var deeper string
-	err := filepath.WalkDir(pkg.Dir, func(p string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(pkg.Dir, func(p string, d fs.DirEntry, err error) error {
 		switch {
 		case err != nil || deeper != "":
 			return filepath.SkipAll

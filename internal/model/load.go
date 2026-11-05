@@ -157,7 +157,9 @@ func Load(dir, stack string) (*Project, error) {
 	return LoadWith(context.Background(), dir, stack, sources.Options{})
 }
 
-// LoadWith resolves dependencies as one root transaction.
+// LoadWith resolves dependencies as one root transaction. It then writes
+// EditorSchemaFile, unless opts.Discovery, which may leave out what is not
+// fetched.
 func LoadWith(ctx context.Context, dir, stack string, opts sources.Options) (*Project, error) {
 	session, err := sources.Begin(ctx, dir, opts)
 	if err != nil {
@@ -170,6 +172,10 @@ func LoadWith(ctx context.Context, dir, stack string, opts sources.Options) (*Pr
 	if err != nil {
 		session.Close()
 		return nil, err
+	}
+	if !opts.Discovery && !p.Undeclared {
+		// It only helps editors, so a failure to write it fails nothing.
+		_ = WriteEditorSchema(p)
 	}
 	return p, nil
 }
@@ -304,7 +310,8 @@ func Validate(dir string) error {
 }
 
 // ValidateWith is Validate with options; it also returns the warnings of
-// the stacks that load, once each.
+// the stacks that load, once each. When every stack loads, it writes
+// EditorSchemaFile for all of them.
 func ValidateWith(ctx context.Context, dir string, opts sources.Options) (Problems, error) {
 	names, err := Stacks(dir)
 	if err != nil {
@@ -316,6 +323,7 @@ func ValidateWith(ctx context.Context, dir string, opts sources.Options) (Proble
 	}
 	defer session.Close()
 	var all, warns Problems
+	var loaded []*Project
 	seen := map[string]bool{}
 	once := func(to *Problems, ps Problems) {
 		for _, pr := range ps {
@@ -336,11 +344,16 @@ func ValidateWith(ctx context.Context, dir string, opts sources.Options) (Proble
 			return nil, err
 		}
 		once(&warns, p.Warnings)
+		loaded = append(loaded, p)
 	}
 	if len(all) > 0 {
 		return warns, all
 	}
-	return warns, session.Finish()
+	if err := session.Finish(); err != nil {
+		return warns, err
+	}
+	_ = WriteEditorSchema(loaded...)
+	return warns, nil
 }
 
 // readDocument reads and parses a file, and returns how it differs from

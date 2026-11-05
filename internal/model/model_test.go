@@ -127,6 +127,7 @@ func problems(t *testing.T, dir, stack string) []string {
 		if err != nil {
 			t.Fatal(err)
 		}
+		editorAccepts(t, dir)
 		return nil
 	}
 	var out []string

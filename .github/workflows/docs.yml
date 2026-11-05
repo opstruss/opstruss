@@ -44,12 +44,10 @@ jobs:
       - if: steps.version.outputs.folder != ''
         run: |
           # The folder of a version keeps what its opstruss links: the home
-          # page, the page that the help of each command ends with, and the
-          # schema that init writes into opstruss.yaml.
+          # page and the page that the help of each command ends with.
           go run ./internal/docgen -links "$RUNNER_TEMP/linked.txt"
           while IFS= read -r p; do
             case "$p" in
-              schema/*) f=internal/$p ;;
               '') f=docs/.vitepress/dist/index.html ;;
               *) f=docs/.vitepress/dist/$p.html ;;
             esac

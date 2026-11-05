@@ -94,19 +94,28 @@ opstruss --completion fish > ~/.config/fish/completions/opstruss.fish
 The schema of `opstruss.yaml` gives completion and checks in editors
 that use the YAML language server, such as VS Code with the YAML
 extension. `opstruss init` writes the line that names it at the top of
-the file, with the schema of its version:
+the file:
 
 ```yaml
-# yaml-language-server: $schema=https://opstruss.github.io/v1.0/schema/project.json
+# yaml-language-server: $schema=.opstruss/schema.json
 ```
 
-The schema of `opstruss.plugin.yaml` is `plugin.json` in the same place.
+Each command that reads the project writes that file again when what
+the project uses changes, so each `with:` and each call of a task
+completes the inputs of the plugin, component, or task it names, with
+their descriptions. In a fresh clone, `opstruss uses fetch`, or any
+command that reads the project, writes it. An include file in a
+subdirectory names it from there, as `$schema=../.opstruss/schema.json`.
+
+The schema without what a project uses is
+`https://opstruss.github.io/v1.0/schema/project.json`, and that of
+`opstruss.plugin.yaml` is `plugin.json` in the same place.
 
 ## Files and directories
 
 | Path | Holds | Back up |
 |---|---|---|
-| `.opstruss/` of a project | the state of its stacks, the records and logs of its runs, the daemon of each stack | `.opstruss/state/` |
+| `.opstruss/` of a project | the state of its stacks, the records and logs of its runs, the daemon of each stack, the schema for editors | `.opstruss/state/` |
 | `~/Library/Application Support/opstruss/age/keys.txt` on macOS, `~/.config/opstruss/age/keys.txt` on Linux | the age key of this machine, which opens the sensitive values of the state; `$OPSTRUSS_AGE_KEY_FILE` names another file | yes |
 | `~/.opstruss/` | the cache of fetched plugins, and the id of this machine | no |
 

@@ -23,15 +23,11 @@ func docsURL(version, path string) string {
 	return docsSite + "v" + m[1] + "." + m[2] + "/" + path
 }
 
-// schemaPath is the schema that init names in opstruss.yaml.
-const schemaPath = "schema/project.json"
-
 // LinkedPaths are the paths of the documentation that the commands under
 // root link: the page that the help of each ends with, "" for the home
-// page, and the schema that init writes into opstruss.yaml. The site keeps
-// each of them as long as it keeps the version.
+// page. The site keeps each of them as long as it keeps the version.
 func LinkedPaths(root *cobra.Command) []string {
-	paths := []string{schemaPath}
+	var paths []string
 	var walk func(*cobra.Command)
 	walk = func(c *cobra.Command) {
 		paths = append(paths, docsPath(c))

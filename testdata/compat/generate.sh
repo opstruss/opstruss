@@ -55,6 +55,7 @@ mv last.yaml changing.yaml
 
 # What OpsTruss builds again, and the names and paths of this machine.
 rm -r .home .opstruss/runs/default/.index
+rm -f .opstruss/schema.json
 find .opstruss -type f \( -name '*.json' -o -name '*.jsonl' \) | while read -r f; do
 	sed -e 's/"hostname": *"[^"]*"/"hostname": "fixture"/g' -e 's/"user": *"[^"]*"/"user": "fixture"/g' \
 		-e "s|/private$work|.|g" -e "s|$work|.|g" "$f" >"$f.new"

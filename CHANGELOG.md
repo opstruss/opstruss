@@ -36,7 +36,8 @@ on one machine.
 - Runs recorded in `.opstruss/` and read by `runs`, `logs`, and
   `status`; `runs cancel`, `runs rerun`, and `state` repair them.
 - `validate`, `explain`, `doctor`, `list`, `outputs`, `exec`, `init`,
-  `uses`, and shell completion; a schema for editors.
+  `uses`, and shell completion; a schema for editors that completes
+  the inputs of what a project uses.
 - Output as blocks at a terminal, groups in GitHub Actions, and JSON
   events with `--json`.
 - `tty: true` gives a tool a terminal of its own while the run shows on

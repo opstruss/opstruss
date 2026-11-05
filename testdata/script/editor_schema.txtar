@@ -1,0 +1,65 @@
+# Each command that reads the project writes .opstruss/schema.json, the
+# schema that the first line of opstruss.yaml names for editors, in which
+# each with: takes the inputs of what it names. A project that does not
+# load keeps the schema it had.
+
+env HOME=$WORK/home
+
+exec opstruss validate
+grep '"pattern": "\^web\$"' .opstruss/schema.json
+grep '"description": "The port it listens on"' .opstruss/schema.json
+
+# a new declaration comes with the next command
+cp more.yaml opstruss.yaml
+exec opstruss explain
+grep '"description": "The database it makes"' .opstruss/schema.json
+
+cp broken.yaml opstruss.yaml
+! exec opstruss validate
+grep '"description": "The database it makes"' .opstruss/schema.json
+
+# uses fetch, which a clone runs first, writes it too
+cp more.yaml opstruss.yaml
+rm .opstruss/schema.json
+exec opstruss uses fetch
+grep '"description": "The database it makes"' .opstruss/schema.json
+
+-- opstruss.yaml --
+# yaml-language-server: $schema=.opstruss/schema.json
+name: shop
+uses:
+  web: ./plugins/web
+units:
+  site:
+    uses: web
+    with: {port: 8080}
+-- more.yaml --
+# yaml-language-server: $schema=.opstruss/schema.json
+name: shop
+uses:
+  web: ./plugins/web
+  db: ./plugins/db
+units:
+  site:
+    uses: web
+    with: {port: 8080}
+-- broken.yaml --
+# yaml-language-server: $schema=.opstruss/schema.json
+name: shop
+units:
+  site:
+    uses: web
+-- plugins/web/opstruss.plugin.yaml --
+name: web
+inputs:
+  port: {type: integer, description: The port it listens on}
+tasks:
+  up:
+    run: [./up.sh]
+-- plugins/db/opstruss.plugin.yaml --
+name: db
+inputs:
+  name: {type: string, description: The database it makes}
+tasks:
+  up:
+    run: [./up.sh]

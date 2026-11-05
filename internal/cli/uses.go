@@ -283,14 +283,19 @@ func (a *app) fetchSources(cmd *cobra.Command, update string) error {
 	if err != nil {
 		return err
 	}
+	var loaded []*model.Project
 	for _, stack := range stacks {
-		if _, err := model.LoadSession(dir, stack, session); err != nil {
+		p, err := model.LoadSession(dir, stack, session)
+		if err != nil {
 			return err
 		}
+		loaded = append(loaded, p)
 	}
 	if err := session.Finish(); err != nil {
 		return err
 	}
+	// It only helps editors, so a failure to write it fails nothing.
+	_ = model.WriteEditorSchema(loaded...)
 	rows := []sourceRow{}
 	tw := tabwriter.NewWriter(a.stdout, 0, 0, 2, ' ', 0)
 	for _, key := range slices.Sorted(maps.Keys(session.Pins())) {
