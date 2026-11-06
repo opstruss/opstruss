@@ -62,7 +62,7 @@ An event:
 | `status` | `running` on the first event of a run, a unit operation, a task, or a step, and `finished` on the last |
 | `outcome` | On a `finished` event: `success`, `failure`, `skipped`, or `cancelled` |
 | `exit_code` | On the last event of a run: the exit code of the command |
-| `outputs` | On the last event of a run: the outputs of the task, each an output as [below](#documents) |
+| `outputs` | On the last event of a run: the outputs of the task, each an output as [below](#documents); none for a task with `for_each` ([tasks](../guides/tasks#for-each-item)) |
 | `plan` | On a `plan` event: the plan of its unit, as `units.<name>.plan` reads it (below) |
 
 - A reader ignores the fields and types it does not know: a new version

@@ -1,6 +1,7 @@
 package model
 
 import (
+	"cmp"
 	"fmt"
 	"maps"
 	"os"
@@ -58,23 +59,35 @@ func andList(words []string) string {
 
 // taskEvent is what event may hold in a run of task t, in a run of any
 // of its triggers, or nil for a task without on:, which --event calls with
-// any trigger.
-func taskEvent(t *Task) []string {
+// any trigger; and a task with for_each that one of them follows.
+func (c *checker) taskEvent(t *Task) ([]string, string) {
 	if t.On == nil {
-		return nil
+		return nil, ""
 	}
-	fields := []string{"time", "trigger"}
+	fields, fanOut := []string{"time", "trigger"}, ""
 	if len(t.On.Webhook) > 0 {
 		fields = append(fields, triggerEvent("webhook", nil)...)
 	}
-	if len(t.On.After) > 0 {
-		fields = append(fields, triggerEvent("after", nil)...)
+	for _, a := range t.On.After {
+		f, name := c.afterEvent(a)
+		fields, fanOut = append(fields, f...), cmp.Or(fanOut, name)
 	}
 	for _, w := range t.On.Watch {
 		fields = append(fields, triggerEvent("watch", w)...)
 	}
 	slices.Sort(fields)
-	return slices.Compact(fields)
+	return slices.Compact(fields), fanOut
+}
+
+// afterEvent is what event holds in a run of the trigger a, and the task
+// it follows when that task has for_each: its runs end with no outputs, so
+// event.outputs would always be empty.
+func (c *checker) afterEvent(a *After) ([]string, string) {
+	fields := triggerEvent("after", nil)
+	if c.p == nil || c.p.Tasks[a.Task] == nil || c.p.Tasks[a.Task].ForEach == nil {
+		return fields, ""
+	}
+	return slices.DeleteFunc(fields, func(f string) bool { return f == "outputs" }), a.Task
 }
 
 // place is where an expression is written, which decides what it may read.
@@ -85,6 +98,7 @@ type place struct {
 	steps   map[string]*Step // the steps before, by id
 	forUnit bool             // a task that a unit uses, whose expressions read state_key and reason
 	event   []string         // the fields of event there, or nil when any may be
+	fanOut  string           // a task with for_each that after follows there, which gives event no outputs
 }
 
 var readable = map[string][]string{
@@ -204,6 +218,11 @@ func (c *checker) refs(path []string, v any, pl place) []string {
 				who := "the triggers of this task give"
 				if pl.kind == "trigger" {
 					who = "this trigger gives"
+				}
+				if name == "outputs" && pl.fanOut != "" {
+					c.add(path, "%s no event.outputs: %s has for_each, so its runs end with no outputs; follow a task with steps that calls %s and shapes them (in ${{ %s }})",
+						who, pl.fanOut, pl.fanOut, r.Expr)
+					continue
 				}
 				c.add(path, "%s no event.%s; event has %s%s (in ${{ %s }})", who, name, andList(pl.event),
 					expr.DidYouMean(name, pl.event), r.Expr)
@@ -457,7 +476,8 @@ func (c *checker) references() {
 				if len(t.On.After) > 1 {
 					ap = at(ap, strconv.Itoa(i))
 				}
-				pl := place{kind: "trigger", event: triggerEvent("after", nil)}
+				pl := place{kind: "trigger"}
+				pl.event, pl.fanOut = c.afterEvent(a)
 				c.refs(at(ap, "if"), condition(a.If), pl)
 				c.refs(at(ap, "with"), a.With, pl)
 			}
@@ -527,7 +547,8 @@ func walkSteps(steps []*Step, fn func(*Step)) {
 }
 
 func (c *checker) taskRefs(path []string, t *Task) {
-	pl := place{kind: "task", each: t.ForEach != nil, task: t, steps: map[string]*Step{}, forUnit: c.usedByUnit(path), event: taskEvent(t)}
+	pl := place{kind: "task", each: t.ForEach != nil, task: t, steps: map[string]*Step{}, forUnit: c.usedByUnit(path)}
+	pl.event, pl.fanOut = c.taskEvent(t)
 	if c.plugin != nil {
 		pl.kind = "plugin"
 	}

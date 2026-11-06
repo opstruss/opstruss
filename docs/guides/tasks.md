@@ -72,6 +72,43 @@ tasks:
         tty: false        # plain lines, as a test reporter prints them
 ```
 
+## For each item
+
+`for_each` runs a step once per item, one after another in the order of
+the keys, and a task once per item, in parallel up to `max_parallel`.
+`steps.<id>['<key>']` reads the result of each item, also when the step
+calls a task with `for_each`.
+
+The run of a task with `for_each` ends with one outcome for all its items
+and no outputs: its last event, its record, the answer of a webhook with
+`respond: wait`, and `event.outputs` after it have none. A task with steps
+that calls it shapes them:
+
+```yaml
+tasks:
+  build:
+    for_each: [amd64, arm64]
+    run: echo "digest=sha256-$ARCH" >> "$OPSTRUSS_OUTPUT"
+    env:
+      ARCH: ${{ each.key }}
+    outputs:
+      digest: {type: string}
+  release:
+    steps:
+      - id: build
+        task: build
+    outputs:
+      digests:
+        type: object
+        value: ${{ steps.build.transformMap(k, v, v.outputs.digest) }}
+```
+
+`opstruss release --json` ends with `digests`, `{"amd64":
+"sha256-amd64", "arm64": "sha256-arm64"}`, and a task with `on: {after:
+{task: release}}` reads `event.outputs.digests.amd64`. With
+`continue_on_error: true` on the step, `release` goes on when an item
+fails, and `v.outcome` says which one did.
+
 ## Approval is a step
 
 `task: up` in a step plans and asks before it changes anything, as

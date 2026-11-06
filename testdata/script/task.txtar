@@ -63,6 +63,14 @@ stdout '^nested: nested step 1 always 1 \| two$'
 exec opstruss in-turn
 cmp turns want-turns
 
+# a task with for_each ends its run with no outputs; a task with steps
+# that calls it shapes them from each instance
+exec opstruss images --json
+stdout '"type":"run".*"outcome":"success"'
+! stdout '"type":"run".*"outputs"'
+exec opstruss images-all --json
+stdout '"type":"run".*"outputs":\{"digests":\{"sensitive":false,"type":"object","value":\{"amd64":"d-amd64","arm64":"d-arm64"\}\}\}'
+
 # a step that fails skips the rest, and the exit code is 1
 ! exec opstruss broken
 stdout '^broken: .* failed$'
@@ -199,3 +207,18 @@ tasks:
     run: echo "$KEY" >> turns
     env:
       KEY: ${{ each.key }}
+  images:
+    for_each: [amd64, arm64]
+    run: echo "digest=d-$ARCH" >> "$OPSTRUSS_OUTPUT"
+    env:
+      ARCH: ${{ each.key }}
+    outputs:
+      digest: {type: string}
+  images-all:
+    steps:
+      - id: build
+        task: images
+    outputs:
+      digests:
+        type: object
+        value: ${{ steps.build.transformMap(k, v, v.outputs.digest) }}

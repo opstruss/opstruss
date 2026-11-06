@@ -32,10 +32,11 @@ Every run has `event.time`, when it was due or its event came, and
 | `watch` of a service (`unit:`) | `unit`, `stream`, and `line`; with `batch` or `debounce`, `lines`, `count`, and `truncated` instead of `line` |
 | `watch` of `paths` | `paths`, each `{path, op}` with `op` `create`, `write`, `remove`, or `rename`, and `count`; with `batch` or `debounce`, also `truncated` |
 | `watch` of a program | `line`, and `data` when the line is JSON |
-| `after` | `task`, `unit`, `outcome`, and `outputs` of the run it follows: the value of each output, and none of a sensitive one |
+| `after` | `task`, `unit`, `outcome`, and `outputs` of the run it follows: the value of each output, and none of a sensitive one or of a task with `for_each` ([tasks](./tasks#for-each-item)) |
 
 `validate` refuses a field that no trigger of the task gives, such as
-`event.run`. A task that also runs from the command line reads a field
+`event.run`, or `event.outputs` when each `after` of the task follows a
+task with `for_each`. A task that also runs from the command line reads a field
 with `has(event.<field>)`, or gets its value through `with:`.
 
 ## The daemon
