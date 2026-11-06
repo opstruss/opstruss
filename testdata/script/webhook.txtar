@@ -30,6 +30,11 @@ stdout '^404 '
 webhook POST /hooks/hello '{"who":"ana"}' -github gh-secret
 stdout '^200 \{"exit_code":0,"outcome":"success","outputs":\{"greeting":\{"sensitive":false,"value":"hi ana"\}\},"run":"[0-9]'
 
+# a task with for_each ends with no outputs, which wait answers as an
+# empty object
+webhook POST /hooks/fan '{}' -github gh-secret
+stdout '^200 \{"exit_code":0,"outcome":"success","outputs":\{\},"run":"[0-9]'
+
 # an up with another secret keeps the server on its port, and checks the
 # new secret
 env HOOK=n3w-token-for-hooks
@@ -81,3 +86,16 @@ tasks:
         respond: wait
         with:
           who: ${{ event.body.who }}
+  fan:
+    for_each: [a, b]
+    run: echo "n=$KEY" >> "$OPSTRUSS_OUTPUT"
+    env:
+      KEY: ${{ each.key }}
+    outputs:
+      n: {}
+    on:
+      webhook:
+        path: /hooks/fan
+        secret: gh-secret
+        signature: github
+        respond: wait

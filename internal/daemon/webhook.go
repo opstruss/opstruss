@@ -204,7 +204,13 @@ func (w *webhooks) answerDone(answer func(int, any), res *engine.Result, err err
 		if res.ExitCode != 0 {
 			code = http.StatusInternalServerError
 		}
-		answer(code, map[string]any{"run": res.Run, "outcome": res.Outcome, "exit_code": res.ExitCode, "outputs": res.Outputs})
+		// outputs is an object also when the run has none, as a task with
+		// for_each ends, so a client reads a name of it as it is.
+		outputs := res.Outputs
+		if outputs == nil {
+			outputs = map[string]any{}
+		}
+		answer(code, map[string]any{"run": res.Run, "outcome": res.Outcome, "exit_code": res.ExitCode, "outputs": outputs})
 	}
 }
 
