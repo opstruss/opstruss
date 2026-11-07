@@ -291,7 +291,7 @@ Exactly one of run, steps, or one call of a task.
 | `max_parallel` | integer | How many items of for\_each run at once; OPSTRUSS\_PARALLEL by default. |
 | `on` | [Triggers](#triggers) | Triggers that run the task from the daemon of the stack. |
 | `approval` | one of `ask`, `auto` | ask to wait for approval of the changes that the task makes, auto to apply them without asking; auto by default. |
-| `concurrency` | one of `queue`, `cancel`, `skip`, `parallel` or [Task › concurrency](#task-concurrency) | What a new run of the task does while another goes on, also across the tasks of one group; queue by default. |
+| `concurrency` | one of `queue`, `cancel`, `skip`, `parallel` or [Task › concurrency](#task-concurrency) | What a new run of the task does while another run of it goes on; queue by default. |
 | `timeout` | string | How long the task may run; 6h by default. |
 | `stop` | [Stop](#stop) | How the program is stopped, also each step's program and the task a step calls by name; each key it gives wins over the stop of the task it calls. always: has its grace after a cancel. |
 | `retry` | [Retry](#retry) | Running the task again when it fails. |
@@ -304,11 +304,11 @@ Any other key is a call of a task by that name, with its inputs as the value.
 
 ## Task › concurrency {#task-concurrency}
 
-What a new run of the task does while another goes on, also across the tasks of one group; queue by default.
+What a new run of the task does while another run of it goes on; queue by default.
 
 | Key | Type | Description |
 |---|---|---|
-| `group` (required) | string | A name that the tasks whose runs wait for one another share. |
+| `group` (required) | string | Runs of the task with the same group wait for one another, and runs with another group go in parallel; it may read the inputs of the call. A group is its task's own: tasks that must not overlap call one internal task. |
 | `mode` | one of `queue`, `cancel`, `skip`, `parallel` | What a new run does: queue, cancel, skip, or parallel; queue by default. |
 
 ## Step {#step}

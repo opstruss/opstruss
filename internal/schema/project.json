@@ -820,7 +820,7 @@
           "default": "auto"
         },
         "concurrency": {
-          "description": "What a new run of the task does while another goes on, also across the tasks of one group; queue by default.",
+          "description": "What a new run of the task does while another run of it goes on; queue by default.",
           "default": "queue",
           "oneOf": [
             { "$ref": "#/$defs/concurrencyMode" },
@@ -828,7 +828,7 @@
               "type": "object",
               "properties": {
                 "group": {
-                  "description": "A name that the tasks whose runs wait for one another share.",
+                  "description": "Runs of the task with the same group wait for one another, and runs with another group go in parallel; it may read the inputs of the call. A group is its task's own: tasks that must not overlap call one internal task.",
                   "type": "string",
                   "minLength": 1
                 },
