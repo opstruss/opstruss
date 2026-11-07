@@ -1,0 +1,98 @@
+# The outputs that an up which failed parsed name what it made, as the
+# packages of a package manager: destroy right after it gets them too,
+# before the outputs of the last up that succeeded, and a later attempt
+# that writes no outputs keeps them.
+
+env HOME=$WORK/home
+chmod 755 own/own.sh
+
+exec opstruss up --yes
+stdout '^default/u: up: done$'
+cp two.yaml opstruss.yaml
+! exec opstruss up --yes
+exec opstruss destroy --yes
+cmp destroyed want
+
+rm destroyed
+cp one.yaml opstruss.yaml
+exec opstruss up --yes
+cp two.yaml opstruss.yaml
+! exec opstruss up --yes
+cp silent.yaml opstruss.yaml
+! exec opstruss up --yes
+exec opstruss destroy --yes
+cmp destroyed want
+
+# An up that failed without outputs of its own, after one that succeeded,
+# adds nothing to destroy.
+rm destroyed
+cp one.yaml opstruss.yaml
+exec opstruss up --yes
+cp silent.yaml opstruss.yaml
+! exec opstruss up --yes
+exec opstruss destroy --yes
+cmp destroyed want-last
+
+-- opstruss.yaml --
+name: app
+uses:
+  own: ./own
+units:
+  u:
+    uses: own
+    with: {items: [a]}
+-- one.yaml --
+name: app
+uses:
+  own: ./own
+units:
+  u:
+    uses: own
+    with: {items: [a]}
+-- two.yaml --
+name: app
+uses:
+  own: ./own
+units:
+  u:
+    uses: own
+    with: {items: [a, b], fail: true}
+-- silent.yaml --
+name: app
+uses:
+  own: ./own
+units:
+  u:
+    uses: own
+    with: {items: [a, b, c], fail: true, silent: true}
+-- want --
+"installed":["a","b"]
+"installed":["a"]
+-- want-last --
+"installed":["a"]
+-- own/opstruss.plugin.yaml --
+name: own
+opstruss: "1.0"
+inputs:
+  items: {type: array, items: {type: string}, default: []}
+  fail: {type: boolean, default: false}
+  silent: {type: boolean, default: false}
+outputs:
+  installed: {type: array}
+tasks:
+  plan:
+    run: [./own.sh, plan]
+  up:
+    run: [./own.sh, up]
+  destroy:
+    run: [./own.sh, destroy]
+-- own/own.sh --
+#!/bin/sh
+case $1 in
+plan) echo '{"changes": [{"action": "create", "resource": "x"}], "exact": false}' >"$OPSTRUSS_PLAN" ;;
+up)
+	[ "$INPUT_SILENT" = true ] || printf '{"installed": %s}\n' "$INPUT_ITEMS" >"$OPSTRUSS_OUTPUT"
+	[ "$INPUT_FAIL" = false ]
+	;;
+destroy) grep -o '"installed": *\[[^]]*\]' "$OPSTRUSS_STATE" | tr -d ' ' >>destroyed ;;
+esac

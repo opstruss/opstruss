@@ -422,8 +422,11 @@ func (e *engine) destroyOne(ctx context.Context, l *leftover) string {
 		}
 	}
 	// An up that did not finish may have made something with its own
-	// contract, so that contract is destroyed too, before the last one.
-	if a := rec.Pending; a != nil && a.Op == "up" && a.Destroy != nil && !same(a.Destroy, rec.Destroy) {
+	// contract, so that contract is destroyed too, before the last one; so
+	// is one with the same contract whose outputs, which name what it made,
+	// differ from the last ones.
+	if a := rec.Pending; a != nil && a.Op == "up" && a.Destroy != nil &&
+		(!same(a.Destroy, rec.Destroy) || parsed(a.Outputs) && !same(a.Outputs, rec.Outputs)) {
 		rec.Abandoned = append(rec.Abandoned, a)
 	}
 	contracts := slices.Clone(rec.Abandoned)

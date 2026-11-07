@@ -815,6 +815,10 @@ func (e *engine) turn(ctx context.Context, inst *instance, leave func()) {
 	// up of a plugin gets the digest of its own plan, to apply what it
 	// planned or refuse.
 	keep := func(res *plugin.Result, marks map[string]any) error {
+		if res.OutputErr == nil && !parsed(res.Outputs) {
+			// An attempt that gave no outputs leaves those it carries.
+			return nil
+		}
 		next.Pending.Outputs, next.Pending.RawOutput = res.Outputs, ""
 		if res.OutputErr != nil {
 			next.Pending.RawOutput = string(res.RawOutput)
@@ -1137,6 +1141,16 @@ func (e *engine) needs(inst *instance) []string {
 		out = append(out, d.address)
 	}
 	return out
+}
+
+// parsed reports whether a program gave any of its outputs.
+func parsed(outputs map[string]any) bool {
+	for _, v := range outputs {
+		if v != nil {
+			return true
+		}
+	}
+	return false
 }
 
 // same reports whether a and b are the same as JSON, as records store them.
