@@ -59,6 +59,32 @@ func TestLocalPut(t *testing.T) {
 	}
 }
 
+func TestLocalList(t *testing.T) {
+	b := NewLocal(t.TempDir())
+	// Each key is written twice, so those that keep a backup have one.
+	for _, k := range []string{"prod/_meta", "prod/web/state.json", "prod/_kv/daily.backup", "prod/_kv/state.backup.json", "prod/_kv/state.json"} {
+		etag, err := b.Put(k, []byte(k), "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := b.Put(k, []byte(k), etag); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := b.List("prod/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"prod/_kv/daily.backup", "prod/_kv/state.backup.json", "prod/_kv/state.json", "prod/_meta", "prod/web/state.json"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("list: %q, want %q", got, want)
+	}
+	// A value of kv keeps no backup, which would take the name of another.
+	if data, _, err := b.Get("prod/_kv/state.backup.json"); err != nil || string(data) != "prod/_kv/state.backup.json" {
+		t.Fatalf("value: %q %v", data, err)
+	}
+}
+
 func TestLocalLock(t *testing.T) {
 	b := NewLocal(t.TempDir())
 	h := NewHolder("20261020T101530Z-4b2e91d0", "host1")

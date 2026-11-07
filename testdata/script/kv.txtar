@@ -13,7 +13,7 @@ stdout '^  changed: false$'
 
 # kv('<prefix>*') reads every name that starts with it
 exec opstruss previews
-stdout '^  names: pr-1,pr-2$'
+stdout '^  names: pr-1,pr-2,pr-3\.backup$'
 
 # expect writes only over the value it names, and otherwise fails with
 # the value there is
@@ -72,6 +72,7 @@ tasks:
     steps:
       - kv: {key: pr-1, value: {branch: a}}
       - kv: {key: pr-2, value: {branch: b}}
+      - kv: {key: pr-3.backup, value: {branch: c}}
       - kv: {key: other, value: x}
       - id: all
         set: {names: "${{ kv('pr-*').map(k, k).join(',') }}"}

@@ -124,8 +124,23 @@ func (l *Local) Put(key string, data []byte, ifMatch string) (string, error) {
 	return ETag(data), syncDir(filepath.Dir(p))
 }
 
+// keepsBackup reports whether a put or delete of key keeps the previous
+// content as its backup: that of a record or _meta does, that of a value
+// in _kv (kvKey) does not, so a backup never takes the name of a value.
 func keepsBackup(key string) bool {
-	return path.Base(key) == "state.json" || path.Base(key) == "_meta"
+	dir, base := path.Split(key)
+	return (base == "state.json" || base == "_meta") && path.Base(dir) != "_kv"
+}
+
+// isBackup reports whether key is the backup that a put or delete keeps.
+func isBackup(key string) bool {
+	switch dir, base := path.Split(key); base {
+	case "state.backup.json":
+		return keepsBackup(dir + "state.json")
+	case "_meta.backup":
+		return keepsBackup(dir + "_meta")
+	}
+	return false
 }
 
 // Delete removes a key, keeping a record's last content as its backup. A
@@ -171,15 +186,15 @@ func (l *Local) List(prefix string) ([]string, error) {
 		if err != nil || d.IsDir() {
 			return err
 		}
-		name := d.Name()
-		if strings.HasPrefix(name, ".tmp-") || strings.Contains(name, ".backup") {
-			return nil
-		}
 		rel, err := filepath.Rel(l.root, p)
 		if err != nil {
 			return err
 		}
-		keys = append(keys, filepath.ToSlash(rel))
+		key := filepath.ToSlash(rel)
+		if strings.HasPrefix(d.Name(), ".tmp-") || isBackup(key) {
+			return nil
+		}
+		keys = append(keys, key)
 		return nil
 	})
 	slices.Sort(keys)
