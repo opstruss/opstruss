@@ -1,0 +1,47 @@
+# Integers beyond 2^53 keep every digit wherever JSON comes in: an event
+# that the command line writes, a line that a watch hears, and the events
+# of a run through the daemon.
+
+env HOME=$WORK/home
+
+exec opstruss run receive --event '{"trigger": "webhook", "body": {"id": 9007199254740993}}' --json
+stdout '"value":9007199254740993'
+exec opstruss run heard --event '{"trigger": "watch", "line": "{\"n\": 9007199254740993}"}' --json
+stdout '"value":9007199254740993'
+
+exec opstruss up -d --yes
+exec opstruss run -d big --json
+stdout '"value":9007199254740993'
+exec opstruss stop
+
+-- opstruss.yaml --
+name: numbers
+daemon:
+  listen: 127.0.0.1:0
+tasks:
+  receive:
+    on:
+      webhook:
+        path: /hook
+        signature: bearer
+        secret: fixture-token
+    steps:
+      - set: {id: '${{ event.body.id }}'}
+        id: s
+    outputs:
+      id: {type: integer, value: '${{ steps.s.outputs.id }}'}
+  heard:
+    on:
+      watch:
+        command: {argv: [sh, -c, 'exec sleep 300']}
+    steps:
+      - set: {n: '${{ event.data.n }}'}
+        id: s
+    outputs:
+      n: {type: integer, value: '${{ steps.s.outputs.n }}'}
+  big:
+    steps:
+      - set: {n: 9007199254740993}
+        id: s
+    outputs:
+      n: {type: integer, value: '${{ steps.s.outputs.n }}'}

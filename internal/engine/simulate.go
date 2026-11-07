@@ -3,7 +3,6 @@ package engine
 import (
 	"cmp"
 	"context"
-	"encoding/json"
 	"fmt"
 	"maps"
 	"slices"
@@ -292,7 +291,7 @@ func watchEvent(p *model.Project, tr *Trigger, ev map[string]any) (map[string]an
 	}
 	if kind == "program" {
 		var data any
-		if json.Unmarshal([]byte(line), &data) == nil {
+		if model.DecodeJSON([]byte(line), &data) == nil {
 			out["data"] = data
 		}
 	}

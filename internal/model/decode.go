@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"reflect"
 	"strings"
 )
@@ -27,6 +28,26 @@ func decodeJSON(b []byte, v any) error {
 	dec := json.NewDecoder(bytes.NewReader(b))
 	dec.UseNumber()
 	return dec.Decode(v)
+}
+
+// DecodeJSON reads the one JSON value of data into v, as json.Unmarshal
+// does, with each number in an any-typed place as expressions read one:
+// int64 when whole, float64 otherwise, so a large integer keeps every
+// digit.
+func DecodeJSON(data []byte, v any) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	if err := dec.Decode(v); err != nil {
+		return err
+	}
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		if err == nil {
+			err = errors.New("more than one JSON value")
+		}
+		return err
+	}
+	fixNumbers(reflect.ValueOf(v))
+	return nil
 }
 
 // fixNumbers replaces the json.Number values left in any-typed fields.

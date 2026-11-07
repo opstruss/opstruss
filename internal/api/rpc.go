@@ -249,7 +249,7 @@ func (s *Server) request(m message) (Request, *rpcError) {
 		err = fmt.Errorf("%s: %s", probs[0].Path, probs[0].Message)
 	}
 	if err == nil {
-		err = json.Unmarshal(m.Params, &r)
+		err = model.DecodeJSON(m.Params, &r)
 	}
 	if err != nil {
 		return r, &rpcError{Code: codeParams, Message: err.Error()}
@@ -443,7 +443,7 @@ func (cl *Client) Call(ctx context.Context, method string, r Request, h Handlers
 		switch m.Method {
 		case "event":
 			var ev record.Event
-			if json.Unmarshal(m.Params, &ev) == nil && h.Event != nil {
+			if model.DecodeJSON(m.Params, &ev) == nil && h.Event != nil {
 				h.Event(ev)
 			}
 		case "approve", "ask":

@@ -21,7 +21,7 @@ waitgrep '^inbox inbox/note.md$' fired
 waitgrep '^line error: disk full$' fired
 ! grep 'all good' fired
 waitgrep '^source one -$' fired
-waitgrep '^source \{"n":2\} 2$' fired
+waitgrep '^source \{"n":9007199254740993\} 9007199254740993$' fired
 waitgrep '^feed token of 11 characters$' fired
 exists where
 ! exists feed/where
@@ -94,7 +94,7 @@ tasks:
     env: {LINE: '${{ event.line }}', N: '${{ has(event.data) ? string(event.data.n) : "-" }}'}
     on:
       watch:
-        command: {argv: [sh, -c, 'echo one; echo "{\"n\":2}"; exec sleep 300']}
+        command: {argv: [sh, -c, 'echo one; echo "{\"n\":9007199254740993}"; exec sleep 300']}
   feed:
     run: echo "feed $LINE" >> fired
     env: {LINE: '${{ event.line }}'}

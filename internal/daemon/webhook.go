@@ -229,7 +229,7 @@ func fields(r *http.Request, body []byte) map[string]any {
 	var parsed any = string(body)
 	if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err == nil && (mt == "application/json" || strings.HasSuffix(mt, "+json")) {
 		var v any
-		if json.Unmarshal(body, &v) == nil {
+		if model.DecodeJSON(body, &v) == nil {
 			parsed = v
 		}
 	}

@@ -2,7 +2,6 @@ package daemon
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"path"
 	"path/filepath"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/opstruss/opstruss/internal/engine"
+	"github.com/opstruss/opstruss/internal/model"
 	"github.com/opstruss/opstruss/internal/plugin"
 	"github.com/opstruss/opstruss/internal/record"
 )
@@ -286,7 +286,7 @@ func (t *triggers) source(ctx context.Context, w *watcher, spec *watchSpec) erro
 				return
 			}
 			var data any
-			if json.Unmarshal([]byte(line), &data) == nil {
+			if model.DecodeJSON([]byte(line), &data) == nil {
 				ev["data"] = data
 			}
 			w.push(ev)

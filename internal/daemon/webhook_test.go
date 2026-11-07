@@ -63,6 +63,19 @@ func TestWebhookBody(t *testing.T) {
 	}
 }
 
+func TestWebhookFieldsNumbers(t *testing.T) {
+	r := httptest.NewRequest(http.MethodPost, "/hook", nil)
+	r.Header.Set("Content-Type", "application/json")
+	body, _ := fields(r, []byte(`{"id": 9007199254740993, "ratio": 0.5}`))["body"].(map[string]any)
+	if body["id"] != int64(9007199254740993) || body["ratio"] != 0.5 {
+		t.Fatalf("body: %#v", body)
+	}
+	// More than one value is no JSON body, as json.Unmarshal has it.
+	if got := fields(r, []byte(`{"id": 1} {}`))["body"]; got != `{"id": 1} {}` {
+		t.Fatalf("two values: %#v", got)
+	}
+}
+
 func sign(alg func() hash.Hash, key []byte, data string) []byte {
 	m := hmac.New(alg, key)
 	m.Write([]byte(data))

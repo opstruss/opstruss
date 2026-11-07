@@ -341,8 +341,9 @@ func (a *app) readEvent(s string) (map[string]any, error) {
 		return nil, fmt.Errorf("the event is larger than %d MiB", engine.MaxEvent>>20)
 	}
 	dec := json.NewDecoder(bytes.NewReader(data))
+	var first json.RawMessage
 	var ev map[string]any
-	if err := dec.Decode(&ev); err != nil || ev == nil {
+	if err := dec.Decode(&first); err != nil || model.DecodeJSON(first, &ev) != nil || ev == nil {
 		return nil, errors.New("the event is not a JSON object")
 	}
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
