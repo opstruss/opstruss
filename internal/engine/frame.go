@@ -456,9 +456,8 @@ func (inst *instance) view() map[string]any {
 
 // componentView is units.<name> of a unit that uses a component, for its
 // instance g: the component's outputs, and once a pass reached the units
-// inside, their outcome and changed together, and their plans as one, as
-// a module is in the JSON plan of Terraform. The units inside stay out of
-// reach.
+// inside, their outcome and changed together, and their plans as one. The
+// units inside stay out of reach.
 // The marks say which outputs are sensitive: declared so, or read from a
 // sensitive value.
 func (e *engine) componentView(g *frame) (map[string]any, any) {

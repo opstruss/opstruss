@@ -20,10 +20,9 @@ import (
 
 // Logs shows the output of the units: the log of a service, the logs task
 // of a plugin that has one, or the output of the last run that touched a
-// unit, as docker logs shows that of a container that ended; and that of
-// the tasks named, from their last run. With opts.Follow, the logs of
-// services, the plugins that follow, and the runs of the tasks go on
-// until ctx ends. The outcome of the runs shown is not that of logs.
+// unit; and that of the tasks named, from their last run. With opts.Follow,
+// the logs of services, the plugins that follow, and the runs of the tasks
+// go on until ctx ends. The outcome of the runs shown is not that of logs.
 func Logs(ctx context.Context, opts Options) (*Result, error) {
 	e, err := open(ctx, opts, "logs", "")
 	if err != nil {

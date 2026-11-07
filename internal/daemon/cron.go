@@ -12,12 +12,11 @@ import (
 // starBit marks a field written as *, as robfig/cron marks it.
 const starBit = 1 << 63
 
-// cronSpec is a cron schedule in its time zone. robfig/cron reads it as
-// CronJob of Kubernetes does; when it runs is worked out here, as cronie
-// does it around a change of daylight saving time: a job at a fixed time
-// that the clock skips runs right after the jump, and one at a fixed time
-// that the clock repeats runs once, while a job whose minute or hour is a
-// wildcard follows the clock.
+// cronSpec is a cron schedule in its time zone. robfig/cron parses it; when
+// it runs is worked out here, also around a change of daylight saving time:
+// a job at a fixed time that the clock skips runs right after the jump, and
+// one at a fixed time that the clock repeats runs once, while a job whose
+// minute or hour is a wildcard follows the clock.
 type cronSpec struct {
 	s     *cron.SpecSchedule
 	loc   *time.Location

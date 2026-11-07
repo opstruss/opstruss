@@ -13,8 +13,7 @@ import (
 	"github.com/opstruss/opstruss/internal/proc"
 )
 
-// sudoKeep is how often a run keeps the ticket of sudo while it lasts, as
-// the keep-alive loops of yay and of dotfiles for macOS do.
+// sudoKeep is how often a run keeps the ticket of sudo while it lasts.
 var sudoKeep = time.Minute
 
 // sudoTries is how often a run asks for the password of sudo, as sudo does.

@@ -162,7 +162,7 @@ At cancel or timeout, `stop.signal` (SIGINT by default) goes to the
 process group of the program; after `stop.grace` (1m by default) the
 group is killed. Processes left in the group when the program ends, such
 as `server &` in a script, are stopped the same way before the lock of
-the unit is let go, as systemd does with `KillMode=control-group`.
+the unit is let go.
 
 `stop` of a unit covers each program run for it, the `plan`, `status`,
 `logs`, and `destroy` of its plugin included, and `stop` of a task covers

@@ -146,8 +146,7 @@ func (e *engine) resolveService(u *model.Unit, r *resolved, s *expr.Scope) error
 }
 
 // digest adds to the digest trigger of a service what decides how its
-// supervisor runs it, so a change restarts it, as Compose recreates a
-// service whose configuration changed.
+// supervisor runs it, so a change restarts it.
 func (d *serviceDef) digest(r *resolved, def map[string]any) {
 	ready := map[string]any{"interval": d.interval.String(), "timeout": d.timeout.String()}
 	switch {
@@ -272,8 +271,8 @@ func (noSupervisor) Forget(string) ([]string, error)       { return nil, nil }
 
 // Unlock forgets what is left of the service of the one unit named that
 // cannot be proven its own, such as a process group whose leader is gone,
-// which keeps up from starting it again, and says what it forgot, as
-// terraform force-unlock does; the record of the run keeps that.
+// which keeps up from starting it again, and says what it forgot; the
+// record of the run keeps that.
 func Unlock(ctx context.Context, opts Options) (*Result, error) {
 	e, err := open(ctx, opts, "unlock", "")
 	if err != nil {

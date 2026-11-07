@@ -639,9 +639,8 @@ func (e *engine) hide(v, marks any) {
 	}
 }
 
-// markContent marks the outputs that hold a sensitive value the run
-// knows, as GitHub Actions does for job outputs, and says which; marks
-// may be nil, and the marks are returned.
+// markContent marks the outputs that hold a sensitive value the run knows,
+// and says which; marks may be nil, and the marks are returned.
 func (e *engine) markContent(outputs, marks map[string]any, ev Event) map[string]any {
 	for _, k := range slices.Sorted(maps.Keys(outputs)) {
 		if marks[k] != nil || !e.redact.Contains(outputs[k]) {
@@ -926,7 +925,7 @@ func (w *lineWriter) flush() {
 }
 
 // liveEvery is how often the rows that a program may still change are drawn
-// at most, as docker compose draws its progress.
+// at most.
 const liveEvery = 100 * time.Millisecond
 
 // screenWriter turns what a program writes to a terminal of its own into

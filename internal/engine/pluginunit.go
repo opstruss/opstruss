@@ -351,8 +351,7 @@ func (e *engine) recordStatus(inst *instance) map[string]any {
 }
 
 // toolMoved stops a unit whose tool keeps state in tool/ while its input
-// backend names another place: that backend is empty, as terraform init
-// refuses a backend that changed without -migrate-state.
+// backend names another place: that backend is empty.
 func (e *engine) toolMoved(inst *instance, r *resolved) error {
 	if r.plugin == nil || r.plugin.tool == "" {
 		return nil

@@ -10,9 +10,8 @@ import (
 // Marks say which parts of a value are sensitive: true for all of it, a
 // map[string]any with the marks of the keys that have sensitive parts, for
 // a map, a []any with the marks of each item, for a list written item by
-// item, or nil for none. The result of an expression that reads a
-// sensitive part is sensitive as a whole, like a sensitive value in
-// Terraform.
+// item, or nil for none. The result of an expression that reads a sensitive
+// part is sensitive as a whole.
 
 // MarkAt returns the marks of the part of a value at path.
 func MarkAt(marks any, path ...string) any {

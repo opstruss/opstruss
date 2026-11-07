@@ -116,9 +116,8 @@ func (e *engine) keepReplay(rp *replay) {
 }
 
 // keepAnswer keeps the answer to the question for input k of the task that
-// the command line runs as a flag, so runs rerun gives it again as gh run
-// rerun gives the inputs of workflow_dispatch; sealed as all of the
-// payload is, also when the input is sensitive.
+// the command line runs as a flag, so runs rerun gives it again; sealed as
+// all of the payload is, also when the input is sensitive.
 func (e *engine) keepAnswer(k, text string) {
 	if !e.keepsReplay {
 		return

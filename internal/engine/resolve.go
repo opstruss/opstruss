@@ -588,10 +588,10 @@ func (e *engine) digest(inst *instance, r *resolved) (digested, error) {
 }
 
 // partsOf gives each part of def a digest of its own, which a record keeps
-// so a plan names what changed, as bazel --explain does: an input of
-// with, a variable of env or pass, and each other key, such as run or
-// sources, with plugin for the files of a plugin and component for those
-// of the package a unit is in. Sensitive values are hashed already in def.
+// so a plan names what changed: an input of with, a variable of env or
+// pass, and each other key, such as run or sources, with plugin for the
+// files of a plugin and component for those of the package a unit is in.
+// Sensitive values are hashed already in def.
 func partsOf(def map[string]any) (map[string]string, error) {
 	out := map[string]string{}
 	add := func(name string, v any) error {
@@ -663,8 +663,8 @@ func digestSource(id *sources.Identity, hash string) map[string]any {
 
 // hashed is a sensitive value as a digest holds it: the HMAC of its
 // canonical JSON under a key that the data key of the stack and the id of
-// the record give, as Vault's audit log does, so the digest changes when
-// the value does and tells nothing about it.
+// the record give, so the digest changes when the value does and tells
+// nothing about it.
 func (e *engine) hashed(inst *instance, v any) (string, error) {
 	key, err := e.dataKey()
 	if err != nil {

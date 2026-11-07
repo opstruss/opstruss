@@ -30,8 +30,8 @@ import (
 // daemon guards, which each program passes on to the programs it starts.
 const ServiceID = "OPSTRUSS_SERVICE_ID"
 
-// Restarts back off as Docker's do: the first delay doubles up to the
-// longest, and starts over once a service ran for resetAfter.
+// Restarts back off: the first delay doubles up to the longest, and starts
+// over once a service ran for resetAfter.
 var (
 	firstDelay = 100 * time.Millisecond
 	maxDelay   = time.Minute
@@ -867,9 +867,8 @@ func (s *service) stop() {
 	<-s.done
 }
 
-// halt stops c as Kubernetes stops a container with a preStop hook:
-// stop.run first while it lives, then its signal to its process group when
-// it still lives, all within its grace, then a kill.
+// halt stops c: stop.run first while it lives, then its signal to its
+// process group when it still lives, all within its grace, then a kill.
 func (s *service) halt(c *child) {
 	deadline := time.Now().Add(s.spec.Stop.Grace)
 	if s.spec.StopRun != nil && !closed(c.exited) {

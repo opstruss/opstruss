@@ -655,9 +655,9 @@ func (c *checker) tasks() {
 	}
 }
 
-// schedules checks the schedule and every triggers of a task: cron as
-// CronJob of Kubernetes reads it, with its time zone in timezone: only and
-// intervals in every: only, and intervals of at least a second.
+// schedules checks the schedule and every triggers of a task: cron with its
+// time zone in timezone: only and intervals in every: only, and intervals
+// of at least a second.
 func (c *checker) schedules(path []string, on *Triggers) {
 	for i, s := range on.Schedule {
 		sp := at(path, "schedule")
@@ -964,8 +964,8 @@ func schemaHint(path []string, msg string, doc map[string]any) (string, bool) {
 		}
 		return hint, true
 	case n >= 3 && path[n-3] == "tasks" && (path[n-1] == "rescue" || path[n-1] == "always"):
-		// Another key of a task is a call of a task, which takes a map;
-		// Ansible and GitHub Actions users write these on the task.
+		// Another key of a task is a call of a task, which takes a map; users
+		// of other tools write these on the task.
 		return "rescue and always go with block, in a step: steps: [{block: [...], rescue: [...], always: [...]}]", true
 	case !isKeys:
 	case len(keys) == 0 && strings.HasPrefix(msg, "minItems"):

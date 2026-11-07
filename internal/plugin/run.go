@@ -53,7 +53,7 @@ type Stop struct {
 }
 
 // DefaultStop is how the program of a run unit or task stops by default,
-// and ServiceStop how a service does, as docker stop does.
+// and ServiceStop how a service does.
 var (
 	DefaultStop = Stop{Signal: syscall.SIGINT, Grace: time.Minute}
 	ServiceStop = Stop{Signal: syscall.SIGTERM, Grace: 10 * time.Second}

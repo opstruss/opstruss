@@ -381,8 +381,8 @@ func (a *app) objectFile(path string) (string, error) {
 }
 
 // summary is the line of a task in help: its description, or without one
-// what it runs, as npm run lists scripts with their commands: the first
-// line of run, the ids of its steps, or the task it calls.
+// what it runs: the first line of run, the ids of its steps, or the task it
+// calls.
 func summary(t *model.Task) string {
 	text := t.Description
 	switch {

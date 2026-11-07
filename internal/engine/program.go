@@ -331,9 +331,8 @@ func ttyOf(own, def *bool) *bool {
 func isTrue(b *bool) bool { return b != nil && *b }
 
 // logRead writes to the log what the streams that outputs read held, once
-// the outputs are parsed, unless one of those outputs is sensitive, as
-// no_log keeps a result out of the log in Ansible; the log hides the
-// sensitive values the run knows in the rest.
+// the outputs are parsed, unless one of those outputs is sensitive; the log
+// hides the sensitive values the run knows in the rest.
 func logRead(res *plugin.Result, outputs map[string]*model.Output, marks map[string]any, out, errw *lineWriter) {
 	for _, w := range []*lineWriter{out, errw} {
 		name := w.stream

@@ -71,7 +71,7 @@ stdin orphan.json
 exec opstruss state push gone --force
 
 # a claim of kv that a run left goes with state rm, under the lock of kv,
-# with the etag of the pull or --force, as consul kv delete -cas
+# with the etag of the pull or --force
 cd claim
 exec opstruss claim
 ! exec opstruss claim

@@ -98,8 +98,8 @@ func (p plan) summary() string {
 	case p.blocked != "":
 		return "skipped: " + p.blocked + " cannot be planned"
 	case len(p.waitFor) > 0:
-		// As (known after apply) in Terraform: what reads the outputs is
-		// named, and planned at its turn, never with the old values.
+		// What reads the outputs is named, and planned at its turn, never
+		// with the old values.
 		after := "plan after " + unitsText(p.waitFor)
 		if len(p.reads) > 0 {
 			after += " (" + strings.Join(p.reads, ", ") + ")"

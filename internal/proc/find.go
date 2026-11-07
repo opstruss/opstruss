@@ -30,11 +30,10 @@ func (p Process) String() string { return fmt.Sprintf("pid %d (%s)", p.PID, p.Co
 
 // Find returns the processes of this user, other than this one, whose
 // environment holds name=value, such as OPSTRUSS_RUN=<run>. It reads the
-// environment each process started with, which a program passes on to
-// every program it starts, as the runner of GitHub Actions finds orphan
-// processes by RUNNER_TRACKING_ID. A program that clears its environment
-// or writes over it is not found, and neither is a system binary of macOS,
-// whose environment macOS does not show.
+// environment each process started with, which a program passes on to every
+// program it starts. A program that clears its environment or writes over
+// it is not found, and neither is a system binary of macOS, whose
+// environment macOS does not show.
 func Find(name, value string) ([]Process, error) {
 	err := failpoint.Fail("proc-list")
 	var ps []Process

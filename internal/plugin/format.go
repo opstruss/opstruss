@@ -18,9 +18,8 @@ var envName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 // Decode reads data in format: text as a string without its trailing
 // newlines, json and yaml as their values, lines as a list of one string
-// per line, and dotenv as an object of KEY=value lines, as .env files of
-// Compose and EnvironmentFile of systemd. Bytes that are not UTF-8 become
-// U+FFFD. Empty json is null.
+// per line, and dotenv as an object of KEY=value lines. Bytes that are not
+// UTF-8 become U+FFFD. Empty json is null.
 func Decode(data []byte, format string) (any, error) {
 	text := strings.ToValidUTF8(string(data), "\uFFFD")
 	switch format {

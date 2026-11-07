@@ -153,9 +153,8 @@ func (e *engine) previewAll(ctx context.Context) {
 	}
 }
 
-// sayPlan writes the plan line of inst, with its plan as units.<n>.plan
-// has it, for readers of --json, as terraform plan -json writes each
-// planned change.
+// sayPlan writes the plan line of inst, with its plan as units.<n>.plan has
+// it, for readers of --json.
 func (e *engine) sayPlan(inst *instance) {
 	e.emit(Event{Type: "plan", Level: "info", Address: inst.address, Task: "plan", Message: inst.plan.summary(),
 		Status: record.Finished, Outcome: inst.plan.outcome(), Plan: inst.plan.view(inst.plan.exact())})
@@ -264,8 +263,8 @@ func (e *engine) preview(ctx context.Context, inst *instance) {
 	}
 	inst.plan = e.decide(ctx, inst, r, rec, nil)
 	inst.plan.auto = e.approvalOf(inst.def) == "auto"
-	// A pattern that matches nothing never runs the unit again, as Bazel
-	// refuses an empty glob; it may also name what a unit before it makes.
+	// A pattern that matches nothing never runs the unit again; it may also
+	// name what a unit before it makes, so it is a warning.
 	for _, pattern := range inst.plan.emptySources {
 		rel, _ := filepath.Rel(e.p.Dir, inst.dir)
 		e.warn(inst.address, "sources: %s matches no file in %s", pattern, filepath.ToSlash(rel)+"/")
@@ -773,8 +772,7 @@ func (e *engine) turn(ctx context.Context, inst *instance, leave func()) {
 			attempt.Hidden = withHidden(attempt.Hidden, prev.Hidden, state.PartOutputs)
 		} else {
 			// An attempt with another destroy contract may have made something
-			// elsewhere; it is kept to be destroyed after this one succeeds,
-			// as Terraform keeps a deposed object.
+			// elsewhere; it is kept to be destroyed after this one succeeds.
 			next.Abandoned = append(next.Abandoned, prev)
 		}
 	}

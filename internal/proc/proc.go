@@ -66,12 +66,11 @@ func Start(cmd *exec.Cmd) (Group, error) {
 	return Group(cmd.Process.Pid), nil
 }
 
-// Wait waits for the program that cmd started as the leader of g, as
-// Start starts it, and then stops what it left in g, so nothing of it runs
-// once Wait returns, as systemd stops the control group of a unit. When
-// ctx ends first, the group is stopped with sig, and killed after grace or
-// once the kill channel of ctx closes. Stopped says that ctx ended the
-// program; warnings say what else had to be stopped.
+// Wait waits for the program that cmd started as the leader of g, as Start
+// starts it, and then stops what it left in g, so nothing of it runs once
+// Wait returns. When ctx ends first, the group is stopped with sig, and
+// killed after grace or once the kill channel of ctx closes. Stopped says
+// that ctx ended the program; warnings say what else had to be stopped.
 func Wait(ctx context.Context, cmd *exec.Cmd, g Group, sig syscall.Signal, grace time.Duration) (stopped bool, warnings []string) {
 	exited := make(chan struct{})
 	go func() {

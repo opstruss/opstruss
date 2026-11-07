@@ -68,10 +68,9 @@ func (e *engine) openKey() ([]byte, error) {
 		} else if err != nil {
 			return nil, err
 		}
-		// Only the record and OPSTRUSS_LOG=debug say so, as Pulumi makes the
-		// encryptedkey of a stack without a word: nothing is asked of the
-		// operator, unlike a new age key of this machine, which is said with
-		// its backup.
+		// Only the record and OPSTRUSS_LOG=debug say so: nothing is asked of
+		// the operator, unlike a new age key of this machine, which is said
+		// with its backup.
 		e.emit(Event{Type: "diagnostic", Level: "debug", Message: fmt.Sprintf("made the data key of stack %s in %s, %s",
 			e.p.StackName, state.MetaKey(e.p.StackName), wrappedFor(m.Key))})
 		return key, nil

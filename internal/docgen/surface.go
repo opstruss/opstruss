@@ -21,7 +21,7 @@ import (
 // the repository: in a directory of its own, since testscript reads every
 // .txt file in testdata/compat as a script. A release freezes a copy of it
 // beside it as <major>.<minor>.txt, and TestSurface fails when a line of a
-// frozen copy is gone, as the api/go1.*.txt files of Go do.
+// frozen copy is gone.
 const surfaceFile = "testdata/compat/surface/main.txt"
 
 // contracts are the schemas of the files and the data that a release

@@ -313,8 +313,8 @@ func (a *app) stateRm() *cobra.Command {
 }
 
 // rmKV removes the key name of kv under the lock of kv, while it still has
-// the etag of the pull, as consul kv delete -cas does, so a claim that a
-// run left is released without losing one written since.
+// the etag of the pull, so a claim that a run left is released without
+// losing one written since.
 func (a *app) rmKV(s *state.Store, name, ifMatch string, force bool) (err error) {
 	if ifMatch == "" && !force {
 		return errors.New("removing a key of kv needs --if-match <etag> from state pull, or --force, so a value written since is not lost")

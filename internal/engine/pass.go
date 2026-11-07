@@ -185,14 +185,13 @@ func (e *engine) approves(ctx context.Context, q Question, digest string, place 
 const afterUpstream = "after upstream"
 
 // askFirst asks at the terminal once about the changes of the pass whose
-// plan is known, in the order of the plan, before anything moves or runs,
-// as terraform apply asks before it applies: an interrupt or a no then
-// leaves everything as it was, also the units with approval: auto. The
-// answer holds for the plans it saw. A unit with no program that plans it
-// is in the question also when it waits for the outputs of another, as
-// (known after apply) in Terraform, and the answer holds at its turn; a
-// unit whose plan changes by its turn, or whose plugin plans it once
-// those outputs are there, asks at its turn.
+// plan is known, in the order of the plan, before anything moves or runs:
+// an interrupt or a no then leaves everything as it was, also the units
+// with approval: auto. The answer holds for the plans it saw. A unit with
+// no program that plans it is in the question also when it waits for the
+// outputs of another, and the answer holds at its turn; a unit whose plan
+// changes by its turn, or whose plugin plans it once those outputs are
+// there, asks at its turn.
 func (e *engine) askFirst(ctx context.Context, insts []*instance, leftovers []*leftover) {
 	if e.opts.Approve == nil || e.pass.yes {
 		return

@@ -22,7 +22,7 @@ import (
 
 // unitCommands are the commands that change units: plan, up, and destroy.
 // They have no aliases: the names that users of other tools reach for are
-// only suggested, as git suggests a command for a typo.
+// only suggested.
 func (a *app) unitCommands() []*cobra.Command {
 	type flags struct{ yes, force, noDeps bool }
 	command := func(use, short, force string, suggestFor ...string) *cobra.Command {
@@ -43,8 +43,7 @@ func (a *app) unitCommands() []*cobra.Command {
 				if err != nil {
 					return err
 				}
-				// Without a terminal nothing could answer, so say what would,
-				// as pulumi up does without --yes.
+				// Without a terminal nothing could answer, so say what would.
 				if res.ExitCode == 2 && !req.Yes && !a.answers() {
 					fmt.Fprintf(a.stderr, "changes need approval: run %s at a terminal, or with --yes\n", use)
 				}
@@ -161,7 +160,7 @@ func (a *app) handlers() api.Handlers {
 func (a *app) answers() bool { return a.terminal && a.stdin != nil }
 
 // approve asks at the terminal whether to apply one change; only y or yes
-// approves it, as the prompt of terraform apply wants yes.
+// approves it.
 func (a *app) approve(ctx context.Context, q engine.Question) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		// An interrupted run asks nothing more.
@@ -180,9 +179,9 @@ func (a *app) approve(ctx context.Context, q engine.Question) (bool, error) {
 	if len(items) == 0 {
 		items = []engine.Question{q}
 	}
-	// One answer approves every item, as terraform apply asks once: the
-	// question names what yes does to each, in the order of the plan, and
-	// the instances of one unit by their count, as the plan does.
+	// One answer approves every item: the question names what yes does to
+	// each, in the order of the plan, and the instances of one unit by their
+	// count, as the plan does.
 	type ask struct {
 		verb, who, unit string
 		n               int
@@ -247,8 +246,8 @@ func (a *app) approve(ctx context.Context, q engine.Question) (bool, error) {
 	return false, nil
 }
 
-// askVerb names what yes does to the change of q, as terraform destroy
-// asks about destroying; a daemon older than op asks to apply.
+// askVerb names what yes does to the change of q; a daemon older than op
+// asks to apply.
 func askVerb(q engine.Question) string {
 	switch {
 	case q.Op == "destroy" && strings.HasPrefix(q.Summary, "will be forgotten"):
@@ -286,9 +285,9 @@ func (a *app) ask(ctx context.Context, name string, in *model.Input) (string, er
 // maxHeld bounds the output that a question holds back.
 const maxHeld = 1 << 20
 
-// question writes text, which asks something at the terminal, and holds
-// the output of the run back until the answer, so the question stays the
-// last line there, as terraform apply asks with nothing else on screen.
+// question writes text, which asks something at the terminal, and holds the
+// output of the run back until the answer, so the question stays the last
+// line there.
 func (a *app) question(text string) {
 	a.renderMu.Lock()
 	defer a.renderMu.Unlock()
@@ -562,8 +561,8 @@ func (a *app) endOutput() {
 
 // interrupts is how a command that runs stops on SIGINT and SIGTERM: the
 // first cancels ctx with engine.Interrupted, so each program gets its stop
-// signal and stop.grace and the run ends cancelled, and a second kills
-// them at once, as Terraform stops on two interrupts.
+// signal and stop.grace and the run ends cancelled, and a second kills them
+// at once.
 type interrupts struct {
 	ctx  context.Context
 	stop func()

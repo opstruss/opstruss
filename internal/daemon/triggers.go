@@ -38,10 +38,9 @@ type Schedule struct {
 
 // triggers are the triggers that the daemon installed. Each install reads
 // the project into a snapshot, with the inputs and environment of whoever
-// installed it, and reconciles the sources with it, as compose up keeps the
-// containers whose config stays: a source whose definition stays lives on,
-// with its timer, baseline, or program, and takes the new snapshot for the
-// events that come after it.
+// installed it, and reconciles the sources with it: a source whose
+// definition stays lives on, with its timer, baseline, or program, and
+// takes the new snapshot for the events that come after it.
 type triggers struct {
 	d     *Daemon
 	hooks *webhooks
@@ -417,9 +416,8 @@ func (t *triggers) active() bool {
 
 // schedule makes a run at each time that the cron of tr names. The daemon
 // looks at the clock at least once a minute, since the clock that timers
-// count stops while the machine sleeps; a time that comes later than
-// grace was missed, and only a persistent schedule runs once for what it
-// missed, as Persistent=true of a systemd timer does.
+// count stops while the machine sleeps; a time that comes later than grace
+// was missed, and only a persistent schedule runs once for what it missed.
 func (t *triggers) schedule(ctx context.Context, s *source) {
 	tr := s.cur.Load().tr
 	c, err := parseCron(tr.Cron, tr.Timezone)
@@ -487,8 +485,7 @@ func (t *triggers) every(ctx context.Context, s *source) {
 
 // fire makes a run of the trigger of s for the time at, with the snapshot
 // that s has, unless the run it made last still runs or waits, which takes
-// this time too, as a systemd timer does not start a service that is
-// active, or unless its task has MaxPending runs unfinished.
+// this time too, or unless its task has MaxPending runs unfinished.
 func (t *triggers) fire(s *source, at time.Time) {
 	b := s.cur.Load()
 	tr := b.tr

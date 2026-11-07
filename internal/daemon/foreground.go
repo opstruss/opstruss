@@ -13,11 +13,10 @@ import (
 	"github.com/opstruss/opstruss/internal/record"
 )
 
-// Foreground is the supervisor of a run in the process of the command
-// line, while no daemon of its stack runs: the first service that starts
-// makes this process the daemon of the stack, which stays in the
-// foreground while its services run, as docker compose up does, and the
-// runs of other command lines go to it meanwhile.
+// Foreground is the supervisor of a run in the process of the command line,
+// while no daemon of its stack runs: the first service that starts makes
+// this process the daemon of the stack, which stays in the foreground while
+// its services run, and the runs of other command lines go to it meanwhile.
 type Foreground struct {
 	Locked bool
 

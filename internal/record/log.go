@@ -19,7 +19,7 @@ import (
 )
 
 // MaxLog is the size at which a log turns over, and LogFiles how many files
-// of it are kept, as the json-file driver of Docker keeps them.
+// of it are kept.
 const (
 	MaxLog   = 10 << 20
 	LogFiles = 3

@@ -10,7 +10,7 @@ import (
 )
 
 // MaxPolled is how many files one watch of paths looks at on macOS, where
-// it reads the stat of each every second, as watchexec --poll does.
+// it reads the stat of each every second.
 const MaxPolled = 50000
 
 type stamp struct {

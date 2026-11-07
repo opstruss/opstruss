@@ -101,12 +101,12 @@ func (l leftover) String() string {
 }
 
 // survey finds what is left of p: the processes that carry its id with
-// their groups, and its group while its leader is the one recorded, by
-// pid and start time. A group whose leader is gone but which still has
-// members in its session cannot be proven its own: nginx, for one, writes
-// over its environment for the titles of its workers. The number of a
-// group never moves to another session, so members in another one prove
-// that the number was used again.
+// their groups, and its group while its leader is the one recorded, by pid
+// and start time. A group whose leader is gone but which still has members
+// in its session cannot be proven its own: a server that sets the titles of
+// its workers, for one, writes over its environment. The number of a group
+// never moves to another session, so members in another one prove that the
+// number was used again.
 func survey(root string, p *Process) (leftover, error) {
 	var l leftover
 	carriers, held, err := proc.Marker{Name: ServiceID, Value: p.ID, Lock: filepath.Join(root, filepath.FromSlash(p.Lock))}.Alive()

@@ -12,11 +12,10 @@ import (
 )
 
 // planTable gathers the plan lines of the units at a terminal until the
-// plan is done, then prints them as one table, as pulumi preview does:
-// the units in a column, their changes first, then those left out, those
-// only warned of, and those that cannot be planned, each hint on a line of
-// its own, and a line that counts them. The status of the units prints the
-// same way, as docker compose ps lists services.
+// plan is done, then prints them as one table: the units in a column, their
+// changes first, then those left out, those only warned of, and those that
+// cannot be planned, each hint on a line of its own, and a line that counts
+// them. The status of the units prints the same way.
 type planTable struct {
 	title  string // Plan or Status
 	rows   []*planRow
@@ -262,8 +261,8 @@ func (t *planTable) print(color bool) string {
 			kinds = append(kinds, struct{ kind, code string }{row.kind, row.code})
 		}
 		counts[row.kind]++
-		// The summary counts what does not change, as pulumi preview
-		// leaves the same resources out.
+		// The summary counts what does not change; the table shows it only
+		// with a warning.
 		if row.kind != "unchanged" || len(row.warns) > 0 {
 			shown = append(shown, row)
 		}
@@ -347,10 +346,10 @@ func keepsTable(ev engine.Event) bool {
 	return (ev.Type == "task" || ev.Type == "step") && ev.Address != ""
 }
 
-// planMark is the mark of a plan line, as terraform plan marks changes: +
-// for what is made or runs, ~ for what changes, ± for what is replaced, -
-// for what goes, ? for what may run once the units before it ran, = for
-// nothing, ○ for a unit left out, and ✗ for one that cannot be planned.
+// planMark is the mark of a plan line: + for what is made or runs, ~ for
+// what changes, ± for what is replaced, - for what goes, ? for what may run
+// once the units before it ran, = for nothing, ○ for a unit left out, and ✗
+// for one that cannot be planned.
 func planMark(ev engine.Event) (string, string) {
 	switch ev.Outcome {
 	case "failure":

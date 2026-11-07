@@ -17,15 +17,14 @@ import (
 	"github.com/opstruss/opstruss/internal/secret"
 )
 
-// renderer turns the events of one command into what it prints. With
-// --json it prints each event on a line. At a terminal, each unit
-// operation, task, and step that runs is a block, as the log of GitHub
-// Actions shows a step: a line that starts it, the lines of its programs
-// under a gutter, in their own colors, and a line with how it ended and
-// the time it took; while other sources print too, each line of a program
-// is led by its source, as docker compose up does. Otherwise each event is
-// a line led by its source, which in GitHub Actions also groups the lines
-// of each source. None of it is a contract, unlike --json.
+// renderer turns the events of one command into what it prints. With --json
+// it prints each event on a line. At a terminal, each unit operation, task,
+// and step that runs is a block: a line that starts it, the lines of its
+// programs under a gutter, in their own colors, and a line with how it
+// ended and the time it took; while other sources print too, each line of a
+// program is led by its source. Otherwise each event is a line led by its
+// source, which in GitHub Actions also groups the lines of each source.
+// None of it is a contract, unlike --json.
 type renderer struct {
 	out, err           io.Writer
 	json, terminal     bool
@@ -347,9 +346,8 @@ const (
 	yellow = "33"
 )
 
-// palette colors the labels of sources, one after another, as docker
-// compose colors its services; green, yellow, and red say how something
-// went, so no label has them.
+// palette colors the labels of sources, one after another; green, yellow,
+// and red say how something went, so no label has them.
 var palette = []string{"36", "35", "34", "96", "95", "94"}
 
 // paint wraps s in an SGR code when color is on.
@@ -463,8 +461,7 @@ func (r *renderer) blockEvent(ev engine.Event) []piece {
 	}
 	if r.table != nil && ev.Address == "" && ev.Status == "" && ev.Type != "approval" {
 		// A note of the run while the plan is gathered, as that this machine
-		// got an age key, comes under the plan table, as terraform plan
-		// prints its warnings after the plan, rather than between the
+		// got an age key, comes under the plan table rather than between the
 		// blocks of the plans of plugins.
 		r.table.after = append(r.table.after, piece{w, msg + "\n"})
 		return nil
@@ -533,7 +530,7 @@ func (r *renderer) program(ev engine.Event, key string, w io.Writer, color bool)
 		return append(out, r.blockLine(k, w, under(w, gutter+" ", gutter+" ", msg), color)...)
 	}
 	// A line outside any block, as of a service: led by its source while
-	// others print too, as docker compose up does.
+	// others print too.
 	if !r.printed[key] && blank {
 		return nil
 	}
@@ -671,9 +668,9 @@ func (r *renderer) closeBlock(k string, color bool, last piece) []piece {
 }
 
 // live takes the rows that a program with a terminal of its own may still
-// change, which the area at the bottom of the terminal shows, as docker
-// compose draws its progress there; while the block of the program holds
-// its lines, its rows show there too. No rows take them away.
+// change, which the area at the bottom of the terminal shows; while the
+// block of the program holds its lines, its rows show there too. No rows
+// take them away.
 func (r *renderer) live(s engine.Rows) {
 	ev := engine.Event{Address: s.Address, Task: s.Task, Step: s.Step}
 	src := source(ev)
@@ -742,11 +739,10 @@ func (r *renderer) promote(color bool) []piece {
 	return r.release(next, color)
 }
 
-// tag sets the label that leads the lines of a source while others
-// print, as docker compose names its services: the unit alone for an
-// operation of a unit, which every line of it is; the label otherwise. The
-// column of these labels is as wide as the widest of the sources that
-// started, so the lines of one burst line up.
+// tag sets the label that leads the lines of a source while others print:
+// the unit alone for an operation of a unit, which every line of it is; the
+// label otherwise. The column of these labels is as wide as the widest of
+// the sources that started, so the lines of one burst line up.
 func (r *renderer) tag(ev engine.Event, key string) {
 	l := r.labels[key]
 	if ev.Address != "" && ev.Step == "" && (ev.Task == "" || ev.Task == "plan" || ev.Task == "up" || ev.Task == "destroy") {
@@ -784,9 +780,8 @@ func (r *renderer) count(ev engine.Event) {
 	}
 }
 
-// summary is the line that counts how the operations of units ended, at
-// the end of a run that has any, as terraform apply ends with Apply
-// complete!
+// summary is the line that counts how the operations of units ended, at the
+// end of a run that has any.
 func (r *renderer) summary(color bool) string {
 	stack := ""
 	for k := range r.ended["\x00stack"] {

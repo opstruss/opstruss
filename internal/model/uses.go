@@ -638,8 +638,7 @@ func (c *checker) with(path, missing []string, t *Target, with map[string]any) {
 		case holdsExpr(with[k]):
 			// Only a run knows the value; it checks it then.
 		default:
-			// A value as written is checked as a run checks it, as
-			// terraform validate checks a variable given a constant.
+			// A value as written is checked as a run checks it.
 			if _, err := inputs[k].Conform(with[k]); err != nil {
 				c.add(at(path, k), "%v", err)
 			} else if t.Kind == TargetBuiltin && t.Task == "kv" && k == "key" && text {

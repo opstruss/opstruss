@@ -925,8 +925,8 @@ func (tc *taskCtx) stepGroup(ctx context.Context, s *model.Step, label string, d
 	case res.outcome == failure:
 		msg = "failed"
 	case res.outcome == success && res.part == failure:
-		// rescue: handled what failed in block:, as Ansible counts it
-		// rescued; steps.<id>.outcome still says failure.
+		// rescue: handled what failed in block:, so it counts as rescued;
+		// steps.<id>.outcome still says failure.
 		msg = "rescued"
 	}
 	tc.e.endTask(tc.c.address(), tc.label, label, res.outcome, "%s", msg)
@@ -1288,8 +1288,8 @@ func conform(decl map[string]*model.Input, given, written map[string]any, s *exp
 }
 
 // flagHint is err of a call of the command line that left out a required
-// input, with how the command line gives it, as gh and kubectl name the
-// flag that is missing; a sensitive input takes no flag.
+// input, with how the command line gives it; a sensitive input takes no
+// flag.
 func flagHint(decl map[string]*model.Input, given map[string]any, err error) error {
 	for _, k := range slices.Sorted(maps.Keys(decl)) {
 		in := decl[k]

@@ -7,10 +7,10 @@ import (
 	"unicode/utf8"
 )
 
-// shapes are the forms of well-known credentials, each with a prefix of
-// its own and a length and alphabet of its own, which a run hides in what
-// it writes out although it does not know them, as GitHub secret scanning
-// and gitleaks find them. The list may grow; it is no contract.
+// shapes are the forms of well-known credentials, each with a prefix of its
+// own and a length and alphabet of its own, which a run hides in what it
+// writes out although it does not know them. The list may grow; it is no
+// contract.
 var shapes = regexp.MustCompile(`\b(?:` +
 	`gh[pousr]_[0-9A-Za-z]{36,251}|github_pat_[0-9A-Za-z_]{82,244}|` + // GitHub
 	`glpat-[0-9A-Za-z_-]{20,249}|` + // GitLab
@@ -34,8 +34,8 @@ var (
 const maxShape = 256
 
 // hiddenNames are the names of the variables whose values pass: lets
-// through to a program a run hides as it hides a secret, as Buildkite's
-// redacted vars do; a name matches whatever its case.
+// through to a program a run hides as it hides a secret; a name matches
+// whatever its case.
 var hiddenNames = []string{"*_TOKEN", "*_SECRET", "*_PASSWORD", "*_ACCESS_KEY", "*_SECRET_KEY"}
 
 // HiddenName reports whether the value of the variable name, which pass:

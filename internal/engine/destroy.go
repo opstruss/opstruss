@@ -66,8 +66,7 @@ func noDestroy(rec *state.Record) bool {
 }
 
 // view is the plan of a leftover of up, as task: plan gives it: exact,
-// since nothing is left to learn, with one change, delete or, as
-// Terraform calls a removed block without destroy, forget.
+// since nothing is left to learn, with one change, delete or forget.
 func (l *leftover) view() map[string]any {
 	action := "delete"
 	if l.forget {
@@ -141,9 +140,8 @@ func (e *engine) destroyPass(ctx context.Context) ([]*leftover, error) {
 		e.say("run", "", "stack %s has no units to destroy", e.p.StackName)
 	}
 	e.keepPlan(records, items)
-	// As Terraform and Pulumi refuse a destroy that reaches a protected
-	// resource, nothing is destroyed while one of the units is protected,
-	// rather than the units that depend on it going first.
+	// Nothing is destroyed while one of the units is protected, rather than
+	// the units that depend on it going first.
 	protected := false
 	for _, l := range items {
 		if l.def != nil && l.def.Protect {

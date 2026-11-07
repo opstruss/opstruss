@@ -25,8 +25,8 @@ import (
 // names it; the name never changes.
 const SudoCommand = "__sudo"
 
-// SudoExit is the exit code of opstruss __sudo when it cannot take a
-// program, as GNU env exits 125 for a failure of its own.
+// SudoExit is the exit code of opstruss __sudo for a failure of its own,
+// when it cannot take a program.
 const SudoExit = 125
 
 // Spec is a program that opstruss __sudo starts as root: what it runs,

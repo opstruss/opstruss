@@ -59,9 +59,9 @@ type Call struct {
 
 	Outputs map[string]*model.Output // a stream that an output reads stays out of the log
 	// TTY gives the program a terminal of that size for its stdout and
-	// stderr, which Stdout gets as one stream, as docker run -t does; the
-	// caller sets it only for a program that a run shows on a terminal and
-	// whose streams no output reads.
+	// stderr, which Stdout gets as one stream; the caller sets it only for a
+	// program that a run shows on a terminal and whose streams no output
+	// reads.
 	TTY    *TTY
 	Stdout io.Writer // live log of the streams that no output reads
 	Stderr io.Writer
@@ -95,9 +95,9 @@ type Result struct {
 	Stopped   error // the cause of the context that stopped the program before it ended, whatever it exited with
 }
 
-// shells run a script by the name of shell:. sh and bash stop at the
-// first command that fails, as GitHub Actions runs them; python, node, and
-// pwsh run it as written, as a shell: list does.
+// shells run a script by the name of shell:. sh and bash stop at the first
+// command that fails; python, node, and pwsh run it as written, as a shell:
+// list does.
 var shells = map[string][]string{
 	"":       {"sh", "-e", "-c"},
 	"sh":     {"sh", "-e", "-c"},

@@ -192,8 +192,7 @@ var eventCommands = []string{"plan", "up", "destroy", "status", "logs", "rerun"}
 
 // jsonError prints, with --json, what failed before cmd printed anything:
 // for a command that prints events, a diagnostic event for each problem of
-// the files and a last run event with its exit code, as terraform plan
-// -json prints the diagnostics of its configuration; for the others, a
+// the files and a last run event with its exit code; for the others, a
 // document with the error. stderr still has the text.
 func (a *app) jsonError(cmd *cobra.Command, err error) {
 	events := cmd != nil && (slices.Contains(eventCommands, cmd.Name()) || cmd.GroupID == groupTasks ||
@@ -225,8 +224,8 @@ func (a *app) jsonError(cmd *cobra.Command, err error) {
 }
 
 // takeShort removes from args the short flags that are OpsTruss's on every
-// command line, since inputs make only long flags: -C <dir>, like git -C,
-// each one after the first relative to the one before, -d, and -f.
+// command line, since inputs make only long flags: -C <dir>, each one after
+// the first relative to the one before, -d, and -f.
 func (a *app) takeShort(args []string) ([]string, error) {
 	var out []string
 	for i := 0; i < len(args); i++ {
@@ -285,9 +284,8 @@ func joinDir(base, dir string) string {
 	return filepath.Join(base, dir)
 }
 
-// unknownCommand is the error of a name that is no command of cmd, with
-// the suggestions that git and kubectl give, which cobra.NoArgs would leave
-// out.
+// unknownCommand is the error of a name that is no command of cmd, with the
+// suggestions that cobra.NoArgs would leave out.
 func unknownCommand(cmd *cobra.Command, args []string) error {
 	if len(args) == 0 {
 		return nil
@@ -342,10 +340,8 @@ func (a *app) root() *cobra.Command {
 	root.SetUsageTemplate(usageTemplate(root.UsageTemplate()))
 	root.Version = version()
 	root.SetVersionTemplate(`opstruss {{.Version}} ` + runtime.GOOS + "/" + runtime.GOARCH + "\n")
-	// Help shows the commands that a project starts with first, as
-	// terraform -help shows its main commands, and the commands of
-	// OpsTruss apart from the tasks of the project, as npm run and just
-	// --list show scripts on their own.
+	// Help shows the commands that a project starts with first, and the
+	// commands of OpsTruss apart from the tasks of the project.
 	root.AddGroup(&cobra.Group{ID: groupMain, Title: "Main commands:"},
 		&cobra.Group{ID: groupInspect, Title: "Inspect:"},
 		&cobra.Group{ID: groupCommands, Title: "Other commands:"})
@@ -394,7 +390,7 @@ func init() {
 
 // usageTemplate is cobra's usage template with the flags of each section
 // printed by flagUsages, and each help ending with its page in the
-// documentation of this version, as gh ends each help with its manual.
+// documentation of this version.
 func usageTemplate(t string) string {
 	t = strings.Replace(t, "{{.LocalFlags.FlagUsages", "{{flagUsages . .LocalFlags true", 1)
 	t = strings.Replace(t, "{{.InheritedFlags.FlagUsages", "{{flagUsages . .InheritedFlags false", 1)

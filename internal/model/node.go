@@ -144,13 +144,12 @@ func (p *Project) Leaves(path string) []string {
 	return out
 }
 
-// graph builds the graph of the units that run, through the components
-// that units use, as Terraform does through modules: a unit depends on the
-// units its expressions read and those it needs; reading an output of a
-// component depends on what that output reads, and an input of a component
-// on what the unit that uses it gives there. What a unit that uses a
-// component needs, and what its env, if, and for_each read, reach every
-// unit inside.
+// graph builds the graph of the units that run, through the components that
+// units use: a unit depends on the units its expressions read and those it
+// needs; reading an output of a component depends on what that output
+// reads, and an input of a component on what the unit that uses it gives
+// there. What a unit that uses a component needs, and what its env, if, and
+// for_each read, reach every unit inside.
 func (c *checker) graph() {
 	p := c.p
 	p.Nodes = map[string]*Node{}
