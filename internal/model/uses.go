@@ -407,7 +407,7 @@ func (c *checker) alias(name string, decl *Uses) (*Package, error) {
 	if len(env) == 0 {
 		env = nil
 	}
-	d := &Uses{Source: decl.Source, With: decl.With, Env: env, Pass: slices.Concat(fromDecl.Pass, decl.Pass)}
+	d := &Uses{Source: decl.Source, With: decl.With, Env: env, Pass: slices.Concat(fromDecl.Pass, decl.Pass), Sudo: fromDecl.Sudo || decl.Sudo}
 	return c.inner(parent, dir, name, d)
 }
 

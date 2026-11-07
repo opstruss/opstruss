@@ -163,6 +163,7 @@ type engine struct {
 	holder   state.Holder
 	started  time.Time
 	run      *plugin.Run
+	sudo     sudoSession
 	parallel int
 	sel      *selection
 	pass     pass
@@ -435,6 +436,7 @@ func (e *engine) debug(addr, format string, args ...any) {
 // as written gives them.
 func (e *engine) close(outcome string, outputs, marks map[string]any) {
 	if e.run != nil {
+		e.endSudo()
 		if err := e.run.Close(); err != nil {
 			e.warn("", "removing the run's temporary files: %v", err)
 		}

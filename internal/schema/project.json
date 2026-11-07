@@ -420,6 +420,10 @@
               "pass": {
                 "$ref": "#/$defs/pass",
                 "description": "Variables of the environment that its programs get when it asks for them, by name or pattern; not * alone, since the units that use it keep their values in their digest."
+              },
+              "sudo": {
+                "description": "Allows its tasks, and the units and tasks of a component from git, that ask for sudo to run their programs as root, in every use of it, as sudo: true on each unit or step that uses it does.",
+                "type": "boolean"
               }
             },
             "required": ["source"],
@@ -661,6 +665,10 @@
           "description": "Gives each program of the unit a terminal of its own while the run shows on one, over the tty of what the unit uses, for tools that draw color and progress there, such as docker compose; its stderr then comes with its stdout. In CI, in the daemon, with --json, or when an output reads its stream, it gets pipes. Not for a service, which runs in the daemon.",
           "type": "boolean"
         },
+        "sudo": {
+          "description": "Runs the program of the unit, and of its destroy, as root through sudo. On a unit that uses a plugin, a task, or a component, it allows what they ask for: the tasks of a plugin that write sudo: true, and the units and tasks of a component from git that write it, also through the components it uses; the rest runs as the operator. OpsTruss asks for the password of sudo once a run, when the first such program starts, unless sudo needs none; a run without a terminal fails then. Not for a service, which runs in the daemon.",
+          "type": "boolean"
+        },
         "sources": {
           "$ref": "#/$defs/paths",
           "description": "Files whose content is part of the definition, so a change to one runs the unit again."
@@ -790,6 +798,10 @@
         },
         "tty": {
           "description": "Gives the program a terminal of its own while the run shows on one, also each step's program, for tools that draw color and progress there, such as docker compose; its stderr then comes with its stdout. In CI, in the daemon, with --json, or when an output reads its stream, it gets pipes.",
+          "type": "boolean"
+        },
+        "sudo": {
+          "description": "Runs the program of the task as root through sudo, also each step's program, unless the step writes sudo: false. In a plugin or a component from git, the task asks for it, and its programs run as root only when the unit or step that uses it, or the declaration in uses:, writes sudo: true.",
           "type": "boolean"
         },
         "requires": {
@@ -934,6 +946,10 @@
         },
         "tty": {
           "description": "Gives the program of the step, or of the task it calls by name, a terminal of its own while the run shows on one, for tools that draw color and progress there, such as docker compose; in a block, also each step's program. Its stderr then comes with its stdout. In CI, in the daemon, with --json, or when an output reads its stream, it gets pipes.",
+          "type": "boolean"
+        },
+        "sudo": {
+          "description": "Runs the program of the step, or of the command it calls, as root through sudo; in a block, also each step's program; false runs it as the operator, over the sudo of the task or block around it. On a step that calls a task of a plugin, it allows that task to run as root when it asks. Not for a task: step, whose task keeps its own sudo, or a call of a built-in task other than command.",
           "type": "boolean"
         },
         "timeout": { "$ref": "#/$defs/duration", "description": "How long the step may run." },

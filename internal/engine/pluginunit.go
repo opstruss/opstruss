@@ -28,6 +28,7 @@ type pluginUnit struct {
 	inputs map[string]any // the plugin's inputs, from the declaration's with: and the unit's
 	plan   *model.Command // nil when the plugin has no plan
 	tty    bool           // of the plan
+	sudo   bool           // the plan runs as root
 	stop   plugin.Stop    // of the plan
 	hash   string         // of what the plugin's directory holds, as h1: is
 	tool   string         // tool/, where a plugin with state: tool keeps the tool's state
@@ -101,6 +102,9 @@ func (e *engine) resolvePlugin(inst *instance, r *resolved, s *expr.Scope) error
 	// The tty of the unit wins over that of each task, and each key of its
 	// stop over that of the task.
 	r.tty = isTrue(ttyOf(u.TTY, up.TTY))
+	// A task of the plugin runs as root when it asks and the unit allows.
+	sudo := inst.node.SudoAllowed()
+	r.sudo = up.Sudo && sudo
 	if r.stop, err = plugin.StopOf(u.Stop.Over(up.Stop)); err != nil {
 		return err
 	}
@@ -110,13 +114,14 @@ func (e *engine) resolvePlugin(inst *instance, r *resolved, s *expr.Scope) error
 			return fmt.Errorf("destroy: %w", err)
 		}
 		r.destroy, r.ttyDown, r.stopDown = &cmd, isTrue(ttyOf(u.TTY, d.TTY)), u.Stop.Over(d.Stop)
+		r.sudoDown = d.Sudo && sudo
 	}
 	if p := pl.Tasks["plan"]; p != nil {
 		cmd, err := e.command(p.Run, ps)
 		if err != nil {
 			return fmt.Errorf("plan: %w", err)
 		}
-		pu.plan, pu.tty = &cmd, isTrue(ttyOf(u.TTY, p.TTY))
+		pu.plan, pu.tty, pu.sudo = &cmd, isTrue(ttyOf(u.TTY, p.TTY)), p.Sudo && sudo
 		if pu.stop, err = plugin.StopOf(u.Stop.Over(p.Stop)); err != nil {
 			return err
 		}
@@ -280,7 +285,8 @@ func (e *engine) statusPass(ctx context.Context, patterns []string) (map[string]
 				e.fail(inst.address, err)
 				continue
 			}
-			run := &pluginRun{name: t.Package.Name, dir: r.plugin.dir, requires: t.Package.Plugin.Requires, inputs: taskInputs(t.Package.Plugin, "status")}
+			run := &pluginRun{name: t.Package.Name, dir: r.plugin.dir, requires: t.Package.Plugin.Requires, inputs: taskInputs(t.Package.Plugin, "status"),
+				sudo: inst.node.SudoAllowed()}
 			ur := &unitRun{env: r.plugin.env, pass: slices.Sorted(maps.Keys(r.pass)), stateDir: r.plugin.tool}
 			if inst.record != nil {
 				ur.state = programState(inst.record)
@@ -391,11 +397,11 @@ func (e *engine) planPlugin(ctx context.Context, inst *instance, r *resolved, re
 	pl := r.plugin.target.Package.Plugin
 	c := &plugin.Call{Command: *r.plugin.plan, Shell: pl.Tasks["plan"].Shell, Base: inst.dir, Dir: r.dir,
 		Env: r.env, Pass: slices.Sorted(maps.Keys(r.pass)), Stop: r.plugin.stop, Task: "plan", Reason: "requested", Plan: true,
-		Unit: e.unitOf(inst, r, rec), Inputs: r.plugin.inputs, PluginDir: r.plugin.dir}
+		Unit: e.unitOf(inst, r, rec), Inputs: r.plugin.inputs, PluginDir: r.plugin.dir, Sudo: r.plugin.sudo}
 	ss := e.streams(c, r.plugin.tty, Event{Address: inst.address, Task: "plan"}, held)
 	defer ss.out.flush()
 	defer ss.err.flush()
-	res, err := e.run.Exec(ctx, c)
+	res, err := e.execCall(ctx, c, Event{Address: inst.address, Task: "plan"})
 	ss.end()
 	if err != nil {
 		return nil, err

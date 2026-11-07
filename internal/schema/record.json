@@ -90,6 +90,10 @@
           "description": "the program gets a terminal while the run shows on one",
           "type": "boolean"
         },
+        "sudo": {
+          "description": "the program runs as root through sudo",
+          "type": "boolean"
+        },
         "stop": {
           "type": "object",
           "properties": {

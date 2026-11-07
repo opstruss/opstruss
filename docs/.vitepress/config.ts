@@ -40,6 +40,7 @@ export default defineConfig({
           { text: 'Tasks and steps', link: '/guides/tasks' },
           { text: 'Services', link: '/guides/services' },
           { text: 'Secrets with sops', link: '/guides/secrets' },
+          { text: 'Run as root', link: '/guides/run-as-root' },
           { text: 'Triggers and the daemon', link: '/guides/triggers' },
           { text: 'CI with GitHub Actions', link: '/guides/ci' },
           { text: 'Writing a plugin', link: '/guides/writing-a-plugin' },

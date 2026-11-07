@@ -49,7 +49,7 @@ var Commands = []string{"init", "validate", "explain", "doctor", "list", "output
 var ansible = map[string]string{
 	"when": "if", "register": "id, then steps.<id>.outputs", "loop": "for_each", "with_items": "for_each",
 	"ignore_errors": "continue_on_error", "environment": "env", "until": "retry.until", "retries": "retry.attempts",
-	"delay": "retry.delay", "vars": "with", "args": "with", "become": "", "notify": "", "tags": "", "delegate_to": "",
+	"delay": "retry.delay", "vars": "with", "args": "with", "become": "sudo", "notify": "", "tags": "", "delegate_to": "",
 }
 
 var (
@@ -124,6 +124,7 @@ func (p *Project) check() Problems {
 		cats: map[string]*Catalog{}}
 	c.file()
 	c.graph()
+	c.sudo()
 	byPlace := func(a, b Problem) int {
 		return cmp.Or(cmp.Compare(a.File, b.File), cmp.Compare(a.Line, b.Line), cmp.Compare(a.Column, b.Column))
 	}
@@ -507,6 +508,7 @@ func (c *checker) units() {
 		} else if u.With != nil {
 			c.add(at(path, "with"), "with is for units that use a plugin, task, or component")
 		}
+		c.sudoUnit(path, u)
 		if len(u.Outputs) > 0 && u.Run == nil {
 			c.add(at(path, "outputs"), "outputs: is for run units; other units get their outputs from what they run")
 		}
@@ -809,6 +811,9 @@ func (c *checker) task(path []string, t *Task, project bool) {
 	if hasExpr(t.Run) {
 		c.add(at(path, "run"), "%s", scriptExpr(t.Run))
 	}
+	if t.Sudo {
+		c.sudoBuiltin(at(path, "sudo"), t.Calls)
+	}
 	c.environment(path, t.Env, t.Pass)
 	c.shellList(path, t.Shell)
 	c.stop(path, t.Stop)
@@ -1005,7 +1010,7 @@ func (c *checker) steps(path []string, steps []*Step, ids map[string]bool) {
 				}
 			}
 		} else {
-			for k, set := range map[string]bool{"env": len(s.Env) > 0, "pass": len(s.Pass) > 0, "shell": !s.Shell.IsZero(), "dir": s.Dir != "", "stdin": s.Stdin != nil, "tty": s.TTY != nil} {
+			for k, set := range map[string]bool{"env": len(s.Env) > 0, "pass": len(s.Pass) > 0, "shell": !s.Shell.IsZero(), "dir": s.Dir != "", "stdin": s.Stdin != nil, "tty": s.TTY != nil, "sudo": s.Sudo != nil} {
 				if set {
 					c.add(at(sp, k), "a task: step passes data through with:; the task keeps its own %s", k)
 				}
@@ -1013,6 +1018,9 @@ func (c *checker) steps(path []string, steps []*Step, ids map[string]bool) {
 		}
 		if len(s.Outputs) > 0 && s.Run == nil {
 			c.add(at(sp, "outputs"), "outputs: is for run steps")
+		}
+		if s.Sudo != nil {
+			c.sudoBuiltin(at(sp, "sudo"), s.Calls)
 		}
 		if len(s.Block) > 0 && (s.ForEach != nil || s.Retry != nil) {
 			c.add(sp, "a block has no for_each or retry")
@@ -1079,6 +1087,8 @@ func (c *checker) secrets() {
 			}
 			if t.Kind != TargetTask || t.Package.Plugin.Tasks[t.Task].Outputs["value"] == nil {
 				c.add(at(path, callee), "a secret comes from a task of a plugin with the output value, and %s is not one", callee)
+			} else if t.Package.Plugin.Tasks[t.Task].AsksSudo() {
+				c.add(at(path, callee), "%s runs with sudo, and a secret source runs as the operator", callee)
 			}
 		}
 	}

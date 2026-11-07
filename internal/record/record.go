@@ -61,6 +61,7 @@ type Event struct {
 	ExitCode *int           `json:"exit_code,omitempty"`
 	Outputs  map[string]any `json:"outputs,omitempty"`
 	Plan     map[string]any `json:"plan,omitempty"` // of a plan event: the plan of its unit, as units.<n>.plan has it
+	Sudo     bool           `json:"sudo,omitempty"` // of the event that a program which runs as root starts with
 }
 
 // Record is record.json: who ran what and when, and how it ended.

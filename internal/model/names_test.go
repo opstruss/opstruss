@@ -24,7 +24,7 @@ func TestNames(t *testing.T) {
 		{"keywords", slices.Sorted(maps.Keys(keywords)), []string{"always", "approval", "batch", "block", "changed_when",
 			"concurrency", "continue_on_error", "debounce", "description", "dir", "env", "failed_when", "field", "for_each",
 			"force", "id", "if", "inputs", "internal", "max_parallel", "name", "needs", "on", "outputs", "pass", "paths",
-			"requires", "rescue", "retry", "run", "shell", "sops", "stdin", "steps", "stop", "stream", "task", "timeout",
+			"requires", "rescue", "retry", "run", "shell", "sops", "stdin", "steps", "stop", "stream", "sudo", "task", "timeout",
 			"tty", "unit", "units", "with", "yes"}},
 	} {
 		if !slices.Equal(l.got, l.want) {

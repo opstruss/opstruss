@@ -1051,7 +1051,7 @@ func (e *engine) exec(ctx context.Context, inst *instance, r *resolved, rec *sta
 	}
 	c := &plugin.Call{Command: r.cmd, Shell: r.shell, Base: inst.dir, Dir: r.dir, Env: r.env,
 		Pass: slices.Sorted(maps.Keys(r.pass)), Stdin: r.stdin, Stop: r.stop, Task: "up", Reason: reason, Digest: digest,
-		Unit: e.unitOf(inst, r, rec), Outputs: inst.def.Outputs}
+		Unit: e.unitOf(inst, r, rec), Outputs: inst.def.Outputs, Sudo: r.sudo}
 	if r.plugin != nil {
 		outs := r.plugin.target.Package.Plugin.Outputs
 		c.Inputs, c.PluginDir, c.Outputs, c.AnyOutputs = r.plugin.inputs, r.plugin.dir, outs.Declared, outs.Tool
@@ -1059,7 +1059,7 @@ func (e *engine) exec(ctx context.Context, inst *instance, r *resolved, rec *sta
 	ss := e.streams(c, r.tty, Event{Address: inst.address, Task: "up"}, nil)
 	defer ss.out.flush()
 	defer ss.err.flush()
-	res, err := e.run.Exec(ctx, c)
+	res, err := e.execCall(ctx, c, Event{Address: inst.address, Task: "up"})
 	ss.end()
 	if err != nil {
 		return nil, err

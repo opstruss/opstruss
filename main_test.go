@@ -40,6 +40,7 @@ func TestMain(m *testing.M) {
 		"fakeapi":   func() { os.Exit(fakeapi(os.Args[1:])) },
 		"fakesops":  func() { os.Exit(fakesops(os.Args[1:])) },
 		"lines":     func() { os.Exit(lines(os.Args[1:])) },
+		"sudo":      func() { os.Exit(fakesudo(os.Args[1:])) },
 	})
 }
 

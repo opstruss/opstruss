@@ -1,0 +1,14 @@
+name: workstation
+units:
+  hosts:
+    # A line of /etc/hosts, which only root may change.
+    run: grep -q dev.local /etc/hosts || echo '127.0.0.1 dev.local' >> /etc/hosts
+    destroy: sed -i.bak '/dev\.local/d' /etc/hosts
+    sudo: true
+tasks:
+  whoami:
+    sudo: true
+    steps:
+      - run: id -un # root
+      - run: id -un # the operator
+        sudo: false

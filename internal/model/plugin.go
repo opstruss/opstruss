@@ -123,6 +123,9 @@ func (c *checker) pluginRules() {
 		if t.Approval == "auto" {
 			c.add(at(path, "approval"), "approval: auto is for the project to choose; a plugin cannot approve its own changes")
 		}
+		if slices.Contains(Hooks, name) && t.AsksSudo() {
+			c.add(at(path, "sudo"), "%s is a hook, which runs as the operator; sudo is for the tasks that a run runs", name)
+		}
 		if t.TTY != nil {
 			switch name {
 			case "watch":

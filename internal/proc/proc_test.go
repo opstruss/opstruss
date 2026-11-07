@@ -17,6 +17,9 @@ import (
 // TestMain makes the test binary a program for the tests to find, because
 // macOS does not show the environment of its own binaries, such as sleep.
 func TestMain(m *testing.M) {
+	if len(os.Args) == 2 && os.Args[1] == SudoCommand {
+		os.Exit(Serve(os.Stderr, os.Args[0]))
+	}
 	switch os.Getenv("PROC_HELPER") {
 	case "sleep":
 		d, _ := time.ParseDuration(os.Getenv("PROC_HELPER_FOR"))

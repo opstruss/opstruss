@@ -42,6 +42,9 @@ on one machine.
   events with `--json`.
 - `tty: true` gives a tool a terminal of its own while the run shows on
   one, so its color and progress show as they do in a terminal.
+- `sudo: true` runs a program as root through sudo, asking for the
+  password at most once a run; plugins and components from git ask for
+  it, and only the files of the project allow it.
 - Release builds for Linux and macOS on amd64 and arm64, with checksums,
   SBOMs, and build provenance; documentation at opstruss.github.io.
 

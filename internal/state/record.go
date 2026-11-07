@@ -86,7 +86,8 @@ type Destroy struct {
 	EnvFiles map[string]string `json:"env_files,omitempty"`
 	Pass     map[string]string `json:"pass,omitempty"`
 	Timeout  string            `json:"timeout,omitempty"`
-	TTY      bool              `json:"tty,omitempty"` // the program gets a terminal while the run shows on one
+	TTY      bool              `json:"tty,omitempty"`  // the program gets a terminal while the run shows on one
+	Sudo     bool              `json:"sudo,omitempty"` // the program runs as root through sudo
 	Stop     *DestroyStop      `json:"stop,omitempty"`
 }
 

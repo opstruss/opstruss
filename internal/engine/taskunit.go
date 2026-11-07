@@ -217,7 +217,8 @@ func (e *engine) execTask(ctx context.Context, inst *instance, r *resolved, rec 
 		}
 	case model.TargetTask:
 		inputs, _ := t.Inputs()
-		c.plugin = &pluginRun{name: t.Package.Name, dir: t.Package.Dir, requires: t.Package.Plugin.Requires, inputs: inputs}
+		c.plugin = &pluginRun{name: t.Package.Name, dir: t.Package.Dir, requires: t.Package.Plugin.Requires, inputs: inputs,
+			sudo: inst.node.SudoAllowed()}
 		res = e.callTask(ctx, t.Name, t.Package.Plugin.Tasks[t.Task], r.cwd, r.task.inputs, c)
 	default:
 		given := func(k string) bool {

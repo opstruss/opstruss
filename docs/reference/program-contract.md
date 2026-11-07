@@ -176,3 +176,14 @@ The lock of the run is the inherited file descriptor 3, which a shell and
 Go pass on to children; a run that starts after OpsTruss died waits while
 a program of the old run still holds it, or still carries
 `OPSTRUSS_RUN=<id>` in its environment.
+
+## As root
+
+A program with `sudo: true` runs as root through `sudo -n -- opstruss
+__sudo`, which gets the program and its descriptors, the lock of the run
+among them, from OpsTruss, and stops it when OpsTruss stops it or dies. It
+gets the contract above, with `HOME` and `USER` of root, unless `env:`
+sets them, and `SUDO_USER`, `SUDO_UID`, and `SUDO_GID`; files that it makes
+in `OPSTRUSS_TEMP`, `OPSTRUSS_ARTIFACTS`, `OPSTRUSS_WORKDIR`, and
+`OPSTRUSS_STATE_DIR` go back to the operator once it ends. See
+[Run as root](../guides/run-as-root.md).

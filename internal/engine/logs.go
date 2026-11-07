@@ -232,7 +232,7 @@ func (e *engine) unitLogs(ctx context.Context, inst *instance, follow bool) (any
 		if task.Inputs["follow"] != nil {
 			given["follow"] = follow
 		}
-		run := &pluginRun{name: t.Package.Name, dir: r.plugin.dir, requires: pl.Requires, inputs: taskInputs(pl, "logs")}
+		run := &pluginRun{name: t.Package.Name, dir: r.plugin.dir, requires: pl.Requires, inputs: taskInputs(pl, "logs"), sudo: inst.node.SudoAllowed()}
 		ur := &unitRun{env: r.plugin.env, pass: slices.Sorted(maps.Keys(r.pass)), stateDir: r.plugin.tool}
 		if inst.record != nil {
 			ur.state = programState(inst.record)

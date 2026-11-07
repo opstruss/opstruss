@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"os"
 	"os/exec"
 	"slices"
 	"strings"
@@ -63,6 +64,48 @@ func Start(cmd *exec.Cmd) (Group, error) {
 		return 0, err
 	}
 	return Group(cmd.Process.Pid), nil
+}
+
+// Wait waits for the program that cmd started as the leader of g, as
+// Start starts it, and then stops what it left in g, so nothing of it runs
+// once Wait returns, as systemd stops the control group of a unit. When
+// ctx ends first, the group is stopped with sig, and killed after grace or
+// once the kill channel of ctx closes. Stopped says that ctx ended the
+// program; warnings say what else had to be stopped.
+func Wait(ctx context.Context, cmd *exec.Cmd, g Group, sig syscall.Signal, grace time.Duration) (stopped bool, warnings []string) {
+	exited := make(chan struct{})
+	go func() {
+		_ = cmd.Wait()
+		close(exited)
+	}()
+	// A second Ctrl-C kills at once what the first one stops.
+	kill := Kill(ctx)
+	select {
+	case <-exited:
+	case <-ctx.Done():
+		stopped = true
+		if err := g.Stop(sig, grace, kill); err != nil {
+			warnings = append(warnings, err.Error())
+		}
+		<-exited
+	}
+	if !g.Empty() {
+		warnings = append(warnings, "stopped the processes that the program left in its process group")
+		if err := g.Stop(sig, grace, kill); err != nil {
+			warnings = append(warnings, err.Error())
+		}
+	}
+	return stopped, warnings
+}
+
+// ExitCode is the exit code of a program that ended with state: 128 + the
+// signal for one that a signal ended, as in a shell.
+func ExitCode(state *os.ProcessState) int {
+	ws := state.Sys().(syscall.WaitStatus)
+	if ws.Signaled() {
+		return 128 + int(ws.Signal())
+	}
+	return ws.ExitStatus()
 }
 
 // Group is a process group, numbered by the pid of its leader. The number

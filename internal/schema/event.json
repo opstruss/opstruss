@@ -19,7 +19,9 @@
     "outcome": { "enum": ["success", "failure", "skipped", "cancelled"] },
     "exit_code": { "type": "integer" },
     "outputs": { "description": "Of the last event of a run: the outputs of its task, each with value, sensitive, and type, as the record of the run has them.", "type": "object" },
-    "plan": { "description": "Of a plan event: the plan of its unit, as units.<n>.plan has it: changes, outputs, exact, digest, summary, and reason, changed, after, and reads when they apply.", "type": "object" }
+    "plan": { "description": "Of a plan event: the plan of its unit, as units.<n>.plan has it: changes, outputs, exact, digest, summary, and reason, changed, after, and reads when they apply.", "type": "object" },
+
+"sudo": { "description": "Of the debug event that a program with sudo: true starts with, as root through sudo or as an OpsTruss that is root: true.", "type": "boolean" }
   },
   "required": ["version", "seq", "time", "run", "type", "level", "message"]
 }

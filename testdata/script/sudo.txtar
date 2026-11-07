@@ -1,0 +1,78 @@
+# A program with sudo: true runs as root through sudo -n -- opstruss
+# __sudo, which the sudo here runs as the same user: it gets HOME and USER
+# of root, SUDO_USER, its stdin, and its descriptors, and its exit code
+# comes back. A step with sudo: false, a unit without sudo, and plan run as
+# the operator. The events mark each program that runs as root.
+
+env HOME=$WORK/home
+mkdir home/.fakesudo
+
+exec opstruss plan
+! exists home/.fakesudo/log
+
+exec opstruss up --yes
+stdout 'default/root \| root user=root sudo_user=\S+ home=/(var/)?root in=hello'
+stdout 'default/plain \| plain user='
+! stdout 'plain user=root'
+grep -count=1 '^-n -- \S+/opstruss __sudo$' home/.fakesudo/log
+exec sh -c 'cat .opstruss/runs/default/*/events.jsonl'
+stdout '"address":"default/root","task":"up","message":"runs as root through sudo","sudo":true'
+
+# A task and its steps: sudo: false on a step, sudo: true on a block, and a
+# call of command.
+rm home/.fakesudo/log
+exec opstruss setup
+stdout 'setup step 1 \| one user=root'
+stdout 'setup step 2 \| two user='
+! stdout 'two user=root'
+stdout 'setup step 3 block 1 \| three user=root'
+stdout 'setup step 4 \| four user=root'
+grep -count=3 '__sudo$' home/.fakesudo/log
+
+# The exit code of a program of root comes back.
+! exec opstruss fails
+stderr 'exited with 3'
+
+# The record keeps the sudo of destroy, so a unit gone from the file is
+# destroyed as root too.
+exec sh -c 'cat .opstruss/state/default/root/state.json'
+stdout '"sudo": true'
+cp gone.yaml opstruss.yaml
+rm home/.fakesudo/log
+exec opstruss up --yes
+stdout 'default/root \| down user=root'
+grep -count=1 '__sudo$' home/.fakesudo/log
+
+-- opstruss.yaml --
+name: sudo
+units:
+  root:
+    run: 'echo "root user=$USER sudo_user=$SUDO_USER home=$HOME in=$(cat)"'
+    stdin:
+      value: hello
+    destroy: 'echo "down user=$USER"'
+    sudo: true
+  plain:
+    run: 'echo "plain user=$USER"'
+tasks:
+  setup:
+    sudo: true
+    steps:
+      - run: 'echo "one user=$USER"'
+      - run: 'echo "two user=$USER"'
+        sudo: false
+      - block:
+          - run: 'echo "three user=$USER"'
+      - command:
+          script: 'echo "four user=$USER"'
+  fails:
+    run: exit 3
+    sudo: true
+-- gone.yaml --
+name: sudo
+units:
+  plain:
+    run: 'echo "plain user=$USER"'
+removed:
+  - from: root
+    destroy: true

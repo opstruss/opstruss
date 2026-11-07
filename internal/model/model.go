@@ -34,6 +34,7 @@ type Uses struct {
 	With   map[string]any `json:"with,omitempty"`
 	Env    Env            `json:"env,omitempty"`
 	Pass   []string       `json:"pass,omitempty"`
+	Sudo   bool           `json:"sudo,omitempty"`
 }
 
 // Input is the schema of an input, also of an item or property of one.
@@ -221,6 +222,7 @@ type Unit struct {
 	Pass        []string           `json:"pass,omitempty"`
 	Stdin       *Stdin             `json:"stdin,omitempty"`
 	TTY         *bool              `json:"tty,omitempty"`
+	Sudo        bool               `json:"sudo,omitempty"`
 	Sources     []PathItem         `json:"sources,omitempty"`
 	Generates   []string           `json:"generates,omitempty"`
 	Revision    string             `json:"revision,omitempty"`
@@ -259,6 +261,7 @@ type Task struct {
 	Pass            []string           `json:"pass,omitempty"`
 	Stdin           *Stdin             `json:"stdin,omitempty"`
 	TTY             *bool              `json:"tty,omitempty"`
+	Sudo            bool               `json:"sudo,omitempty"`
 	Requires        *Requires          `json:"requires,omitempty"`
 	Needs           []string           `json:"needs,omitempty"`
 	If              any                `json:"if,omitempty"`
@@ -303,6 +306,7 @@ type Step struct {
 	Dir             string             `json:"dir,omitempty"`
 	Stdin           *Stdin             `json:"stdin,omitempty"`
 	TTY             *bool              `json:"tty,omitempty"`
+	Sudo            *bool              `json:"sudo,omitempty"`
 	Timeout         string             `json:"timeout,omitempty"`
 	ForEach         any                `json:"for_each,omitempty"`
 	Retry           *Retry             `json:"retry,omitempty"`

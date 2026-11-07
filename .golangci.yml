@@ -23,9 +23,15 @@ linters:
           - errcheck
         text: '`fmt\.Fprint'
       # The fake programs of the tests write what they report.
-      - path: ^fake(cloud|api|sops)_test\.go$
+      - path: ^fake(cloud|api|sops|sudo)_test\.go$
         linters:
           - forbidigo
+      # A test binary that stands in for opstruss __sudo writes on its own
+      # stderr, which sudo hands to OpsTruss, as internal/cli does.
+      - path: _test\.go$
+        linters:
+          - forbidigo
+        source: Serve\(os\.Stderr,
 
 formatters:
   enable:

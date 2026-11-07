@@ -1,0 +1,77 @@
+# In a component from git, sudo asks: its program runs as root only when
+# the unit that uses the component writes sudo: true, and validate names
+# what inside asks when it does not. Inside, a unit that uses a plugin that
+# asks writes sudo: true itself, as a unit of the project does.
+
+env HOME=$WORK/home
+mkdir home/.fakesudo
+sourcerepo repo
+exec opstruss uses fetch
+
+exec opstruss up --yes
+stdout 'default/site/pkgs \| installed as root'
+stdout 'default/site/plain \| plain as '
+! stdout 'plain as root'
+stdout 'default/site/own \| own as root'
+
+cp denied.yaml opstruss.yaml
+! exec opstruss validate
+stderr 'unit site: component site asks for sudo in units.own and units.pkgs; allow it with sudo: true on the unit'
+
+cp allowed.yaml opstruss.yaml
+cp unasked.yaml repo/component/opstruss.yaml
+exec git -C repo config user.name Fixture
+exec git -C repo config user.email fixture@example.invalid
+exec git -C repo add .
+exec git -C repo commit -qm unasked
+exec git -C repo tag -f v1
+! exec opstruss uses update site
+stderr 'unit site/pkgs: plugin tools runs up with sudo; allow it with sudo: true on the unit'
+
+-- opstruss.yaml --
+name: remote
+uses:
+  site: github.com/opstruss/catalog/component@v1
+units:
+  site:
+    uses: site
+    sudo: true
+-- allowed.yaml --
+name: remote
+uses:
+  site: github.com/opstruss/catalog/component@v1
+units:
+  site:
+    uses: site
+    sudo: true
+-- denied.yaml --
+name: remote
+uses:
+  site: github.com/opstruss/catalog/component@v1
+units:
+  site:
+    uses: site
+-- repo/component/opstruss.yaml --
+uses:
+  tools: ./tools
+units:
+  pkgs:
+    uses: tools
+    sudo: true
+  plain:
+    run: 'echo "plain as $USER"'
+  own:
+    run: 'echo "own as $USER"'
+    sudo: true
+-- repo/component/tools/opstruss.plugin.yaml --
+name: tools
+tasks:
+  up:
+    run: 'echo "installed as $USER"'
+    sudo: true
+-- unasked.yaml --
+uses:
+  tools: ./tools
+units:
+  pkgs:
+    uses: tools

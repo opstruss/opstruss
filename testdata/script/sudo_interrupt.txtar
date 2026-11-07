@@ -1,0 +1,50 @@
+# Ctrl-C stops a program that runs as root through __sudo with its stop
+# signal, and a second one kills it, as for any program. When OpsTruss is
+# killed, __sudo sees its socket close and stops the program, which holds
+# the lock of its run until it ends, so the next run waits for it.
+
+env HOME=$WORK/home
+mkdir home/.fakesudo
+
+exec sh -c 'opstruss up --yes > up.out 2> up.err & echo $! > pid; wait $!; echo $? > code' &up&
+waitfile started
+exec sh -c 'kill -INT $(cat pid)'
+waitfile got-int
+exec sh -c 'kill -INT $(cat pid)'
+wait up
+grep '^130$' code
+grep '^two interrupts received: killing the programs at once' up.err
+grep '^default/slow: interrupted: ' up.out
+exec sh -c 'kill -0 $(cat program) 2>/dev/null && echo alive || echo gone'
+stdout '^gone$'
+
+cp killed.yaml opstruss.yaml
+exec sh -c 'opstruss up --yes > killed.out 2>&1 & echo $! > pid; wait $! || true' &killed&
+waitfile started-killed
+exec sh -c 'kill -KILL $(cat pid)'
+wait killed
+exec opstruss up --yes
+stdout 'default/slow: waiting for .* of interrupted run'
+exists stopped
+stdout 'default/slow \| again'
+
+-- opstruss.yaml --
+name: interrupt
+units:
+  slow:
+    run: |
+      trap 'touch got-int' INT
+      echo $$ > program
+      touch started
+      while :; do sleep 1 || true; done
+    sudo: true
+-- killed.yaml --
+name: interrupt
+units:
+  slow:
+    run: |
+      if [ -f stopped ]; then echo again; exit 0; fi
+      trap 'sleep 2; touch stopped; exit 0' INT
+      touch started-killed
+      while :; do sleep 0.1 || true; done
+    sudo: true

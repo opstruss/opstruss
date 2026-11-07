@@ -34,6 +34,9 @@ type Call struct {
 	Pass    []string                  // names and patterns of the operator's variables to pass
 	Stdin   []byte                    // nil reads nothing
 	Stop    Stop
+	// Sudo runs the program as root through sudo -n, with HOME and USER of
+	// root unless Env sets them; an operator who is root runs it as is.
+	Sudo bool
 
 	Task   string         // OPSTRUSS_TASK
 	Reason string         // OPSTRUSS_REASON
@@ -277,6 +280,10 @@ func (r *Run) Exec(ctx context.Context, c *Call) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	asRoot := c.Sudo && os.Geteuid() != 0
+	if asRoot {
+		rootUser(env, c.Env)
+	}
 	path, args, cwd, err := program(c, env)
 	if err != nil {
 		return nil, err
@@ -341,7 +348,30 @@ func (r *Run) Exec(ctx context.Context, c *Call) (*Result, error) {
 		term.close()
 		return nil, err
 	}
-	g, err := proc.Start(cmd)
+	stop := c.Stop
+	if stop.Signal == 0 {
+		stop = DefaultStop
+	}
+	var wait func() (code int, stopped bool, warnings []string)
+	if asRoot {
+		var p *proc.SudoProgram
+		p, err = r.startAsRoot(ctx, c, cmd, stop)
+		wait = func() (int, bool, []string) {
+			code, stopped, warnings, err := p.Wait()
+			if err != nil {
+				// How the program ended is lost with __sudo.
+				return 1, stopped, append(warnings, err.Error())
+			}
+			return code, stopped, warnings
+		}
+	} else {
+		var g proc.Group
+		g, err = proc.Start(cmd)
+		wait = func() (int, bool, []string) {
+			stopped, warnings := proc.Wait(ctx, cmd, g, stop.Signal, stop.Grace)
+			return proc.ExitCode(cmd.ProcessState), stopped, warnings
+		}
+	}
 	closeAll(theirs)
 	if err != nil {
 		closeAll(ours)
@@ -360,34 +390,11 @@ func (r *Run) Exec(ctx context.Context, c *Call) (*Result, error) {
 	}
 
 	res := &Result{}
-	exited := make(chan struct{})
-	go func() {
-		_ = cmd.Wait()
-		close(exited)
-	}()
-	stop := c.Stop
-	if stop.Signal == 0 {
-		stop = DefaultStop
-	}
-	// A second Ctrl-C kills at once what the first one stops.
-	kill := proc.Kill(ctx)
-	select {
-	case <-exited:
-	case <-ctx.Done():
+	code, stopped, warnings := wait()
+	if stopped {
 		res.Stopped = context.Cause(ctx)
-		if err := g.Stop(stop.Signal, stop.Grace, kill); err != nil {
-			res.Warnings = append(res.Warnings, err.Error())
-		}
-		<-exited
 	}
-	// What the program left in its group stops too, so nothing of it runs
-	// once the call returns, as systemd stops the control group of a unit.
-	if !g.Empty() {
-		res.Warnings = append(res.Warnings, "stopped the processes that the program left in its process group")
-		if err := g.Stop(stop.Signal, stop.Grace, kill); err != nil {
-			res.Warnings = append(res.Warnings, err.Error())
-		}
-	}
+	res.Warnings = warnings
 	if stdin != nil {
 		_ = stdin.Close()
 	}
@@ -398,11 +405,7 @@ func (r *Run) Exec(ctx context.Context, c *Call) (*Result, error) {
 		res.Warnings = append(res.Warnings, "a process outside the program's process group still holds its output; what it writes later is lost")
 	}
 
-	ws := cmd.ProcessState.Sys().(syscall.WaitStatus)
-	res.ExitCode = ws.ExitStatus()
-	if ws.Signaled() {
-		res.ExitCode = 128 + int(ws.Signal())
-	}
+	res.ExitCode = code
 	res.Stdout, res.Stderr = streams["stdout"].tail(), streams["stderr"].tail()
 	for name, s := range streams {
 		if s.data {

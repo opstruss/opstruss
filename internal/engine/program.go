@@ -37,6 +37,7 @@ type progSpec struct {
 	changedWhen any
 	stop        *model.Stop
 	tty         *bool      // nil when nothing around the program writes it
+	sudo        bool       // the sudo nearest the program: its own request, or what a call of a plugin task allows
 	unit        *instance  // for the task of a unit
 	call        bool       // a call of command, whose outputs are its streams
 	plugin      *pluginRun // for the programs of a plugin task
@@ -206,7 +207,8 @@ func (e *engine) execProgram(ctx context.Context, p progSpec, c *plugin.Call) (*
 		addr = c.Unit.Address
 	}
 	ss := e.streams(c, isTrue(p.tty), Event{Address: addr, Task: p.label, Step: p.step}, nil)
-	res, err := e.run.Exec(ctx, c)
+	c.Sudo = p.runsAsRoot()
+	res, err := e.execCall(ctx, c, Event{Address: addr, Task: p.label, Step: p.step})
 	ss.flush()
 	if err != nil {
 		return nil, nil, err

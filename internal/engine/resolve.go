@@ -40,6 +40,8 @@ type resolved struct {
 	stop     plugin.Stop
 	tty      bool        // of the program of up
 	ttyDown  bool        // of the program of destroy
+	sudo     bool        // the program of up runs as root
+	sudoDown bool        // the program of destroy runs as root
 	stopDown *model.Stop // of the program of destroy, as its contract keeps it
 	waitFor  []string    // the addresses of the upstream units of reads, in plan order
 	reads    []string    // the parts that read outputs this run changes first, such as env.URL
@@ -160,6 +162,8 @@ func (e *engine) resolve(inst *instance, preview bool) (*resolved, error) {
 		return nil, err
 	}
 	r.tty, r.ttyDown, r.stopDown = isTrue(u.TTY), isTrue(u.TTY), u.Stop
+	r.sudo = inst.node.SudoRun()
+	r.sudoDown = r.sudo
 	if u.Service != nil {
 		if err := e.resolveService(u, r, s); err != nil {
 			return nil, err
@@ -424,7 +428,7 @@ func (e *engine) destroyContract(inst *instance, r *resolved) *state.Destroy {
 		rel = r.cwd
 	}
 	d := &state.Destroy{Run: cmdValue(*r.destroy), Shell: r.shell.Value(), Dir: filepath.ToSlash(rel), Plugin: e.pluginOf(r),
-		Tool: r.plugin != nil && r.plugin.tool != "", Pass: r.fingerprints(), Timeout: inst.def.Timeout, TTY: r.ttyDown}
+		Tool: r.plugin != nil && r.plugin.tool != "", Pass: r.fingerprints(), Timeout: inst.def.Timeout, TTY: r.ttyDown, Sudo: r.sudoDown}
 	for k, v := range r.env {
 		if v.File {
 			if d.EnvFiles == nil {

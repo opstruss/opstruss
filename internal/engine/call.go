@@ -123,6 +123,7 @@ type pluginRun struct {
 	requires []string
 	inputs   map[string]*model.Input // of the plugin and the task
 	secret   bool                    // the task gives a secret
+	sudo     bool                    // what calls the task lets its programs that ask for sudo run as root
 }
 
 // unitRun is what the programs of a task that runs for a unit get from it:
@@ -145,7 +146,9 @@ type unitRun struct {
 func (e *engine) pluginRunOf(t *model.Target, p progSpec) *pluginRun {
 	pl := t.Package.Plugin
 	inputs, _ := t.Inputs()
-	run := &pluginRun{name: t.Package.Name, dir: t.Package.Dir, env: p.env, requires: pl.Requires, inputs: inputs, secret: p.secret}
+	remote, up := p.frame.sudoFrom()
+	run := &pluginRun{name: t.Package.Name, dir: t.Package.Dir, env: p.env, requires: pl.Requires, inputs: inputs, secret: p.secret,
+		sudo: model.SudoAllows(p.sudo || t.Package.Decl != nil && t.Package.Decl.Sudo, remote, up)}
 	for _, kv := range e.opts.Environ {
 		k, _, _ := strings.Cut(kv, "=")
 		if pl.Asks(k) && slices.ContainsFunc(p.pass, func(pat string) bool { ok, _ := path.Match(pat, k); return ok }) {

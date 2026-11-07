@@ -22,6 +22,7 @@ import (
 	"github.com/opstruss/opstruss/internal/ansi"
 	"github.com/opstruss/opstruss/internal/expr"
 	"github.com/opstruss/opstruss/internal/model"
+	"github.com/opstruss/opstruss/internal/proc"
 	"github.com/opstruss/opstruss/internal/record"
 	"github.com/opstruss/opstruss/internal/secret"
 	"github.com/opstruss/opstruss/internal/sources"
@@ -34,6 +35,12 @@ import (
 // Main runs the command line with the process arguments and returns the
 // exit code. A terminal on stdin can answer the questions of a run.
 func Main() int {
+	if len(os.Args) == 2 && os.Args[1] == proc.SudoCommand {
+		// What sudo runs as root reads nothing but its socket: no flag, no
+		// file, and no variable of the operator's.
+		exe, _ := os.Executable()
+		return proc.Serve(os.Stderr, exe)
+	}
 	return start(os.Args[1:], os.Stdin, isTerminal(os.Stdin), os.Stdout, os.Stderr, os.Environ())
 }
 

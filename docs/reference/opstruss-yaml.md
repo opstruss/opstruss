@@ -149,6 +149,7 @@ What a project uses, by name: a source, or an object with source and what every 
 | `with` | object | Inputs given to every use of it, under those of the use. |
 | `env` | map of string or [Env](#env) | Variables set for its programs, under those of the use. |
 | `pass` | list of string | Variables of the environment that its programs get when it asks for them, by name or pattern; not \* alone, since the units that use it keep their values in their digest. |
+| `sudo` | boolean | Allows its tasks, and the units and tasks of a component from git, that ask for sudo to run their programs as root, in every use of it, as sudo: true on each unit or step that uses it does. |
 
 ## Stack {#stack}
 
@@ -239,6 +240,7 @@ A unit: something that up brings up and destroy takes away, with exactly one of 
 | `pass` | list of string | Variables of the environment that the programs of the unit get; not \* alone, since the unit keeps their values in its digest and destroy context. |
 | `stdin` | [Stdin](#stdin) | What the program reads on its standard input. |
 | `tty` | boolean | Gives each program of the unit a terminal of its own while the run shows on one, over the tty of what the unit uses, for tools that draw color and progress there, such as docker compose; its stderr then comes with its stdout. In CI, in the daemon, with --json, or when an output reads its stream, it gets pipes. Not for a service, which runs in the daemon. |
+| `sudo` | boolean | Runs the program of the unit, and of its destroy, as root through sudo. On a unit that uses a plugin, a task, or a component, it allows what they ask for: the tasks of a plugin that write sudo: true, and the units and tasks of a component from git that write it, also through the components it uses; the rest runs as the operator. OpsTruss asks for the password of sudo once a run, when the first such program starts, unless sudo needs none; a run without a terminal fails then. Not for a service, which runs in the daemon. |
 | `sources` | list of string or [Paths](#paths) | Files whose content is part of the definition, so a change to one runs the unit again. |
 | `generates` | list of string | Files that the unit makes, relative to this file and read as written; a missing one runs the unit again. |
 | `revision` | string | A value whose change runs the unit again. |
@@ -284,6 +286,7 @@ Exactly one of run, steps, or one call of a task.
 | `pass` | list of string | Variables of the environment that the programs of the task and its steps get. |
 | `stdin` | [Stdin](#stdin) | What the program reads on its standard input. |
 | `tty` | boolean | Gives the program a terminal of its own while the run shows on one, also each step's program, for tools that draw color and progress there, such as docker compose; its stderr then comes with its stdout. In CI, in the daemon, with --json, or when an output reads its stream, it gets pipes. |
+| `sudo` | boolean | Runs the program of the task as root through sudo, also each step's program, unless the step writes sudo: false. In a plugin or a component from git, the task asks for it, and its programs run as root only when the unit or step that uses it, or the declaration in uses:, writes sudo: true. |
 | `requires` | string or list of string | Programs that must be in PATH before the task runs. |
 | `needs` | list of string | Tasks that run before this one. |
 | `if` | string or boolean | A condition that skips the task when false. |
@@ -335,6 +338,7 @@ Exactly one of run, task, block, or one call of a task.
 | `dir` | string | The directory that the program starts in, relative to this file. |
 | `stdin` | [Stdin](#stdin) | What the program reads on its standard input. |
 | `tty` | boolean | Gives the program of the step, or of the task it calls by name, a terminal of its own while the run shows on one, for tools that draw color and progress there, such as docker compose; in a block, also each step's program. Its stderr then comes with its stdout. In CI, in the daemon, with --json, or when an output reads its stream, it gets pipes. |
+| `sudo` | boolean | Runs the program of the step, or of the command it calls, as root through sudo; in a block, also each step's program; false runs it as the operator, over the sudo of the task or block around it. On a step that calls a task of a plugin, it allows that task to run as root when it asks. Not for a task: step, whose task keeps its own sudo, or a call of a built-in task other than command. |
 | `timeout` | string | How long the step may run. |
 | `for_each` | array or object or string | A list or a map: the step runs once per item, read as each.key and each.value; a string of a list is its own key, and another item has its index. |
 | `retry` | [Retry](#retry) | Running the step again when it fails. |

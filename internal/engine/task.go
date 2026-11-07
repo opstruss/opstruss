@@ -668,14 +668,14 @@ func (e *engine) taskOnce(ctx context.Context, name, label string, t *model.Task
 	case t.Run != nil:
 		res = e.program(ctx, progSpec{frame: c.where(e), label: label, task: name, cmd: t.Run, shell: t.Shell, dir: t.Dir, base: dir,
 			env: env, pass: pass, stdin: t.Stdin, inputs: scope.Vars["inputs"].(map[string]any), outputs: t.Outputs,
-			retry: t.Retry, failedWhen: t.FailedWhen, changedWhen: t.ChangedWhen, stop: stop, tty: tty, unit: c.unit, plugin: c.plugin,
-			unitRun: c.unitRun}, scope)
+			retry: t.Retry, failedWhen: t.FailedWhen, changedWhen: t.ChangedWhen, stop: stop, tty: tty, sudo: t.Sudo, unit: c.unit,
+			plugin: c.plugin, unitRun: c.unitRun}, scope)
 	case len(t.Calls) == 1:
 		// A task that calls one task passes on its outputs.
 		for callee, args := range t.Calls {
 			res = e.callByName(ctx, progSpec{frame: c.where(e), label: label, task: name, shell: t.Shell, dir: t.Dir, base: dir, env: env,
 				pass: pass, stdin: t.Stdin, retry: t.Retry, failedWhen: t.FailedWhen, changedWhen: t.ChangedWhen,
-				stop: stop, tty: tty, unit: c.unit, plugin: c.plugin, unitRun: c.unitRun}, callee, args, scope)
+				stop: stop, tty: tty, sudo: t.Sudo, unit: c.unit, plugin: c.plugin, unitRun: c.unitRun}, callee, args, scope)
 		}
 	default:
 		res = e.stepsWithRetry(ctx, name, label, t, dir, scope, c)
@@ -719,7 +719,8 @@ func (e *engine) stepsWithRetry(ctx context.Context, name, label string, t *mode
 	for i := 1; ; i++ {
 		tc := &taskCtx{e: e, name: name, label: label, dir: dir, scope: scope, steps: map[string]any{}, marks: map[string]any{}, c: c}
 		env, pass := c.envPass(t)
-		res := tc.run(ctx, t.Steps, defaults{shell: t.Shell, dir: t.Dir, env: env, pass: pass, tty: ttyOf(c.tty, t.TTY), stop: c.stop.Over(t.Stop)},
+		res := tc.run(ctx, t.Steps, defaults{shell: t.Shell, dir: t.Dir, env: env, pass: pass, tty: ttyOf(c.tty, t.TTY), sudo: t.Sudo,
+			stop: c.stop.Over(t.Stop)},
 			tc.label+" step ")
 		var err error
 		if res.outputs, res.marks, err = tc.values(t.Outputs); err != nil {
@@ -753,24 +754,28 @@ func (e *engine) stepsWithRetry(ctx context.Context, name, label string, t *mode
 	}
 }
 
-// defaults are shell, dir, env, pass, and tty of a task or block, which
-// each step inside overrides key by key, and the stop of the task, which
-// steps do not write.
+// defaults are shell, dir, env, pass, tty, and sudo of a task or block,
+// which each step inside overrides key by key, and the stop of the task,
+// which steps do not write.
 type defaults struct {
 	shell model.Shell
 	dir   string
 	env   model.Env
 	pass  []string
 	tty   *bool
+	sudo  bool
 	stop  *model.Stop
 }
 
-func (d defaults) with(shell model.Shell, dir string, env model.Env, pass []string, tty *bool) defaults {
+func (d defaults) with(shell model.Shell, dir string, env model.Env, pass []string, tty, sudo *bool) defaults {
 	if shell.IsZero() {
 		shell = d.shell
 	}
 	out := defaults{shell: shell, dir: cmp.Or(dir, d.dir), env: maps.Clone(d.env), pass: d.pass, tty: ttyOf(tty, d.tty),
-		stop: d.stop}
+		sudo: d.sudo, stop: d.stop}
+	if sudo != nil {
+		out.sudo = *sudo
+	}
 	if out.env == nil {
 		out.env = model.Env{}
 	}
@@ -964,15 +969,15 @@ func (tc *taskCtx) stepOnce(ctx context.Context, s *model.Step, label string, d 
 	var res *taskResult
 	switch {
 	case s.Run != nil:
-		d := d.with(s.Shell, s.Dir, s.Env, s.Pass, s.TTY)
+		d := d.with(s.Shell, s.Dir, s.Env, s.Pass, s.TTY, s.Sudo)
 		res = tc.e.program(ctx, progSpec{frame: tc.c.where(tc.e), label: tc.label, step: label, task: tc.name, cmd: s.Run, shell: d.shell, dir: d.dir, base: tc.dir,
-			env: d.env, pass: d.pass, stdin: s.Stdin, outputs: s.Outputs, retry: s.Retry, tty: d.tty, stop: d.stop,
+			env: d.env, pass: d.pass, stdin: s.Stdin, outputs: s.Outputs, retry: s.Retry, tty: d.tty, sudo: d.sudo, stop: d.stop,
 			failedWhen: s.FailedWhen, changedWhen: s.ChangedWhen, unit: tc.c.unit, plugin: tc.c.plugin, unitRun: tc.c.unitRun}, scope)
 	case len(s.Calls) == 1:
-		d := d.with(s.Shell, s.Dir, s.Env, s.Pass, s.TTY)
+		d := d.with(s.Shell, s.Dir, s.Env, s.Pass, s.TTY, s.Sudo)
 		for callee, args := range s.Calls {
 			res = tc.e.callByName(ctx, progSpec{frame: tc.c.where(tc.e), label: tc.label, step: label, task: tc.name, shell: d.shell, dir: d.dir,
-				base: tc.dir, env: d.env, pass: d.pass, stdin: s.Stdin, retry: s.Retry, failedWhen: s.FailedWhen, tty: d.tty, stop: d.stop,
+				base: tc.dir, env: d.env, pass: d.pass, stdin: s.Stdin, retry: s.Retry, failedWhen: s.FailedWhen, tty: d.tty, sudo: d.sudo, stop: d.stop,
 				changedWhen: s.ChangedWhen, unit: tc.c.unit, plugin: tc.c.plugin, unitRun: tc.c.unitRun}, callee, args, scope)
 		}
 	case s.Task != "":
@@ -982,7 +987,7 @@ func (tc *taskCtx) stepOnce(ctx context.Context, s *model.Step, label string, d 
 			return r, r.outputs, nil
 		})
 	case len(s.Block) > 0:
-		res = tc.block(ctx, s, label, d.with(s.Shell, s.Dir, s.Env, s.Pass, s.TTY))
+		res = tc.block(ctx, s, label, d.with(s.Shell, s.Dir, s.Env, s.Pass, s.TTY, s.Sudo))
 	}
 	return res
 }

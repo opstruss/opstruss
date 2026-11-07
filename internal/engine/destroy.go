@@ -645,10 +645,11 @@ func (e *engine) runDestroy(ctx context.Context, addr, stateKey string, c *state
 	if d.Tool {
 		call.Unit.StateDir, _ = e.store.ToolDir(addr)
 	}
+	call.Sudo = d.Sudo
 	ss := e.streams(call, d.TTY, Event{Address: addr, Task: "destroy"}, nil)
 	defer ss.out.flush()
 	defer ss.err.flush()
-	res, err := e.run.Exec(ctx, call)
+	res, err := e.execCall(ctx, call, Event{Address: addr, Task: "destroy"})
 	ss.end()
 	if err != nil {
 		return err

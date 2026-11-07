@@ -31,7 +31,7 @@ type Report struct {
 // Check is one finding: ok; skip when only a run can check it; warn for
 // what may matter; error for what fails a run.
 type Check struct {
-	Check   string   `json:"check"` // program, sops, key, env, state, or processes
+	Check   string   `json:"check"` // program, sops, key, env, state, processes, or sudo
 	Status  string   `json:"status"`
 	Message string   `json:"message"`
 	Name    string   `json:"name,omitempty"` // the program or the variable
@@ -66,6 +66,7 @@ func Doctor(opts Options) (*Report, error) {
 		d.add(&Check{Check: "state", Status: "warn", Message: msg})
 	}
 	d.processes()
+	d.sudo()
 	return d.r, nil
 }
 
@@ -449,6 +450,36 @@ func (d *doctor) state() {
 		d.add(&Check{Check: "state", Status: "ok", Name: fs, Message: fmt.Sprintf("%s is on a local filesystem (%s)", name, fs)})
 	default:
 		d.add(&Check{Check: "state", Status: "ok", Message: name + " is on a local filesystem"})
+	}
+}
+
+// sudo checks, when programs of the stack run as root, whether sudo runs
+// opstruss __sudo, as their run would, without a password; when it wants
+// one, it gives the rule of sudoers that lets it run without.
+func (d *doctor) sudo() {
+	users := d.e.p.SudoUsers()
+	if len(users) == 0 {
+		return
+	}
+	if os.Geteuid() == 0 {
+		d.add(&Check{Check: "sudo", Status: "ok", Message: "OpsTruss runs as root, so the programs with sudo: true run without sudo", For: users})
+		return
+	}
+	run := plugin.Outside(d.e.p.Name, d.e.p.StackName, d.e.opts.Environ)
+	cmd, err := run.SudoCommand()
+	if err == nil {
+		err = run.SudoProbe()
+	}
+	var refused *proc.SudoRefused
+	switch {
+	case err == nil:
+		d.add(&Check{Check: "sudo", Status: "ok", Name: "sudo", Message: "sudo runs " + cmd + " without a password", For: users})
+	case errors.As(err, &refused):
+		d.add(&Check{Check: "sudo", Status: "warn", Name: "sudo", For: users, Message: fmt.Sprintf(
+			"sudo needs a password to run %s (%s): a run at a terminal asks for it once, and a run without one fails; to run without a password, add %s ALL=(root) NOPASSWD: %s to sudoers, which lets any program run as root",
+			cmd, refused.Message, username(), cmd)})
+	default:
+		d.add(&Check{Check: "sudo", Status: "error", Name: "sudo", Message: err.Error(), For: users})
 	}
 }
 
