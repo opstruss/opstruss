@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -111,7 +112,8 @@ func (e *engine) resolveTask(inst *instance, r *resolved, s *expr.Scope) error {
 
 // taskSource is what a unit that uses the task name of the project runs:
 // the task as written, with the tasks it calls through task: and needs,
-// their remote plugin sources, and programs named by a relative path.
+// the plugins they call and what uses: declares for each callee, and
+// programs named by a relative path.
 func (e *engine) taskSource(in *model.Project, name string, out map[string]any) error {
 	if _, seen := out[name]; seen || in.Tasks[name] == nil {
 		return nil
@@ -124,34 +126,61 @@ func (e *engine) taskSource(in *model.Project, name string, out map[string]any) 
 		if err != nil {
 			return err
 		}
-		if pkg := target.Package; pkg != nil && pkg.Source != nil {
-			h, err := e.pluginHash(pkg)
-			if err != nil {
-				return err
-			}
+		pkg := target.Package
+		if pkg == nil {
+			continue
+		}
+		// Every call takes these, as a unit that uses the callee has them
+		// in its inputs and env; source stays out, since a ref is not part
+		// of a digest.
+		if d := pkg.Decl; d != nil && len(d.With)+len(d.Env)+len(d.Pass) > 0 {
+			out["uses "+callee] = map[string]any{"with": d.With, "env": d.Env, "pass": d.Pass}
+		}
+		if target.Kind != model.TargetTask {
+			continue
+		}
+		h, err := e.pluginHash(pkg)
+		if err != nil {
+			return err
+		}
+		if pkg.Source != nil {
 			out["source "+callee] = digestSource(pkg.Source, h)
+		} else {
+			out["source "+callee] = h
 		}
 	}
-	runs := []*model.Command{t.Run}
+	// A program is found from the directory that its step or task runs in;
+	// a step's dir: replaces the one it inherits.
+	type program struct {
+		cmd *model.Command
+		dir string
+	}
+	runs := []program{{t.Run, t.Dir}}
 	var called []string
-	var walk func([]*model.Step)
-	walk = func(steps []*model.Step) {
+	var walk func([]*model.Step, string)
+	walk = func(steps []*model.Step, dir string) {
 		for _, s := range steps {
-			runs = append(runs, s.Run)
+			d := cmp.Or(s.Dir, dir)
+			runs = append(runs, program{s.Run, d})
 			if in.Tasks[s.Task] != nil {
 				called = append(called, s.Task)
 			}
-			walk(s.Block)
-			walk(s.Rescue)
-			walk(s.Always)
+			walk(s.Block, d)
+			walk(s.Rescue, d)
+			walk(s.Always, d)
 		}
 	}
-	walk(t.Steps)
-	for _, c := range runs {
-		if c == nil || len(c.Argv) == 0 || !strings.Contains(c.Argv[0], "/") || strings.Contains(c.Argv[0], "${{") {
+	walk(t.Steps, t.Dir)
+	for _, r := range runs {
+		c := r.cmd
+		if c == nil || len(c.Argv) == 0 || !strings.Contains(c.Argv[0], "/") || strings.Contains(c.Argv[0]+r.dir, "${{") {
 			continue
 		}
-		prog := c.Argv[0]
+		rel := c.Argv[0]
+		if r.dir != "" && !filepath.IsAbs(rel) {
+			rel = filepath.Join(r.dir, rel)
+		}
+		prog := rel
 		if !filepath.IsAbs(prog) {
 			prog = filepath.Join(dir, prog)
 		}
@@ -159,7 +188,7 @@ func (e *engine) taskSource(in *model.Project, name string, out map[string]any) 
 		if err != nil {
 			return fmt.Errorf("task %s: program: %w", name, err)
 		}
-		out["program "+name+" "+c.Argv[0]] = sum
+		out["program "+name+" "+rel] = sum
 	}
 	for _, n := range append(called, t.Needs...) {
 		if err := e.taskSource(in, n, out); err != nil {

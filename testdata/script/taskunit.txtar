@@ -5,6 +5,7 @@
 env HOME=$WORK/home
 chmod 755 build.sh
 chmod 755 plugins/stamp/stamp.sh
+chmod 755 scripts/run.sh
 
 exec opstruss up
 stdout '^default/image \| building v1 for default/image key default/image\.[0-9a-f]+ reason changed workdir yes$'
@@ -24,6 +25,28 @@ stdout '^default/image: will run: definition changed: source, with.tag$'
 exec opstruss up
 stdout 'building v2'
 
+# so are the plugins that it calls and what uses: declares for them
+exec sh -c 'echo "# changed" >> plugins/stamp/stamp.sh'
+exec opstruss plan
+stdout '^default/mark: will run: definition changed: source$'
+stdout '^default/stamped: will run: definition changed: source$'
+stdout '^default/retagged: will run: definition changed: source$'
+exec opstruss up
+exec sh -c 'sed "s/id: t1/id: t2/" opstruss.yaml > o.yaml && mv o.yaml opstruss.yaml'
+exec opstruss plan
+stdout '^default/retagged: will run: definition changed: source$'
+stdout '^default/stamped: unchanged$'
+exec opstruss up
+stdout '^default/retagged: up: done$'
+
+# a relative program is read from the dir: of its task or step
+exec sh -c 'echo "# changed" >> scripts/run.sh'
+exec opstruss plan
+stdout '^default/scripted: will run: definition changed: source$'
+stdout '^default/stepdir: will run: definition changed: source$'
+exec opstruss up
+stdout 'ran in scripts'
+
 # destroy: of a unit that uses a task takes it away; one without is forgotten
 exec opstruss destroy
 stdout 'removed image'
@@ -34,7 +57,22 @@ exec opstruss state list
 name: app
 uses:
   stamp: ./plugins/stamp
+  tagged:
+    source: ./plugins/stamp
+    with: {id: t1}
 tasks:
+  stampit:
+    stamp.make: {id: s2}
+  retag:
+    tagged.make: {}
+  in-dir:
+    dir: scripts
+    run: [./run.sh]
+  step-in-dir:
+    steps:
+      - dir: scripts
+        block:
+          - run: [./run.sh]
   build:
     inputs:
       tag: {type: string, required: true}
@@ -62,6 +100,21 @@ units:
     with:
       argv: [echo, "image ${{ units.image.outputs.image }} stamp ${{ units.mark.outputs.text }} config ${{ units.config.outputs.path != '' ? 'written' : 'none' }}"]
     approval: auto
+  stamped:
+    uses: stampit
+    approval: auto
+  retagged:
+    uses: retag
+    approval: auto
+  scripted:
+    uses: in-dir
+    approval: auto
+  stepdir:
+    uses: step-in-dir
+    approval: auto
+-- scripts/run.sh --
+#!/bin/sh
+echo "ran in ${PWD##*/}"
 -- build.sh --
 #!/bin/sh
 wd=no
