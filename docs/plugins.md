@@ -26,6 +26,14 @@ that needs a later OpsTruss stops with the version and keeps the pins.
 |---|---|---|
 | [`tofu`](https://github.com/opstruss/catalog/tree/v1/plugins/tofu) | OpenTofu root modules: an exact plan, apply, and destroy, with the state of the module kept with the state of OpsTruss | `dir`, `vars`, `var_files`, `args` |
 | [`compose`](https://github.com/opstruss/catalog/tree/v1/plugins/compose) | Docker Compose projects, named after the unit, with `logs` and `config` tasks | `files`, `profiles`, `env_files`, `args` |
+| [`brew`](https://github.com/opstruss/catalog/tree/v1/plugins/brew) | Homebrew formulae and casks; `destroy` uninstalls only what the unit installed | `packages`, `casks`, `args` |
+| [`apt`](https://github.com/opstruss/catalog/tree/v1/plugins/apt) | Debian and Ubuntu packages, as root with `sudo: true` on the unit; `destroy` removes only what the unit installed | `packages`, `args` |
+| [`dnf`](https://github.com/opstruss/catalog/tree/v1/plugins/dnf) | Fedora, RHEL, and other RPM packages, as root with `sudo: true` on the unit; `destroy` removes only what the unit installed | `packages`, `args` |
+
+The catalog has components too, used the same way:
+[`packages`](https://github.com/opstruss/catalog/tree/v1/components/packages)
+installs one list of packages with the package manager of the machine,
+brew, apt, or dnf.
 
 The README of each plugin is its documentation: its inputs, outputs,
 tasks, and what it needs in `PATH`. To write a plugin of your own, see
