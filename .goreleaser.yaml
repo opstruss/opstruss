@@ -45,3 +45,6 @@ release:
     name: opstruss
   draft: true
   replace_existing_draft: true
+  # A tag with a pre-release part, as v1.0.0-rc.1, makes a pre-release,
+  # which GitHub never marks as the latest release.
+  prerelease: auto

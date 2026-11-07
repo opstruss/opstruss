@@ -34,8 +34,9 @@ without a change on their side.
 - What `OPSTRUSS_LOG=debug` prints.
 - What a version does not support yet, such as backend plugins and
   `mcp:`, which it refuses; a later version may support them.
-- Builds that are not releases: a build of `main` or of any other
-  commit, and the docs under `/dev/`.
+- Builds that are not releases: a release candidate, such as
+  `1.0.0-rc.1`, a build of `main` or of any other commit, and the docs
+  under `/dev/`.
 - Going back: an upgrade from any 1.x to a later 1.x keeps working; going
   back to an earlier one is not promised, since an older version refuses
   data and levels that are newer than it.

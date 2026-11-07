@@ -25,18 +25,40 @@ jobs:
         with:
           cache: false
       # The notes are the CHANGELOG.md section of this version, written
-      # "## [1.2.3] - 2026-11-02" once [Unreleased] became the release.
+      # "## [1.2.3] - 2026-11-02" once [Unreleased] became the release. A
+      # release candidate, a tag with a pre-release part as v1.0.0-rc.1,
+      # gets the section [Unreleased] after an opening that says what it is
+      # and how to install it.
       - name: Extract release notes
         run: |
-          awk -v version="${GITHUB_REF_NAME#v}" '
-            $1 == "##" && $2 == "[" version "]" {
+          version="${GITHUB_REF_NAME#v}"
+          rc=0
+          case "$version" in *-*) rc=1 ;; esac
+          awk -v version="$version" -v rc="$rc" '
+            rc && $1 == "##" && $2 == "[Unreleased]" { found = 1; next }
+            !rc && $1 == "##" && $2 == "[" version "]" {
               if ($3 != "-" || $4 !~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$/) exit 1
               found = 1; next
             }
             found && (/^## / || /^\[[^]]+\]: /) { exit }
             found { print }
-          ' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
-          grep -q '[^[:space:]]' "$RUNNER_TEMP/notes.md"
+          ' CHANGELOG.md > "$RUNNER_TEMP/section.md"
+          grep -q '[^[:space:]]' "$RUNNER_TEMP/section.md"
+          if [ "$rc" = 1 ]; then
+            final="${version%%-*}"
+            cat > "$RUNNER_TEMP/notes.md" <<EOF
+          OpsTruss $version is a release candidate of $final, published to be
+          tried before the release. The compatibility promise starts with
+          $final: until then, commands, files, and the data that a release
+          candidate writes may still change.
+
+              mise use github:opstruss/opstruss@$version
+              go install github.com/opstruss/opstruss@v$version
+
+          Report what you find at https://github.com/opstruss/opstruss/issues.
+          EOF
+          fi
+          cat "$RUNNER_TEMP/section.md" >> "$RUNNER_TEMP/notes.md"
       - run: goreleaser release --clean --release-notes "$RUNNER_TEMP/notes.md"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
