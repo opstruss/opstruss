@@ -14,6 +14,7 @@ type Ref struct {
 	Path    []string
 	Dynamic bool
 	Expr    string
+	ID      int64 // the node of the path in the parsed expression
 }
 
 // Use is what an expression reads and the functions it calls, with the
@@ -91,7 +92,7 @@ func AnalyzeValue(v any) (*Use, error) {
 func (u *Use) walk(e ast.Expr, src string) {
 	if p, ok := selectPath(e); ok {
 		if slices.Contains(Namespaces, p[0]) {
-			u.Refs = append(u.Refs, Ref{Path: p, Expr: src})
+			u.Refs = append(u.Refs, Ref{Path: p, Expr: src, ID: e.ID()})
 		}
 		return
 	}
@@ -111,7 +112,7 @@ func (u *Use) walk(e ast.Expr, src string) {
 		if c.FunctionName() == "_[_]" && len(c.Args()) == 2 {
 			// A path indexed with a key known only at run time.
 			if p, ok := selectPath(c.Args()[0]); ok && slices.Contains(Namespaces, p[0]) {
-				u.Refs = append(u.Refs, Ref{Path: p, Dynamic: true, Expr: src})
+				u.Refs = append(u.Refs, Ref{Path: p, Dynamic: true, Expr: src, ID: c.Args()[0].ID()})
 				u.walk(c.Args()[1], src)
 				return
 			}

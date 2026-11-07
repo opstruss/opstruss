@@ -314,7 +314,7 @@ func Eval(src string, s *Scope) (any, error) {
 	act := s.activation()
 	out, _, err := p.Eval(act)
 	if err != nil {
-		return nil, fmt.Errorf("${{ %s }}: %w", src, missingKey(err, src, act))
+		return nil, fmt.Errorf("${{ %s }}: %w", src, missingKey(err, src, s.Dir, act))
 	}
 	return Native(out)
 }
@@ -360,9 +360,9 @@ func IsFunction(name string) bool {
 }
 
 // missingKey adds to an error of a key that a map lacks the keys that the
-// map has, at most ten, read from the path of src that ends with the key,
-// or that the key names a function.
-func missingKey(err error, src string, act map[string]any) error {
+// map has, at most ten, read from the path of src that ends with the key
+// and that the evaluation reached, or that the key names a function.
+func missingKey(err error, src, dir string, act map[string]any) error {
 	key, ok := strings.CutPrefix(err.Error(), "no such key: ")
 	if !ok {
 		return err
@@ -370,13 +370,13 @@ func missingKey(err error, src string, act map[string]any) error {
 	if IsFunction(key) {
 		return fmt.Errorf("%w; %s is a function, called as %s(<value>)", err, key, key)
 	}
-	u, aerr := Analyze(src)
-	if aerr != nil {
+	u, reached, rerr := reach(src, dir, act)
+	if rerr != nil {
 		return err
 	}
 	for _, r := range u.Refs {
 		i := slices.Index(r.Path, key)
-		if i < 1 {
+		if i < 1 || !reached(r.ID) {
 			continue
 		}
 		v := act[r.Path[0]]
@@ -402,6 +402,34 @@ func missingKey(err error, src string, act map[string]any) error {
 		return fmt.Errorf("%w; %s has %s", err, where, strings.Join(keys, ", "))
 	}
 	return err
+}
+
+// reach evaluates src again, tracking the nodes that it reaches, and gives
+// what it reads, so that a hint names a path that the evaluation read, not
+// one in a branch that it skipped. It runs only for an error.
+func reach(src, dir string, act map[string]any) (*Use, func(id int64) bool, error) {
+	e, err := envFor(dir)
+	if err != nil {
+		return nil, nil, err
+	}
+	checked, iss := e.Compile(src)
+	if iss.Err() != nil {
+		return nil, nil, iss.Err()
+	}
+	p, err := e.Program(checked, cel.CustomDecoratorV2(sortLiterals), cel.EvalOptions(cel.OptTrackState))
+	if err != nil {
+		return nil, nil, err
+	}
+	u := &Use{}
+	u.walk(checked.NativeRep().Expr(), src)
+	_, details, _ := p.Eval(act)
+	if details == nil || details.State() == nil {
+		return u, func(int64) bool { return true }, nil
+	}
+	return u, func(id int64) bool {
+		_, ok := details.State().Value(id)
+		return ok
+	}, nil
 }
 
 // EvalString evaluates the expressions in str. A string that is exactly

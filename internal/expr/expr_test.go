@@ -295,3 +295,20 @@ func TestUnknown(t *testing.T) {
 		}
 	}
 }
+
+// A key that a map lacks names the keys of the map that the evaluation
+// read, not those of one in a branch that it skipped.
+func TestMissingKey(t *testing.T) {
+	s := &Scope{Vars: map[string]any{"units": map[string]any{
+		"a": map[string]any{"outputs": map[string]any{}},
+		"b": map[string]any{"outputs": map[string]any{"w": int64(1)}},
+	}}}
+	for src, want := range map[string]string{
+		"false ? units.a.outputs.v : units.b.outputs.v": "no such key: v; units.b.outputs has w",
+		"true ? units.a.outputs.v : units.b.outputs.v":  "no such key: v; units.a.outputs is empty",
+	} {
+		if _, err := Eval(src, s); err == nil || !strings.HasSuffix(err.Error(), want) {
+			t.Errorf("%s: got %v, want %s", src, err, want)
+		}
+	}
+}
