@@ -1,0 +1,20 @@
+# destroy right after a first up that failed runs the destroy of that
+# attempt, and says that it destroyed the unit; a unit without a destroy
+# program is still forgotten without one.
+
+env HOME=$WORK/home
+
+! exec opstruss up --yes
+exec opstruss destroy --yes
+stdout '^default/made: destroy: done$'
+stdout '^default/bare: forgotten without a destroy program$'
+grep '^made$' destroyed
+
+-- opstruss.yaml --
+name: app
+units:
+  made:
+    run: exit 1
+    destroy: echo made >> destroyed
+  bare:
+    run: exit 1

@@ -475,12 +475,14 @@ func (e *engine) destroyOne(ctx context.Context, l *leftover) string {
 			return fail(err)
 		}
 	}
+	ran := false // a contract had a destroy program, which ran
 	for len(contracts) > 0 {
 		c := contracts[0]
 		if err := e.runDestroy(ctx, addr, rec.StateKey, c); err != nil {
 			e.endAttempt(addr, rec, etag, parent)
 			return fail(err)
 		}
+		ran = ran || c.Destroy != nil
 		contracts = contracts[1:]
 		if len(rec.Abandoned) > 0 {
 			rec.Abandoned = rec.Abandoned[1:]
@@ -501,7 +503,7 @@ func (e *engine) destroyOne(ctx context.Context, l *leftover) string {
 	switch {
 	case service:
 		e.ended(addr, "destroy", success, "destroy: stopped")
-	case rec.Destroy == nil:
+	case !ran:
 		e.ended(addr, "destroy", success, "forgotten without a destroy program")
 	default:
 		e.ended(addr, "destroy", success, "destroy: done")
