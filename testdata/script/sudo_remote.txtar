@@ -16,7 +16,7 @@ stdout 'default/site/own \| own as root'
 
 cp denied.yaml opstruss.yaml
 ! exec opstruss validate
-stderr 'unit site: component site asks for sudo in units.own and units.pkgs; allow it with sudo: true on the unit'
+stderr 'units.site: component site asks for sudo in units.own and units.pkgs; allow it with sudo: true on the unit'
 
 cp allowed.yaml opstruss.yaml
 cp unasked.yaml repo/component/opstruss.yaml

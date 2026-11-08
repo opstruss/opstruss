@@ -3,6 +3,7 @@ package engine
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -103,6 +104,10 @@ func (e *engine) tell(task, format string, args ...any) {
 	}
 }
 
+// ErrEventTrigger refuses an event of --event whose trigger is missing or
+// is none that a task has.
+var ErrEventTrigger = errors.New(`trigger is schedule, every, webhook, watch, or after, as in {"trigger": "webhook"}`)
+
 // simulated reads ev, an event that the caller of the task name wrote,
 // as the trigger that it fits would get it from its source: its fields
 // checked and completed as the daemon gives them, and its time, which is
@@ -114,7 +119,7 @@ func simulated(p *model.Project, name string, ev map[string]any) (*Trigger, time
 	// what a batch or debounce gathers of many.
 	allowed, ok := model.EventFields[kind]
 	if !ok {
-		return nil, at, nil, fmt.Errorf(`trigger is schedule, every, webhook, watch, or after, as in {"trigger": "webhook"}`)
+		return nil, at, nil, ErrEventTrigger
 	}
 	for _, k := range slices.Sorted(maps.Keys(ev)) {
 		v := ev[k]

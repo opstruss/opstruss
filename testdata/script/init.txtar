@@ -77,15 +77,28 @@ stdout '^next: run opstruss plan$'
 exists clone/.opstruss/schema.json
 
 # a project with problems gets all of them, as validate gives them, and no
-# schema
+# schema; the output names only what init wrote before it stopped
 mkdir broken
 cp broken.yaml broken/opstruss.yaml
 ! exec opstruss -C broken init
 stderr '^opstruss.yaml:3:1: unit: unknown key; did you mean units\?$'
 stderr '^opstruss.yaml:4:1: task: unknown key'
-! stdout .
+stdout '^wrote \.gitignore$'
+! stdout 'next|opstruss\.yaml'
 ! exists broken/.opstruss/schema.json
 
+
+# without git in PATH, a source from git says what is missing, and init
+# still names the files it wrote before it stopped
+mkdir nogit empty
+cp nogit.yaml nogit/opstruss.yaml
+exec sh -c 'ln -s "$(command -v opstruss)" empty/opstruss'
+env PATH=$WORK/empty
+! exec opstruss -C nogit init
+stderr 'opstruss\.yaml:3:3: uses\.ops: git is not in PATH, and fetching a source from git needs it$'
+! stderr 'executable file not found|git init failed'
+stdout '^wrote \.gitignore$'
+exists nogit/.gitignore
 -- want/opstruss.yaml --
 # yaml-language-server: $schema=.opstruss/schema.json
 opstruss: "1.0"
@@ -115,3 +128,7 @@ units:
 name: broken
 unit: {}
 task: {}
+-- nogit.yaml --
+name: nogit
+uses:
+  ops: github.com/opstruss/catalog@v1

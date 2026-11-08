@@ -349,6 +349,11 @@ func (a *app) readEvent(s string) (map[string]any, error) {
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
 		return nil, errors.New("the event holds more than one JSON value")
 	}
+	// Checked here as well, so a run in the daemon says the same.
+	kind, _ := ev["trigger"].(string)
+	if _, ok := model.EventFields[kind]; !ok {
+		return nil, engine.ErrEventTrigger
+	}
 	return ev, nil
 }
 

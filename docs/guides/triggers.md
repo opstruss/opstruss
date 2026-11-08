@@ -39,6 +39,12 @@ Every run has `event.time`, when it was due or its event came, and
 task with `for_each`. A task that also runs from the command line reads a field
 with `has(event.<field>)`, or gets its value through `with:`.
 
+`opstruss <task> --event '<json>'` runs a task as its trigger would for
+that event, to try `if:` and `with:` without the source. `trigger` is
+required, and the other fields are those of the table, as in `--event
+'{"trigger": "webhook", "body": {"ref": "main"}}'`; `--event @push.json`
+and `--event @-` read the event from a file or stdin.
+
 ## The daemon
 
 The webhook of `deploy` checks its requests with a secret from the

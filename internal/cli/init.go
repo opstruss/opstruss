@@ -47,27 +47,38 @@ func (a *app) initCommand() *cobra.Command {
 				return err
 			}
 			res := initResult{Wrote: []string{}, Sources: []sourceRow{}}
-			if err := initProject(dir, name, &res); err != nil {
+			wrote := func() {
+				for _, w := range res.Wrote {
+					fmt.Fprintf(a.stdout, "wrote %s\n", w)
+				}
+			}
+			// A step that fails keeps the files that the steps before it
+			// wrote, so the output names them.
+			failed := func(err error) error {
+				if !a.json {
+					wrote()
+				}
 				return err
+			}
+			if err := initProject(dir, name, &res); err != nil {
+				return failed(err)
 			}
 			if err := initIgnore(dir, &res); err != nil {
-				return err
+				return failed(err)
 			}
 			if err := a.initSources(cmd.Context(), dir, &res); err != nil {
-				return err
+				return failed(err)
 			}
 			// Only an explicit --stack makes _meta, not $OPSTRUSS_STACK.
 			if a.stack != "" {
 				if err := initMeta(dir, a.stack, &res); err != nil {
-					return err
+					return failed(err)
 				}
 			}
 			if a.json {
 				return a.printJSON(res)
 			}
-			for _, w := range res.Wrote {
-				fmt.Fprintf(a.stdout, "wrote %s\n", w)
-			}
+			wrote()
 			tw := tabwriter.NewWriter(a.stdout, 0, 0, 2, ' ', 0)
 			for _, r := range res.Sources {
 				fmt.Fprintf(tw, "%s\t%s\t%s\n", r.Source, shortCommit(r.Commit), r.Cache)

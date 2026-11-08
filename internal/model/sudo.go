@@ -106,7 +106,12 @@ func (c *checker) sudo() {
 		// In a component from git, a unit that allows asks in turn, and the
 		// unit above reports what is not allowed.
 		if what := n.sudoAsks(); what != "" && !local && (remote || !up) {
-			report(n.In, []string{"units", n.Name}, "unit %s: %s; allow it with sudo: true on the unit", n.Path, what)
+			// The position names a unit of a component by its name in
+			// there, so the message names it by its path.
+			if n.Path != n.Name {
+				what = "unit " + n.Path + ": " + what
+			}
+			report(n.In, []string{"units", n.Name}, "%s; allow it with sudo: true on the unit", what)
 		}
 		c.sudoTasks(n.In, n.Unit.Tasks, "units."+n.Name+".tasks", remote, up, report)
 		if comp := n.Component(); comp != nil {

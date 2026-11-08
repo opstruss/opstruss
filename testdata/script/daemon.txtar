@@ -25,6 +25,10 @@ exec opstruss up -d --yes
 stdout 'default/web: unchanged'
 daemonrun default
 
+# an event without its trigger, through the daemon, says what --event takes
+! exec opstruss hello --event '{"body": {}}'
+stderr '^opstruss: --event: trigger is schedule, every, webhook, watch, or after, as in \{"trigger": "webhook"\}$'
+
 # -d is for up and tasks
 ! exec opstruss plan -d
 stderr '-d is for up and tasks, which can start a daemon, not for plan'

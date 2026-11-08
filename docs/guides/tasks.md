@@ -56,6 +56,18 @@ list.
 - `needs` runs other tasks first, once per run.
 - `shell`, `dir`, `env`, `pass`, and `tty` of a task or a `block` are the
   defaults of the steps in it; a step writes its own to change one.
+- `shell` is `sh` by default, or `bash`, `python`, `node`, or `pwsh`. A
+  list is a program and its arguments, which gets the script as its last
+  argument, with no `$0`:
+
+  ```yaml
+  tasks:
+    host:
+      shell: [python3, -c]
+      run: |
+        import platform
+        print(platform.node())
+  ```
 
 A tool that draws progress at a terminal, as `npm install` does, shows it
 with `tty: true` while the run shows on a terminal; in CI, and with

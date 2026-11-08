@@ -43,6 +43,9 @@ func gitCommand(ctx context.Context, dir string, args ...string) *exec.Cmd {
 // last line that git wrote to stderr, such as fatal: unable to access.
 func gitOutput(ctx context.Context, dir string, args ...string) ([]byte, error) {
 	b, err := gitCommand(ctx, dir, args...).Output()
+	if errors.Is(err, exec.ErrNotFound) {
+		return nil, errors.New("git is not in PATH, and fetching a source from git needs it")
+	}
 	if err != nil {
 		var exit *exec.ExitError
 		if errors.As(err, &exit) {

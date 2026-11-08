@@ -189,7 +189,7 @@ One source: sops, env, run, or a call of a plugin task whose output is value.
 | `run` | string or list of string | A program whose standard output is the secret, such as op read. |
 | `pass` | list of string | Variables of the environment that the program of run: gets. |
 | `dir` | string | The directory the program of run: starts in, relative to this file. |
-| `shell` | one of `sh`, `bash`, `python`, `node`, `pwsh` or list of string | The shell that runs run: when it is a script. |
+| `shell` | one of `sh`, `bash`, `python`, `node`, `pwsh` or list of string | The shell that runs run: when it is a script. A list is a program and its arguments, which gets the script as its last argument, as [python3, -c]. |
 
 Any other key is a call of a task by that name, with its inputs as the value.
 
@@ -234,7 +234,7 @@ A unit: something that up brings up and destroy takes away, with exactly one of 
 | `with` | object | Inputs of what the unit uses. |
 | `tasks` | map of [Task](#task) | Tasks of the unit, run as opstruss &lt;task&gt; [unit]... |
 | `requires` | string or list of string | Programs that must be in PATH before the unit runs. |
-| `shell` | one of `sh`, `bash`, `python`, `node`, `pwsh` or list of string | The shell that runs a script; sh by default. |
+| `shell` | one of `sh`, `bash`, `python`, `node`, `pwsh` or list of string | The shell that runs a script; sh by default. A list is a program and its arguments, which gets the script as its last argument, as [python3, -c]. |
 | `dir` | string | The directory that the programs start in, relative to this file. |
 | `env` | map of string or [Env](#env) | Variables set for the programs of the unit. |
 | `pass` | list of string | Variables of the environment that the programs of the unit get; not \* alone, since the unit keeps their values in its digest and destroy context. |
@@ -280,7 +280,7 @@ Exactly one of run, steps, or one call of a task.
 | `outputs` | map of [Output](#output) | Outputs of the task. |
 | `run` | string or list of string | The program of the task. |
 | `steps` | list of [Step](#step) | The steps of the task. |
-| `shell` | one of `sh`, `bash`, `python`, `node`, `pwsh` or list of string | The shell that runs a script, also for each step; sh by default. |
+| `shell` | one of `sh`, `bash`, `python`, `node`, `pwsh` or list of string | The shell that runs a script, also for each step; sh by default. A list is a program and its arguments, which gets the script as its last argument, as [python3, -c]. |
 | `dir` | string | The directory that the programs start in, relative to this file, also for each step. |
 | `env` | map of string or [Env](#env) | Variables set for the programs of the task and its steps. |
 | `pass` | list of string | Variables of the environment that the programs of the task and its steps get. |
@@ -334,7 +334,7 @@ Exactly one of run, task, block, or one call of a task.
 | `force` | boolean | As --force for task: up or destroy. |
 | `env` | map of string or [Env](#env) | Variables set for the program. |
 | `pass` | list of string | Variables of the environment that the program gets. |
-| `shell` | one of `sh`, `bash`, `python`, `node`, `pwsh` or list of string | The shell that runs a script. |
+| `shell` | one of `sh`, `bash`, `python`, `node`, `pwsh` or list of string | The shell that runs a script. A list is a program and its arguments, which gets the script as its last argument, as [python3, -c]. |
 | `dir` | string | The directory that the program starts in, relative to this file. |
 | `stdin` | [Stdin](#stdin) | What the program reads on its standard input. |
 | `tty` | boolean | Gives the program of the step, or of the task it calls by name, a terminal of its own while the run shows on one, for tools that draw color and progress there, such as docker compose; in a block, also each step's program. Its stderr then comes with its stdout. In CI, in the daemon, with --json, or when an output reads its stream, it gets pipes. |
