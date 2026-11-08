@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -44,6 +45,32 @@ export SUDO_UID=$(id -u) SUDO_GID=$(id -g) SUDO_USER=$(id -un)
 exec "$@"
 `
 
+// sudoPass is the password that the fake sudo of sudoProject wants.
+const sudoPass = "secret-password-9"
+
+// sudoProject writes a project with yaml and a fake sudo that wants
+// sudoPass, and returns the project, the environment of a run, and the
+// directory of the fake.
+func sudoProject(t *testing.T, yaml string) (project string, env []string, fake string) {
+	t.Helper()
+	home, bin, project := t.TempDir(), t.TempDir(), t.TempDir()
+	t.Setenv("HOME", home)
+	if err := os.WriteFile(filepath.Join(bin, "sudo"), []byte(fakeSudo), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	fake = filepath.Join(home, ".fakesudo")
+	if err := os.MkdirAll(fake, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(fake, "password"), []byte(sudoPass+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(project, "opstruss.yaml"), []byte(yaml), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return project, []string{"HOME=" + home, "PATH=" + bin + ":/usr/bin:/bin"}, fake
+}
+
 // TestSudoPassword: sudo that wants a password asks for it once at the
 // terminal, again after a wrong one, also for programs that start at the
 // same time, and keeps its ticket while the run lasts; the password is in
@@ -52,30 +79,15 @@ func TestSudoPassword(t *testing.T) {
 	old := sudoKeep
 	sudoKeep = 50 * time.Millisecond
 	defer func() { sudoKeep = old }()
-	home, bin, project := t.TempDir(), t.TempDir(), t.TempDir()
-	t.Setenv("HOME", home)
-	if err := os.WriteFile(filepath.Join(bin, "sudo"), []byte(fakeSudo), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	fake := filepath.Join(home, ".fakesudo")
-	if err := os.MkdirAll(fake, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	const password = "secret-password-9"
-	if err := os.WriteFile(filepath.Join(fake, "password"), []byte(password+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	yaml := "name: pw\nunits:\n" +
 		"  a:\n    run: 'sleep 0.3; env > \"$OPSTRUSS_ARTIFACTS/env\"; echo \"a as $USER\"'\n    sudo: true\n" +
 		"  b:\n    run: 'sleep 0.3; echo \"b as $USER\"'\n    sudo: true\n"
-	if err := os.WriteFile(filepath.Join(project, "opstruss.yaml"), []byte(yaml), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	project, env, fake := sudoProject(t, yaml)
 	var mu sync.Mutex
 	var asked []string
 	var events []Event
-	answers := []string{"wrong", password}
-	env := []string{"HOME=" + home, "PATH=" + bin + ":/usr/bin:/bin"}
+	answers := []string{"wrong", sudoPass}
+	const password = sudoPass
 	res, err := Up(t.Context(), Options{Dir: project, Environ: env, LookupEnv: func(string) (string, bool) { return "", false }, Yes: true,
 		Ask: func(_ context.Context, prompt string, in *model.Input) (string, error) {
 			mu.Lock()
@@ -157,5 +169,63 @@ func TestSudoPassword(t *testing.T) {
 		}})
 	if err != nil || res.ExitCode != 0 {
 		t.Fatalf("exit %v, %v", res, err)
+	}
+}
+
+// An interrupt at the password prompt of sudo ends the run as an
+// interrupt does, without the words of a password that sudo did not take,
+// and a program that waits for the same prompt, or still starts, asks
+// nothing.
+func TestSudoPasswordInterrupted(t *testing.T) {
+	yaml := "name: pw\nunits:\n" +
+		"  a:\n    run: 'echo a'\n    sudo: true\n" +
+		"  b:\n    run: 'echo b'\n    sudo: true\n"
+	project, env, _ := sudoProject(t, yaml)
+	ctx, cancel := context.WithCancelCause(t.Context())
+	defer cancel(nil)
+	var mu sync.Mutex
+	var events []Event
+	asked := 0
+	res, err := Up(ctx, Options{Dir: project, Environ: env, LookupEnv: func(string) (string, bool) { return "", false }, Yes: true,
+		Ask: func(ctx context.Context, _ string, _ *model.Input) (string, error) {
+			mu.Lock()
+			asked++
+			mu.Unlock()
+			// As the terminal does at Ctrl-C.
+			cancel(Interrupted{Signal: syscall.SIGINT})
+			return "", context.Cause(ctx)
+		},
+		Emit: func(ev Event) {
+			mu.Lock()
+			defer mu.Unlock()
+			events = append(events, ev)
+		}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if asked != 1 {
+		t.Errorf("asked %d times; want once", asked)
+	}
+	var prompt int
+	for _, ev := range events {
+		if ev.Type != "unit" || ev.Status != "finished" {
+			continue
+		}
+		if ev.Outcome != cancelled {
+			t.Errorf("%s ended %s: %s; want cancelled", ev.Address, ev.Outcome, ev.Message)
+		}
+		for _, bad := range []string{"did not take", "password of sudo:"} {
+			if strings.Contains(ev.Message, bad) {
+				t.Errorf("%s: %q holds %q", ev.Address, ev.Message, bad)
+			}
+		}
+		if ev.Message == "interrupted: at the password prompt of sudo" {
+			prompt++
+		} else if !strings.HasPrefix(ev.Message, "interrupted: ") {
+			t.Errorf("%s ended with %q; want an interrupt", ev.Address, ev.Message)
+		}
+	}
+	if prompt != 1 || res.ExitCode == 0 {
+		t.Errorf("exit %d, %d units interrupted at the prompt; want 1: %v", res.ExitCode, prompt, events)
 	}
 }

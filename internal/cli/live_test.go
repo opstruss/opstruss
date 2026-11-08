@@ -3,6 +3,7 @@ package cli
 import (
 	"bufio"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"slices"
@@ -14,6 +15,8 @@ import (
 	"github.com/creack/pty"
 	"github.com/opstruss/opstruss/internal/ansi"
 	"github.com/opstruss/opstruss/internal/engine"
+	"github.com/opstruss/opstruss/internal/model"
+	"golang.org/x/sys/unix"
 )
 
 func rows(addr, task string, ms int, rows ...string) engine.Rows {
@@ -233,4 +236,69 @@ func TestLiveInterruptedQuestion(t *testing.T) {
 		t.Fatal("approve did not end")
 	}
 	tt.shows(t, "Apply db? (new) [y/N]", "interrupted", "▸ web › up", "│ one")
+}
+
+// echoes reports whether the terminal f echoes what is typed.
+func echoes(t *testing.T, f *os.File) bool {
+	t.Helper()
+	tios, err := unix.IoctlGetTermios(int(f.Fd()), getTermios)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tios.Lflag&unix.ECHO != 0
+}
+
+// A sensitive input is typed without echo; an interrupt ends its question
+// at once, as it ends any other, and the echo comes back either way.
+func TestAskHidden(t *testing.T) {
+	in := &model.Input{Type: "string", Sensitive: true}
+	hidden := func(t *testing.T) (*terminal, *app) {
+		tt := newTerminal(t)
+		return tt, &app{stdout: tt.slave, stderr: tt.slave, in: tt.slave, stdin: bufio.NewReader(tt.slave), env: map[string]string{"NO_COLOR": "1"}}
+	}
+
+	tt, a := hidden(t)
+	ctx, cancel := context.WithCancelCause(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := a.ask(ctx, "token", in)
+		done <- err
+	}()
+	tt.shows(t, "token:")
+	if echoes(t, tt.slave) {
+		t.Fatal("the terminal echoes at the question of a sensitive input")
+	}
+	cancel(errors.New("interrupted by SIGINT"))
+	select {
+	case err := <-done:
+		if err == nil || err.Error() != "interrupted by SIGINT" {
+			t.Fatalf("ask ended with %v; want the interrupt", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("an interrupt did not end the question")
+	}
+	if !echoes(t, tt.slave) {
+		t.Fatal("the echo stays off after an interrupt")
+	}
+
+	tt, a = hidden(t)
+	got := make(chan string, 1)
+	go func() {
+		v, err := a.ask(context.Background(), "token", in)
+		if err != nil {
+			t.Error(err)
+		}
+		got <- v
+	}()
+	tt.shows(t, "token:")
+	if _, err := tt.master.Write([]byte("abc\n")); err != nil {
+		t.Fatal(err)
+	}
+	if v := <-got; v != "abc" {
+		t.Fatalf("ask gave %q; want abc", v)
+	}
+	tt.shows(t, "token:")
+	if !echoes(t, tt.slave) {
+		t.Fatal("the echo stays off after the answer")
+	}
 }

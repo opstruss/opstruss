@@ -270,13 +270,19 @@ func (a *app) ask(ctx context.Context, name string, in *model.Input) (string, er
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	a.question(prompt + ": ")
 	if f, ok := a.in.(*os.File); ok && in.Sensitive && term.IsTerminal(int(f.Fd())) {
 		// A sensitive input is typed without echo, so the line ends here.
-		b, err := term.ReadPassword(int(f.Fd()))
+		restore, err := noEcho(f)
+		if err != nil {
+			return "", err
+		}
+		a.question(prompt + ": ")
+		line, err := a.readLine(ctx)
+		restore()
 		a.answered(true, "")
-		return string(b), err
+		return strings.TrimRight(line, "\r\n"), err
 	}
+	a.question(prompt + ": ")
 	line, err := a.readLine(ctx)
 	a.answered(err != nil, strings.TrimRight(line, "\r\n"))
 	return strings.TrimRight(line, "\r\n"), err

@@ -74,6 +74,10 @@ func (e *engine) sudoPassword(ctx context.Context, took int, refused *proc.SudoR
 	if s.took != took {
 		return nil
 	}
+	if errors.Is(ctx.Err(), context.Canceled) {
+		// The run stopped while another program had the prompt.
+		return errors.New("waiting for the password prompt of sudo")
+	}
 	if e.opts.Ask == nil {
 		// Without a terminal sudo keeps no ticket that this run could share,
 		// as in CI, the daemon, and a trigger, so sudoers is the only way.
@@ -82,6 +86,11 @@ func (e *engine) sudoPassword(ctx context.Context, took int, refused *proc.SudoR
 	}
 	for try := 1; ; try++ {
 		password, err := e.opts.Ask(ctx, "sudo password for "+username(), &model.Input{Sensitive: true})
+		if errors.Is(ctx.Err(), context.Canceled) {
+			// The run reports the interrupt; what sudo -v said of it says
+			// nothing more.
+			return errors.New("at the password prompt of sudo")
+		}
 		if err != nil {
 			return fmt.Errorf("the password of sudo: %w", err)
 		}
@@ -89,6 +98,9 @@ func (e *engine) sudoPassword(ctx context.Context, took int, refused *proc.SudoR
 		if err = e.run.SudoValidate(ctx, password); err == nil {
 			s.took++
 			return nil
+		}
+		if errors.Is(ctx.Err(), context.Canceled) {
+			return errors.New("at the password prompt of sudo")
 		}
 		if !errors.As(err, &refused) || try == sudoTries {
 			return fmt.Errorf("sudo did not take the password: %w", err)
