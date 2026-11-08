@@ -55,6 +55,11 @@ jobs:
               mise use github:opstruss/opstruss@$version
               go install github.com/opstruss/opstruss@v$version
 
+          The docs of a release candidate are those of main, at
+          https://opstruss.github.io/dev/. \`opstruss init\` writes the schema
+          for editors to .opstruss/schema.json; that of opstruss.plugin.yaml
+          is https://opstruss.github.io/dev/schema/plugin.json.
+
           Report what you find at https://github.com/opstruss/opstruss/issues.
           EOF
           fi
