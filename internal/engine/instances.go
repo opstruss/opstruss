@@ -32,6 +32,7 @@ type instance struct {
 
 	record   *state.Record
 	plan     plan
+	turnPlan *plan  // the plan its turn made, nil while its turn has not planned it
 	approval string // what approved its change: auto, --yes, or a step
 	outcome  string
 	changed  bool
@@ -39,6 +40,17 @@ type instance struct {
 	outMarks map[string]any // the sensitive outputs
 	done     chan struct{}
 	place    int // where it is in the plan, which orders its questions
+}
+
+// unplanned says whether inst has no plan without error once the turns
+// are done: its plan failed at the preview or at its turn, or waited for
+// its turn, which did not plan it, as a unit it depends on did not
+// succeed. One that another run holds is left out.
+func (inst *instance) unplanned() bool {
+	if inst.turnPlan != nil {
+		return inst.turnPlan.err != nil
+	}
+	return inst.plan.err != nil || len(inst.plan.waitFor) > 0
 }
 
 // plan is what the run will do to an instance.

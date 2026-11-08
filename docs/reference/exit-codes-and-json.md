@@ -17,7 +17,9 @@
   exits with 1, but destroys and forgets nothing: the instances that left
   `if` or `for_each` and the units that `removed:` decides end `skipped`
   with `skipped: waits until every unit can be planned`, and go at the
-  first `up` that plans every unit.
+  first `up` that plans every unit.  A unit planned at its turn counts
+  too: its plan fails there, or is never made because a unit it needs did
+  not succeed.
 - `doctor` exits with 1 only when a check is `error`, which is what fails
   a run. A later version may add checks, so it fails only where a run
   would.

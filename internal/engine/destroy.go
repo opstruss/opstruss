@@ -316,13 +316,25 @@ func (e *engine) removal(l *leftover) *model.Removed {
 }
 
 // settle destroys and forgets the leftovers of up, once every turn is
-// done, so no unit still reads an instance that is destroyed.
+// done, so no unit still reads an instance that is destroyed. A plan that
+// failed at its turn, or that its turn never made, holds them as one that
+// failed at the preview does; after an interrupt, what is left says so.
 func (e *engine) settle(ctx context.Context, items []*leftover) {
+	unplanned := !errors.Is(ctx.Err(), context.Canceled) && slices.ContainsFunc(e.insts, func(inst *instance) bool {
+		return e.sel.has(inst) && inst.unplanned()
+	})
 	var destroys, settled []*leftover
 	for _, l := range items {
+		l.waits = l.waits || unplanned
 		if l.waits {
 			l.outcome = skipped
 			e.ended(l.address, "destroy", skipped, "%s", l.summary())
+			continue
+		}
+		if l.forget && errors.Is(ctx.Err(), context.Canceled) {
+			// The run was interrupted before this turn, as at a question.
+			l.outcome = cancelled
+			e.ended(l.address, "destroy", cancelled, "interrupted before its turn")
 			continue
 		}
 		settled = append(settled, l)

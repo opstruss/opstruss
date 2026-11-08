@@ -36,6 +36,44 @@ stdout '^default/kept: forgotten; a tombstone stays at the address$'
 grep '^a\[y\]$' destroys
 grep '^old$' destroys
 
+# a plan made at its turn holds them too: one that fails there, after the
+# unit that may install the program, and one that its turn never makes, as
+# the unit it needs failed
+cp turn.yaml opstruss.yaml
+! exec opstruss up --yes
+stdout '^default/prepare: up: done$'
+stderr '^default/replacement: requires: no-such-program-anywhere is not in PATH$'
+stdout '^default/c: skipped: waits until every unit can be planned$'
+stdout '^default/bad: skipped: waits until every unit can be planned$'
+! grep '^c$' destroys
+exec opstruss state list
+stdout 'default/c\s'
+! stdout 'default/bad\s+forgotten'
+
+cp failed.yaml opstruss.yaml
+! exec opstruss up --yes
+stdout '^default/replacement: skipped: default/prepare is failure$'
+stdout '^default/c: skipped: waits until every unit can be planned$'
+stdout '^default/bad: skipped: waits until every unit can be planned$'
+! grep '^c$' destroys
+
+# an interrupt before their turn leaves them all, also what is forgotten
+cp interrupt.yaml opstruss.yaml
+! exec opstruss up --yes &up&
+waitgrep go started
+kill -INT up
+wait up
+stdout '^default/c: interrupted before its turn$'
+stdout '^default/bad: interrupted before its turn$'
+exec opstruss state list
+! stdout 'default/bad\s+forgotten'
+
+cp done.yaml opstruss.yaml
+exec opstruss up --yes
+stdout '^default/c: destroy: done$'
+stdout '^default/bad: forgotten; a tombstone stays at the address$'
+grep '^c$' destroys
+
 -- opstruss.yaml --
 name: waits
 units:
@@ -60,6 +98,7 @@ units:
     requires: [no-such-program-anywhere]
   c:
     run: echo c
+    destroy: echo c >> destroys
 removed:
   - {from: old, destroy: true}
   - {from: kept, destroy: false}
@@ -74,6 +113,73 @@ units:
     run: echo bad
   c:
     run: echo c
+    destroy: echo c >> destroys
 removed:
   - {from: old, destroy: true}
   - {from: kept, destroy: false}
+-- turn.yaml --
+name: waits
+units:
+  a:
+    for_each: [x]
+    run: echo a
+    destroy: echo "${OPSTRUSS_ADDRESS#default/}" >> destroys
+  prepare:
+    run: echo prepare
+  replacement:
+    needs: [prepare]
+    run: echo replacement
+    requires: [no-such-program-anywhere]
+removed:
+  - {from: c, destroy: true}
+  - {from: bad, destroy: false}
+-- failed.yaml --
+name: waits
+units:
+  a:
+    for_each: [x]
+    run: echo a
+    destroy: echo "${OPSTRUSS_ADDRESS#default/}" >> destroys
+  prepare:
+    run: exit 3
+  replacement:
+    needs: [prepare]
+    run: echo replacement
+    requires: [no-such-program-anywhere]
+removed:
+  - {from: c, destroy: true}
+  - {from: bad, destroy: false}
+-- interrupt.yaml --
+name: waits
+units:
+  a:
+    for_each: [x]
+    run: echo a
+    destroy: echo "${OPSTRUSS_ADDRESS#default/}" >> destroys
+  prepare:
+    run: echo prepare
+  replacement:
+    needs: [prepare]
+    run: echo replacement
+  slow:
+    run: echo go > started; sleep 30
+removed:
+  - {from: c, destroy: true}
+  - {from: bad, destroy: false}
+-- done.yaml --
+name: waits
+units:
+  a:
+    for_each: [x]
+    run: echo a
+    destroy: echo "${OPSTRUSS_ADDRESS#default/}" >> destroys
+  prepare:
+    run: echo prepare
+  replacement:
+    needs: [prepare]
+    run: echo replacement
+  slow:
+    run: echo slow
+removed:
+  - {from: c, destroy: true}
+  - {from: bad, destroy: false}

@@ -667,10 +667,12 @@ func (e *engine) turn(ctx context.Context, inst *instance, leave func()) {
 	e.setRecord(inst, rec)
 	r, err := e.resolve(inst, false)
 	if err != nil {
+		inst.turnPlan = &plan{err: err}
 		failed(err)
 		return
 	}
 	if err := e.missing(inst, r); err != nil {
+		inst.turnPlan = &plan{err: err}
 		failed(err)
 		return
 	}
@@ -681,6 +683,7 @@ func (e *engine) turn(ctx context.Context, inst *instance, leave func()) {
 		held = &heldLogs{}
 	}
 	p := e.decide(ctx, inst, r, rec, held)
+	inst.turnPlan = &p
 	if held != nil {
 		held.release(e, p.err != nil || p.approval() != inst.plan.approval())
 	}
