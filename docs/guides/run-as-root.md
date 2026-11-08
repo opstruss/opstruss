@@ -44,7 +44,8 @@ line for the path of the binary that runs.
   [program contract](../reference/program-contract.md) as without sudo.
   Files that it makes in `OPSTRUSS_TEMP`, `OPSTRUSS_ARTIFACTS`,
   `OPSTRUSS_WORKDIR`, and `OPSTRUSS_STATE_DIR` go back to the operator once
-  it ends; files elsewhere stay root's.
+  it ends; files elsewhere stay root's, and so do a file there with another
+  link, which may be a file elsewhere, and what is on another filesystem.
 - Ctrl-C, `stop.grace`, and `timeout` stop it as any program, and it stops
   when OpsTruss dies.
 

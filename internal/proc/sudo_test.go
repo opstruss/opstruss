@@ -161,3 +161,49 @@ func TestSudoRefused(t *testing.T) {
 		t.Fatalf("got %v, want a program that does not exist", err)
 	}
 }
+
+// TestGiveBack gives the operator what root made in a directory of the
+// run, and nothing that the directory only reaches: a hard link to a file
+// elsewhere, as one to /etc/shadow, or a symlink to a directory outside.
+// It needs root, as in the check of Linux in a container.
+func TestGiveBack(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("needs root")
+	}
+	t.Setenv("SUDO_UID", "1000")
+	t.Setenv("SUDO_GID", "1000")
+	outside, dir := t.TempDir(), t.TempDir()
+	file := func(path string) string {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	system := file(filepath.Join(outside, "shadow"))
+	deep := file(filepath.Join(outside, "deep", "file"))
+	if err := os.Link(system, filepath.Join(dir, "shadow")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Dir(deep), filepath.Join(dir, "out")); err != nil {
+		t.Fatal(err)
+	}
+	made := file(filepath.Join(dir, "made", "file"))
+
+	warnings := giveBack([]string{dir})
+	for path, want := range map[string]uint32{system: 0, deep: 0, filepath.Dir(deep): 0,
+		made: 1000, filepath.Dir(made): 1000, filepath.Join(dir, "out"): 1000} {
+		info, err := os.Lstat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := info.Sys().(*syscall.Stat_t).Uid; got != want {
+			t.Errorf("%s: owner %d, want %d", path, got, want)
+		}
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "other links") {
+		t.Errorf("got warnings %q, want one about the files with other links", warnings)
+	}
+}

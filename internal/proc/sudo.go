@@ -10,7 +10,6 @@ import (
 	"net"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -392,10 +391,9 @@ func receiveFiles(conn *net.UnixConn) ([]*os.File, error) {
 }
 
 // giveBack gives the operator who ran sudo the files that root owns in
-// dirs, without following a symlink, so a later program that runs as the
-// operator, and the removal of the run's directory, still reach them, as
-// SUDO_UID and SUDO_GID name the operator. Files elsewhere stay root's, as
-// with sudo at a shell.
+// dirs, so a later program that runs as the operator, and the removal of
+// the run's directory, still reach them, as SUDO_UID and SUDO_GID name the
+// operator. Files elsewhere stay root's, as with sudo at a shell.
 func giveBack(dirs []string) []string {
 	uid, err1 := strconv.Atoi(os.Getenv("SUDO_UID"))
 	gid, err2 := strconv.Atoi(os.Getenv("SUDO_GID"))
@@ -403,25 +401,69 @@ func giveBack(dirs []string) []string {
 		return nil
 	}
 	var failed []string
+	kept := false
 	for _, dir := range dirs {
-		_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return nil
-			}
-			info, err := d.Info()
-			if err != nil {
-				return nil
-			}
-			if st, ok := info.Sys().(*syscall.Stat_t); ok && st.Uid == 0 {
-				if err := os.Lchown(p, uid, gid); err != nil && len(failed) < 3 {
-					failed = append(failed, err.Error())
-				}
-			}
-			return nil
-		})
+		f, k := giveBackDir(dir, uid, gid)
+		kept = kept || k
+		failed = append(failed, f...)
+	}
+	var warnings []string
+	if kept {
+		warnings = append(warnings, "some files that the program made as root stay root's, since they have other links or are on another filesystem")
 	}
 	if len(failed) > 0 {
-		return []string{"some files that the program made as root stay root's: " + strings.Join(failed, "; ")}
+		warnings = append(warnings, "some files that the program made as root stay root's: "+strings.Join(failed[:min(3, len(failed))], "; "))
 	}
-	return nil
+	return warnings
+}
+
+// giveBackDir gives back what root owns in dir. The walk and each chown go
+// through a Root, so no path leaves dir by .. or a symlink, also one that
+// a program puts in place meanwhile. A file with other links is an inode
+// that may be anywhere, as a link to /etc/shadow, and what lies on another
+// filesystem is not of the run, so both stay root's; kept says so.
+func giveBackDir(dir string, uid, gid int) (failed []string, kept bool) {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, false
+	}
+	defer func() { _ = root.Close() }()
+	top, err := root.Lstat(".")
+	if err != nil {
+		return nil, false
+	}
+	st, ok := top.Sys().(*syscall.Stat_t)
+	if !ok {
+		return nil, false
+	}
+	dev := st.Dev
+	_ = fs.WalkDir(root.FS(), ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		st, ok := info.Sys().(*syscall.Stat_t)
+		switch {
+		case !ok:
+			return nil
+		case st.Dev != dev:
+			kept = true
+			if d.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		case !d.IsDir() && st.Nlink > 1:
+			kept = true
+			return nil
+		case st.Uid == 0:
+			if err := root.Lchown(p, uid, gid); err != nil {
+				failed = append(failed, err.Error())
+			}
+		}
+		return nil
+	})
+	return failed, kept
 }

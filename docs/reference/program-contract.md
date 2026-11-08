@@ -185,5 +185,6 @@ among them, from OpsTruss, and stops it when OpsTruss stops it or dies. It
 gets the contract above, with `HOME` and `USER` of root, unless `env:`
 sets them, and `SUDO_USER`, `SUDO_UID`, and `SUDO_GID`; files that it makes
 in `OPSTRUSS_TEMP`, `OPSTRUSS_ARTIFACTS`, `OPSTRUSS_WORKDIR`, and
-`OPSTRUSS_STATE_DIR` go back to the operator once it ends. See
+`OPSTRUSS_STATE_DIR` go back to the operator once it ends, except a file
+with another link and what is on another filesystem. See
 [Run as root](../guides/run-as-root.md).
