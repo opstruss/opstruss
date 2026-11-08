@@ -992,7 +992,7 @@ func (e *engine) attempts(ctx context.Context, inst *instance, r *resolved, rec 
 		}
 		if done || i >= n || ctx.Err() != nil {
 			if ferr == nil {
-				ferr = fmt.Errorf("retry.until is still false after %d attempts", i)
+				ferr = untilFalse(i)
 			}
 			return nil, ferr
 		}
@@ -1005,6 +1005,15 @@ func (e *engine) attempts(ctx context.Context, inst *instance, r *resolved, rec 
 		delay = time.Duration(float64(delay) * backoff)
 		reason = "interrupted"
 	}
+}
+
+// untilFalse is the failure of a result that succeeded while retry.until
+// stayed false until the last attempt.
+func untilFalse(attempts int) error {
+	if attempts == 1 {
+		return errors.New("retry.until is still false after 1 attempt")
+	}
+	return fmt.Errorf("retry.until is still false after %d attempts", attempts)
 }
 
 // outcomeErr says why a program's result is a failure, or nil.

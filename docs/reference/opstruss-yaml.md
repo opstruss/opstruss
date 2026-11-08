@@ -79,7 +79,7 @@ Running a program again when it fails.
 
 | Key | Type | Description |
 |---|---|---|
-| `attempts` | integer | How many times the program runs at most, the first one included. |
+| `attempts` (required) | integer | How many times the program runs at most, the first one included. |
 | `delay` | string | The wait before the second attempt. |
 | `backoff` | number | What each wait is multiplied by for the next one. |
 | `until` | string or boolean | A condition on the outputs that ends the attempts when true. |

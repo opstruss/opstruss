@@ -733,6 +733,7 @@ func (e *engine) stepsWithRetry(ctx context.Context, name, label string, t *mode
 		if t.Retry != nil && t.Retry.Until != nil {
 			ok, err := expr.EvalCondition(t.Retry.Until, js)
 			if err != nil {
+				e.emit(Event{Type: "task", Level: "error", Address: c.address(), Task: label, Message: "retry.until: " + err.Error()})
 				res.outcome = failure
 				return res
 			}
@@ -741,6 +742,7 @@ func (e *engine) stepsWithRetry(ctx context.Context, name, label string, t *mode
 		if done || i >= n || ctx.Err() != nil || res.approval {
 			if !done && res.outcome == success {
 				res.outcome = failure
+				e.emit(Event{Type: "task", Level: "error", Address: c.address(), Task: label, Message: untilFalse(i).Error()})
 			}
 			return res
 		}

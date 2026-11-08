@@ -105,6 +105,7 @@ func (e *engine) try(ctx context.Context, p progSpec, s *expr.Scope, attempt fun
 		if done || i >= n || ctx.Err() != nil || r.approval {
 			if !done && r.outcome == success {
 				r.outcome = failure
+				e.emit(Event{Type: "step", Level: "error", Task: p.label, Step: p.step, Message: untilFalse(i).Error()})
 			}
 			return r
 		}

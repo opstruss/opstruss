@@ -1,0 +1,54 @@
+# retry says how often a program runs at most with attempts, which has no
+# default; one whose until stays false fails and says so, for a unit, a
+# task, and a step.
+
+env HOME=$WORK/home
+
+# retry without attempts is not valid, wherever it is written
+! exec opstruss validate -C missing
+stderr '^opstruss.yaml:\d+:\d+: units.u.retry: missing key "attempts"$'
+stderr '^opstruss.yaml:\d+:\d+: tasks.t.retry: missing key "attempts"$'
+stderr '^opstruss.yaml:\d+:\d+: tasks.s.steps\[0\].retry: missing key "attempts"$'
+
+# until that stays false fails the result and names the attempts
+! exec opstruss up --yes
+stderr 'retry.until is still false after 2 attempts'
+! exec opstruss task
+stderr 'retry.until is still false after 2 attempts'
+! exec opstruss step
+stderr 'retry.until is still false after 1 attempt$'
+
+-- missing/opstruss.yaml --
+name: missing
+units:
+  u:
+    run: "true"
+    retry: {delay: 1ms}
+tasks:
+  t:
+    run: "true"
+    retry: {until: "true"}
+  s:
+    steps:
+      - run: "true"
+        retry: {until: "true", delay: 1ms}
+-- opstruss.yaml --
+name: until
+units:
+  u:
+    run: echo "ready=false" >> "$OPSTRUSS_OUTPUT"
+    outputs:
+      ready: {type: boolean}
+    retry: {attempts: 2, delay: 1ms, until: "${{ outputs.ready }}"}
+tasks:
+  task:
+    run: echo "ready=false" >> "$OPSTRUSS_OUTPUT"
+    outputs:
+      ready: {type: boolean}
+    retry: {attempts: 2, delay: 1ms, until: "${{ outputs.ready }}"}
+  step:
+    steps:
+      - run: echo "ready=false" >> "$OPSTRUSS_OUTPUT"
+        outputs:
+          ready: {type: boolean}
+        retry: {attempts: 1, until: "${{ outputs.ready }}"}

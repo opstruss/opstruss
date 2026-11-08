@@ -238,6 +238,7 @@
     "retry": {
       "description": "Running a program again when it fails.",
       "type": "object",
+      "required": ["attempts"],
       "properties": {
         "attempts": {
           "description": "How many times the program runs at most, the first one included.",
