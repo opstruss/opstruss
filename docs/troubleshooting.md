@@ -15,6 +15,14 @@ directory that has it in `PATH`. `opstruss doctor` shows where each
 program is found. The [Install](./getting-started/install#requirements)
 page lists what each plugin needs.
 
+## A unit runs and never ends
+
+A program that asks a question at the terminal itself, as `Email?` of
+`chezmoi init` or a passphrase of `ssh`, waits for an answer that never
+reaches it: what you type shows, but the program gets [no
+keyboard](./reference/program-contract#no-keyboard). Press Ctrl-C, then
+give the answer through an input, `stdin:`, or a flag of the tool.
+
 ## A unit is pending after a crash
 
 When OpsTruss is killed during a run, the record of a unit that was
