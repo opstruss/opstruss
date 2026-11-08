@@ -38,6 +38,25 @@ stdout '"stopped": false'
 exec opstruss up --yes --force
 ! daemonrun default
 
+# up -d reads the project before it starts a daemon: files that do not
+# validate fail as up without -d does, and start nothing
+cp bad.yaml opstruss.yaml
+! exec opstruss up -d --yes
+stderr 'units\.web\.restrat: unknown key; did you mean restart\?'
+exec opstruss stop --json
+stdout '"stopped": false'
+! exec opstruss up -d --yes --json
+stdout '"type":"diagnostic","level":"error","message":"opstruss.yaml:.*unknown key'
+stdout '"message":"failed before it started"'
+exec opstruss stop --json
+stdout '"stopped": false'
+
+-- bad.yaml --
+name: shop
+units:
+  web:
+    run: echo up
+    restrat: always
 -- opstruss.yaml --
 name: shop
 units:

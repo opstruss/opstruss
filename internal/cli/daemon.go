@@ -16,6 +16,7 @@ import (
 	"github.com/opstruss/opstruss/internal/daemon"
 	"github.com/opstruss/opstruss/internal/engine"
 	"github.com/opstruss/opstruss/internal/model"
+	"github.com/opstruss/opstruss/internal/sources"
 	"github.com/spf13/cobra"
 )
 
@@ -83,6 +84,13 @@ func (a *app) dial(req api.Request) (*api.Client, error) {
 	}
 	c, err := daemon.Dial(root, stack, version(), a.answers())
 	if err == nil && c == nil && a.detach {
+		// Files that a run cannot read start no daemon, which would stay
+		// with no trigger and out of sight of the commands that read them.
+		p, lerr := model.LoadWith(context.Background(), req.Dir, stack, sources.Options{Locked: req.Locked})
+		if lerr != nil {
+			return nil, lerr
+		}
+		p.Close()
 		if err = a.startDaemon(req.Dir, stack); err == nil {
 			c, err = daemon.Dial(root, stack, version(), a.answers())
 		}
