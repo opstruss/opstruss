@@ -101,16 +101,35 @@ func (r *Run) SudoValidate(ctx context.Context, password string) error {
 	}
 	var said bytes.Buffer
 	cmd := exec.CommandContext(ctx, s.Path, "-S", "-p", "", "-v")
-	cmd.Env, cmd.Stdin, cmd.Stdout, cmd.Stderr = s.Env, strings.NewReader(password+"\n"), &said, &said
+	// In English, so what sudo says can be told apart; sudo -v runs no
+	// program that would get it.
+	env := append(slices.Clone(s.Env), "LC_ALL=C")
+	cmd.Env, cmd.Stdin, cmd.Stdout, cmd.Stderr = env, strings.NewReader(password+"\n"), &said, &said
 	// Ctrl-C at the terminal reaches OpsTruss, which ends the run.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() != nil {
 			return context.Cause(ctx)
 		}
-		return &proc.SudoRefused{Message: strings.TrimSpace(said.String())}
+		return sudoSaid(said.String())
 	}
 	return nil
+}
+
+// sudoSaid is the refusal of sudo -S -v, which said out: a wrong password,
+// or the lines that say why else, without the end of stdin that sudo finds
+// when it reads it again for the next try.
+func sudoSaid(out string) *proc.SudoRefused {
+	if strings.Contains(out, "incorrect password attempt") || strings.Contains(out, "Sorry, try again") {
+		return &proc.SudoRefused{Message: "the password is wrong", WrongPassword: true}
+	}
+	var lines []string
+	for l := range strings.Lines(out) {
+		if l = strings.TrimSpace(l); l != "" && !strings.Contains(l, "no password was provided") {
+			lines = append(lines, l)
+		}
+	}
+	return &proc.SudoRefused{Message: strings.Join(lines, "; ")}
 }
 
 // SudoRefresh keeps the ticket of sudo for the run, as sudo -n -v does; a

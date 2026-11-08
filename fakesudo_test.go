@@ -22,6 +22,7 @@ import (
 //	password   the password it wants; without the file, it wants none
 //	ticket     the ticket that sudo -v makes, which -n then takes
 //	log_input  put a pipe on the stdin of the command, as sudoers log_input does
+//	denied     refuse the user after any password, as sudo refuses one that sudoers does not name
 //	log        each call, one line of its arguments
 //
 // It knows sudo -n [-v | -- <command>...] and sudo -S -p <prompt> -v, which
@@ -71,9 +72,15 @@ func fakesudo(args []string) int {
 		}
 		r := bufio.NewReader(os.Stdin)
 		line, err := r.ReadString('\n')
+		if has("denied") {
+			host, _ := os.Hostname()
+			fmt.Fprintf(os.Stderr, "Sorry, user %s may not run sudo on %s.\n", os.Getenv("USER"), host)
+			return 1
+		}
 		if strings.TrimSuffix(line, "\n") != strings.TrimSpace(string(want)) {
 			if err == nil {
-				fmt.Fprintln(os.Stderr, "Sorry, try again.")
+				// sudo reads stdin again for the next try, and finds its end.
+				fmt.Fprint(os.Stderr, "Sorry, try again.\n\nsudo: no password was provided\n")
 			}
 			fmt.Fprintln(os.Stderr, "sudo: 1 incorrect password attempt")
 			return 1

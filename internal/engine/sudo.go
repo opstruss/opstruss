@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -16,16 +17,19 @@ import (
 // sudoKeep is how often a run keeps the ticket of sudo while it lasts.
 var sudoKeep = time.Minute
 
-// sudoTries is how often a run asks for the password of sudo, as sudo does.
+// sudoTries is how many wrong passwords of sudo a run takes, as sudo does.
 const sudoTries = 3
 
 // sudoSession is what the programs of one run share of sudo: one question
-// for the password at a time, and the ticket that sudo keeps once it took
-// one, which the run keeps alive until it ends.
+// for the password at a time, the ticket that sudo keeps once it took
+// one, which the run keeps alive until it ends, and the refusals, which
+// end the questions for the run.
 type sudoSession struct {
-	mu   sync.Mutex
-	took int                // the passwords that sudo took, so a program that waited for a question asks none
-	stop context.CancelFunc // of the keep-alive, once it runs
+	mu     sync.Mutex
+	took   int                // the passwords that sudo took, so a program that waited for a question asks none
+	wrong  int                // the passwords that sudo did not take
+	failed error              // why the run asks no more, once sudo refused
+	stop   context.CancelFunc // of the keep-alive, once it runs
 }
 
 // execCall runs c, as root through sudo when c says so: sudo -n starts it, and
@@ -66,7 +70,8 @@ func (e *engine) execCall(ctx context.Context, c *plugin.Call, ev Event) (*plugi
 
 // sudoPassword asks at the terminal for the password of sudo, which sudo
 // -v reads once, unless sudo took one since took; a run without a terminal
-// fails, with what sudo said.
+// fails, with what sudo said. A run asks until sudo took sudoTries wrong
+// passwords, or refused the operator, and then no more.
 func (e *engine) sudoPassword(ctx context.Context, took int, refused *proc.SudoRefused, ev Event) error {
 	s := &e.sudo
 	s.mu.Lock()
@@ -78,14 +83,20 @@ func (e *engine) sudoPassword(ctx context.Context, took int, refused *proc.SudoR
 		// The run stopped while another program had the prompt.
 		return errors.New("waiting for the password prompt of sudo")
 	}
+	if s.failed != nil {
+		return s.failed
+	}
 	if e.opts.Ask == nil {
 		// Without a terminal sudo keeps no ticket that this run could share,
 		// as in CI, the daemon, and a trigger, so sudoers is the only way.
 		return fmt.Errorf("sudo needs a password, and this run has no terminal to ask for it; to run without one, add %s ALL=(root) NOPASSWD: %s to sudoers, which lets any program run as root (%s)",
 			username(), e.sudoCommand(), refused.Message)
 	}
-	for try := 1; ; try++ {
-		password, err := e.opts.Ask(ctx, "sudo password for "+username(), &model.Input{Sensitive: true})
+	// The question names whose program it is, as its block may not show
+	// yet.
+	label := cmp.Or(e.short(ev.Address), ev.Task)
+	for {
+		password, err := e.opts.Ask(ctx, fmt.Sprintf("sudo password for %s (%s)", username(), label), &model.Input{Sensitive: true})
 		if errors.Is(ctx.Err(), context.Canceled) {
 			// The run reports the interrupt; what sudo -v said of it says
 			// nothing more.
@@ -102,10 +113,18 @@ func (e *engine) sudoPassword(ctx context.Context, took int, refused *proc.SudoR
 		if errors.Is(ctx.Err(), context.Canceled) {
 			return errors.New("at the password prompt of sudo")
 		}
-		if !errors.As(err, &refused) || try == sudoTries {
+		switch {
+		case !errors.As(err, &refused):
 			return fmt.Errorf("sudo did not take the password: %w", err)
+		case !refused.WrongPassword:
+			s.failed = fmt.Errorf("sudo refused earlier in this run: %s", refused.Message)
+			return fmt.Errorf("sudo refused: %s", refused.Message)
 		}
-		e.emit(Event{Type: "diagnostic", Level: "warn", Address: ev.Address, Task: ev.Task, Step: ev.Step, Message: refused.Message})
+		if s.wrong++; s.wrong == sudoTries {
+			s.failed = errors.New("sudo did not take the password earlier in this run")
+			return fmt.Errorf("sudo did not take the password after %d attempts", sudoTries)
+		}
+		e.emit(Event{Type: "diagnostic", Level: "warn", Address: ev.Address, Task: ev.Task, Step: ev.Step, Message: "sudo did not take the password; try again"})
 	}
 }
 

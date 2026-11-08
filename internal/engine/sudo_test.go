@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -24,7 +25,8 @@ func TestMain(m *testing.M) {
 
 // fakeSudo wants the password in $HOME/.fakesudo/password until sudo -S
 // -v took it, then runs its command as the same user; each call goes to
-// $HOME/.fakesudo/log.
+// $HOME/.fakesudo/log. With $HOME/.fakesudo/denied, it refuses the user
+// after any password. It says what sudo 1.9 says.
 const fakeSudo = `#!/bin/sh
 d=$HOME/.fakesudo
 echo "$*" >> "$d/log"
@@ -37,7 +39,8 @@ if [ -f "$d/password" ] && [ ! -f "$d/ticket" ]; then
   [ -n "$n" ] && { echo 'sudo: a password is required' >&2; exit 1; }
   [ -n "$S" ] || exit 1
   IFS= read -r pw
-  [ "$pw" = "$(cat "$d/password")" ] || { echo 'Sorry, try again.' >&2; echo 'sudo: 1 incorrect password attempt' >&2; exit 1; }
+  [ -f "$d/denied" ] && { echo "Sorry, user $(id -un) may not run sudo on $(uname -n)." >&2; exit 1; }
+  [ "$pw" = "$(cat "$d/password")" ] || { printf 'Sorry, try again.\n\nsudo: no password was provided\nsudo: 1 incorrect password attempt\n' >&2; exit 1; }
   : > "$d/ticket"
 fi
 [ -n "$v" ] && exit 0
@@ -112,15 +115,18 @@ func TestSudoPassword(t *testing.T) {
 	if res.ExitCode != 0 {
 		t.Fatalf("exit %d, events %v", res.ExitCode, events)
 	}
-	if len(asked) != 2 || !strings.HasPrefix(asked[0], "sudo password for ") {
-		t.Fatalf("asked %q; want the password twice, the wrong one and the right one", asked)
+	if len(asked) != 2 || !strings.HasPrefix(asked[0], "sudo password for ") || !strings.HasSuffix(asked[0], " (a)") && !strings.HasSuffix(asked[0], " (b)") {
+		t.Fatalf("asked %q; want the password twice, the wrong one and the right one, for a unit that it names", asked)
 	}
 	var sorry, ran int
 	for _, ev := range events {
 		if strings.Contains(ev.Message, password) {
 			t.Errorf("event holds the password: %+v", ev)
 		}
-		if ev.Message == "Sorry, try again.\nsudo: 1 incorrect password attempt" {
+		if strings.Contains(ev.Message, "incorrect password attempt") || strings.Contains(ev.Message, "no password was provided") {
+			t.Errorf("event holds what sudo said of a wrong password: %+v", ev)
+		}
+		if ev.Message == "sudo did not take the password; try again" && ev.Level == "warn" {
 			sorry++
 		}
 		if ev.Type == "log" && (ev.Message == "a as root" || ev.Message == "b as root") {
@@ -227,5 +233,75 @@ func TestSudoPasswordInterrupted(t *testing.T) {
 	}
 	if prompt != 1 || res.ExitCode == 0 {
 		t.Errorf("exit %d, %d units interrupted at the prompt; want 1: %v", res.ExitCode, prompt, events)
+	}
+}
+
+// sudoRun runs up in a project of two units that run as root, with a
+// fake sudo that wants a password, answers each question with answer,
+// and returns how often it asked and how each unit ended.
+func sudoRun(t *testing.T, denied bool, answer string) (asked int, ended map[string]Event) {
+	t.Helper()
+	yaml := "name: pw\nunits:\n" +
+		"  a:\n    run: 'echo a'\n    sudo: true\n" +
+		"  b:\n    run: 'echo b'\n    sudo: true\n"
+	project, env, fake := sudoProject(t, yaml)
+	if denied {
+		if err := os.WriteFile(filepath.Join(fake, "denied"), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var mu sync.Mutex
+	ended = map[string]Event{}
+	_, err := Up(t.Context(), Options{Dir: project, Environ: env, LookupEnv: func(string) (string, bool) { return "", false }, Yes: true,
+		Ask: func(context.Context, string, *model.Input) (string, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			asked++
+			return answer, nil
+		},
+		Emit: func(ev Event) {
+			mu.Lock()
+			defer mu.Unlock()
+			if ev.Type == "unit" && ev.Status == "finished" {
+				ended[ev.Address] = ev
+			}
+		}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return asked, ended
+}
+
+// Three wrong passwords are all that a run asks for, whatever programs
+// want sudo.
+func TestSudoPasswordTries(t *testing.T) {
+	asked, ended := sudoRun(t, false, "wrong")
+	if asked != 3 {
+		t.Errorf("asked %d times; want 3 for the run", asked)
+	}
+	msgs := []string{ended["default/a"].Message, ended["default/b"].Message}
+	if len(ended) != 2 || !slices.Contains(msgs, "sudo did not take the password after 3 attempts") ||
+		!slices.Contains(msgs, "sudo did not take the password earlier in this run") {
+		t.Errorf("units ended %v", ended)
+	}
+}
+
+// sudo that refuses the user, not the password, ends the questions.
+func TestSudoPasswordRefused(t *testing.T) {
+	asked, ended := sudoRun(t, true, sudoPass)
+	if asked != 1 {
+		t.Errorf("asked %d times; want once", asked)
+	}
+	var refused, earlier int
+	for _, ev := range ended {
+		switch {
+		case strings.HasPrefix(ev.Message, "sudo refused: Sorry, user ") && strings.Contains(ev.Message, " may not run sudo on "):
+			refused++
+		case strings.HasPrefix(ev.Message, "sudo refused earlier in this run: Sorry, user "):
+			earlier++
+		}
+	}
+	if refused != 1 || earlier != 1 {
+		t.Errorf("units ended %v", ended)
 	}
 }

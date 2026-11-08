@@ -476,7 +476,7 @@ func (d *doctor) sudo() {
 		d.add(&Check{Check: "sudo", Status: "ok", Name: "sudo", Message: "sudo runs " + cmd + " without a password", For: users})
 	case errors.As(err, &refused):
 		d.add(&Check{Check: "sudo", Status: "warn", Name: "sudo", For: users, Message: fmt.Sprintf(
-			"sudo needs a password to run %s (%s): a run at a terminal asks for it once, and a run without one fails; to run without a password, add %s ALL=(root) NOPASSWD: %s to sudoers, which lets any program run as root",
+			"sudo needs a password to run %s (%s), or this user may not use sudo: a run at a terminal asks for the password, and a run without one fails; to run without a password, add %s ALL=(root) NOPASSWD: %s to sudoers, which lets any program run as root",
 			cmd, refused.Message, username(), cmd)})
 	default:
 		d.add(&Check{Check: "sudo", Status: "error", Name: "sudo", Message: err.Error(), For: users})

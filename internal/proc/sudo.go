@@ -58,8 +58,12 @@ type sudoMessage struct {
 
 // SudoRefused is the error of a sudo that did not start opstruss __sudo:
 // it needs a password, or the operator may not run it. Message is what
-// sudo said.
-type SudoRefused struct{ Message string }
+// sudo said; WrongPassword says that sudo -S -v did not take the password
+// it read, rather than refusing the operator.
+type SudoRefused struct {
+	Message       string
+	WrongPassword bool
+}
 
 func (e *SudoRefused) Error() string {
 	if e.Message == "" {

@@ -18,9 +18,12 @@ writes a file in `/etc`, runs as root with `sudo: true`.
 ## The password
 
 The first program that runs as root starts through `sudo -n`, once the
-plan is approved. When sudo needs a password, OpsTruss asks for it once at
-the terminal and hands it to `sudo -v`, keeping it only to hide it from
-the output of the run, then keeps the ticket of sudo while the run lasts.
+plan is approved. When sudo needs a password, OpsTruss asks for it at the
+terminal, naming the unit or task that wants it, and hands it to `sudo
+-v`, keeping it only to hide it from the output of the run, then keeps the
+ticket of sudo while the run lasts. A run asks up to three times in all,
+and asks no more once sudo refuses the user, as for a user that sudoers
+does not name. Ctrl-C at the prompt stops the run.
 
 sudo keeps that ticket for the terminal, not for one program: while it
 lasts, a program of the run, or of that terminal, that runs `sudo` itself
