@@ -64,6 +64,7 @@ An event:
 | `exit_code` | On the last event of a run: the exit code of the command |
 | `outputs` | On the last event of a run: the outputs of the task, each an output as [below](#documents); none for a task with `for_each` ([tasks](../guides/tasks#for-each-item)) |
 | `plan` | On a `plan` event: the plan of its unit, as `units.<name>.plan` reads it (below) |
+| `sudo` | `true` on the `debug` `diagnostic` event that a program which runs as root starts with |
 
 - A reader ignores the fields and types it does not know: a new version
   may add some, and `message` is there to show any event.

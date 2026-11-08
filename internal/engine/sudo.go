@@ -75,8 +75,10 @@ func (e *engine) sudoPassword(ctx context.Context, took int, refused *proc.SudoR
 		return nil
 	}
 	if e.opts.Ask == nil {
-		return fmt.Errorf("sudo needs a password, and this run has no terminal; run sudo -v in this terminal first, or allow %s in sudoers without a password (%s)",
-			e.sudoCommand(), refused.Message)
+		// Without a terminal sudo keeps no ticket that this run could share,
+		// as in CI, the daemon, and a trigger, so sudoers is the only way.
+		return fmt.Errorf("sudo needs a password, and this run has no terminal to ask for it; to run without one, add %s ALL=(root) NOPASSWD: %s to sudoers, which lets any program run as root (%s)",
+			username(), e.sudoCommand(), refused.Message)
 	}
 	for try := 1; ; try++ {
 		password, err := e.opts.Ask(ctx, "sudo password for "+username(), &model.Input{Sensitive: true})

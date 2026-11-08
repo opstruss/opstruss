@@ -116,6 +116,7 @@ builtin write input path type string
 builtin write output path
 builtin write output path type string
 command opstruss
+command opstruss __sudo
 command opstruss destroy
 command opstruss doctor
 command opstruss exec

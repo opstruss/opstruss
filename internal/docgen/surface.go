@@ -12,6 +12,7 @@ import (
 	"github.com/opstruss/opstruss/internal/cli"
 	"github.com/opstruss/opstruss/internal/expr"
 	"github.com/opstruss/opstruss/internal/model"
+	"github.com/opstruss/opstruss/internal/proc"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"go.yaml.in/yaml/v3"
@@ -60,6 +61,9 @@ func surface(root string) ([]string, error) {
 
 	cmd, short := cli.Reference()
 	lines = append(lines, commandLines(cmd, short)...)
+	// What sudo runs as root is no command of the help, but sudoers names
+	// it, so its name stays.
+	lines = append(lines, "command opstruss "+proc.SudoCommand)
 
 	exprs, err := expr.Surface()
 	if err != nil {

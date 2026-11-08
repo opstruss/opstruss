@@ -19,11 +19,20 @@ writes a file in `/etc`, runs as root with `sudo: true`.
 
 The first program that runs as root starts through `sudo -n`, once the
 plan is approved. When sudo needs a password, OpsTruss asks for it once at
-the terminal, hands it to `sudo -v`, and forgets it, then keeps the ticket
-of sudo while the run lasts. A run without a terminal, as in CI, the
-daemon, or a trigger, fails before the program starts; there, run `sudo
--v` in the same terminal first, or let sudo run OpsTruss without a
-password:
+the terminal and hands it to `sudo -v`, keeping it only to hide it from
+the output of the run, then keeps the ticket of sudo while the run lasts.
+
+sudo keeps that ticket for the terminal, not for one program: while it
+lasts, a program of the run, or of that terminal, that runs `sudo` itself
+needs no password either, as after `sudo` at a shell. `sudo: true`
+chooses what OpsTruss starts as root; it does not keep other programs
+from sudo, so a plugin or a component from git is code that you trust.
+A program that runs `sudo` by itself is not part of what OpsTruss
+promises.
+
+A run without a terminal, as in CI, the daemon, or a trigger, has no
+ticket to use and fails before the program starts; there, let sudo run
+OpsTruss without a password:
 
 ```text
 # /etc/sudoers.d/opstruss
@@ -33,7 +42,10 @@ deploy ALL=(root) NOPASSWD: /usr/local/bin/opstruss __sudo
 `opstruss __sudo` runs whatever program OpsTruss gives it, so this line
 lets `deploy` run any program as root without a password; it is as much as
 root itself. `opstruss doctor` says whether sudo needs a password, with the
-line for the path of the binary that runs.
+line for the path of the binary that runs. sudo matches the file that the
+line names, so a link that stays across upgrades, such as
+`/usr/local/bin/opstruss`, keeps it working when the binary is in a
+directory of its version.
 
 ## What the program gets
 
