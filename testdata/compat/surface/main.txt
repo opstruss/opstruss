@@ -162,6 +162,16 @@ contract OPSTRUSS_RUN_PARENTS
 contract OPSTRUSS_SERVICE_ID
 contract OPSTRUSS_STACK
 contract OPSTRUSS_STATE
+contract OPSTRUSS_STATE abandoned
+contract OPSTRUSS_STATE abandoned[].inputs
+contract OPSTRUSS_STATE abandoned[].op
+contract OPSTRUSS_STATE abandoned[].outputs
+contract OPSTRUSS_STATE inputs
+contract OPSTRUSS_STATE outputs
+contract OPSTRUSS_STATE pending
+contract OPSTRUSS_STATE pending.inputs
+contract OPSTRUSS_STATE pending.op
+contract OPSTRUSS_STATE pending.outputs
 contract OPSTRUSS_STATE_DIR
 contract OPSTRUSS_STATE_KEY
 contract OPSTRUSS_TASK

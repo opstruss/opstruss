@@ -1079,11 +1079,11 @@ func (e *engine) exec(ctx context.Context, inst *instance, r *resolved, rec *sta
 
 // programState is $OPSTRUSS_STATE for up: the inputs and outputs of the
 // last attempt that succeeded, the pending one with what it parsed, and the
-// abandoned ones.
+// abandoned ones, as the program contract lists them.
 func programState(rec *state.Record) map[string]any {
 	s := map[string]any{"inputs": rec.Inputs, "outputs": rec.Outputs}
 	if a := rec.Pending; a != nil {
-		s["pending"] = map[string]any{"op": a.Op, "inputs": a.Inputs, "outputs": a.Outputs, "raw_output": a.RawOutput}
+		s["pending"] = map[string]any{"op": a.Op, "inputs": a.Inputs, "outputs": a.Outputs}
 	}
 	if len(rec.Abandoned) > 0 {
 		var list []any

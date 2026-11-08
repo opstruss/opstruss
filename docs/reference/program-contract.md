@@ -10,13 +10,28 @@ what a script or a plugin can rely on.
 |---|---|
 | `INPUT_<NAME>` | Each input of the task or plugin, in uppercase with `-` as `_`; a list or a map as JSON. An input over 64 KiB is only in `OPSTRUSS_INPUTS` |
 | `OPSTRUSS_INPUTS` | A JSON file with every input in its own type; mode `0600`, removed after the call |
-| `OPSTRUSS_STATE` | For a program of a unit: a JSON file with the last outputs and inputs that succeeded, and an attempt that did not finish; for `destroy`, those of what it takes away |
+| `OPSTRUSS_STATE` | For a program of a unit: a JSON file with the last outputs and inputs that succeeded, and an attempt that did not finish; for `destroy`, those of what it takes away ([below](#the-state-file)) |
 | stdin | What `stdin:` writes |
 | arguments | For the `exec` hook only: what follows `--` in `opstruss exec` |
 
 `INPUT_*` reaches the program that is the body of a task or a plugin. A
 `run` inside `steps:` gets values through `env:`, so each value reaches
 only the program that names it.
+
+## The state file
+
+`OPSTRUSS_STATE` is a JSON object, with mode `0600`, removed after the
+call. A reader ignores the fields that it does not know, since a later
+version may add some.
+
+| Field | Holds |
+|---|---|
+| `inputs`, `outputs` | The inputs and outputs of the last `up` that succeeded; for `destroy`, those of what it takes away: the last `up`, an attempt that did not finish, or an abandoned one |
+| `pending` | The attempt that did not finish, when there is one; not for `destroy` |
+| `pending.op` | What the attempt ran, such as `up` or `destroy` |
+| `pending.inputs`, `pending.outputs` | The inputs of the attempt, and the outputs that it wrote before it stopped |
+| `abandoned` | The attempts, with other inputs or another program, that the next `up` destroys once it succeeds; not for `destroy` |
+| `abandoned[].op`, `abandoned[].inputs`, `abandoned[].outputs` | As in `pending`, for each attempt |
 
 ## Out
 

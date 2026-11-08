@@ -336,6 +336,10 @@ var (
 	variable = regexp.MustCompile(`^[A-Z][A-Z0-9_]*(<[A-Z]+>)?$`)
 )
 
+// stateField is a field of the state file of the program contract, as
+// pending.op.
+var stateField = regexp.MustCompile(`^[a-z][a-z_]*(\[\])?(\.[a-z][a-z_]*)?$`)
+
 // referenceLines are what the reference lists as tables, in dir: the
 // variables that OpsTruss reads, its exit codes, the fields of the
 // documents of --json, and the variables of the program contract.
@@ -387,6 +391,13 @@ func referenceLines(dir string) ([]string, error) {
 		for _, v := range quotes(row[0]) {
 			if variable.MatchString(v) {
 				lines = append(lines, "contract "+v)
+			}
+		}
+	}
+	for _, row := range table(contract, "## The state file") {
+		for _, f := range quotes(row[0]) {
+			if stateField.MatchString(f) {
+				lines = append(lines, "contract OPSTRUSS_STATE "+f)
 			}
 		}
 	}
