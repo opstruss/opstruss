@@ -1,6 +1,6 @@
 # A reader that closes the output of a run, as head does, does not stop the
 # run: what follows is dropped, the program goes on, and the record ends as
-# the run does.
+# the run does. The run of the logs task of a plugin ends the same way.
 
 env HOME=$WORK/home
 
@@ -12,9 +12,19 @@ exec opstruss runs --json
 stdout '"outcome":\s*"success"'
 ! stdout '"outcome":\s*"(cancelled|failure)"'
 
+exec opstruss up --yes api
+exec sh -c 'opstruss logs api | head -n 1'
+exec opstruss up --yes
+! stderr 'ended without finishing its record'
+
 -- opstruss.yaml --
 name: app
+uses:
+  tail: ./plugins/tail
 units:
+  api:
+    uses: tail
+    approval: auto
   chatty:
     run: |
       echo one
@@ -23,3 +33,10 @@ units:
       sleep 1
       echo three
       echo done > marker
+-- plugins/tail/opstruss.plugin.yaml --
+name: tail
+tasks:
+  up:
+    run: [sh, -c, 'echo up']
+  logs:
+    run: [sh, -c, 'echo one; sleep 1; echo two; sleep 1; echo three']

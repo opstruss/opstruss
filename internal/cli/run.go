@@ -110,6 +110,7 @@ func (a *app) logsCommand() *cobra.Command {
 			req.Follow = follow || a.follow
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
+			keepOnClosedOutput()
 			res, err := a.api().Logs(ctx, req)
 			if err != nil {
 				return err
@@ -581,11 +582,7 @@ func (a *app) interrupts() *interrupts {
 	ctx, kill := proc.WithKill(ctx)
 	ch := make(chan os.Signal, 2)
 	signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
-	// A reader that closes the output, as head does, does not stop the run:
-	// with SIGPIPE caught, a write there fails and is dropped, the programs
-	// go on, and the run ends with its record, as one without a terminal.
-	// It stays caught until the process ends, as output follows the run.
-	signal.Notify(make(chan os.Signal, 1), syscall.SIGPIPE)
+	keepOnClosedOutput()
 	in := &interrupts{ctx: ctx}
 	done := make(chan struct{})
 	go func() {
@@ -617,6 +614,13 @@ func (a *app) interrupts() *interrupts {
 	}
 	return in
 }
+
+// keepOnClosedOutput catches SIGPIPE, so a reader that closes the output,
+// as head does, does not stop the run: a write there fails and is dropped,
+// the programs go on, and the run ends with its record, as one without a
+// terminal. It stays caught until the process ends, as output follows the
+// run.
+func keepOnClosedOutput() { signal.Notify(make(chan os.Signal, 1), syscall.SIGPIPE) }
 
 // exit ends a command whose run ended with code: with 128 and the signal
 // when one stopped it, as a shell reports, otherwise with code.
