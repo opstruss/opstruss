@@ -13,6 +13,11 @@
   approval exits with 1.
 - `plan` exits with 1 when a unit cannot be planned, and with 0 when a
   unit is held by another run.
+- While a unit cannot be planned, `up` still runs the other units and
+  exits with 1, but destroys and forgets nothing: the instances that left
+  `if` or `for_each` and the units that `removed:` decides end `skipped`
+  with `skipped: waits until every unit can be planned`, and go at the
+  first `up` that plans every unit.
 - `doctor` exits with 1 only when a check is `error`, which is what fails
   a run. A later version may add checks, so it fails only where a run
   would.

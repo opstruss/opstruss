@@ -106,7 +106,7 @@ func (e *engine) unitPass(ctx context.Context, op string, p pass) (map[string]an
 		for _, l := range leftovers {
 			v := l.view()
 			e.read[l.address] = v["digest"].(string)
-			out[e.short(l.address)] = map[string]any{"outcome": success, "changed": false, "outputs": map[string]any{}, "plan": v}
+			out[e.short(l.address)] = map[string]any{"outcome": l.planOutcome(), "changed": false, "outputs": map[string]any{}, "plan": v}
 		}
 		return out, marks, nil
 	}
@@ -214,7 +214,7 @@ func (e *engine) askFirst(ctx context.Context, insts []*instance, leftovers []*l
 		digests = append(digests, digest)
 	}
 	for _, l := range leftovers {
-		if l.forget || e.approvalOf(l.def) == "auto" {
+		if l.forget || l.waits || e.approvalOf(l.def) == "auto" {
 			continue
 		}
 		items = append(items, Question{Op: "destroy", Address: l.address, Summary: l.summary()})

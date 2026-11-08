@@ -35,6 +35,7 @@ type leftover struct {
 	cause   string      // why, as a word: requested, gone, or removed
 	def     *model.Unit // nil for a unit no longer in the files
 	auto    bool        // approval: auto, so destroy asks nothing
+	waits   bool        // up leaves it, as a unit of the pass cannot be planned
 	done    chan struct{}
 	outcome string
 }
@@ -42,6 +43,8 @@ type leftover struct {
 // summary is the line of plan for a leftover of up.
 func (l *leftover) summary() string {
 	switch {
+	case l.waits:
+		return "skipped: waits until every unit can be planned"
 	case l.forget:
 		return "will be forgotten without being destroyed: removed: with destroy: false"
 	case noDestroy(l.record) && l.reason == "requested":
@@ -90,7 +93,15 @@ func (e *engine) warnOrphan(l *leftover) {
 // it.
 func (l *leftover) sayPlan(e *engine) {
 	e.emit(Event{Type: "plan", Level: "info", Address: l.address, Task: "plan", Message: l.summary(),
-		Status: record.Finished, Outcome: success, Plan: l.view()})
+		Status: record.Finished, Outcome: l.planOutcome(), Plan: l.view()})
+}
+
+// planOutcome is how the plan of l ended: skipped while it waits.
+func (l *leftover) planOutcome() string {
+	if l.waits {
+		return skipped
+	}
+	return success
 }
 
 // destroyDigest is the digest of destroying the record at addr with etag,
@@ -205,11 +216,15 @@ func (e *engine) records(skip map[string]bool) ([]*leftover, error) {
 // previewLeftovers finds what up destroys or forgets after the turns:
 // instances that if or for_each no longer has, and units that removed:
 // decides. Units gone from the files without removed: stay, with a
-// warning.
+// warning. While a unit of the pass cannot be planned, they all wait,
+// since that unit may be what takes their place, and destroy is the
+// hardest to take back.
 func (e *engine) previewLeftovers() []*leftover {
 	planned := map[string]bool{}
+	waits := false
 	for _, inst := range e.insts {
 		planned[inst.address] = true
+		waits = waits || e.sel.has(inst) && inst.plan.err != nil
 	}
 	records, err := e.records(planned)
 	if err != nil {
@@ -234,6 +249,7 @@ func (e *engine) previewLeftovers() []*leftover {
 			continue
 		}
 		rm := e.removal(l)
+		l.waits = waits
 		switch {
 		case l.def != nil:
 			if !e.sel.all && len(e.sel.picks[l.unit]) == 0 {
@@ -257,7 +273,7 @@ func (e *engine) previewLeftovers() []*leftover {
 			l.forget, l.cause = true, "removed"
 			l.sayPlan(e)
 		}
-		if !l.forget {
+		if !l.forget && !l.waits {
 			if err := e.checkDestroySources(e.ctx, l.record); err != nil {
 				e.fail(l.address, err)
 				continue
@@ -265,7 +281,7 @@ func (e *engine) previewLeftovers() []*leftover {
 		}
 		out = append(out, l)
 	}
-	e.keepPlan(records, out)
+	e.keepPlan(records, slices.DeleteFunc(slices.Clone(out), func(l *leftover) bool { return l.waits }))
 	for _, inst := range e.insts {
 		if inst.record != nil {
 			e.atPlan[inst.address] = inst.record
@@ -302,8 +318,14 @@ func (e *engine) removal(l *leftover) *model.Removed {
 // settle destroys and forgets the leftovers of up, once every turn is
 // done, so no unit still reads an instance that is destroyed.
 func (e *engine) settle(ctx context.Context, items []*leftover) {
-	var destroys []*leftover
+	var destroys, settled []*leftover
 	for _, l := range items {
+		if l.waits {
+			l.outcome = skipped
+			e.ended(l.address, "destroy", skipped, "%s", l.summary())
+			continue
+		}
+		settled = append(settled, l)
 		if !l.forget {
 			destroys = append(destroys, l)
 			continue
@@ -317,7 +339,7 @@ func (e *engine) settle(ctx context.Context, items []*leftover) {
 		e.ended(l.address, "destroy", success, "forgotten; a tombstone stays at the address")
 	}
 	e.destroyAll(ctx, destroys)
-	e.dropFrames(ctx, append(framesOfDestroy(e, items), e.stale...))
+	e.dropFrames(ctx, append(framesOfDestroy(e, settled), e.stale...))
 }
 
 func (e *engine) forget(ctx context.Context, addr string) error {

@@ -1,0 +1,79 @@
+# up destroys and forgets nothing while a unit cannot be planned, since
+# that unit may be what takes the place of what would go: the instances
+# that left for_each and the units that removed: decides wait until every
+# unit can be planned, and the other units still run.
+
+env HOME=$WORK/home
+exec opstruss up --yes
+stdout '^default/a\[y\]: up: done$'
+
+cp waits.yaml opstruss.yaml
+! exec opstruss plan
+stdout '^default/bad: error: requires: '
+stdout '^default/a\[y\]: skipped: waits until every unit can be planned$'
+stdout '^default/old: skipped: waits until every unit can be planned$'
+stdout '^default/kept: skipped: waits until every unit can be planned$'
+! stdout 'will be destroyed|will be forgotten'
+! exec opstruss plan --json
+stdout '"type":"plan","level":"info","address":"default/a\[y\]",.*"outcome":"skipped","plan":\{.*"reason":"gone"'
+stdout '"type":"plan","level":"info","address":"default/old",.*"outcome":"skipped","plan":\{.*"reason":"removed"'
+
+! exec opstruss up --yes
+stdout '^default/c: up: done$'
+stdout '^default/a\[y\]: skipped: waits until every unit can be planned$'
+! exists destroys
+exec opstruss state list
+stdout 'default/a\[y\]'
+stdout 'default/old'
+stdout 'default/kept'
+
+# once every unit can be planned, they go
+cp fixed.yaml opstruss.yaml
+exec opstruss up --yes
+stdout '^default/a\[y\]: destroy: done$'
+stdout '^default/old: destroy: done$'
+stdout '^default/kept: forgotten; a tombstone stays at the address$'
+grep '^a\[y\]$' destroys
+grep '^old$' destroys
+
+-- opstruss.yaml --
+name: waits
+units:
+  a:
+    for_each: [x, y]
+    run: echo a
+    destroy: echo "${OPSTRUSS_ADDRESS#default/}" >> destroys
+  old:
+    run: echo old
+    destroy: echo old >> destroys
+  kept:
+    run: echo kept
+-- waits.yaml --
+name: waits
+units:
+  a:
+    for_each: [x]
+    run: echo a
+    destroy: echo "${OPSTRUSS_ADDRESS#default/}" >> destroys
+  bad:
+    run: echo bad
+    requires: [no-such-program-anywhere]
+  c:
+    run: echo c
+removed:
+  - {from: old, destroy: true}
+  - {from: kept, destroy: false}
+-- fixed.yaml --
+name: waits
+units:
+  a:
+    for_each: [x]
+    run: echo a
+    destroy: echo "${OPSTRUSS_ADDRESS#default/}" >> destroys
+  bad:
+    run: echo bad
+  c:
+    run: echo c
+removed:
+  - {from: old, destroy: true}
+  - {from: kept, destroy: false}
