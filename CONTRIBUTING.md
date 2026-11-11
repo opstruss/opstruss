@@ -42,4 +42,6 @@ imperative of at most 50 characters, and a body that says why.
 After the first release, a commit that changes what an operator, or the
 author of a component or a plugin, can notice adds one entry to
 [`CHANGELOG.md`](CHANGELOG.md), under `[Unreleased]`, in the same commit:
-one or two lines on the effect, with a link to the commit or pull request.
+one or two sentences on the effect, with a link to the commit or pull
+request. An entry, as a paragraph, stays on one line: the notes of a
+release break a line where `CHANGELOG.md` does.

@@ -35,9 +35,10 @@ checksum:
 sboms:
   - artifacts: archive
 
-# Release notes come from CHANGELOG.md; see .github/workflows/release.yml.
-changelog:
-  disable: true
+# The notes of a release come from --release-notes, which
+# .github/workflows/release.yml builds from CHANGELOG.md. Only the
+# changelog pipe reads that file, so changelog.disable would publish a
+# release without notes.
 
 release:
   github:

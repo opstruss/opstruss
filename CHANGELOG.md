@@ -1,51 +1,27 @@
 # Changelog
 
-Every change to OpsTruss that an operator, or the author of a component or
-a plugin, can notice is written down here, newest first.
+Every change to OpsTruss that an operator, or the author of a component or a plugin, can notice is written down here, newest first.
 
-The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-with one addition: a release that asks something of a project, a component,
-or a plugin says so first, under "Upgrade notes". OpsTruss follows
-[Semantic Versioning](https://semver.org/spec/v2.0.0.html): a minor or
-patch release keeps every project, component, and plugin working, as
-[Compatibility](docs/reference/compatibility.md) says, and a change that
-cannot keep them working comes only in a new major version.
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), with one addition: a release that asks something of a project, a component, or a plugin says so first, under "Upgrade notes". OpsTruss follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html): a minor or patch release keeps every project, component, and plugin working, as [Compatibility](docs/reference/compatibility.md) says, and a change that cannot keep them working comes only in a new major version.
 
 ## [Unreleased]
 
-The first release of OpsTruss: one binary that runs any tool as the units
-and tasks of a project, and hands the typed results of one to the next,
-on one machine.
+The first release of OpsTruss: one binary that runs any tool as the units and tasks of a project, and hands the typed results of one to the next, on one machine.
 
 ### Added
 
-- Projects in `opstruss.yaml` with include files and stacks, each stack
-  with its inputs, its state, and `approval: ask` or `auto`.
-- Units that run once (`run`), keep running (`service`, with `ready`), or
-  use a plugin, a task, or a component; `for_each`, `protect`, `moved:`.
-- Tasks with typed inputs as flags, steps, `rescue`/`always`, `retry`,
-  `${{ }}` expressions in CEL, and built-in tasks such as `http` and `kv`.
-- `plan`, `up`, and `destroy` in graph order under a lock per unit: a
-  unit runs again only when it changed, after one approval per run.
-- Plugins and components from a path or `github.com/opstruss/catalog`,
-  pinned in `opstruss.lock`, and the program contract for plugins.
-- Triggers that the daemon of a stack runs: `schedule`, `every`, `watch`,
-  `webhook`, and `after`; `up -d` starts it and `stop` stops it.
-- Secrets from sops, the environment, a program, or a plugin, hidden in
-  every output, and sensitive state encrypted with a data key per stack.
-- Runs recorded in `.opstruss/` and read by `runs`, `logs`, and
-  `status`; `runs cancel`, `runs rerun`, and `state` repair them.
-- `validate`, `explain`, `doctor`, `list`, `outputs`, `exec`, `init`,
-  `uses`, and shell completion; a schema for editors that completes
-  the inputs of what a project uses.
-- Output as blocks at a terminal, groups in GitHub Actions, and JSON
-  events with `--json`.
-- `tty: true` gives a tool a terminal of its own while the run shows on
-  one, so its color and progress show as they do in a terminal.
-- `sudo: true` runs a program as root through sudo, asking for the
-  password at most once a run; plugins and components from git ask for
-  it, and only the files of the project allow it.
-- Release builds for Linux and macOS on amd64 and arm64, with checksums,
-  SBOMs, and build provenance; documentation at opstruss.github.io.
+- Projects in `opstruss.yaml` with include files and stacks, each stack with its inputs, its state, and `approval: ask` or `auto`.
+- Units that run once (`run`), keep running (`service`, with `ready`), or use a plugin, a task, or a component; `for_each`, `protect`, `moved:`.
+- Tasks with typed inputs as flags, steps, `rescue`/`always`, `retry`, `${{ }}` expressions in CEL, and built-in tasks such as `http` and `kv`.
+- `plan`, `up`, and `destroy` in graph order under a lock per unit: a unit runs again only when it changed, after one approval per run.
+- Plugins and components from a path or `github.com/opstruss/catalog`, pinned in `opstruss.lock`, and the program contract for plugins.
+- Triggers that the daemon of a stack runs: `schedule`, `every`, `watch`, `webhook`, and `after`; `up -d` starts it and `stop` stops it.
+- Secrets from sops, the environment, a program, or a plugin, hidden in every output, and sensitive state encrypted with a data key per stack.
+- Runs recorded in `.opstruss/` and read by `runs`, `logs`, and `status`; `runs cancel`, `runs rerun`, and `state` repair them.
+- `validate`, `explain`, `doctor`, `list`, `outputs`, `exec`, `init`, `uses`, and shell completion; a schema for editors that completes the inputs of what a project uses.
+- Output as blocks at a terminal, groups in GitHub Actions, and JSON events with `--json`.
+- `tty: true` gives a tool a terminal of its own while the run shows on one, so its color and progress show as they do in a terminal.
+- `sudo: true` runs a program as root through sudo, asking for the password at most once a run; plugins and components from git ask for it, and only the files of the project allow it.
+- Release builds for Linux and macOS on amd64 and arm64, with checksums, SBOMs, and build provenance; documentation at opstruss.github.io.
 
 [Unreleased]: https://github.com/opstruss/opstruss/commits/main

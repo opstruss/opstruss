@@ -25,15 +25,21 @@ jobs:
         with:
           cache: false
       # The notes are the CHANGELOG.md section of this version, written
-      # "## [1.2.3] - 2026-11-02" once [Unreleased] became the release. A
-      # release candidate, a tag with a pre-release part as v1.0.0-rc.1,
-      # gets the section [Unreleased] after an opening that says what it is
-      # and how to install it.
+      # "## [1.2.3] - 2026-11-02" once [Unreleased] became the release, then
+      # how to install and verify it, and a link to the changes since the
+      # release before. A release candidate, a tag with a pre-release part
+      # as v1.0.0-rc.1, gets the section [Unreleased] after an opening that
+      # says what it is, and the docs of main. GitHub breaks a line of the
+      # notes where the file does, so CHANGELOG.md keeps a paragraph or an
+      # item on one line.
       - name: Extract release notes
         run: |
           version="${GITHUB_REF_NAME#v}"
+          final="${version%%-*}"
           rc=0
           case "$version" in *-*) rc=1 ;; esac
+          # Blank lines are kept only between others, so the section starts
+          # and ends with text.
           awk -v version="$version" -v rc="$rc" '
             rc && $1 == "##" && $2 == "[Unreleased]" { found = 1; next }
             !rc && $1 == "##" && $2 == "[" version "]" {
@@ -41,29 +47,66 @@ jobs:
               found = 1; next
             }
             found && (/^## / || /^\[[^]]+\]: /) { exit }
-            found { print }
+            found && !NF { blank++; next }
+            found { if (printed) for (; blank; blank--) print ""; blank = 0; printed = 1; print }
           ' CHANGELOG.md > "$RUNNER_TEMP/section.md"
           grep -q '[^[:space:]]' "$RUNNER_TEMP/section.md"
-          if [ "$rc" = 1 ]; then
-            final="${version%%-*}"
-            cat > "$RUNNER_TEMP/notes.md" <<EOF
-          OpsTruss $version is a release candidate of $final, published to be
-          tried before the release. The compatibility promise starts with
-          $final: until then, commands, files, and the data that a release
-          candidate writes may still change.
+          docs="https://opstruss.github.io/v${final%.*}/"
+          [ "$rc" = 0 ] || docs=https://opstruss.github.io/dev/
+          # A release candidate is compared with the tag before it, and a
+          # release with the release before it. git sorts v1.0.0-rc.1 after
+          # v1.0.0 unless told that "-" starts a pre-release.
+          previous=$(git -c versionsort.suffix=- tag --list 'v*.*.*' --sort=-v:refname |
+            awk -v tag="$GITHUB_REF_NAME" -v rc="$rc" 'seen && (rc || !/-/) { print; exit } $0 == tag { seen = 1 }')
+          fill() {
+            sed -e "s/@version@/$version/g" -e "s/@final@/$final/g" -e "s|@docs@|$docs|g"
+          }
+          {
+            if [ "$rc" = 1 ]; then
+              fill <<'EOF'
+          OpsTruss @version@ is a release candidate of @final@, published to be tried before the release. The compatibility promise starts with @final@: until then, commands, files, and the data that a release candidate writes may still change. Report what you find at https://github.com/opstruss/opstruss/issues.
 
-              mise use github:opstruss/opstruss@$version
-              go install github.com/opstruss/opstruss@v$version
-
-          The docs of a release candidate are those of main, at
-          https://opstruss.github.io/dev/. \`opstruss init\` writes the schema
-          for editors to .opstruss/schema.json; that of opstruss.plugin.yaml
-          is https://opstruss.github.io/dev/schema/plugin.json.
-
-          Report what you find at https://github.com/opstruss/opstruss/issues.
           EOF
-          fi
-          cat "$RUNNER_TEMP/section.md" >> "$RUNNER_TEMP/notes.md"
+            fi
+            printf '## Release notes\n\n'
+            cat "$RUNNER_TEMP/section.md"
+            fill <<'EOF'
+
+          ## Install
+
+          ```sh
+          mise use github:opstruss/opstruss@@version@
+          ```
+
+          ```sh
+          go install github.com/opstruss/opstruss@v@version@
+          ```
+
+          Or download the archive for your platform below. The [install page](@docs@getting-started/install) says more.
+          EOF
+            if [ "$rc" = 1 ]; then
+              fill <<'EOF'
+
+          The docs of a release candidate are those of `main`. `opstruss init` writes the schema for editors to `.opstruss/schema.json`, and that of `opstruss.plugin.yaml` is @docs@schema/plugin.json.
+          EOF
+            fi
+            fill <<'EOF'
+
+          ## Verify
+
+          Each archive has its SHA-256 in `checksums.txt`, an SBOM, and a build attestation that the [GitHub CLI](https://cli.github.com) checks:
+
+          ```sh
+          sha256sum --ignore-missing -c checksums.txt
+          gh attestation verify opstruss_@version@_linux_amd64.tar.gz --repo opstruss/opstruss
+          ```
+
+          On macOS, `shasum -a 256 --ignore-missing -c checksums.txt` checks the archives.
+          EOF
+            if [ -n "$previous" ]; then
+              printf '\n**Full Changelog**: https://github.com/opstruss/opstruss/compare/%s...%s\n' "$previous" "$GITHUB_REF_NAME"
+            fi
+          } > "$RUNNER_TEMP/notes.md"
       - run: goreleaser release --clean --release-notes "$RUNNER_TEMP/notes.md"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
