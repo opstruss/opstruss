@@ -364,5 +364,16 @@ func readEvents(f *os.File, rest *[]byte, fn func(Event)) error {
 // to the millisecond, so that one run reads its start before its end.
 func Stamp(t time.Time) string { return t.UTC().Format("2006-01-02T15:04:05.000Z") }
 
+// When writes an RFC 3339 time for people to read: in the clock of the
+// terminal, to the second, with its zone, where JSON keeps UTC. Text that
+// is no such time stays as it is.
+func When(stamp string) string {
+	t, err := time.Parse(time.RFC3339Nano, stamp)
+	if err != nil {
+		return stamp
+	}
+	return t.Local().Format("2006-01-02 15:04:05 MST")
+}
+
 // now is the time of an event.
 func now() string { return Stamp(time.Now()) }

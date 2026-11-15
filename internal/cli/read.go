@@ -43,6 +43,9 @@ func (a *app) listCommand() *cobra.Command {
 			// When a task comes next, and whether its triggers run at all,
 			// is what its daemon knows.
 			root := filepath.Join(req.Dir, ".opstruss")
+			if f, err := daemon.Read(root, st.Stack); err == nil && daemon.Alive(root, st.Stack) {
+				a.warnVersion(st.Stack, f.OpsTruss)
+			}
 			next := daemon.Next(root, st.Stack)
 			for _, t := range st.Tasks {
 				if at, ok := next[t.Name]; ok {
@@ -81,7 +84,7 @@ func (a *app) listCommand() *cobra.Command {
 						last += "; on " + strings.Join(t.Triggers, ", ")
 					}
 					if t.Next != "" {
-						last += "; next " + t.Next
+						last += "; next " + record.When(t.Next)
 					}
 					fmt.Fprintf(tw, "  %s\t%s\t%s\n", t.Name, desc, last)
 				}
@@ -224,16 +227,24 @@ func (a *app) runsCommand() *cobra.Command {
 				return a.printJSON(runs)
 			}
 			tw := tabwriter.NewWriter(a.stdout, 0, 0, 2, ' ', 0)
+			root := filepath.Join(req.Dir, ".opstruss")
 			for _, r := range runs.Runs {
 				what := r.Command
 				if r.Task != "" {
 					what = r.Task
 				}
-				started := r.Started
-				if t, err := time.Parse(time.RFC3339Nano, started); err == nil {
-					started = t.Format(time.RFC3339)
+				started := record.When(r.Started)
+				// A run without an outcome runs, or ended without its
+				// record, which the next run marks.
+				outcome := r.Outcome
+				switch {
+				case outcome != "":
+				case record.Alive(root, r.Run):
+					outcome = "running"
+				default:
+					outcome = "interrupted"
 				}
-				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", r.Run, what, r.Outcome, started)
+				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", r.Run, what, outcome, started)
 			}
 			return tw.Flush()
 		},

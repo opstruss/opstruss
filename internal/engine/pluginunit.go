@@ -16,6 +16,7 @@ import (
 	"github.com/opstruss/opstruss/internal/expr"
 	"github.com/opstruss/opstruss/internal/model"
 	"github.com/opstruss/opstruss/internal/plugin"
+	"github.com/opstruss/opstruss/internal/record"
 	"github.com/opstruss/opstruss/internal/sources"
 	"github.com/opstruss/opstruss/internal/state"
 )
@@ -330,7 +331,7 @@ func (e *engine) recordStatus(inst *instance) map[string]any {
 			outputs["outputs"] = shown
 			written = e.written(rec.Outputs, marks, outputTypes(inst.def))
 		}
-		ev.Message = fmt.Sprintf("up, from run %s at %s", rec.Run, rec.Updated)
+		ev.Message = fmt.Sprintf("up, from run %s at %s", rec.Run, record.When(rec.Updated))
 		if rec.Pending != nil {
 			outputs["state"] = "pending"
 			ev.Message = "pending: " + pendingReason(rec.Pending)

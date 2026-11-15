@@ -100,13 +100,20 @@ func (a *app) dial(req api.Request) (*api.Client, error) {
 		return nil, fmt.Errorf("the daemon of stack %s runs opstruss %s, which speaks protocol %d, not %d: stop it with opstruss stop, then start it again with opstruss up -d",
 			stack, pe.Version, pe.Protocol, api.Protocol)
 	}
-	// A daemon keeps the binary that started it, so the run goes by that
-	// version until the daemon starts again.
-	if c != nil && c.Version != version() {
-		fmt.Fprintf(a.stderr, "warning: the daemon of stack %s runs opstruss %s, and this is %s; to run this one, stop it with opstruss stop, then start it again with opstruss up -d\n",
-			stack, c.Version, version())
+	if c != nil {
+		a.warnVersion(stack, c.Version)
 	}
 	return c, err
+}
+
+// warnVersion says that the daemon of stack runs v, another OpsTruss than
+// this one: a daemon keeps the binary that started it, so its runs go by
+// that version until it starts again.
+func (a *app) warnVersion(stack, v string) {
+	if v != version() {
+		fmt.Fprintf(a.stderr, "warning: the daemon of stack %s runs opstruss %s, and this is %s; to run this one, stop it with opstruss stop, then start it again with opstruss up -d\n",
+			stack, v, version())
+	}
 }
 
 // startDaemon starts the daemon of stack in the background: this program

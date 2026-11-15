@@ -6,13 +6,19 @@
 [!failpoints] skip 'needs a build with -tags failpoints'
 env HOME=$WORK/home
 
-# killed before the pending mark, the unit is still new
+# killed before the pending mark, the unit is still new; runs tells the
+# run that ended without its record from one that runs, and the next run
+# marks it before it plans
 env OPSTRUSS_FAILPOINT=up-before-pending=kill
 ! exec opstruss up db --yes
 env OPSTRUSS_FAILPOINT=
+exec opstruss runs
+stdout '^[0-9TZ]+-[0-9a-f]+ +up +interrupted '
 exec opstruss plan db
 stdout '^default/db: will run: new$'
 stderr 'ended without finishing its record; it is marked cancelled, as interrupted$'
+exec opstruss runs
+stdout ' up +cancelled '
 
 # killed after it, or after the program, or before the last write, the
 # next plan shows the attempt that did not finish, and up finishes it

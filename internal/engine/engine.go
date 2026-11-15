@@ -375,6 +375,9 @@ func (e *engine) start(command, task string, with map[string]any, tr *Trigger) e
 	for _, w := range p.Warnings {
 		e.emit(Event{Type: "diagnostic", Level: "warn", Message: w.String()})
 	}
+	// A run that ended without its record is marked before this one plans,
+	// or at its end once the programs it left end too.
+	e.prune()
 	// The run is in its record now, which is what a webhook answers after;
 	// the rest of the start comes after that answer.
 	if opts.Started != nil {
@@ -401,6 +404,22 @@ func (e *engine) start(command, task string, with map[string]any, tr *Trigger) e
 	}
 	e.run = run
 	return nil
+}
+
+// prune marks the runs of the stack that ended without their record, and
+// says so, and drops the oldest runs beyond what the stack keeps.
+func (e *engine) prune() {
+	marked, err := record.Prune(e.root, e.p.StackName)
+	for _, r := range marked {
+		if r.Reason == "interrupted" {
+			e.warn("", "run %s ended without finishing its record; it is marked cancelled, as interrupted", r.Run)
+		} else {
+			e.warn("", "run %s ended without writing its record; it is marked %s, as its last event says", r.Run, r.Outcome)
+		}
+	}
+	if err != nil {
+		e.warn("", "%v", err)
+	}
 }
 
 // abort ends a run whose start failed after its record was made: failed,
@@ -478,17 +497,7 @@ func (e *engine) close(outcome string, outputs, marks map[string]any) {
 			code = 1
 		}
 	} else {
-		marked, err := record.Prune(e.root, e.p.StackName)
-		for _, r := range marked {
-			if r.Reason == "interrupted" {
-				e.warn("", "run %s ended without finishing its record; it is marked cancelled, as interrupted", r.Run)
-			} else {
-				e.warn("", "run %s ended without writing its record; it is marked %s, as its last event says", r.Run, r.Outcome)
-			}
-		}
-		if err != nil {
-			e.warn("", "%v", err)
-		}
+		e.prune()
 	}
 	e.mu.Lock()
 	e.exit = code

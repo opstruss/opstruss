@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/opstruss/opstruss/internal/engine"
 )
@@ -396,6 +397,9 @@ func statusEvent(addr, msg string, outputs map[string]any) engine.Event {
 // also of a unit whose plugin printed its status above, with a status of a
 // plugin that failed as a warning under its unit.
 func TestRenderStatusTable(t *testing.T) {
+	// The time is in the clock of the terminal.
+	defer func(l *time.Location) { time.Local = l }(time.Local)
+	time.Local = time.FixedZone("WITA", 8*60*60)
 	out, _ := renderAll(terminalRenderer(false),
 		at(ev("task", "default/infra", "default/infra/status", "", "running", "", "started"), 0),
 		at(logLine("default/infra", "default/infra/status", "", "terraform_data.greeting"), 1),
@@ -413,7 +417,7 @@ func TestRenderStatusTable(t *testing.T) {
 ✓ infra › status  0.4s
 ✗ web › status  0.1s
 
-  ● infra  up · 2026-10-25 12:58 UTC · run R1
+  ● infra  up · 2026-10-25 20:58:33 WITA · run R1
            outputs: {"greeting":"hi"}
   ! web    pending: up of run R1 failed
            ! the status of its plugin failed, above

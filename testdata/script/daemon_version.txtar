@@ -1,0 +1,22 @@
+# list warns of a daemon that runs another OpsTruss, as status does. The
+# trigger fires once an hour, so the daemon does not write its file again
+# while the test changes it.
+
+env HOME=$WORK/home
+
+exec opstruss up -d --yes
+exec opstruss list
+! stderr warning
+cp .opstruss/daemon/default.json daemon.json
+exec sh -c 'sed "s/\"opstruss\": \"[^\"]*\"/\"opstruss\": \"v0.9.0\"/" daemon.json > .opstruss/daemon/default.json'
+exec opstruss list
+stderr '^warning: the daemon of stack default runs opstruss v0.9.0, and this is '
+cp daemon.json .opstruss/daemon/default.json
+exec opstruss stop
+
+-- opstruss.yaml --
+name: versions
+tasks:
+  hourly:
+    on: {every: 1h}
+    run: [echo, tick]

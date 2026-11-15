@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/opstruss/opstruss/internal/engine"
+	"github.com/opstruss/opstruss/internal/record"
 )
 
 // planTable gathers the plan lines of the units at a terminal until the
@@ -155,8 +155,8 @@ func (t *planTable) status(ev engine.Event) {
 	row.mark, row.code = stateMark(state)
 	row.kind, row.text = state, ev.Message
 	run, _ := ev.Outputs["run"].(string)
-	if updated, err := time.Parse(time.RFC3339, fmt.Sprint(ev.Outputs["updated"])); state == "up" && run != "" && err == nil {
-		row.text = "up · " + updated.UTC().Format("2006-01-02 15:04 UTC") + " · run " + run
+	if updated, _ := ev.Outputs["updated"].(string); state == "up" && run != "" && updated != "" {
+		row.text = "up · " + record.When(updated) + " · run " + run
 	}
 }
 

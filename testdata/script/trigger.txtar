@@ -11,10 +11,13 @@ exec opstruss up -d --yes
 waitgrep '^every 20' fired
 waitgrep '"command": "task",\n\s+"task": "tick",\n\s+"trigger": "every"' '.opstruss/runs/default/*/record.json'
 exec opstruss list
-stdout '^  tick .*on every 1s; next 20[0-9-]+T'
+stdout '^  tick .*on every 1s; next 20[0-9]{2}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} '
+! stderr warning
 exec opstruss list --json
+stdout '"next": "20[0-9-]+T[0-9:]+Z"'
 stdout '"triggers": \[\n\s+"every 1s"'
 grep '"type":"trigger","level":"info","message":"installed 1 triggers: 1 sources started, 0 kept, 0 stopped, 0 failed"' .opstruss/logs/default/_daemon.jsonl
+
 
 # a run from the command line
 exec opstruss tick
