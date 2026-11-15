@@ -580,11 +580,18 @@ func (p *Project) overlay(root *document, stack string, sd map[string]any) {
 func valueAt(doc map[string]any, path []string) any {
 	var cur any = doc
 	for _, k := range path {
-		m, ok := cur.(map[string]any)
-		if !ok {
+		switch x := cur.(type) {
+		case map[string]any:
+			cur = x[k]
+		case []any:
+			i, err := strconv.Atoi(k)
+			if err != nil || i < 0 || i >= len(x) {
+				return nil
+			}
+			cur = x[i]
+		default:
 			return nil
 		}
-		cur = m[k]
 	}
 	return cur
 }

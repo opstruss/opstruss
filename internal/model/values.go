@@ -73,7 +73,11 @@ func ForEachItems(v any) ([]string, map[string]any, error) {
 		for _, it := range x {
 			k, ok := it.(string)
 			if !ok {
-				return nil, items, fmt.Errorf("for_each of a unit takes strings or a map, not %s; build a map with keys of your own", TypeName(it))
+				hint := "build a map with keys of your own"
+				if t := TypeName(it); t == "integer" || t == "number" {
+					hint = "make each a string, as ${{ lists.range(3).map(x, string(x)) }} does"
+				}
+				return nil, items, fmt.Errorf("for_each of a unit takes strings or a map, not %s; %s", TypeName(it), hint)
 			}
 			if _, dup := items[k]; dup {
 				return nil, items, fmt.Errorf("for_each has %s twice", k)

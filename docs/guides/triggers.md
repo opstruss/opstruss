@@ -11,7 +11,7 @@ stack runs those triggers.
 | `schedule` | At the times of a cron expression, in the time zone of the machine unless `timezone` names another; with `persistent: true`, once for what was missed while the daemon was down |
 | `every` | At an interval, such as `5m` |
 | `webhook` | On an HTTP request to the daemon whose signature checks out |
-| `watch` | On changes of `paths`, on lines of a service (`unit:`), or on lines of a program |
+| `watch` | On changes of the files that `paths` matches, such as `src/**` (a directory alone matches no file in it), on lines of a service (`unit:`), or on lines of a program |
 | `after` | After a run of another task or command ends, by its `outcome` |
 
 `if:` reads `event`, which says what happened, such as `event.paths` of

@@ -409,6 +409,11 @@ inputs:
 stacks:
   dev:
     with: {stacked: from-stack, flag: 1}
+tasks:
+  push:
+    inputs:
+      interval_s: {type: integer}
+    run: "true"
 `})
 	p, err := Load(dir, "dev")
 	if err != nil {
@@ -431,8 +436,12 @@ stacks:
 	if _, err := p.ResolveInputs(map[string]string{"flag": "x"}, nil, nil); err == nil || !strings.Contains(err.Error(), `--input flag: "x" is not an integer`) {
 		t.Fatalf("want a parse error, got %v", err)
 	}
-	if _, err := p.ResolveInputs(map[string]string{"nope": "1"}, nil, nil); err == nil {
-		t.Fatal("want an unknown input error")
+	if _, err := p.ResolveInputs(map[string]string{"nope": "1"}, nil, nil); err == nil || strings.Contains(err.Error(), "task") {
+		t.Fatalf("want an unknown input error without a task, got %v", err)
+	}
+	// an input of a task is a flag of the task
+	if _, err := p.ResolveInputs(map[string]string{"interval_s": "5"}, nil, nil); err == nil || err.Error() != "--input interval_s: the project has no input interval_s; task push takes it as --interval-s" {
+		t.Fatalf("want the flag of the task, got %v", err)
 	}
 }
 

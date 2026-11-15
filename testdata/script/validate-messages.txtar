@@ -53,7 +53,19 @@ stderr '^opstruss.yaml:24:32: tasks.gate.on.after.if: this trigger gives no even
 ! exec opstruss validate -C each
 stderr '^opstruss.yaml:4:5: units.drinks.for_each: for_each key "kopi susu" has more than lower-case letters, digits'
 stderr '^opstruss.yaml:7:5: units.objects.for_each: for_each of a unit takes strings or a map, not object'
+stderr '^opstruss.yaml:13:5: units.numbers.for_each: for_each of a unit takes strings or a map, not integer; make each a string, as \$\{\{ lists.range\(3\).map\(x, string\(x\)\) \}\} does$'
 ! stderr 'units.later'
+
+# keys that other forms take, with the form that this place takes
+! exec opstruss validate -C forms
+stderr '^opstruss.yaml:[0-9]+:[0-9]+: tasks.tick.on.schedule.every: every is a trigger of its own, beside schedule: on: \{every: 2s\}$'
+stderr '^opstruss.yaml:[0-9]+:[0-9]+: tasks.web.steps\[0\].outputs.body.from: outputs: is for run steps; a step that calls a task has its outputs as steps.<id>.outputs$'
+! stderr 'tasks.scan'
+
+# a watch of a directory alone, which matches no file under it
+exec opstruss validate -C watchdir
+stderr '^warning: opstruss.yaml:6:17: tasks.rebuild.on.watch.paths\[0\]: src is a directory, and paths matches files; src/\*\* watches the files in it$'
+! stderr 'paths\[1\]|paths\[2\]'
 
 # one that an expression gives is checked as up reads it
 exec opstruss validate -C later
@@ -164,6 +176,40 @@ units:
   later:
     for_each: ${{ ['Bad Key'] }}
     run: [echo, "${{ each.key }}"]
+  numbers:
+    for_each: [1, 2]
+    run: [echo, "${{ each.key }}"]
+-- forms/opstruss.yaml --
+name: shop
+tasks:
+  tick:
+    on:
+      schedule:
+        every: 2s
+    run: [echo]
+  web:
+    steps:
+      - id: h
+        http: {url: "http://127.0.0.1:1/"}
+        outputs:
+          body: {from: body}
+  scan:
+    steps:
+      - run: [echo, "{}"]
+        outputs:
+          report: {from: stdout, format: json}
+-- watchdir/opstruss.yaml --
+name: shop
+tasks:
+  rebuild:
+    on:
+      watch:
+        paths: [src, docs/**, src/a.txt]
+    run: [echo]
+-- watchdir/src/a.txt --
+a
+-- watchdir/docs/b.txt --
+b
 -- later/opstruss.yaml --
 name: shop
 units:

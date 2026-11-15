@@ -4,7 +4,27 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 )
+
+// taskFlagHint names the tasks that take name as an input of their own,
+// which the command line gives as a flag of the task, not with --input.
+func (p *Project) taskFlagHint(name string) string {
+	var tasks []string
+	for t, task := range p.Tasks {
+		if in := task.Inputs[name]; in != nil && !in.Args {
+			tasks = append(tasks, t)
+		}
+	}
+	slices.Sort(tasks)
+	switch len(tasks) {
+	case 0:
+		return ""
+	case 1:
+		return fmt.Sprintf("; task %s takes it as --%s", tasks[0], FlagName(name))
+	}
+	return fmt.Sprintf("; tasks %s take it as --%s", strings.Join(tasks, ", "), FlagName(name))
+}
 
 // InputValue is the value of a project input and where it came from:
 // --input, stack, env, or default.
@@ -21,7 +41,7 @@ func (p *Project) ResolveInputs(given map[string]string, lookupEnv func(string) 
 	for _, name := range slices.Sorted(maps.Keys(given)) {
 		switch in := p.Inputs[name]; {
 		case in == nil:
-			return nil, fmt.Errorf("--input %s: the project has no input %s", name, name)
+			return nil, fmt.Errorf("--input %s: the project has no input %s%s", name, name, p.taskFlagHint(name))
 		case in.Sensitive:
 			return nil, fmt.Errorf("--input %s: input %s is sensitive, so it is not taken from the command line, which shell history and the list of processes keep; give it through env: or the stack", name, name)
 		}

@@ -7,6 +7,7 @@ import (
 	"maps"
 	"net"
 	"net/url"
+	"os"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -629,7 +630,7 @@ func (c *checker) tasks() {
 			continue
 		}
 		c.schedules(at(path, "on"), t.On)
-		c.watches(at(path, "on"), t.On)
+		c.watches(at(path, "on"), t.On, c.p.DirOf("tasks."+name))
 		for i, w := range t.On.Webhook {
 			wp := at(path, "on", "webhook")
 			if len(t.On.Webhook) > 1 {
@@ -698,7 +699,7 @@ func (c *checker) schedules(path []string, on *Triggers) {
 // watches checks the watch and after triggers of a task: a watch has
 // exactly one source, stream goes with unit, batch or debounce but not
 // both, and the units and tasks they name exist.
-func (c *checker) watches(path []string, on *Triggers) {
+func (c *checker) watches(path []string, on *Triggers, dir string) {
 	for i, w := range on.Watch {
 		wp := at(path, "watch")
 		if len(on.Watch) > 1 {
@@ -723,6 +724,19 @@ func (c *checker) watches(path []string, on *Triggers) {
 			c.add(wp, "a watch has batch or debounce, not both")
 		}
 		c.paths(at(wp, "paths"), w.Paths, "task", "write the path relative to that file, or the absolute path")
+		for j, it := range w.Paths {
+			// A pattern matches files, so a directory alone never fires.
+			if it.Exclude || strings.ContainsAny(it.Pattern, "*?[{") {
+				continue
+			}
+			p := it.Pattern
+			if !filepath.IsAbs(p) {
+				p = filepath.Join(dir, p)
+			}
+			if fi, err := os.Stat(p); err == nil && fi.IsDir() {
+				c.warn(at(wp, "paths", strconv.Itoa(j)), "%s is a directory, and paths matches files; %s/** watches the files in it", it.Pattern, strings.TrimSuffix(it.Pattern, "/"))
+			}
+		}
 		for name := range w.Calls {
 			if slices.Contains(StandardTasks, name) || slices.Contains(BuiltinTasks, name) && name != "command" {
 				c.add(at(wp, name), "a watch source is a program that writes a line per event: command, or a task of a plugin")
@@ -976,6 +990,14 @@ func schemaHint(path []string, msg string, doc map[string]any) (string, bool) {
 			hint += "; did you mean " + near + "?"
 		}
 		return hint, true
+	case n >= 3 && msg == "unknown key" && path[n-3] == "on" && path[n-2] == "schedule" && path[n-1] == "every":
+		return "every is a trigger of its own, beside schedule: on: {every: 2s}", true
+	case n >= 5 && path[n-1] == "from" && path[n-3] == "outputs" && slices.Contains([]string{"steps", "block", "rescue", "always"}, path[n-5]):
+		// The from: of a step that calls a task names what that task gives.
+		if step, ok := valueAt(doc, path[:n-3]).(map[string]any); ok && step["run"] == nil {
+			return "outputs: is for run steps; a step that calls a task has its outputs as steps.<id>.outputs", true
+		}
+		return "", false
 	case n >= 3 && path[n-3] == "tasks" && (path[n-1] == "rescue" || path[n-1] == "always"):
 		// Another key of a task is a call of a task, which takes a map; users
 		// of other tools write these on the task.
