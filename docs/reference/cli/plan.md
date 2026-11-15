@@ -27,7 +27,7 @@ opstruss plan --stack prod --json
 
 | Flag | Description |
 |---|---|
-| `--no-deps` | leave out the units that the ones named depend on, or for destroy those that depend on them |
+| `--no-deps` | leave out the units that the ones named depend on |
 
 ## Global flags
 

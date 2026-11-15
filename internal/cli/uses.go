@@ -31,9 +31,9 @@ func (a *app) usesCommand() *cobra.Command {
 		Long: "List project sources and their pins without fetching.", SuggestFor: []string{"plugins", "deps"}, Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error { return a.listSources(cmd.Context()) }}
 	cmd.AddCommand(&cobra.Command{Use: "fetch", Short: "Fetch the pinned sources and binaries",
-		Long: "Prepare all project sources and binaries; repair pinned cache entries.", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return a.fetchSources(cmd, "") }})
+		Long: "Fetch the sources of the project and the binaries of their plugins at the commits that opstruss.lock pins, pinning a source that has no pin yet; what the cache lost or holds broken is fetched again.", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return a.fetchSources(cmd, "") }})
 	cmd.AddCommand(&cobra.Command{Use: "update [name]", Short: "Update the pins of all sources, or of one",
-		Long: "Update all sources, or a root uses declaration and its repository/ref group.", Args: cobra.MaximumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		Long: "Move the pins in opstruss.lock to the commits that the refs name now: of every source, or of the uses: entry named and the other sources from its repository at the same ref.", Args: cobra.MaximumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 			name := "*"
 			if len(args) > 0 {
 				name = args[0]

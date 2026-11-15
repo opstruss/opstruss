@@ -50,7 +50,7 @@ func (a *app) unitCommands() []*cobra.Command {
 				return in.exit(res.ExitCode)
 			},
 		}
-		cmd.Flags().BoolVar(&f.noDeps, "no-deps", false, "leave out the units that the ones named depend on, or for destroy those that depend on them")
+		cmd.Flags().BoolVar(&f.noDeps, "no-deps", false, "leave out the units that the ones named depend on")
 		if force != "" {
 			cmd.Flags().BoolVarP(&f.yes, "yes", "y", false, "approve the changes of this run, as in CI")
 			cmd.Flags().BoolVar(&f.force, "force", false, force)
@@ -74,6 +74,7 @@ and stays while they run; Ctrl-C stops them.`
 	destroy := command("destroy", "Take the units of the stack down",
 		"run destroy although pass values differ from those recorded", "down", "delete", "remove", "rm")
 	destroy.Long = "Take the units of the stack down, each with the destroy program and inputs that its record keeps."
+	destroy.Flags().Lookup("no-deps").Usage = "leave out the units that depend on the ones named"
 	destroy.Example = `  opstruss destroy --stack dev
   opstruss destroy web        # web and the units that read it`
 	status := command("status", "Show the state of the units", "", "ps")

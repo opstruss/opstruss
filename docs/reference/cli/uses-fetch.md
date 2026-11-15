@@ -8,7 +8,7 @@ title: opstruss uses fetch
 
 # opstruss uses fetch
 
-Prepare all project sources and binaries; repair pinned cache entries.
+Fetch the sources of the project and the binaries of their plugins at the commits that opstruss.lock pins, pinning a source that has no pin yet; what the cache lost or holds broken is fetched again.
 
 ## Usage
 

@@ -8,7 +8,7 @@ title: opstruss uses update
 
 # opstruss uses update
 
-Update all sources, or a root uses declaration and its repository/ref group.
+Move the pins in opstruss.lock to the commits that the refs name now: of every source, or of the uses: entry named and the other sources from its repository at the same ref.
 
 ## Usage
 

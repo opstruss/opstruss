@@ -37,7 +37,7 @@ opstruss up -d              # in the daemon, with its triggers and services
 |---|---|
 | `-d` | run in the daemon of the stack, which starts in the background when none runs |
 | `--force` | run the units named although unchanged |
-| `--no-deps` | leave out the units that the ones named depend on, or for destroy those that depend on them |
+| `--no-deps` | leave out the units that the ones named depend on |
 | `-y`, `--yes` | approve the changes of this run, as in CI |
 
 ## Global flags
