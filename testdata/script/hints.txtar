@@ -84,6 +84,24 @@ stdout '^deploy \| deployed$'
 ! exec opstruss greet
 stderr '^greet: input name: required; pass --name <string>$'
 
+# a command written wrong in a project whose sources are not fetched keeps
+# its suggestion, and says why the tasks are unknown
+mkdir unfetched
+cp unfetched.yaml unfetched/opstruss.yaml
+! exec opstruss -C unfetched pln
+stderr '^opstruss: unknown command "pln" for "opstruss"; did you mean plan or run\?$'
+stderr '^the tasks of the project are unknown: remote component task metadata may be unavailable; run opstruss uses fetch first$'
+! exec opstruss -C unfetched nightly
+stderr '^opstruss: remote component task metadata may be unavailable; run opstruss uses fetch first$'
+! stderr 'unknown command'
+
+-- unfetched.yaml --
+name: shop
+uses:
+  ops: github.com/opstruss/catalog@v1
+units:
+  hello:
+    run: echo hi
 -- bad.yaml --
 name: shop
 tasks:

@@ -164,9 +164,14 @@ func start(args []string, stdin io.Reader, terminal bool, stdout, stderr io.Writ
 	}
 	var exit *exitError
 	var probs model.Problems
-	// An unknown command may be a task of a project that does not load.
+	// An unknown command may be a task of a project that does not load; one
+	// near a command keeps its suggestion first.
 	if err != nil && strings.HasPrefix(err.Error(), "unknown command") && a.loadErr != nil {
-		err = a.loadErr
+		if strings.Contains(err.Error(), "; did you mean ") {
+			err = fmt.Errorf("%w\nthe tasks of the project are unknown: %v", err, a.loadErr)
+		} else {
+			err = a.loadErr
+		}
 	}
 	if err != nil && a.json && !errors.As(err, &exit) {
 		a.jsonError(ran, err)
