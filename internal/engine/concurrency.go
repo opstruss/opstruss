@@ -42,7 +42,7 @@ type heldTask struct {
 // <task>[<group>].lock with a group, as flock(1) in cron: queue waits for
 // it, skip does not, cancel stops the holder first, and parallel takes
 // none. The context it returns ends when another call cancels this one.
-func (e *engine) taskLock(ctx context.Context, name string, t *model.Task, s *expr.Scope) (context.Context, func(), bool, error) {
+func (e *engine) taskLock(ctx context.Context, name string, call int, t *model.Task, s *expr.Scope) (context.Context, func(), bool, error) {
 	mode, group := "queue", ""
 	if c := t.Concurrency; c != nil {
 		mode = cmp.Or(c.Mode, "queue")
@@ -101,7 +101,7 @@ func (e *engine) taskLock(ctx context.Context, name string, t *model.Task, s *ex
 		}
 		if !waiting {
 			waiting = true
-			e.sayTask(name, "", "waiting for the run of %s that holds its concurrency lock", file)
+			e.sayTask(Event{Task: name, Call: call}, "waiting for the run of %s that holds its concurrency lock", file)
 		}
 		select {
 		case <-ctx.Done():

@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/opstruss/opstruss/internal/expr"
@@ -144,6 +145,8 @@ const DefaultParallel = 10
 const DefaultTimeout = 6 * time.Hour
 
 type engine struct {
+	calls atomic.Int64 // the calls of task: that steps made, which number their events
+
 	// unitsHint is the note of an up without units that the daemon gives
 	// once it installed the triggers that it names.
 	unitsHint string
@@ -705,9 +708,10 @@ func (e *engine) say(typ, addr, format string, args ...any) {
 	e.emit(Event{Type: typ, Level: "info", Address: addr, Message: fmt.Sprintf(format, args...)})
 }
 
-// sayTask reports on a task, or on one of its steps.
-func (e *engine) sayTask(task, step, format string, args ...any) {
-	e.emit(Event{Type: taskType(step), Level: "info", Task: task, Step: step, Message: fmt.Sprintf(format, args...)})
+// sayTask reports on the task, or the step, that at names.
+func (e *engine) sayTask(at Event, format string, args ...any) {
+	at.Type, at.Level, at.Message = taskType(at.Step), "info", fmt.Sprintf(format, args...)
+	e.emit(at)
 }
 
 func taskType(step string) string {
@@ -724,16 +728,17 @@ func (e *engine) begin(typ, addr, task, step, message string) {
 	e.emit(Event{Type: typ, Level: "info", Address: addr, Task: task, Step: step, Status: record.Running, Message: message})
 }
 
-// startTask reports that a task, or one of its steps, starts; addr is the
-// unit that runs it, as the lines of its programs say.
-func (e *engine) startTask(addr, task, step string) {
-	e.begin(taskType(step), addr, task, step, "started")
+// startTask reports that the task, or the step, that at names starts; its
+// address is the unit that runs it, as the lines of its programs say.
+func (e *engine) startTask(at Event) {
+	at.Type, at.Level, at.Status, at.Message = taskType(at.Step), "info", record.Running, "started"
+	e.emit(at)
 }
 
-// endTask reports how a task, or one of its steps, ended.
-func (e *engine) endTask(addr, task, step, outcome, format string, args ...any) {
-	e.emit(Event{Type: taskType(step), Level: "info", Address: addr, Task: task, Step: step, Status: record.Finished,
-		Outcome: outcome, Message: fmt.Sprintf(format, args...)})
+// endTask reports how the task, or the step, that at names ended.
+func (e *engine) endTask(at Event, outcome, format string, args ...any) {
+	at.Type, at.Level, at.Status, at.Outcome, at.Message = taskType(at.Step), "info", record.Finished, outcome, fmt.Sprintf(format, args...)
+	e.emit(at)
 }
 
 // ended reports how the operation op (plan, up, destroy) of the unit at addr
@@ -848,9 +853,7 @@ func (e *engine) evalLocals(kv func(string) (any, error)) (map[string]any, error
 // pieces.
 type lineWriter struct {
 	e      *engine
-	addr   string
-	task   string
-	step   string
+	at     Event // whose lines they are: the address, task, step, call, and attempt of each
 	stream string
 	lines  *secret.Lines
 	held   *heldLogs // nil, or where the lines wait
@@ -860,7 +863,8 @@ type lineWriter struct {
 func (w *lineWriter) Write(p []byte) (int, error) {
 	if w.lines == nil {
 		w.lines = secret.NewLines(w.e.redact.Stream(), func(text string) {
-			ev := Event{Type: "log", Level: cmp.Or(w.level, "info"), Address: w.addr, Task: w.task, Step: w.step, Stream: w.stream, Message: text}
+			ev := Event{Type: "log", Level: cmp.Or(w.level, "info"), Address: w.at.Address, Task: w.at.Task, Step: w.at.Step,
+				Call: w.at.Call, Attempt: w.at.Attempt, Stream: w.stream, Message: text}
 			if !w.held.hold(w.e, ev) {
 				w.e.send(ev)
 			}
@@ -956,7 +960,8 @@ type screenWriter struct {
 func (e *engine) newScreenWriter(ev Event, held *heldLogs, cols, rows int) *screenWriter {
 	w := &screenWriter{e: e, ev: ev, held: held}
 	w.screen = secret.NewScreen(e.redact.Stream(), cols, rows, func(text string) {
-		ev := Event{Type: "log", Level: "info", Address: w.ev.Address, Task: w.ev.Task, Step: w.ev.Step, Stream: "stdout", Message: text}
+		ev := Event{Type: "log", Level: "info", Address: w.ev.Address, Task: w.ev.Task, Step: w.ev.Step, Call: w.ev.Call,
+			Attempt: w.ev.Attempt, Stream: "stdout", Message: text}
 		if !w.held.hold(w.e, ev) {
 			w.e.send(ev)
 		}

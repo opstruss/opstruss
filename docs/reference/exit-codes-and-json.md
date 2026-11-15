@@ -72,6 +72,8 @@ An event:
 | `outputs` | On the last event of a run: the outputs of the task, each an output as [below](#documents); none for a task with `for_each` ([tasks](../guides/tasks#for-each-item)) |
 | `plan` | On a `plan` event: the plan of its unit, as `units.<name>.plan` reads it (below) |
 | `sudo` | `true` on the `debug` `diagnostic` event that a program which runs as root starts with |
+| `call` | On the events of a task that a step calls, with `task:` or `<alias>.<task>`, and of its steps and their lines: the number of that call in the run, from 1, so two calls of one task tell apart |
+| `attempt` | On the events of an attempt of a unit, task, or step with `retry`, and on the lines of its program: the number of the attempt, from 1 |
 
 - A reader ignores the fields and types it does not know: a new version
   may add some, and `message` is there to show any event.

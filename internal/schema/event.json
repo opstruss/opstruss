@@ -21,7 +21,9 @@
     "outputs": { "description": "Of the last event of a run: the outputs of its task, each with value, sensitive, and type, as the record of the run has them.", "type": "object" },
     "plan": { "description": "Of a plan event: the plan of its unit, as units.<n>.plan has it: changes, outputs, exact, digest, summary, and reason, changed, after, and reads when they apply.", "type": "object" },
 
-"sudo": { "description": "Of the debug event that a program with sudo: true starts with, as root through sudo or as an OpsTruss that is root: true.", "type": "boolean" }
+"sudo": { "description": "Of the debug event that a program with sudo: true starts with, as root through sudo or as an OpsTruss that is root: true.", "type": "boolean" },
+    "call": { "description": "Of the events of a task that a step calls with task: or <alias>.<task>, and of its steps and their lines: the number of that call in the run, from 1, in the order the calls start, so two calls of one task tell apart.", "type": "integer", "minimum": 1 },
+    "attempt": { "description": "Of the events of an attempt of a unit, task, or step with retry, and of the lines of its program: the number of the attempt, from 1.", "type": "integer", "minimum": 1 }
   },
   "required": ["version", "seq", "time", "run", "type", "level", "message"]
 }

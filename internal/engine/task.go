@@ -116,6 +116,14 @@ type call struct {
 	top     bool           // the call of the command line, whose inputs come from its flags
 	tty     *bool          // what the caller writes over the tty of the task
 	stop    *model.Stop    // what the caller writes over the stop of the task, key by key
+	step    bool           // a step calls it, so its events carry a number of their own
+	id      int            // that number
+}
+
+// at names the task label, or its step, as the events of the call do: with
+// the unit that runs it, and the number of a call that a step makes.
+func (c call) at(label, step string) Event {
+	return Event{Address: c.address(), Task: label, Step: step, Call: c.id}
 }
 
 // address is the unit that runs the call, which the lines of its programs
@@ -418,6 +426,9 @@ func (e *engine) previewQuiet() {
 // defaults, the tasks it needs, if, for_each, approval, concurrency, then
 // its program or steps.
 func (e *engine) callTask(ctx context.Context, name string, t *model.Task, dir string, given map[string]any, c call) *taskResult {
+	if c.step {
+		c.id = int(e.calls.Add(1))
+	}
 	label := name
 	switch f := c.where(e); {
 	case c.unit != nil:
@@ -426,7 +437,7 @@ func (e *engine) callTask(ctx context.Context, name string, t *model.Task, dir s
 		label = f.address + "/" + name
 	}
 	fail := func(err error) *taskResult {
-		e.emit(Event{Type: "task", Level: "error", Address: c.address(), Task: label, Status: record.Finished, Outcome: failure,
+		e.emit(Event{Type: "task", Level: "error", Address: c.address(), Task: label, Call: c.id, Status: record.Finished, Outcome: failure,
 			Message: err.Error()})
 		return failed(err)
 	}
@@ -516,7 +527,7 @@ func (e *engine) callTask(ctx context.Context, name string, t *model.Task, dir s
 			taskMarks[n] = m
 		}
 		if r.outcome != success {
-			e.endTask(c.address(), label, "", skipped, "skipped: task %s it needs is %s", n, r.outcome)
+			e.endTask(c.at(label, ""), skipped, "skipped: task %s it needs is %s", n, r.outcome)
 			return &taskResult{outcome: skipped, outputs: map[string]any{}, approval: r.approval}
 		}
 	}
@@ -541,7 +552,7 @@ func (e *engine) callTask(ctx context.Context, name string, t *model.Task, dir s
 			return fail(fmt.Errorf("if: %w", err))
 		}
 		if !ok {
-			e.endTask(c.address(), label, "", skipped, "skipped: if is false")
+			e.endTask(c.at(label, ""), skipped, "skipped: if is false")
 			return &taskResult{outcome: skipped, outputs: map[string]any{}}
 		}
 	}
@@ -554,7 +565,7 @@ func (e *engine) callTask(ctx context.Context, name string, t *model.Task, dir s
 		}
 		if err != nil && errors.Is(ctx.Err(), context.Canceled) {
 			// The run was interrupted while the task waited for its answer.
-			e.endTask(c.address(), label, "", cancelled, "interrupted before its approval")
+			e.endTask(c.at(label, ""), cancelled, "interrupted before its approval")
 			return &taskResult{outcome: cancelled, outputs: map[string]any{}}
 		}
 		if !ok || err != nil {
@@ -574,12 +585,12 @@ func (e *engine) callTask(ctx context.Context, name string, t *model.Task, dir s
 		}
 		var release func()
 		var skip bool
-		ctx, release, skip, err = e.taskLock(ctx, lock, t, scope)
+		ctx, release, skip, err = e.taskLock(ctx, lock, c.id, t, scope)
 		if err != nil {
 			return fail(err)
 		}
 		if skip {
-			e.endTask(c.address(), label, "", skipped, "skipped: a run of %s is going on, and concurrency is skip", name)
+			e.endTask(c.at(label, ""), skipped, "skipped: a run of %s is going on, and concurrency is skip", name)
 			return &taskResult{outcome: skipped, outputs: map[string]any{}}
 		}
 		defer release()
@@ -660,20 +671,20 @@ func (e *engine) taskOnce(ctx context.Context, name, label string, t *model.Task
 	}
 	ctx, cancel := withTimeout(ctx, timeout)
 	defer cancel()
-	e.startTask(c.address(), label, "")
+	e.startTask(c.at(label, ""))
 	var res *taskResult
 	env, pass := c.envPass(t)
 	tty, stop := ttyOf(c.tty, t.TTY), c.stop.Over(t.Stop)
 	switch {
 	case t.Run != nil:
-		res = e.program(ctx, progSpec{frame: c.where(e), label: label, task: name, cmd: t.Run, shell: t.Shell, dir: t.Dir, base: dir,
+		res = e.program(ctx, progSpec{frame: c.where(e), label: label, task: name, callID: c.id, cmd: t.Run, shell: t.Shell, dir: t.Dir, base: dir,
 			env: env, pass: pass, stdin: t.Stdin, inputs: scope.Vars["inputs"].(map[string]any), outputs: t.Outputs,
 			retry: t.Retry, failedWhen: t.FailedWhen, changedWhen: t.ChangedWhen, stop: stop, tty: tty, sudo: t.Sudo, unit: c.unit,
 			plugin: c.plugin, unitRun: c.unitRun}, scope)
 	case len(t.Calls) == 1:
 		// A task that calls one task passes on its outputs.
 		for callee, args := range t.Calls {
-			res = e.callByName(ctx, progSpec{frame: c.where(e), label: label, task: name, shell: t.Shell, dir: t.Dir, base: dir, env: env,
+			res = e.callByName(ctx, progSpec{frame: c.where(e), label: label, task: name, callID: c.id, shell: t.Shell, dir: t.Dir, base: dir, env: env,
 				pass: pass, stdin: t.Stdin, retry: t.Retry, failedWhen: t.FailedWhen, changedWhen: t.ChangedWhen,
 				stop: stop, tty: tty, sudo: t.Sudo, unit: c.unit, plugin: c.plugin, unitRun: c.unitRun}, callee, args, scope)
 		}
@@ -683,7 +694,7 @@ func (e *engine) taskOnce(ctx context.Context, name, label string, t *model.Task
 	if err := plugin.CheckOutputs(res.outputs); err != nil {
 		// What state cannot keep is not given; a program said so already.
 		if res.outcome == success {
-			e.emit(Event{Type: "task", Level: "error", Address: c.address(), Task: label, Message: err.Error()})
+			e.emit(Event{Type: "task", Level: "error", Address: c.address(), Task: label, Call: c.id, Message: err.Error()})
 			res.outcome = failure
 		}
 		res.outputs, res.marks = map[string]any{}, map[string]any{}
@@ -694,12 +705,12 @@ func (e *engine) taskOnce(ctx context.Context, name, label string, t *model.Task
 	switch res.outcome {
 	case failure:
 		if t.ContinueOnError {
-			e.endTask(c.address(), label, "", failure, "failed; continue_on_error goes on")
+			e.endTask(c.at(label, ""), failure, "failed; continue_on_error goes on")
 		} else {
-			e.endTask(c.address(), label, "", failure, "failed")
+			e.endTask(c.at(label, ""), failure, "failed")
 		}
 	default:
-		e.endTask(c.address(), label, "", res.outcome, "%s", res.outcome)
+		e.endTask(c.at(label, ""), res.outcome, "%s", res.outcome)
 	}
 	return res
 }
@@ -724,7 +735,7 @@ func (e *engine) stepsWithRetry(ctx context.Context, name, label string, t *mode
 			tc.label+" step ")
 		var err error
 		if res.outputs, res.marks, err = tc.values(t.Outputs); err != nil {
-			e.emit(Event{Type: "task", Level: "error", Address: c.address(), Task: label, Message: err.Error()})
+			e.emit(Event{Type: "task", Level: "error", Address: c.address(), Task: label, Call: c.id, Message: err.Error()})
 			res.outcome = failure
 		}
 		js := tc.scopeNow().WithMarks("outputs", res.outputs, anyMarks(res.marks))
@@ -733,7 +744,7 @@ func (e *engine) stepsWithRetry(ctx context.Context, name, label string, t *mode
 		if t.Retry != nil && t.Retry.Until != nil {
 			ok, err := expr.EvalCondition(t.Retry.Until, js)
 			if err != nil {
-				e.emit(Event{Type: "task", Level: "error", Address: c.address(), Task: label, Message: "retry.until: " + err.Error()})
+				e.emit(Event{Type: "task", Level: "error", Address: c.address(), Task: label, Call: c.id, Message: "retry.until: " + err.Error()})
 				res.outcome = failure
 				return res
 			}
@@ -742,11 +753,13 @@ func (e *engine) stepsWithRetry(ctx context.Context, name, label string, t *mode
 		if done || i >= n || ctx.Err() != nil || res.approval {
 			if !done && res.outcome == success {
 				res.outcome = failure
-				e.emit(Event{Type: "task", Level: "error", Address: c.address(), Task: label, Message: untilFalse(i).Error()})
+				e.emit(Event{Type: "task", Level: "error", Address: c.address(), Task: label, Call: c.id, Message: untilFalse(i).Error()})
 			}
 			return res
 		}
-		e.sayTask(label, "", "attempt %d of %d did not succeed; again in %s", i, n, delay)
+		at := c.at(label, "")
+		at.Attempt = i
+		e.sayTask(at, "attempt %d of %d did not succeed; again in %s", i, n, delay)
 		select {
 		case <-ctx.Done():
 			return res
@@ -853,7 +866,7 @@ func (tc *taskCtx) values(decl map[string]*model.Output) (map[string]any, map[st
 			errs = append(errs, fmt.Errorf("output %s: %w", name, err))
 		}
 	}
-	return out, tc.e.markContent(out, marks, Event{Task: tc.label}), errors.Join(errs...)
+	return out, tc.e.markContent(out, marks, Event{Task: tc.label, Call: tc.c.id}), errors.Join(errs...)
 }
 
 // run runs steps in order: a step that fails, unless continue_on_error,
@@ -866,7 +879,7 @@ func (tc *taskCtx) run(ctx context.Context, steps []*model.Step, d defaults, at 
 		label := cmp.Or(s.Name, s.ID, at+strconv.Itoa(i+1))
 		if res.outcome != success {
 			tc.record(s.ID, &taskResult{outcome: skipped, outputs: map[string]any{}})
-			tc.e.endTask(tc.c.address(), tc.label, label, skipped, "skipped")
+			tc.e.endTask(tc.c.at(tc.label, label), skipped, "skipped")
 			continue
 		}
 		r := tc.step(ctx, s, label, d)
@@ -892,7 +905,7 @@ func (tc *taskCtx) step(ctx context.Context, s *model.Step, label string, d defa
 			return tc.failEnded(label, fmt.Errorf("if: %w", err))
 		}
 		if !ok {
-			tc.e.endTask(tc.c.address(), tc.label, label, skipped, "skipped")
+			tc.e.endTask(tc.c.at(tc.label, label), skipped, "skipped")
 			return &taskResult{outcome: skipped, outputs: map[string]any{}}
 		}
 	}
@@ -919,7 +932,7 @@ func (tc *taskCtx) step(ctx context.Context, s *model.Step, label string, d defa
 // stepGroup runs the body of a step, or of one item of its for_each,
 // between the events that start and end it.
 func (tc *taskCtx) stepGroup(ctx context.Context, s *model.Step, label string, d defaults, scope *expr.Scope) *taskResult {
-	tc.e.startTask(tc.c.address(), tc.label, label)
+	tc.e.startTask(tc.c.at(tc.label, label))
 	res := tc.stepOnce(ctx, s, label, d, scope)
 	msg := res.outcome
 	switch {
@@ -932,18 +945,18 @@ func (tc *taskCtx) stepGroup(ctx context.Context, s *model.Step, label string, d
 		// steps.<id>.outcome still says failure.
 		msg = "rescued"
 	}
-	tc.e.endTask(tc.c.address(), tc.label, label, res.outcome, "%s", msg)
+	tc.e.endTask(tc.c.at(tc.label, label), res.outcome, "%s", msg)
 	return res
 }
 
 func (tc *taskCtx) fail(label string, err error) *taskResult {
-	tc.e.emit(Event{Type: "step", Level: "error", Task: tc.label, Step: label, Message: err.Error()})
+	tc.e.emit(Event{Type: "step", Level: "error", Task: tc.label, Step: label, Call: tc.c.id, Message: err.Error()})
 	return failed(err)
 }
 
 // failEnded is fail for a step that err ends before it starts.
 func (tc *taskCtx) failEnded(label string, err error) *taskResult {
-	tc.e.emit(Event{Type: "step", Level: "error", Address: tc.c.address(), Task: tc.label, Step: label, Status: record.Finished,
+	tc.e.emit(Event{Type: "step", Level: "error", Address: tc.c.address(), Task: tc.label, Step: label, Call: tc.c.id, Status: record.Finished,
 		Outcome: failure, Message: err.Error()})
 	return failed(err)
 }
@@ -973,19 +986,19 @@ func (tc *taskCtx) stepOnce(ctx context.Context, s *model.Step, label string, d 
 	switch {
 	case s.Run != nil:
 		d := d.with(s.Shell, s.Dir, s.Env, s.Pass, s.TTY, s.Sudo)
-		res = tc.e.program(ctx, progSpec{frame: tc.c.where(tc.e), label: tc.label, step: label, task: tc.name, cmd: s.Run, shell: d.shell, dir: d.dir, base: tc.dir,
+		res = tc.e.program(ctx, progSpec{frame: tc.c.where(tc.e), label: tc.label, step: label, task: tc.name, callID: tc.c.id, cmd: s.Run, shell: d.shell, dir: d.dir, base: tc.dir,
 			env: d.env, pass: d.pass, stdin: s.Stdin, outputs: s.Outputs, retry: s.Retry, tty: d.tty, sudo: d.sudo, stop: d.stop,
 			failedWhen: s.FailedWhen, changedWhen: s.ChangedWhen, unit: tc.c.unit, plugin: tc.c.plugin, unitRun: tc.c.unitRun}, scope)
 	case len(s.Calls) == 1:
 		d := d.with(s.Shell, s.Dir, s.Env, s.Pass, s.TTY, s.Sudo)
 		for callee, args := range s.Calls {
-			res = tc.e.callByName(ctx, progSpec{frame: tc.c.where(tc.e), label: tc.label, step: label, task: tc.name, shell: d.shell, dir: d.dir,
+			res = tc.e.callByName(ctx, progSpec{frame: tc.c.where(tc.e), label: tc.label, step: label, task: tc.name, callID: tc.c.id, shell: d.shell, dir: d.dir,
 				base: tc.dir, env: d.env, pass: d.pass, stdin: s.Stdin, retry: s.Retry, failedWhen: s.FailedWhen, tty: d.tty, sudo: d.sudo, stop: d.stop,
 				changedWhen: s.ChangedWhen, unit: tc.c.unit, plugin: tc.c.plugin, unitRun: tc.c.unitRun}, callee, args, scope)
 		}
 	case s.Task != "":
 		res = tc.e.try(ctx, progSpec{frame: tc.c.where(tc.e), label: tc.label, step: label, task: tc.name, retry: s.Retry,
-			failedWhen: s.FailedWhen, changedWhen: s.ChangedWhen, plugin: tc.c.plugin}, scope, func(scope *expr.Scope) (*taskResult, map[string]any, error) {
+			failedWhen: s.FailedWhen, changedWhen: s.ChangedWhen, plugin: tc.c.plugin, callID: tc.c.id}, scope, func(_ progSpec, scope *expr.Scope) (*taskResult, map[string]any, error) {
 			r := tc.callStep(ctx, s, label, scope)
 			return r, r.outputs, nil
 		})
@@ -1087,7 +1100,7 @@ func (tc *taskCtx) callStep(ctx context.Context, s *model.Step, label string, sc
 	e.hide(with, withMarks)
 	given, _ := with.(map[string]any)
 	givenMarks, _ := withMarks.(map[string]any)
-	c := call{yes: yes, source: source, marks: givenMarks}
+	c := call{yes: yes, source: source, marks: givenMarks, step: true}
 	if t := f.in.Tasks[s.Task]; t != nil {
 		if f.node != nil {
 			c.frame = f

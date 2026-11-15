@@ -26,7 +26,9 @@ func (e *engine) callByName(ctx context.Context, p progSpec, name string, args m
 	}
 	t, err := in.Resolve(name)
 	if err != nil {
-		e.emit(Event{Type: "step", Level: "error", Task: p.label, Step: p.step, Message: err.Error()})
+		ev := p.at()
+		ev.Type, ev.Level, ev.Message = "step", "error", err.Error()
+		e.emit(ev)
 		return failed(err)
 	}
 	if t.Package != nil && t.Package.Decl != nil {
@@ -48,7 +50,7 @@ func (e *engine) callByName(ctx context.Context, p progSpec, name string, args m
 		}
 		return ok
 	}
-	return e.try(ctx, p, s, func(s *expr.Scope) (*taskResult, map[string]any, error) {
+	return e.try(ctx, p, s, func(p progSpec, s *expr.Scope) (*taskResult, map[string]any, error) {
 		in, marks, err := e.callInputs(t, args, s)
 		if err != nil {
 			return nil, nil, fmt.Errorf("%s: %w", name, err)
@@ -65,10 +67,10 @@ func (e *engine) callByName(ctx context.Context, p progSpec, name string, args m
 		}
 		if t.Kind == model.TargetTask {
 			r := e.callTask(ctx, name, t.Package.Plugin.Tasks[t.Task], dir, in, call{frame: p.frame, unit: p.unit, plugin: e.pluginRunOf(t, p),
-				unitRun: p.unitRun, marks: marks, tty: p.tty, stop: p.stop})
+				unitRun: p.unitRun, marks: marks, tty: p.tty, stop: p.stop, step: p.step != ""})
 			return r, r.outputs, nil
 		}
-		r := e.builtinCall(ctx, name, t.Task, in, marks, dir, given, Event{Task: p.label, Step: p.step}, p.failedWhen != nil)
+		r := e.builtinCall(ctx, name, t.Task, in, marks, dir, given, p.at(), p.failedWhen != nil)
 		return r, r.outputs, nil
 	})
 }

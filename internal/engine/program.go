@@ -43,12 +43,19 @@ type progSpec struct {
 	plugin      *pluginRun // for the programs of a plugin task
 	unitRun     *unitRun   // for the programs of a task that runs for a unit
 	secret      bool       // the program of a secret source, or the call of one
+	callID      int        // the number of the call of task: that runs it, as its events say
+	attempt     int        // the attempt of retry that runs, once it has retry
+}
+
+// at names the task and step of p, as their events do.
+func (p progSpec) at() Event {
+	return Event{Task: p.label, Step: p.step, Call: p.callID, Attempt: p.attempt}
 }
 
 // program runs the program of a task or a step as often as retry allows;
 // see try.
 func (e *engine) program(ctx context.Context, p progSpec, s *expr.Scope) *taskResult {
-	return e.try(ctx, p, s, func(s *expr.Scope) (*taskResult, map[string]any, error) {
+	return e.try(ctx, p, s, func(p progSpec, s *expr.Scope) (*taskResult, map[string]any, error) {
 		c, err := e.programCall(p, s)
 		if err != nil {
 			return nil, nil, err
@@ -64,7 +71,7 @@ func (e *engine) program(ctx context.Context, p progSpec, s *expr.Scope) *taskRe
 // failed_when and changed_when, which read the outputs it judges by. Each
 // attempt evaluates its own expressions, and after the first with kv()
 // read again, so one after a failure reads what changed since.
-func (e *engine) try(ctx context.Context, p progSpec, s *expr.Scope, attempt func(*expr.Scope) (*taskResult, map[string]any, error)) *taskResult {
+func (e *engine) try(ctx context.Context, p progSpec, s *expr.Scope, attempt func(progSpec, *expr.Scope) (*taskResult, map[string]any, error)) *taskResult {
 	fail := func(err error) *taskResult {
 		e.emit(Event{Type: "step", Level: "error", Task: p.label, Step: p.step, Message: err.Error()})
 		return failed(err)
@@ -86,7 +93,10 @@ func (e *engine) try(ctx context.Context, p progSpec, s *expr.Scope, attempt fun
 		if i > 1 {
 			s = e.newKV().scopeIn(p.frame, p.plugin != nil, s)
 		}
-		r, judged, err := attempt(s)
+		if p.retry != nil {
+			p.attempt = i
+		}
+		r, judged, err := attempt(p, s)
 		if err != nil {
 			return fail(err)
 		}
@@ -105,11 +115,13 @@ func (e *engine) try(ctx context.Context, p progSpec, s *expr.Scope, attempt fun
 		if done || i >= n || ctx.Err() != nil || r.approval {
 			if !done && r.outcome == success {
 				r.outcome = failure
-				e.emit(Event{Type: "step", Level: "error", Task: p.label, Step: p.step, Message: untilFalse(i).Error()})
+				ev := p.at()
+				ev.Type, ev.Level, ev.Message = "step", "error", untilFalse(i).Error()
+				e.emit(ev)
 			}
 			return r
 		}
-		e.sayTask(p.label, p.step, "attempt %d of %d did not succeed; again in %s", i, n, delay)
+		e.sayTask(p.at(), "attempt %d of %d did not succeed; again in %s", i, n, delay)
 		select {
 		case <-ctx.Done():
 			return r
@@ -207,15 +219,19 @@ func (e *engine) execProgram(ctx context.Context, p progSpec, c *plugin.Call) (*
 	if c.Unit != nil {
 		addr = c.Unit.Address
 	}
-	ss := e.streams(c, isTrue(p.tty), Event{Address: addr, Task: p.label, Step: p.step}, nil)
+	at := p.at()
+	at.Address = addr
+	ss := e.streams(c, isTrue(p.tty), at, nil)
 	c.Sudo = p.runsAsRoot()
-	res, err := e.execCall(ctx, c, Event{Address: addr, Task: p.label, Step: p.step})
+	res, err := e.execCall(ctx, c, at)
 	ss.flush()
 	if err != nil {
 		return nil, nil, err
 	}
 	for _, w := range res.Warnings {
-		e.emit(Event{Type: "diagnostic", Level: "warn", Address: addr, Task: p.label, Step: p.step, Message: w})
+		ev := at
+		ev.Type, ev.Level, ev.Message = "diagnostic", "warn", w
+		e.emit(ev)
 	}
 	judged := maps.Clone(res.Outputs)
 	judged["stdout"], judged["stderr"], judged["exit_code"] = res.Stdout, res.Stderr, int64(res.ExitCode)
@@ -230,7 +246,7 @@ func (e *engine) execProgram(ctx context.Context, p progSpec, c *plugin.Call) (*
 	for _, name := range res.Sensitive {
 		marks[name] = true
 	}
-	marks = e.markContent(res.Outputs, marks, Event{Address: addr, Task: p.label, Step: p.step})
+	marks = e.markContent(res.Outputs, marks, at)
 	for _, k := range []string{"stdout", "stderr"} {
 		// What a program prints is hidden in the log already; as an output
 		// it is sensitive without a word.
@@ -253,7 +269,8 @@ func (e *engine) execProgram(ctx context.Context, p progSpec, c *plugin.Call) (*
 	if err := outcomeErr(res); err != nil {
 		r.outcome = failure
 		if p.failedWhen == nil {
-			ev := Event{Type: "step", Level: "error", Task: p.label, Step: p.step, Message: err.Error()}
+			ev := p.at()
+			ev.Type, ev.Level, ev.Message = "step", "error", err.Error()
 			if errors.Is(ctx.Err(), context.Canceled) {
 				// The run was interrupted, which stopped the program.
 				ev.Level, ev.Message = "warn", "interrupted: "+err.Error()
@@ -276,8 +293,8 @@ type streams struct {
 // terminal of its own when tty says so and terminalSize allows it.
 func (e *engine) streams(c *plugin.Call, tty bool, ev Event, held *heldLogs) *streams {
 	ss := &streams{
-		out: &lineWriter{e: e, addr: ev.Address, task: ev.Task, step: ev.Step, stream: "stdout", held: held},
-		err: &lineWriter{e: e, addr: ev.Address, task: ev.Task, step: ev.Step, stream: "stderr", held: held},
+		out: &lineWriter{e: e, at: ev, stream: "stdout", held: held},
+		err: &lineWriter{e: e, at: ev, stream: "stderr", held: held},
 	}
 	if cols, rows, ok := e.terminalSize(c, tty); ok {
 		ss.screen = e.newScreenWriter(ev, held, cols, rows)
@@ -357,7 +374,7 @@ func logRead(res *plugin.Result, outputs map[string]*model.Output, marks map[str
 		}
 		_, _ = fmt.Fprintf(w, "captured %s as outputs.%s (%s)\n", name, strings.Join(read, ", outputs."), what)
 		w.flush()
-		debug := &lineWriter{e: w.e, addr: w.addr, task: w.task, step: w.step, stream: w.stream, held: w.held, level: "debug"}
+		debug := &lineWriter{e: w.e, at: w.at, stream: w.stream, held: w.held, level: "debug"}
 		_, _ = debug.Write(data)
 		debug.flush()
 	}

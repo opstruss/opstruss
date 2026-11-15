@@ -977,6 +977,9 @@ func (e *engine) attempts(ctx context.Context, inst *instance, r *resolved, rec 
 		}
 	}
 	for i := 1; ; i++ {
+		if retry != nil {
+			inst.attempt = i
+		}
 		res, err := e.exec(ctx, inst, r, rec, reason, digest)
 		if err != nil {
 			return nil, err
@@ -1004,7 +1007,8 @@ func (e *engine) attempts(ctx context.Context, inst *instance, r *resolved, rec 
 			}
 			return nil, ferr
 		}
-		e.say("unit", inst.address, "attempt %d of %d failed: %v; again in %s", i, n, ferr, delay)
+		e.emit(Event{Type: "unit", Level: "info", Address: inst.address, Attempt: i,
+			Message: fmt.Sprintf("attempt %d of %d failed: %v; again in %s", i, n, ferr, delay)})
 		select {
 		case <-ctx.Done():
 			return nil, context.Cause(ctx)
@@ -1075,7 +1079,7 @@ func (e *engine) exec(ctx context.Context, inst *instance, r *resolved, rec *sta
 		outs := r.plugin.target.Package.Plugin.Outputs
 		c.Inputs, c.PluginDir, c.Outputs, c.AnyOutputs = r.plugin.inputs, r.plugin.dir, outs.Declared, outs.Tool
 	}
-	ss := e.streams(c, r.tty, Event{Address: inst.address, Task: "up"}, nil)
+	ss := e.streams(c, r.tty, Event{Address: inst.address, Task: "up", Attempt: inst.attempt}, nil)
 	defer ss.out.flush()
 	defer ss.err.flush()
 	res, err := e.execCall(ctx, c, Event{Address: inst.address, Task: "up"})

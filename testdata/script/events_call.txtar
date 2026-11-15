@@ -1,0 +1,33 @@
+# The events of a task that a step calls carry the number of that call, and
+# those of an attempt of retry its number, so two calls of one task, and
+# two attempts of one step, tell apart.
+
+env HOME=$WORK/home
+
+exec opstruss main --json
+stdout '"task":"show","message":"started","status":"running","call":1\}$'
+stdout '"task":"show","message":"started","status":"running","call":2\}$'
+stdout '"task":"show","step":"say","message":"the program exited with 1","call":1,"attempt":1\}$'
+stdout '"task":"show","step":"say","stream":"stdout","message":"one","call":1,"attempt":2\}$'
+stdout '"task":"show","step":"say","stream":"stdout","message":"two","call":2,"attempt":2\}$'
+! stdout '"task":"main".*"call"'
+! stdout '"step":"main step 1".*"attempt"'
+
+-- opstruss.yaml --
+name: calls
+tasks:
+  show:
+    internal: true
+    inputs:
+      what: {type: string}
+    steps:
+      - name: say
+        env: {WHAT: '${{ inputs.what }}'}
+        run: '[ -f "ok-$WHAT" ] || { touch "ok-$WHAT"; exit 1; }; echo "$WHAT"'
+        retry: {attempts: 2, delay: 1ms}
+  main:
+    steps:
+      - task: show
+        with: {what: one}
+      - task: show
+        with: {what: two}

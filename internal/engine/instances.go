@@ -36,6 +36,7 @@ type instance struct {
 	approval string // what approved its change: auto, --yes, or a step
 	outcome  string
 	stopped  bool // its change stopped at plan for approval, so its outcome is skipped
+	attempt  int  // the attempt of retry that runs its program, once it has retry
 	changed  bool
 	outputs  map[string]any
 	outMarks map[string]any // the sensitive outputs

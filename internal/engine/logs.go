@@ -104,7 +104,7 @@ func (e *engine) taskLogs(ctx context.Context, name string, follow bool) error {
 			return err
 		}
 	} else {
-		e.sayTask(name, "", "no run of it yet")
+		e.sayTask(Event{Task: name}, "no run of it yet")
 	}
 	if !follow {
 		return nil
@@ -148,7 +148,7 @@ func (e *engine) showRun(ctx context.Context, name string, r *record.Record, via
 	if via != "" {
 		head += " via " + via
 	}
-	e.sayTask(name, "", "%s", head)
+	e.sayTask(Event{Task: name}, "%s", head)
 	err := record.ReadRun(ctx, filepath.Join(e.root, "runs", e.p.StackName, r.Run), follow, func(ev Event) {
 		if via == "" || ev.Task == name {
 			e.replay(ev)

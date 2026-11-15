@@ -819,6 +819,10 @@ schema daemon version
 schema daemon version type integer
 schema event address
 schema event address type string
+schema event attempt
+schema event attempt type integer
+schema event call
+schema event call type integer
 schema event exit_code
 schema event exit_code type integer
 schema event level

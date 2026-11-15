@@ -60,8 +60,10 @@ type Event struct {
 	Outcome  string         `json:"outcome,omitempty"`
 	ExitCode *int           `json:"exit_code,omitempty"`
 	Outputs  map[string]any `json:"outputs,omitempty"`
-	Plan     map[string]any `json:"plan,omitempty"` // of a plan event: the plan of its unit, as units.<n>.plan has it
-	Sudo     bool           `json:"sudo,omitempty"` // of the event that a program which runs as root starts with
+	Plan     map[string]any `json:"plan,omitempty"`    // of a plan event: the plan of its unit, as units.<n>.plan has it
+	Sudo     bool           `json:"sudo,omitempty"`    // of the event that a program which runs as root starts with
+	Call     int            `json:"call,omitempty"`    // of the events of a task that a step calls, and of its steps: the number of that call in the run, from 1
+	Attempt  int            `json:"attempt,omitempty"` // of the events of an attempt of what has retry: its number, from 1
 }
 
 // Record is record.json: who ran what and when, and how it ended.
