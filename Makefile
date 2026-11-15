@@ -18,6 +18,7 @@ lint:
 	golangci-lint run
 	go mod tidy -diff
 	actionlint
+	shellcheck docs/public/install.sh
 	goreleaser check
 
 check: lint test build

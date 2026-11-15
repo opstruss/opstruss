@@ -15,9 +15,28 @@ results to the next.
 - **One binary**, with the state of each stack kept on the machine that
   runs it.
 
-## Quick start
+## Install
 
-Install OpsTruss (below), then:
+```sh
+curl -fsSL https://opstruss.github.io/install.sh | sh
+```
+
+The script installs the latest release in `~/.local/bin`. With
+[mise](https://mise.jdx.dev), the `mise.toml` of a project pins the
+version:
+
+```sh
+mise use github:opstruss/opstruss
+```
+
+Or download an archive of a [release](https://github.com/opstruss/opstruss/releases)
+for Linux or macOS, on amd64 or arm64, or build it with Go:
+
+```sh
+go install github.com/opstruss/opstruss@latest
+```
+
+## Quick start
 
 ```sh
 mkdir hello && cd hello
@@ -73,21 +92,6 @@ makes the age key of this machine: in `~/.config/opstruss/age/` on Linux,
 and in `~/Library/Application Support/opstruss/age/` on macOS. The
 [documentation](https://opstruss.github.io) goes on with an OpenTofu
 module and two stacks.
-
-## Install
-
-With [mise](https://mise.jdx.dev):
-
-```sh
-mise use github:opstruss/opstruss
-```
-
-Or download an archive of a [release](https://github.com/opstruss/opstruss/releases)
-for Linux or macOS, on amd64 or arm64, or build it with Go:
-
-```sh
-go install github.com/opstruss/opstruss@latest
-```
 
 ## Documentation
 

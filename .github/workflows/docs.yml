@@ -2,10 +2,10 @@ name: docs
 
 # Each build writes one version of the documentation to the gh-pages branch
 # of opstruss/opstruss.github.io: main to /dev/, a release tag to
-# /v<major>.<minor>/, and the newest release also to / and /schema/. A
-# release/v<major>.<minor> branch rebuilds the folder of its minor, so a fix
-# reaches the documentation of a release without a new tag. Other folders
-# stay as they were, and versions.json lists them all.
+# /v<major>.<minor>/, and the newest release also to /, /schema/, and
+# /install.sh. A release/v<major>.<minor> branch rebuilds the folder of its
+# minor, so a fix reaches the documentation of a release without a new tag.
+# Other folders stay as they were, and versions.json lists them all.
 on:
   push:
     branches: [main, 'release/v*.*']
@@ -90,11 +90,13 @@ jobs:
             rm -rf schema
             cp -R "$FOLDER/schema" schema
           fi
-          # / leads to the newest release, or to dev before the first one.
+          # / leads to the newest release, or to dev before the first one, and
+          # /install.sh is the script of that folder.
           home=${latest:-dev}
           if [ "$FOLDER" = "$home" ]; then
             printf '<!doctype html>\n<meta http-equiv="refresh" content="0; url=/%s/">\n<a href="/%s/">OpsTruss documentation</a>\n' "$home" "$home" > index.html
             printf '<!doctype html>\n<title>Not found</title>\n<p>This page is not here. See <a href="/%s/">the documentation</a>.</p>\n' "$home" > 404.html
+            cp "$FOLDER/install.sh" install.sh
           fi
           {
             # A folder holds a minor and the patches that fix it: v1.0.x.

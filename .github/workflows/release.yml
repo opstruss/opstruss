@@ -75,6 +75,10 @@ jobs:
           ## Install
 
           ```sh
+          curl -fsSL https://opstruss.github.io/install.sh | OPSTRUSS_VERSION=@version@ sh
+          ```
+
+          ```sh
           mise use github:opstruss/opstruss@@version@
           ```
 

@@ -10,6 +10,35 @@ OpsTruss runs programs with `sh`, and fetches the
 tool in `PATH`: `tofu` and `jq` for `tofu`, and `docker` with Compose v2
 and `jq` for `compose`. `opstruss doctor` checks them for a project.
 
+## With the install script
+
+```sh
+curl -fsSL https://opstruss.github.io/install.sh | sh
+```
+
+The script installs the latest release for this machine in
+`~/.local/bin`, after it checks the archive against the `checksums.txt`
+of the release. `OPSTRUSS_VERSION` picks a release, and
+`OPSTRUSS_INSTALL_DIR` another directory:
+
+```sh
+curl -fsSL https://opstruss.github.io/install.sh | OPSTRUSS_VERSION=1.0.0 sh
+```
+
+It leaves the profile of the shell as it is: when the directory is not in
+`PATH`, as `~/.local/bin` is not on macOS, it prints the line to add. To
+read the script before it runs:
+
+```sh
+curl -fsSLO https://opstruss.github.io/install.sh
+less install.sh
+sh install.sh
+```
+
+The checksums come from the same release as the archive, so they catch a
+broken download; the build attestation of a [release](#from-a-release)
+also says where the archive was built.
+
 ## With mise
 
 [mise](https://mise.jdx.dev) pins the version of OpsTruss in the
@@ -65,7 +94,7 @@ the key of this machine is.
 
 ## Upgrade
 
-Install the new version the same way, as
+Install the new version the same way: run the install script again, or
 `mise use github:opstruss/opstruss@<version>`. A minor or patch release
 keeps every project, component, and plugin working, as
 [Compatibility](../reference/compatibility) says; the
