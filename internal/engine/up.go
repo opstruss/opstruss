@@ -597,7 +597,11 @@ func (e *engine) skips(inst *instance) bool {
 	for _, d := range inst.deps {
 		if d.outcome != success {
 			e.finish(inst, skipped, false, nil, nil)
-			e.ended(inst.address, "up", skipped, "skipped: %s is %s", d.address, d.outcome)
+			if d.stopped {
+				e.ended(inst.address, "up", skipped, "skipped: %s stopped at plan", d.address)
+			} else {
+				e.ended(inst.address, "up", skipped, "skipped: %s is %s", d.address, d.outcome)
+			}
 			return true
 		}
 	}
@@ -718,6 +722,7 @@ func (e *engine) turn(ctx context.Context, inst *instance, leave func()) {
 			return
 		}
 		if why != "" {
+			inst.stopped = true
 			e.finish(inst, skipped, false, nil, nil)
 			e.stoppedAt(addr, "up", "%s; %s, stopped at plan", p.summary(), why)
 			e.stopAtPlan()

@@ -317,8 +317,8 @@ func (r *renderer) followsNo(ev engine.Event) bool {
 	if ev.Type == "approval" && strings.Contains(ev.Message, "the answer was no") {
 		r.said[ev.Run] = true
 	}
-	return r.said[ev.Run] && ev.Type == "unit" && ev.Outcome == "skipped" &&
-		strings.HasPrefix(ev.Message, "skipped: ") && strings.HasSuffix(ev.Message, " is skipped")
+	return r.said[ev.Run] && ev.Type == "unit" && ev.Outcome == "skipped" && strings.HasPrefix(ev.Message, "skipped: ") &&
+		(strings.HasSuffix(ev.Message, " is skipped") || strings.HasSuffix(ev.Message, " stopped at plan"))
 }
 
 // endText is what the end of an operation of a unit says that its plan

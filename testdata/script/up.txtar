@@ -10,7 +10,7 @@ stdout '^default/db: will run: new$'
 stdout '^default/web: will run: new; plan after default/db \(run, env.URL\)$'
 ! exec opstruss up
 stdout '^default/db: needs approval, stopped at plan$'
-stdout '^default/web: skipped: default/db is skipped$'
+stdout '^default/web: skipped: default/db stopped at plan$'
 ! exists facts
 
 # --yes approves the run; web reads the port of db as a number
