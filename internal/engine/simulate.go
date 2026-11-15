@@ -23,7 +23,7 @@ const MaxEvent = 4 << 20
 var fieldTypes = map[string]string{
 	"method": "a string", "path": "a string", "unit": "a string", "stream": "a string", "line": "a string",
 	"task": "a string", "outcome": "a string", "headers": "an object of strings", "query": "an object of strings",
-	"outputs": "an object", "paths": "a list",
+	"outputs": "an object", "paths": "a list", "run": "a string",
 }
 
 // Simulate runs the task name for ev, an event that its caller wrote, as
@@ -250,7 +250,9 @@ func completed(p *model.Project, tr *Trigger, ev map[string]any) (map[string]any
 		if outputs == nil {
 			outputs = map[string]any{}
 		}
-		return map[string]any{"task": tr.After, "unit": tr.Unit, "outcome": outcome, "outputs": outputs}, nil
+		// A run that the caller does not name is none.
+		run, _ := ev["run"].(string)
+		return map[string]any{"task": tr.After, "unit": tr.Unit, "outcome": outcome, "outputs": outputs, "run": run}, nil
 	case "watch":
 		return watchEvent(p, tr, ev)
 	}

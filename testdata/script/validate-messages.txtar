@@ -40,7 +40,7 @@ stderr 'units c → d → c form a cycle$'
 # event of the triggers of a task; after a task with for_each, whose runs
 # end with no outputs, event has none
 ! exec opstruss validate -C events
-stderr '^opstruss.yaml:9:5: tasks.notify.run: the triggers of this task give no event.run; event has outcome, outputs, task, time, trigger, and unit \(in \$\{\{ event.run \}\}\)$'
+stderr '^opstruss.yaml:9:5: tasks.notify.run: the triggers of this task give no event.result; event has outcome, outputs, run, task, time, trigger, and unit \(in \$\{\{ event.result \}\}\)$'
 stderr '^opstruss.yaml:20:5: tasks.push.run: the triggers of this task give no event.outputs: images has for_each, so its runs end with no outputs; follow a task with steps that calls images and shapes them \(in \$\{\{ event.outputs.digest \}\}\)$'
 stderr '^opstruss.yaml:24:32: tasks.gate.on.after.if: this trigger gives no event.outputs: images has for_each'
 ! stderr 'tasks.either'
@@ -127,7 +127,7 @@ tasks:
   build:
     run: [echo, build]
   notify:
-    run: [echo, "${{ event.run }}"]
+    run: [echo, "${{ event.result }}"]
     on: {after: {task: build}}
   follow:
     run: [echo, "${{ event.line }}"]

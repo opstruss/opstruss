@@ -359,7 +359,7 @@ func (t *triggers) ended(rec *record.Record, depth int) {
 				outputs[k] = v
 			}
 		}
-		t.fireEvent(&bound{tr: tr, snap: snap}, map[string]any{"task": name, "unit": tr.Unit, "outcome": rec.Outcome, "outputs": outputs}, depth+1)
+		t.fireEvent(&bound{tr: tr, snap: snap}, map[string]any{"task": name, "unit": tr.Unit, "outcome": rec.Outcome, "outputs": outputs, "run": run}, depth+1)
 	}
 }
 

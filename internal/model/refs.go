@@ -26,7 +26,7 @@ var EventFields = map[string][]string{
 	"every":    nil,
 	"webhook":  {"method", "path", "headers", "query", "body"},
 	"watch":    {"unit", "stream", "line", "paths"},
-	"after":    {"task", "unit", "outcome", "outputs"},
+	"after":    {"task", "unit", "outcome", "outputs", "run"},
 }
 
 // triggerEvent is what event holds in a run of trigger kind, w for a

@@ -55,10 +55,11 @@ grep -count=1 '^source one -$' fired
 
 # a run that ends makes the runs of after, three deep at most; event.outputs
 # has the value of each output of the run it follows, and none of a
-# sensitive one
+# sensitive one, and event.run its id
 exec opstruss t1
 waitgrep '^t4 after t3 success$' fired
 grep '^t2 after t1 success hi false$' fired
+grep '^t3 after t2 success [0-9]+T[0-9]+Z-[0-9a-f]+$' fired
 waitgrep 'after t4: run [0-9T]+Z-[0-9a-f]+ is 3 deep in a chain of after, so it makes no run' .opstruss/logs/default/_daemon.jsonl
 ! grep '^t5' fired
 exec opstruss stop
@@ -127,8 +128,8 @@ tasks:
     env: {T: '${{ event.task }}', O: '${{ event.outcome }}', M: '${{ event.outputs.msg }}', H: '${{ has(event.outputs.token) }}'}
     on: {after: {task: t1}}
   t3:
-    run: echo "t3 after $T $O" >> fired
-    env: {T: '${{ event.task }}', O: '${{ event.outcome }}'}
+    run: echo "t3 after $T $O $R" >> fired
+    env: {T: '${{ event.task }}', O: '${{ event.outcome }}', R: '${{ event.run }}'}
     on: {after: {task: t2}}
   t4:
     run: echo "t4 after $T $O" >> fired

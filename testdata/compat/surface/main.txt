@@ -194,6 +194,7 @@ env TERM
 env XDG_CONFIG_HOME
 event after outcome
 event after outputs
+event after run
 event after task
 event after time
 event after trigger
