@@ -57,6 +57,7 @@ type listEntry struct {
 	ID        string           `json:"id"`
 	Kind      string           `json:"kind,omitempty"`
 	Orphan    bool             `json:"orphan,omitempty"`
+	MovesTo   string           `json:"moves_to,omitempty"`
 	Pending   string           `json:"pending,omitempty"`
 	Abandoned int              `json:"abandoned,omitempty"`
 	Tombstone *state.Tombstone `json:"tombstone,omitempty"`
@@ -69,6 +70,8 @@ func (e listEntry) status() string {
 		parts = append(parts, "moved to "+e.Tombstone.MovedTo)
 	case e.Tombstone != nil:
 		parts = append(parts, "forgotten")
+	case e.MovesTo != "":
+		parts = append(parts, "moves to "+e.MovesTo+" at the next up")
 	case e.Orphan:
 		parts = append(parts, "orphan: no longer in the files")
 	}
@@ -112,6 +115,9 @@ func (a *app) stateList() *cobra.Command {
 				}
 				n := p.NodeAt(strings.TrimPrefix(addr, p.StackName+"/"))
 				e.Orphan = r.Tombstone == nil && (n == nil || (n.Component() != nil) != (r.Kind == "component"))
+				if to := movedTo(p.Moved, strings.TrimPrefix(addr, p.StackName+"/")); e.Orphan && to != "" {
+					e.Orphan, e.MovesTo = false, p.StackName+"/"+to
+				}
 				entries = append(entries, e)
 			}
 			kv, err := s.KVInfos()
@@ -130,6 +136,24 @@ func (a *app) stateList() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+// movedTo is where the entries of moved: take the record at addr, a unit
+// or what is inside a component, in their order, so a chain ends at its
+// last address; "" when none takes it.
+func movedTo(moved []*model.Move, addr string) string {
+	to := addr
+	for _, m := range moved {
+		if to == m.From {
+			to = m.To
+		} else if rest, ok := strings.CutPrefix(to, m.From+"/"); ok {
+			to = m.To + "/" + rest
+		}
+	}
+	if to == addr {
+		return ""
+	}
+	return to
 }
 
 // kvStatus is the line of state list for a key of kv.

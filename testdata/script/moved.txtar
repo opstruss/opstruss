@@ -7,12 +7,18 @@ exec opstruss up --yes
 stdout '^default/web: up: done$'
 cp opstruss.yaml old.yaml
 
-# the renamed unit plans from the record it moves from, so it is not new
+# the renamed unit plans from the record it moves from, so it is not new,
+# and state list says where the record goes
 cp renamed.yaml opstruss.yaml
 exec opstruss plan
 stdout '^default/site: will move from default/web$'
 stdout '^default/site: unchanged$'
 ! stdout orphan
+exec opstruss state list
+stdout '^default/web\tmoves to default/site at the next up$'
+exec opstruss state list --json
+stdout '"moves_to": "default/site"'
+! stdout '"orphan"'
 exec opstruss up --yes
 stdout '^default/site: moved from default/web$'
 stdout '^default/site: unchanged$'
