@@ -61,6 +61,13 @@ env PATH=$WORK/oldsops:$PATH
 ! exec opstruss -C files doctor
 stdout '^error  sops 3\.9\.4 at .*oldsops/sops is older than 3\.10\.0, which OpsTruss needs$'
 
+# the programs that argv lists name are looked up as well; one that is
+# not there may come from what runs before it, so it is a warning
+exec opstruss -C argv doctor
+stdout '^warn   not-a-program-abc is not in PATH, for unit default/app; a run fails unless what runs before it puts it there$'
+stdout '^ok     sh at .*/sh, for task check, unit default/app, unit default/job$'
+! stdout 'own-tool|./bin/app|script-only'
+
 -- opstruss.yaml --
 name: app
 inputs:
@@ -117,3 +124,28 @@ units:
 -- oldsops/sops --
 #!/bin/sh
 echo "sops 3.9.4"
+-- argv/opstruss.yaml --
+name: argv
+units:
+  app:
+    service: [not-a-program-abc, serve]
+    ready:
+      run: [sh, -c, 'true']
+  job:
+    run: [sh, -c, 'true']
+  local:
+    run: [./bin/app]
+  shell:
+    run: script-only --flag
+  pathed:
+    run: [own-tool]
+    env:
+      PATH: /opt/own/bin
+tasks:
+  check:
+    steps:
+      - run: [sh, -c, 'true']
+      - block:
+          - run: [own-tool]
+        env:
+          PATH: /opt/own/bin

@@ -54,7 +54,7 @@ func Doctor(opts Options) (*Report, error) {
 	}
 	defer e.releaseSources()
 	d := &doctor{e: e, r: &Report{Stack: e.p.StackName, Checks: []*Check{}}, need: map[string][]string{},
-		passes: map[*model.Package][]string{}}
+		argv: map[string][]string{}, passes: map[*model.Package][]string{}}
 	d.units()
 	d.tasks()
 	d.programs()
@@ -76,6 +76,7 @@ type doctor struct {
 	e      *engine
 	r      *Report
 	need   map[string][]string // the programs of requires:, with what needs each
+	argv   map[string][]string // the programs that argv lists name, with what runs each
 	skip   []*Check            // requires: that only a run can compute
 	passes map[*model.Package][]string
 }
@@ -93,6 +94,40 @@ func (d *doctor) note(what string, names ...string) {
 		if !slices.Contains(d.need[key], what) {
 			d.need[key] = append(d.need[key], what)
 		}
+	}
+}
+
+// program notes the program that the argv of c names for what, when PATH
+// finds it: a script runs in a shell, a path is not looked up, and an env:
+// with PATH or an expression is known only to a run.
+func (d *doctor) program(what string, c *model.Command, env model.Env) {
+	if c == nil || len(c.Argv) == 0 || strings.ContainsAny(c.Argv[0], "/$") {
+		return
+	}
+	if _, ok := env["PATH"]; ok {
+		return
+	}
+	key := c.Argv[0] + "\x00" + d.e.path()
+	if !slices.Contains(d.argv[key], what) {
+		d.argv[key] = append(d.argv[key], what)
+	}
+}
+
+// steps notes the programs that the run: of steps name.
+func (d *doctor) steps(what string, steps []*model.Step, env model.Env) {
+	for _, st := range steps {
+		e := env
+		if len(st.Env) > 0 {
+			e = maps.Clone(env)
+			if e == nil {
+				e = model.Env{}
+			}
+			maps.Copy(e, st.Env)
+		}
+		d.program(what, st.Run, e)
+		d.steps(what, st.Block, e)
+		d.steps(what, st.Rescue, e)
+		d.steps(what, st.Always, e)
 	}
 }
 
@@ -132,6 +167,11 @@ func (d *doctor) units() {
 		what := "unit " + inst.address
 		s := d.e.scope(inst)
 		d.requires(what, inst.def.Requires, s, false)
+		d.program(what, inst.def.Run, inst.def.Env)
+		d.program(what, inst.def.Service, inst.def.Env)
+		if inst.def.Ready != nil {
+			d.program(what, inst.def.Ready.Run, inst.def.Env)
+		}
 		t := inst.def.Target
 		if t == nil {
 			continue
@@ -211,6 +251,8 @@ func (d *doctor) tasks() {
 func (d *doctor) task(what string, in *model.Project, t *model.Task, s *expr.Scope) {
 	d.search = ""
 	d.requires(what, t.Requires, s, true)
+	d.program(what, t.Run, t.Env)
+	d.steps(what, t.Steps, t.Env)
 	for _, callee := range model.CallNames(t) {
 		d.call(what, in, callee, model.PassesOf(t))
 	}
@@ -232,23 +274,37 @@ func (d *doctor) call(what string, in *model.Project, callee string, passes []st
 		Vars: map[string]any{"stack": d.e.p.StackName, "opstruss": d.e.facts(nil)}}, true)
 }
 
-// programs checks that each program that requires: names is in PATH.
+// programs checks that each program that requires: or an argv names is
+// in PATH. A program of requires: that is not there fails a run; one that
+// only an argv names may come from what runs before it, so it is a warning.
 func (d *doctor) programs() {
-	for _, key := range slices.Sorted(maps.Keys(d.need)) {
+	keys := slices.Sorted(maps.Keys(d.need))
+	keys = slices.Compact(slices.Sorted(slices.Values(append(keys, slices.Collect(maps.Keys(d.argv))...))))
+	for _, key := range keys {
 		name, search, _ := strings.Cut(key, "\x00")
-		if search == "" {
-			search = d.e.path()
+		_, required := d.need[key]
+		what := slices.Clone(d.need[key])
+		for _, w := range d.argv[key] {
+			if !slices.Contains(what, w) {
+				what = append(what, w)
+			}
 		}
-		what := d.need[key]
 		slices.Sort(what)
+		missing := "error"
+		if !required {
+			missing = "warn"
+		}
 		c := &Check{Check: "program", Name: name, For: what}
 		if p, err := plugin.LookPath(name, search); err == nil {
 			c.Status, c.Path, c.Message = "ok", p, fmt.Sprintf("%s at %s, for %s", name, p, strings.Join(what, ", "))
 			if why := plugin.MissingInterpreter(p, search); why != "" {
-				c.Status, c.Message = "error", fmt.Sprintf("%s at %s cannot start: %s, for %s", name, p, why, strings.Join(what, ", "))
+				c.Status, c.Message = missing, fmt.Sprintf("%s at %s cannot start: %s, for %s", name, p, why, strings.Join(what, ", "))
 			}
 		} else {
-			c.Status, c.Message = "error", fmt.Sprintf("%s is not in PATH, for %s", name, strings.Join(what, ", "))
+			c.Status, c.Message = missing, fmt.Sprintf("%s is not in PATH, for %s", name, strings.Join(what, ", "))
+			if !required {
+				c.Message += "; a run fails unless what runs before it puts it there"
+			}
 		}
 		d.add(c)
 	}
