@@ -263,8 +263,11 @@ func EditorSchema(ps ...*Project) ([]byte, error) {
 	}
 
 	// A step and a task call any task by name; a secret and a watch take
-	// fewer, so they keep the call of the base schema.
+	// fewer, so they keep the call of the base schema. The names are all
+	// those that resolve, so another key is a word written wrong, which the
+	// editor marks; validate says the same with its own words.
 	for _, def := range []string{"step", "task"} {
+		object(def)["additionalProperties"] = false
 		props := properties(object(def))
 		for _, name := range slices.Sorted(maps.Keys(n.calls)) {
 			if _, ok := props[name]; ok {

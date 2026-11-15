@@ -134,6 +134,13 @@ tasks:
 		{"    run: [echo]\n", "    opstruss.http: {url: x, nope: 1}\n", false},
 		{"    run: [echo]\n", "    set: {anything: 1}\n", true},
 		{"      - task: deploy\n", "      - http: {url: x}\n      - log: {msg: hi, level: loud}\n      - task: deploy\n", false},
+		// a key that is neither a key nor a task that resolves is a word
+		// written wrong
+		{"      - task: deploy\n", "      - task: deploy\n        retyr: {attempts: 3}\n", false},
+		{"      - task: deploy\n", "      - task: deploy\n        nmae: x\n", false},
+		{"    run: [echo]\n", "    run: [echo]\n    retyr: {attempts: 3}\n", false},
+		{"    run: [echo]\n", "    run: [echo]\n    x-note: kept\n", true},
+		{"      - task: deploy\n", "      - fetch: {url: x}\n      - opstruss.log: {msg: hi}\n      - a.build: {file: x}\n      - task: deploy\n", true},
 		// task: of a step and the triggers of a task
 		{"with: {env: dev}", "with: {env: staging}", false},
 		{"with: {env: dev}", `with: {env: "${{ inputs.domain }}"}`, true},

@@ -791,21 +791,21 @@ func (c *checker) task(path []string, t *Task, project bool) {
 			c.add(at(path, "approval"), "remote components cannot grant approval")
 		}
 	}
-	kinds := len(t.Calls)
+	calls := c.calls(path, t.Calls, jsonKeys(reflect.TypeFor[Task]()))
+	kinds := len(calls)
 	if t.Run != nil {
 		kinds++
 	}
 	if len(t.Steps) > 0 {
 		kinds++
 	}
-	c.calls(path, t.Calls)
 	switch {
-	case len(t.Calls) > 1:
-		c.add(path, "a task calls one task; found %s", callNames(t.Calls))
+	case len(calls) > 1:
+		c.add(path, "a task calls one task; found %s", callNames(calls))
 	case kinds != 1:
 		c.add(path, "a task has exactly one of run, steps, or one call of a task")
 	}
-	if len(t.Calls) == 1 && len(t.Outputs) > 0 {
+	if len(calls) == 1 && len(t.Outputs) > 0 {
 		c.add(at(path, "outputs"), "a task that calls one task passes its outputs on; write steps to shape them")
 	}
 	if hasExpr(t.Run) {
@@ -894,19 +894,32 @@ func (c *checker) flags(path []string, inputs map[string]*Input) {
 // inputs. A name that is an Ansible keyword and calls nothing gets what
 // OpsTruss writes instead; one that calls something, as a name in uses:,
 // is a call.
-func (c *checker) calls(path []string, calls Calls) {
+func (c *checker) calls(path []string, calls Calls, keys map[string]bool) Calls {
+	called := Calls{}
 	for _, name := range slices.Sorted(maps.Keys(calls)) {
 		t, err := c.call(name)
 		if err != nil {
-			if hint, ok := ansibleHint(name); ok {
+			// Any key that is not a keyword reads as a call of a task, so a
+			// key written wrong is said as such, and counts as no call.
+			near := expr.Nearest(name, slices.Sorted(maps.Keys(keys)))
+			switch hint, ok := ansibleHint(name); {
+			case ok:
 				c.add(at(path, name), "%s", hint)
-			} else if !errors.Is(err, errBroken) {
+			case errors.Is(err, errBroken):
+			case near != "" && err.Error() == "there is no task "+name:
+				// Nothing that calls take is near; a key is.
+				c.add(at(path, name), "neither a key nor a task; did you mean %s?", near)
+				continue
+			default:
 				c.add(at(path, name), "%v", err)
 			}
+			called[name] = calls[name]
 			continue
 		}
+		called[name] = calls[name]
 		c.with(at(path, name), at(path, name), t, calls[name])
 	}
+	return called
 }
 
 // call finds what a call runs; a plugin, which has no uses:, calls only
@@ -984,19 +997,19 @@ func (c *checker) steps(path []string, steps []*Step, ids map[string]bool) {
 		if c.p != nil && c.p.Source != nil && s.Yes {
 			c.add(at(sp, "yes"), "remote components cannot grant approval")
 		}
+		calls := c.calls(sp, s.Calls, jsonKeys(reflect.TypeFor[Step]()))
 		kinds := 0
-		for _, set := range []bool{s.Run != nil, s.Task != "", len(s.Block) > 0, len(s.Calls) > 0} {
+		for _, set := range []bool{s.Run != nil, s.Task != "", len(s.Block) > 0, len(calls) > 0} {
 			if set {
 				kinds++
 			}
 		}
-		c.calls(sp, s.Calls)
 		if c.plugin != nil && s.Task != "" {
 			c.add(at(sp, "task"), "a plugin task calls no task: chains belong to the project, and a plugin that needs one brings a component")
 		}
 		switch {
-		case len(s.Calls) > 1:
-			c.add(sp, "a step calls one task; found %s", callNames(s.Calls))
+		case len(calls) > 1:
+			c.add(sp, "a step calls one task; found %s", callNames(calls))
 		case kinds != 1:
 			c.add(sp, "a step has exactly one of run, task, block, or one call of a task")
 		}
@@ -1054,7 +1067,7 @@ func (c *checker) secrets() {
 				kinds++
 			}
 		}
-		c.calls(path, s.Calls)
+		_ = c.calls(path, s.Calls, nil)
 		switch {
 		case len(s.Calls) > 1:
 			c.add(path, "a secret calls one task; found %s", callNames(s.Calls))

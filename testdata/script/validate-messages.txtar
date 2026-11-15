@@ -23,6 +23,8 @@ stderr '^opstruss.yaml:3:3: units.Café: "Café" is not a name: '
 stderr '^opstruss.yaml:9:9: tasks.fetch.steps\[0\].htp: there is no task htp; did you mean http\?$'
 stderr '^opstruss.yaml:5:9: units.net.uses: ops has no package tofuu; did you mean tofu\?$'
 stderr 'names of three parts or more are reserved; to call a task of a package of ops, declare the package in uses:, as tofu: ops.tofu, and call tofu.plan'
+stderr '^opstruss.yaml:16:9: tasks.again.steps\[0\].retyr: neither a key nor a task; did you mean retry\?$'
+! stderr 'tasks.again.steps\[0\]: a step has exactly one'
 
 # a duration
 ! exec opstruss validate -C duration
@@ -88,6 +90,10 @@ tasks:
   preview:
     steps:
       - ops.tofu.plan: {}
+  again:
+    steps:
+      - run: [echo]
+        retyr: {attempts: 2}
 -- calls/catalog/opstruss.catalog.yaml --
 shared: []
 -- calls/catalog/tofu/opstruss.plugin.yaml --
