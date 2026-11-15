@@ -128,6 +128,7 @@ An output of a program or a task, and where its value comes from.
 | `path` | string | The file that from: file reads, relative to the directory of the program. |
 | `format` | one of `text`, `json`, `yaml`, `lines`, `dotenv` | How the text is read: text, json, yaml, lines, or dotenv. |
 | `value` | any | The value, as an expression of the steps of the task. |
+| `items` | [Input](#input) | What each item of an array is. |
 
 ## Project outputs {#project-outputs}
 

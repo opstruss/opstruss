@@ -861,7 +861,7 @@ func (tc *taskCtx) values(decl map[string]*model.Output) (map[string]any, map[st
 			marks[name] = true
 			tc.e.hide(v, true)
 		}
-		if out[name], err = (&model.Input{Type: o.Type}).Conform(v); err != nil {
+		if out[name], err = (&model.Input{Type: o.Type, Items: o.Items}).Conform(v); err != nil {
 			delete(marks, name)
 			errs = append(errs, fmt.Errorf("output %s: %w", name, err))
 		}

@@ -361,7 +361,8 @@
           "$ref": "#/$defs/format",
           "description": "How the text is read: text, json, yaml, lines, or dotenv."
         },
-        "value": { "description": "The value, as an expression of the steps of the task." }
+        "value": { "description": "The value, as an expression of the steps of the task." },
+        "items": { "$ref": "#/$defs/input", "description": "What each item of an array is." }
       },
       "patternProperties": { "^x-": true },
       "additionalProperties": false

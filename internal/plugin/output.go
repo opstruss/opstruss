@@ -101,7 +101,7 @@ func output(c *Call, o *model.Output, written any, streams map[string]*stream) (
 	default:
 		return nil, fmt.Errorf("unknown from %s", o.From)
 	}
-	return (&model.Input{Type: o.Type}).Conform(v)
+	return (&model.Input{Type: o.Type, Items: o.Items}).Conform(v)
 }
 
 // ParseOutputFile reads OPSTRUSS_OUTPUT: lines name=value and blocks

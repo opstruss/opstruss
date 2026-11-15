@@ -840,7 +840,7 @@ func (c *checker) task(path []string, t *Task, project bool) {
 		case !holdsExpr(o.Value):
 			// A value written out is checked as run checks the value of an
 			// expression.
-			if _, err := (&Input{Type: o.Type}).Conform(o.Value); err != nil {
+			if _, err := (&Input{Type: o.Type, Items: o.Items}).Conform(o.Value); err != nil {
 				c.add(at(path, "outputs", name, "value"), "%v", err)
 			}
 		}

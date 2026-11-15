@@ -11,6 +11,12 @@ stderr 'output count: expected integer, got string'
 exec opstruss fine
 stdout '^fine: fine step 2 \| got 3$'
 
+# items: says what each item of an array output is, as for an input
+exec opstruss names
+stdout '^names: names step 2 \| got \["a","b"\]$'
+! exec opstruss numbers
+stderr 'output files: \[0\]: expected string, got integer'
+
 cd literal
 ! exec opstruss validate
 stderr 'tasks\.typed\.outputs\.count\.value: expected integer, got string'
@@ -42,6 +48,18 @@ tasks:
       - id: got
         task: sum
       - run: [echo, 'got ${{ steps.got.outputs.count }}']
+  names:
+    steps:
+      - id: ls
+        run: 'echo files=[\"a\",\"b\"] >> "$OPSTRUSS_OUTPUT"'
+        outputs:
+          files: {type: array, items: {type: string}, format: json}
+      - run: [echo, 'got ${{ toJSON(steps.ls.outputs.files) }}']
+  numbers:
+    steps:
+      - run: 'echo files=[1,2] >> "$OPSTRUSS_OUTPUT"'
+        outputs:
+          files: {type: array, items: {type: string}, format: json}
 -- literal/opstruss.yaml --
 name: app
 tasks:

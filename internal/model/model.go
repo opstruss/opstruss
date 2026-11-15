@@ -64,6 +64,7 @@ type Output struct {
 	Path        string `json:"path,omitempty"`
 	Format      string `json:"format,omitempty"`
 	Value       any    `json:"value,omitempty"`
+	Items       *Input `json:"items,omitempty"` // of an array: what each item is, as for an input
 }
 
 // ProjectOutput is an output of a project or component: an expression, or

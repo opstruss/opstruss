@@ -985,6 +985,43 @@ schema plugin outputs.<name>.from value "file"
 schema plugin outputs.<name>.from value "output"
 schema plugin outputs.<name>.from value "stderr"
 schema plugin outputs.<name>.from value "stdout"
+schema plugin outputs.<name>.items
+schema plugin outputs.<name>.items type object
+schema plugin outputs.<name>.items.args
+schema plugin outputs.<name>.items.args type boolean
+schema plugin outputs.<name>.items.default
+schema plugin outputs.<name>.items.default type any
+schema plugin outputs.<name>.items.description
+schema plugin outputs.<name>.items.description type string
+schema plugin outputs.<name>.items.enum
+schema plugin outputs.<name>.items.enum type array
+schema plugin outputs.<name>.items.env
+schema plugin outputs.<name>.items.env type string
+schema plugin outputs.<name>.items.items
+schema plugin outputs.<name>.items.literal
+schema plugin outputs.<name>.items.literal type boolean
+schema plugin outputs.<name>.items.maximum
+schema plugin outputs.<name>.items.maximum type number
+schema plugin outputs.<name>.items.minimum
+schema plugin outputs.<name>.items.minimum type number
+schema plugin outputs.<name>.items.pattern
+schema plugin outputs.<name>.items.pattern type string
+schema plugin outputs.<name>.items.properties
+schema plugin outputs.<name>.items.properties type object
+schema plugin outputs.<name>.items.properties.<name>
+schema plugin outputs.<name>.items.required
+schema plugin outputs.<name>.items.required type boolean
+schema plugin outputs.<name>.items.sensitive
+schema plugin outputs.<name>.items.sensitive type boolean
+schema plugin outputs.<name>.items.type
+schema plugin outputs.<name>.items.type value "array"
+schema plugin outputs.<name>.items.type value "boolean"
+schema plugin outputs.<name>.items.type value "integer"
+schema plugin outputs.<name>.items.type value "number"
+schema plugin outputs.<name>.items.type value "object"
+schema plugin outputs.<name>.items.type value "string"
+schema plugin outputs.<name>.items.x-*
+schema plugin outputs.<name>.items.x-* type any
 schema plugin outputs.<name>.path
 schema plugin outputs.<name>.path type string
 schema plugin outputs.<name>.sensitive
@@ -1349,6 +1386,43 @@ schema plugin tasks.<name>.outputs.<name>.from value "file"
 schema plugin tasks.<name>.outputs.<name>.from value "output"
 schema plugin tasks.<name>.outputs.<name>.from value "stderr"
 schema plugin tasks.<name>.outputs.<name>.from value "stdout"
+schema plugin tasks.<name>.outputs.<name>.items
+schema plugin tasks.<name>.outputs.<name>.items type object
+schema plugin tasks.<name>.outputs.<name>.items.args
+schema plugin tasks.<name>.outputs.<name>.items.args type boolean
+schema plugin tasks.<name>.outputs.<name>.items.default
+schema plugin tasks.<name>.outputs.<name>.items.default type any
+schema plugin tasks.<name>.outputs.<name>.items.description
+schema plugin tasks.<name>.outputs.<name>.items.description type string
+schema plugin tasks.<name>.outputs.<name>.items.enum
+schema plugin tasks.<name>.outputs.<name>.items.enum type array
+schema plugin tasks.<name>.outputs.<name>.items.env
+schema plugin tasks.<name>.outputs.<name>.items.env type string
+schema plugin tasks.<name>.outputs.<name>.items.items
+schema plugin tasks.<name>.outputs.<name>.items.literal
+schema plugin tasks.<name>.outputs.<name>.items.literal type boolean
+schema plugin tasks.<name>.outputs.<name>.items.maximum
+schema plugin tasks.<name>.outputs.<name>.items.maximum type number
+schema plugin tasks.<name>.outputs.<name>.items.minimum
+schema plugin tasks.<name>.outputs.<name>.items.minimum type number
+schema plugin tasks.<name>.outputs.<name>.items.pattern
+schema plugin tasks.<name>.outputs.<name>.items.pattern type string
+schema plugin tasks.<name>.outputs.<name>.items.properties
+schema plugin tasks.<name>.outputs.<name>.items.properties type object
+schema plugin tasks.<name>.outputs.<name>.items.properties.<name>
+schema plugin tasks.<name>.outputs.<name>.items.required
+schema plugin tasks.<name>.outputs.<name>.items.required type boolean
+schema plugin tasks.<name>.outputs.<name>.items.sensitive
+schema plugin tasks.<name>.outputs.<name>.items.sensitive type boolean
+schema plugin tasks.<name>.outputs.<name>.items.type
+schema plugin tasks.<name>.outputs.<name>.items.type value "array"
+schema plugin tasks.<name>.outputs.<name>.items.type value "boolean"
+schema plugin tasks.<name>.outputs.<name>.items.type value "integer"
+schema plugin tasks.<name>.outputs.<name>.items.type value "number"
+schema plugin tasks.<name>.outputs.<name>.items.type value "object"
+schema plugin tasks.<name>.outputs.<name>.items.type value "string"
+schema plugin tasks.<name>.outputs.<name>.items.x-*
+schema plugin tasks.<name>.outputs.<name>.items.x-* type any
 schema plugin tasks.<name>.outputs.<name>.path
 schema plugin tasks.<name>.outputs.<name>.path type string
 schema plugin tasks.<name>.outputs.<name>.sensitive
@@ -1470,6 +1544,43 @@ schema plugin tasks.<name>.steps[].outputs.<name>.from value "file"
 schema plugin tasks.<name>.steps[].outputs.<name>.from value "output"
 schema plugin tasks.<name>.steps[].outputs.<name>.from value "stderr"
 schema plugin tasks.<name>.steps[].outputs.<name>.from value "stdout"
+schema plugin tasks.<name>.steps[].outputs.<name>.items
+schema plugin tasks.<name>.steps[].outputs.<name>.items type object
+schema plugin tasks.<name>.steps[].outputs.<name>.items.args
+schema plugin tasks.<name>.steps[].outputs.<name>.items.args type boolean
+schema plugin tasks.<name>.steps[].outputs.<name>.items.default
+schema plugin tasks.<name>.steps[].outputs.<name>.items.default type any
+schema plugin tasks.<name>.steps[].outputs.<name>.items.description
+schema plugin tasks.<name>.steps[].outputs.<name>.items.description type string
+schema plugin tasks.<name>.steps[].outputs.<name>.items.enum
+schema plugin tasks.<name>.steps[].outputs.<name>.items.enum type array
+schema plugin tasks.<name>.steps[].outputs.<name>.items.env
+schema plugin tasks.<name>.steps[].outputs.<name>.items.env type string
+schema plugin tasks.<name>.steps[].outputs.<name>.items.items
+schema plugin tasks.<name>.steps[].outputs.<name>.items.literal
+schema plugin tasks.<name>.steps[].outputs.<name>.items.literal type boolean
+schema plugin tasks.<name>.steps[].outputs.<name>.items.maximum
+schema plugin tasks.<name>.steps[].outputs.<name>.items.maximum type number
+schema plugin tasks.<name>.steps[].outputs.<name>.items.minimum
+schema plugin tasks.<name>.steps[].outputs.<name>.items.minimum type number
+schema plugin tasks.<name>.steps[].outputs.<name>.items.pattern
+schema plugin tasks.<name>.steps[].outputs.<name>.items.pattern type string
+schema plugin tasks.<name>.steps[].outputs.<name>.items.properties
+schema plugin tasks.<name>.steps[].outputs.<name>.items.properties type object
+schema plugin tasks.<name>.steps[].outputs.<name>.items.properties.<name>
+schema plugin tasks.<name>.steps[].outputs.<name>.items.required
+schema plugin tasks.<name>.steps[].outputs.<name>.items.required type boolean
+schema plugin tasks.<name>.steps[].outputs.<name>.items.sensitive
+schema plugin tasks.<name>.steps[].outputs.<name>.items.sensitive type boolean
+schema plugin tasks.<name>.steps[].outputs.<name>.items.type
+schema plugin tasks.<name>.steps[].outputs.<name>.items.type value "array"
+schema plugin tasks.<name>.steps[].outputs.<name>.items.type value "boolean"
+schema plugin tasks.<name>.steps[].outputs.<name>.items.type value "integer"
+schema plugin tasks.<name>.steps[].outputs.<name>.items.type value "number"
+schema plugin tasks.<name>.steps[].outputs.<name>.items.type value "object"
+schema plugin tasks.<name>.steps[].outputs.<name>.items.type value "string"
+schema plugin tasks.<name>.steps[].outputs.<name>.items.x-*
+schema plugin tasks.<name>.steps[].outputs.<name>.items.x-* type any
 schema plugin tasks.<name>.steps[].outputs.<name>.path
 schema plugin tasks.<name>.steps[].outputs.<name>.path type string
 schema plugin tasks.<name>.steps[].outputs.<name>.sensitive
@@ -2180,6 +2291,43 @@ schema project tasks.<name>.outputs.<name>.from value "file"
 schema project tasks.<name>.outputs.<name>.from value "output"
 schema project tasks.<name>.outputs.<name>.from value "stderr"
 schema project tasks.<name>.outputs.<name>.from value "stdout"
+schema project tasks.<name>.outputs.<name>.items
+schema project tasks.<name>.outputs.<name>.items type object
+schema project tasks.<name>.outputs.<name>.items.args
+schema project tasks.<name>.outputs.<name>.items.args type boolean
+schema project tasks.<name>.outputs.<name>.items.default
+schema project tasks.<name>.outputs.<name>.items.default type any
+schema project tasks.<name>.outputs.<name>.items.description
+schema project tasks.<name>.outputs.<name>.items.description type string
+schema project tasks.<name>.outputs.<name>.items.enum
+schema project tasks.<name>.outputs.<name>.items.enum type array
+schema project tasks.<name>.outputs.<name>.items.env
+schema project tasks.<name>.outputs.<name>.items.env type string
+schema project tasks.<name>.outputs.<name>.items.items
+schema project tasks.<name>.outputs.<name>.items.literal
+schema project tasks.<name>.outputs.<name>.items.literal type boolean
+schema project tasks.<name>.outputs.<name>.items.maximum
+schema project tasks.<name>.outputs.<name>.items.maximum type number
+schema project tasks.<name>.outputs.<name>.items.minimum
+schema project tasks.<name>.outputs.<name>.items.minimum type number
+schema project tasks.<name>.outputs.<name>.items.pattern
+schema project tasks.<name>.outputs.<name>.items.pattern type string
+schema project tasks.<name>.outputs.<name>.items.properties
+schema project tasks.<name>.outputs.<name>.items.properties type object
+schema project tasks.<name>.outputs.<name>.items.properties.<name>
+schema project tasks.<name>.outputs.<name>.items.required
+schema project tasks.<name>.outputs.<name>.items.required type boolean
+schema project tasks.<name>.outputs.<name>.items.sensitive
+schema project tasks.<name>.outputs.<name>.items.sensitive type boolean
+schema project tasks.<name>.outputs.<name>.items.type
+schema project tasks.<name>.outputs.<name>.items.type value "array"
+schema project tasks.<name>.outputs.<name>.items.type value "boolean"
+schema project tasks.<name>.outputs.<name>.items.type value "integer"
+schema project tasks.<name>.outputs.<name>.items.type value "number"
+schema project tasks.<name>.outputs.<name>.items.type value "object"
+schema project tasks.<name>.outputs.<name>.items.type value "string"
+schema project tasks.<name>.outputs.<name>.items.x-*
+schema project tasks.<name>.outputs.<name>.items.x-* type any
 schema project tasks.<name>.outputs.<name>.path
 schema project tasks.<name>.outputs.<name>.path type string
 schema project tasks.<name>.outputs.<name>.sensitive
@@ -2301,6 +2449,43 @@ schema project tasks.<name>.steps[].outputs.<name>.from value "file"
 schema project tasks.<name>.steps[].outputs.<name>.from value "output"
 schema project tasks.<name>.steps[].outputs.<name>.from value "stderr"
 schema project tasks.<name>.steps[].outputs.<name>.from value "stdout"
+schema project tasks.<name>.steps[].outputs.<name>.items
+schema project tasks.<name>.steps[].outputs.<name>.items type object
+schema project tasks.<name>.steps[].outputs.<name>.items.args
+schema project tasks.<name>.steps[].outputs.<name>.items.args type boolean
+schema project tasks.<name>.steps[].outputs.<name>.items.default
+schema project tasks.<name>.steps[].outputs.<name>.items.default type any
+schema project tasks.<name>.steps[].outputs.<name>.items.description
+schema project tasks.<name>.steps[].outputs.<name>.items.description type string
+schema project tasks.<name>.steps[].outputs.<name>.items.enum
+schema project tasks.<name>.steps[].outputs.<name>.items.enum type array
+schema project tasks.<name>.steps[].outputs.<name>.items.env
+schema project tasks.<name>.steps[].outputs.<name>.items.env type string
+schema project tasks.<name>.steps[].outputs.<name>.items.items
+schema project tasks.<name>.steps[].outputs.<name>.items.literal
+schema project tasks.<name>.steps[].outputs.<name>.items.literal type boolean
+schema project tasks.<name>.steps[].outputs.<name>.items.maximum
+schema project tasks.<name>.steps[].outputs.<name>.items.maximum type number
+schema project tasks.<name>.steps[].outputs.<name>.items.minimum
+schema project tasks.<name>.steps[].outputs.<name>.items.minimum type number
+schema project tasks.<name>.steps[].outputs.<name>.items.pattern
+schema project tasks.<name>.steps[].outputs.<name>.items.pattern type string
+schema project tasks.<name>.steps[].outputs.<name>.items.properties
+schema project tasks.<name>.steps[].outputs.<name>.items.properties type object
+schema project tasks.<name>.steps[].outputs.<name>.items.properties.<name>
+schema project tasks.<name>.steps[].outputs.<name>.items.required
+schema project tasks.<name>.steps[].outputs.<name>.items.required type boolean
+schema project tasks.<name>.steps[].outputs.<name>.items.sensitive
+schema project tasks.<name>.steps[].outputs.<name>.items.sensitive type boolean
+schema project tasks.<name>.steps[].outputs.<name>.items.type
+schema project tasks.<name>.steps[].outputs.<name>.items.type value "array"
+schema project tasks.<name>.steps[].outputs.<name>.items.type value "boolean"
+schema project tasks.<name>.steps[].outputs.<name>.items.type value "integer"
+schema project tasks.<name>.steps[].outputs.<name>.items.type value "number"
+schema project tasks.<name>.steps[].outputs.<name>.items.type value "object"
+schema project tasks.<name>.steps[].outputs.<name>.items.type value "string"
+schema project tasks.<name>.steps[].outputs.<name>.items.x-*
+schema project tasks.<name>.steps[].outputs.<name>.items.x-* type any
 schema project tasks.<name>.steps[].outputs.<name>.path
 schema project tasks.<name>.steps[].outputs.<name>.path type string
 schema project tasks.<name>.steps[].outputs.<name>.sensitive
@@ -2457,6 +2642,43 @@ schema project units.<name>.outputs.<name>.from value "file"
 schema project units.<name>.outputs.<name>.from value "output"
 schema project units.<name>.outputs.<name>.from value "stderr"
 schema project units.<name>.outputs.<name>.from value "stdout"
+schema project units.<name>.outputs.<name>.items
+schema project units.<name>.outputs.<name>.items type object
+schema project units.<name>.outputs.<name>.items.args
+schema project units.<name>.outputs.<name>.items.args type boolean
+schema project units.<name>.outputs.<name>.items.default
+schema project units.<name>.outputs.<name>.items.default type any
+schema project units.<name>.outputs.<name>.items.description
+schema project units.<name>.outputs.<name>.items.description type string
+schema project units.<name>.outputs.<name>.items.enum
+schema project units.<name>.outputs.<name>.items.enum type array
+schema project units.<name>.outputs.<name>.items.env
+schema project units.<name>.outputs.<name>.items.env type string
+schema project units.<name>.outputs.<name>.items.items
+schema project units.<name>.outputs.<name>.items.literal
+schema project units.<name>.outputs.<name>.items.literal type boolean
+schema project units.<name>.outputs.<name>.items.maximum
+schema project units.<name>.outputs.<name>.items.maximum type number
+schema project units.<name>.outputs.<name>.items.minimum
+schema project units.<name>.outputs.<name>.items.minimum type number
+schema project units.<name>.outputs.<name>.items.pattern
+schema project units.<name>.outputs.<name>.items.pattern type string
+schema project units.<name>.outputs.<name>.items.properties
+schema project units.<name>.outputs.<name>.items.properties type object
+schema project units.<name>.outputs.<name>.items.properties.<name>
+schema project units.<name>.outputs.<name>.items.required
+schema project units.<name>.outputs.<name>.items.required type boolean
+schema project units.<name>.outputs.<name>.items.sensitive
+schema project units.<name>.outputs.<name>.items.sensitive type boolean
+schema project units.<name>.outputs.<name>.items.type
+schema project units.<name>.outputs.<name>.items.type value "array"
+schema project units.<name>.outputs.<name>.items.type value "boolean"
+schema project units.<name>.outputs.<name>.items.type value "integer"
+schema project units.<name>.outputs.<name>.items.type value "number"
+schema project units.<name>.outputs.<name>.items.type value "object"
+schema project units.<name>.outputs.<name>.items.type value "string"
+schema project units.<name>.outputs.<name>.items.x-*
+schema project units.<name>.outputs.<name>.items.x-* type any
 schema project units.<name>.outputs.<name>.path
 schema project units.<name>.outputs.<name>.path type string
 schema project units.<name>.outputs.<name>.sensitive
@@ -2918,6 +3140,43 @@ schema project units.<name>.tasks.<name>.outputs.<name>.from value "file"
 schema project units.<name>.tasks.<name>.outputs.<name>.from value "output"
 schema project units.<name>.tasks.<name>.outputs.<name>.from value "stderr"
 schema project units.<name>.tasks.<name>.outputs.<name>.from value "stdout"
+schema project units.<name>.tasks.<name>.outputs.<name>.items
+schema project units.<name>.tasks.<name>.outputs.<name>.items type object
+schema project units.<name>.tasks.<name>.outputs.<name>.items.args
+schema project units.<name>.tasks.<name>.outputs.<name>.items.args type boolean
+schema project units.<name>.tasks.<name>.outputs.<name>.items.default
+schema project units.<name>.tasks.<name>.outputs.<name>.items.default type any
+schema project units.<name>.tasks.<name>.outputs.<name>.items.description
+schema project units.<name>.tasks.<name>.outputs.<name>.items.description type string
+schema project units.<name>.tasks.<name>.outputs.<name>.items.enum
+schema project units.<name>.tasks.<name>.outputs.<name>.items.enum type array
+schema project units.<name>.tasks.<name>.outputs.<name>.items.env
+schema project units.<name>.tasks.<name>.outputs.<name>.items.env type string
+schema project units.<name>.tasks.<name>.outputs.<name>.items.items
+schema project units.<name>.tasks.<name>.outputs.<name>.items.literal
+schema project units.<name>.tasks.<name>.outputs.<name>.items.literal type boolean
+schema project units.<name>.tasks.<name>.outputs.<name>.items.maximum
+schema project units.<name>.tasks.<name>.outputs.<name>.items.maximum type number
+schema project units.<name>.tasks.<name>.outputs.<name>.items.minimum
+schema project units.<name>.tasks.<name>.outputs.<name>.items.minimum type number
+schema project units.<name>.tasks.<name>.outputs.<name>.items.pattern
+schema project units.<name>.tasks.<name>.outputs.<name>.items.pattern type string
+schema project units.<name>.tasks.<name>.outputs.<name>.items.properties
+schema project units.<name>.tasks.<name>.outputs.<name>.items.properties type object
+schema project units.<name>.tasks.<name>.outputs.<name>.items.properties.<name>
+schema project units.<name>.tasks.<name>.outputs.<name>.items.required
+schema project units.<name>.tasks.<name>.outputs.<name>.items.required type boolean
+schema project units.<name>.tasks.<name>.outputs.<name>.items.sensitive
+schema project units.<name>.tasks.<name>.outputs.<name>.items.sensitive type boolean
+schema project units.<name>.tasks.<name>.outputs.<name>.items.type
+schema project units.<name>.tasks.<name>.outputs.<name>.items.type value "array"
+schema project units.<name>.tasks.<name>.outputs.<name>.items.type value "boolean"
+schema project units.<name>.tasks.<name>.outputs.<name>.items.type value "integer"
+schema project units.<name>.tasks.<name>.outputs.<name>.items.type value "number"
+schema project units.<name>.tasks.<name>.outputs.<name>.items.type value "object"
+schema project units.<name>.tasks.<name>.outputs.<name>.items.type value "string"
+schema project units.<name>.tasks.<name>.outputs.<name>.items.x-*
+schema project units.<name>.tasks.<name>.outputs.<name>.items.x-* type any
 schema project units.<name>.tasks.<name>.outputs.<name>.path
 schema project units.<name>.tasks.<name>.outputs.<name>.path type string
 schema project units.<name>.tasks.<name>.outputs.<name>.sensitive
@@ -3039,6 +3298,43 @@ schema project units.<name>.tasks.<name>.steps[].outputs.<name>.from value "file
 schema project units.<name>.tasks.<name>.steps[].outputs.<name>.from value "output"
 schema project units.<name>.tasks.<name>.steps[].outputs.<name>.from value "stderr"
 schema project units.<name>.tasks.<name>.steps[].outputs.<name>.from value "stdout"
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.items
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.items type object
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.items.args
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.items.args type boolean
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.items.default
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.items.default type any
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.items.description
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.items.description type string
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.items.enum
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.items.enum type array
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.items.env
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.items.env type string
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.items.items
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.items.literal
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.items.literal type boolean
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.items.maximum
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.items.maximum type number
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.items.minimum
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.items.minimum type number
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.items.pattern
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.items.pattern type string
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.items.properties
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.items.properties type object
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.items.properties.<name>
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.items.required
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.items.required type boolean
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.items.sensitive
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.items.sensitive type boolean
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.items.type
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.items.type value "array"
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.items.type value "boolean"
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.items.type value "integer"
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.items.type value "number"
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.items.type value "object"
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.items.type value "string"
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.items.x-*
+schema project units.<name>.tasks.<name>.steps[].outputs.<name>.items.x-* type any
 schema project units.<name>.tasks.<name>.steps[].outputs.<name>.path
 schema project units.<name>.tasks.<name>.steps[].outputs.<name>.path type string
 schema project units.<name>.tasks.<name>.steps[].outputs.<name>.sensitive
