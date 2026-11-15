@@ -625,7 +625,7 @@ func (e *engine) turn(ctx context.Context, inst *instance, leave func()) {
 		if errors.Is(ctx.Err(), context.Canceled) {
 			// The run was interrupted while the unit ran, which stopped it.
 			e.finish(inst, cancelled, false, nil, nil)
-			e.ended(addr, "up", cancelled, "interrupted: %v", err)
+			e.ended(addr, "up", cancelled, "%s", interruptedText(err))
 			return
 		}
 		e.finish(inst, failure, false, nil, nil)
@@ -1056,6 +1056,15 @@ func exitErr(res *plugin.Result, what string) error {
 type timedOut time.Duration
 
 func (d timedOut) Error() string { return "timed out after " + time.Duration(d).String() }
+
+// interruptedText is what a unit or a step that the interrupt of the run
+// ended with err says.
+func interruptedText(err error) string {
+	if errors.Is(err, plugin.ErrNotStarted) {
+		return "interrupted before its program started"
+	}
+	return "interrupted: " + err.Error()
+}
 
 // withTimeout is context.WithTimeout whose cause names the timeout.
 func withTimeout(ctx context.Context, d time.Duration) (context.Context, context.CancelFunc) {

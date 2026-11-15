@@ -73,7 +73,12 @@ func (e *engine) program(ctx context.Context, p progSpec, s *expr.Scope) *taskRe
 // read again, so one after a failure reads what changed since.
 func (e *engine) try(ctx context.Context, p progSpec, s *expr.Scope, attempt func(progSpec, *expr.Scope) (*taskResult, map[string]any, error)) *taskResult {
 	fail := func(err error) *taskResult {
-		e.emit(Event{Type: "step", Level: "error", Task: p.label, Step: p.step, Message: err.Error()})
+		ev := p.at()
+		ev.Type, ev.Level, ev.Message = "step", "error", err.Error()
+		if errors.Is(ctx.Err(), context.Canceled) && errors.Is(err, plugin.ErrNotStarted) {
+			ev.Level, ev.Message = "warn", interruptedText(err)
+		}
+		e.emit(ev)
 		return failed(err)
 	}
 	n, delay, backoff := 1, time.Duration(0), 1.0

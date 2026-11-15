@@ -263,13 +263,17 @@ func (s *stream) tail() string {
 	return strings.ToValidUTF8(string(b), "\uFFFD")
 }
 
+// ErrNotStarted is the error of Exec for a program that did not start
+// because its context had ended; Exec wraps the cause of that end.
+var ErrNotStarted = errors.New("the program did not start")
+
 // Exec runs one program under the contract, and returns once it and every
 // process it left in its process group have ended. An error means that
 // the program did not start; a program that fails gives its exit code.
 // When ctx ends, the program is stopped with c.Stop.
 func (r *Run) Exec(ctx context.Context, c *Call) (*Result, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
+	if ctx.Err() != nil {
+		return nil, fmt.Errorf("%w: %w", ErrNotStarted, context.Cause(ctx))
 	}
 	dir := filepath.Join(r.Temp, ".calls", strconv.FormatInt(r.calls.Add(1), 10))
 	if err := os.MkdirAll(dir, 0o700); err != nil {

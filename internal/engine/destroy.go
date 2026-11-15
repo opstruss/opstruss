@@ -415,7 +415,7 @@ func (e *engine) destroyOne(ctx context.Context, l *leftover) string {
 	fail := func(err error) string {
 		if errors.Is(ctx.Err(), context.Canceled) {
 			// The run was interrupted while the unit was being destroyed, which stopped it.
-			e.ended(addr, "destroy", cancelled, "interrupted: %v", err)
+			e.ended(addr, "destroy", cancelled, "%s", interruptedText(err))
 			return cancelled
 		}
 		e.failOp(addr, "destroy", err)

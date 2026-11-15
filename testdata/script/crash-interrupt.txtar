@@ -1,0 +1,24 @@
+# An interrupt after the turn of a unit began, before its program started,
+# ends the unit cancelled and says so. Run with go test -tags failpoints.
+
+[!failpoints] skip 'needs a build with -tags failpoints'
+env HOME=$WORK/home
+
+env OPSTRUSS_FAILPOINT=up-before-program=pause
+env OPSTRUSS_FAILPOINT_PAUSE=$WORK/held
+! exec opstruss up --yes &up&
+waitfile $WORK/held
+kill -INT up
+# The signal reaches the run before the paused unit goes on.
+exec sleep 0.2
+rm $WORK/held
+wait up
+stdout '^default/a: interrupted before its program started$'
+! stdout 'context canceled'
+! exists ran
+
+-- opstruss.yaml --
+name: interrupt
+units:
+  a:
+    run: touch ran
