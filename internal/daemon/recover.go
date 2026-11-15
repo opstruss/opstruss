@@ -227,6 +227,8 @@ func Forget(root, stack, addr string) (forgot []string, err error) {
 // held runs fn on <stack>.json under the lock of the daemon of stack,
 // which no daemon then holds, and writes what fn leaves.
 func held(root, stack string, fn func(*File) error) error {
+	lockMu.Lock()
+	defer lockMu.Unlock()
 	lock, err := os.OpenFile(lockPath(root, stack), os.O_RDWR|os.O_CREATE, 0o600)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil

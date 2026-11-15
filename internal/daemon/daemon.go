@@ -58,6 +58,12 @@ func lockPath(root, stack string) string   { return filepath.Join(root, "daemon"
 func filePath(root, stack string) string   { return filepath.Join(root, "daemon", stack+".json") }
 func socketPath(root, stack string) string { return filepath.Join(root, "daemon", stack+".sock") }
 
+// lockMu serializes the moments this process takes the lock of a daemon to
+// start one, to look whether one runs, or to recover: flock conflicts
+// between two descriptors of one process too, so each would take the other
+// for a daemon that runs.
+var lockMu sync.Mutex
+
 // LogPath is the log of the daemon of stack, under root, the project's
 // .opstruss.
 func LogPath(root, stack string) string { return filepath.Join(root, "logs", stack, "_daemon.jsonl") }
@@ -127,7 +133,10 @@ func Start(opts Options) (_ *Daemon, err error) {
 	if d.lock, err = os.OpenFile(lockPath(root, opts.Stack), os.O_RDWR|os.O_CREATE, 0o600); err != nil {
 		return nil, err
 	}
-	if err := syscall.Flock(int(d.lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	lockMu.Lock()
+	err = syscall.Flock(int(d.lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+	lockMu.Unlock()
+	if err != nil {
 		if errors.Is(err, syscall.EWOULDBLOCK) {
 			running := &RunningError{Stack: opts.Stack}
 			if f, err := Read(root, opts.Stack); err == nil {
@@ -400,6 +409,8 @@ func Read(root, stack string) (*File, error) {
 
 // Alive reports whether a daemon of stack holds its lock under root.
 func Alive(root, stack string) bool {
+	lockMu.Lock()
+	defer lockMu.Unlock()
 	f, err := os.OpenFile(lockPath(root, stack), os.O_RDWR, 0)
 	if err != nil {
 		return false

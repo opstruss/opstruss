@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -184,5 +186,36 @@ func TestReadNewer(t *testing.T) {
 	var newer *state.NewerError
 	if _, err := Read(root, "prod"); !errors.As(err, &newer) {
 		t.Fatalf("got %v", err)
+	}
+}
+
+// TestRecoverInParallel recovers the services of an ended daemon at once,
+// as destroy does after stop: none takes another for a daemon that runs.
+func TestRecoverInParallel(t *testing.T) {
+	dir := project(t, t.TempDir())
+	root := filepath.Join(dir, ".opstruss")
+	d, err := Start(Options{Dir: dir, Stack: "default", Version: "v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.close()
+	errs := make(chan error, 16*20*2)
+	var wg sync.WaitGroup
+	for i := range 16 {
+		wg.Go(func() {
+			for range 20 {
+				if _, _, err := Recover(root, "default", fmt.Sprintf("default/s%d", i)); err != nil {
+					errs <- err
+				}
+				if Alive(root, "default") {
+					errs <- errors.New("alive while no daemon runs")
+				}
+			}
+		})
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatal(err)
 	}
 }
