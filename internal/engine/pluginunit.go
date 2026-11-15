@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/opstruss/opstruss/internal/expr"
 	"github.com/opstruss/opstruss/internal/model"
@@ -320,7 +321,16 @@ func (e *engine) recordStatus(inst *instance) map[string]any {
 		outputs = e.serviceStatus(inst)
 		ev.Message = fmt.Sprint(outputs["state"])
 		if pid := outputs["pid"].(int64); pid != 0 {
-			ev.Message += fmt.Sprintf(", pid %d since %s, %d restarts", pid, outputs["since"], outputs["restarts"])
+			ev.Message += fmt.Sprintf(", pid %d since %s, %d restarts", pid, record.When(outputs["since"].(string)), outputs["restarts"])
+		} else if n := outputs["restarts"].(int64); n > 0 {
+			ev.Message += fmt.Sprintf(", %d restarts", n)
+		}
+		if at := outputs["exited"].(string); at != "" {
+			ev.Message += fmt.Sprintf(", last exit %d at %s", outputs["exit_code"], record.When(at))
+		}
+		if t, err := time.Parse(time.RFC3339Nano, outputs["next"].(string)); err == nil {
+			wait := max(time.Until(t), 0)
+			ev.Message += fmt.Sprintf(", starts again in %s", wait.Round(map[bool]time.Duration{true: 100 * time.Millisecond, false: time.Second}[wait < 10*time.Second]))
 		}
 	case rec == nil || rec.Tombstone != nil:
 		ev.Message = "absent"

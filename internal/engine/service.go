@@ -79,6 +79,9 @@ type ServiceStatus struct {
 	PID      int
 	Since    time.Time
 	Restarts int
+	ExitCode int       // of the last program that exited, once one did
+	Exited   time.Time // when it exited
+	Next     time.Time // when it starts again, while it waits to
 }
 
 // Defaults of ready: and of the restart policy.
@@ -244,16 +247,24 @@ func (e *engine) startService(ctx context.Context, inst *instance, r *resolved, 
 }
 
 // serviceStatus is the status of a service unit: its state, pid, since
-// when, and how often it restarted.
+// when, how often it restarted, how its last program exited and when, and
+// when it starts again.
 func (e *engine) serviceStatus(inst *instance) map[string]any {
-	out := map[string]any{"state": "absent", "pid": int64(0), "since": "", "restarts": int64(0)}
+	out := map[string]any{"state": "absent", "pid": int64(0), "since": "", "restarts": int64(0), "exit_code": int64(0), "exited": "", "next": ""}
 	if rec := inst.record; rec != nil && rec.Tombstone == nil {
 		out["state"] = "stopped"
 	}
 	if st, ok := e.services().Status(inst.address); ok {
-		out["state"], out["pid"], out["restarts"] = st.State, int64(st.PID), int64(st.Restarts)
+		out["state"], out["pid"], out["restarts"], out["exit_code"] = st.State, int64(st.PID), int64(st.Restarts), int64(st.ExitCode)
 		if !st.Since.IsZero() {
 			out["since"] = st.Since.UTC().Format(time.RFC3339)
+		}
+		// To the millisecond, as the time of an event: the first restarts
+		// come within a second.
+		for k, t := range map[string]time.Time{"exited": st.Exited, "next": st.Next} {
+			if !t.IsZero() {
+				out[k] = record.Stamp(t)
+			}
 		}
 	}
 	return out

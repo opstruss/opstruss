@@ -1,0 +1,23 @@
+# A service that exits and starts again says with what it exited, when,
+# and when it starts again: status shows it, and logs has a line of the
+# daemon between the lines of its programs.
+
+env HOME=$WORK/home
+
+exec opstruss up -d --yes
+waitgrep 'exited with 3; starts again in' .opstruss/logs/default/game.jsonl
+exec opstruss status
+stdout '^default/game: .*last exit 3 at 20[0-9-]+ [0-9:]+ [^ ]+'
+exec opstruss status --json
+stdout '"exit_code":3,"exited":"20[0-9-]+T[0-9:.]+Z"'
+exec opstruss logs game
+stdout '^default/game \| up$'
+stderr '^default/game: exited with 3; starts again in [0-9.]+m?s$'
+exec opstruss stop
+
+-- opstruss.yaml --
+name: crashing
+units:
+  game:
+    service: [sh, -c, 'echo up; sleep 0.2; exit 3']
+    restart: always

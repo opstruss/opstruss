@@ -469,6 +469,7 @@ func (s *service) loop() {
 		code := c.code
 		s.mu.Lock()
 		s.exited, s.lastCode = s.exited+1, code
+		s.status.ExitCode, s.status.Exited = code, time.Now().UTC()
 		s.mu.Unlock()
 		if s.isStopping() {
 			s.sup.event("info", addr, "stopped, exit code %d", code)
@@ -476,7 +477,9 @@ func (s *service) loop() {
 			return
 		}
 		if !restarts(s.spec.Restart, code) {
-			s.sup.event(map[bool]string{true: "info", false: "warn"}[code == 0], addr, "exited with %d", code)
+			level := map[bool]string{true: "info", false: "warn"}[code == 0]
+			s.sup.event(level, addr, "exited with %d", code)
+			s.note(level, fmt.Sprintf("exited with %d", code))
 			s.end(fmt.Errorf("exited with %d before it was ready", code))
 			return
 		}
@@ -484,7 +487,11 @@ func (s *service) loop() {
 			delay = firstDelay
 		}
 		s.sup.event("warn", addr, "exited with %d; restarting in %s", code, delay)
+		s.note("warn", fmt.Sprintf("exited with %d; starts again in %s", code, delay))
 		s.set("restarting", 0)
+		s.mu.Lock()
+		s.status.Next = time.Now().Add(delay).UTC()
+		s.mu.Unlock()
 		select {
 		case <-time.After(delay):
 		case <-s.stopped:
@@ -494,6 +501,7 @@ func (s *service) loop() {
 		delay = min(2*delay, maxDelay)
 		s.mu.Lock()
 		s.status.Restarts++
+		s.status.Next = time.Time{}
 		s.mu.Unlock()
 	}
 }
@@ -701,6 +709,14 @@ func (s *service) copyLines(r io.Reader, task, stream string) {
 	lines := secret.NewLines(mask, func(text string) { s.line(task, stream, text) })
 	_, _ = io.Copy(lines, r)
 	lines.Flush()
+}
+
+// note writes what the daemon says of the service to its log too, among
+// the lines of its programs, so logs shows why it started again.
+func (s *service) note(level, msg string) {
+	if s.log != nil {
+		s.log.Emit(record.Event{Type: "service", Level: level, Address: s.spec.Address, Message: msg})
+	}
 }
 
 // line writes one line of output, hidden already, to the log of the

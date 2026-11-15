@@ -14,7 +14,7 @@ stdout 'default/flaky: running, pid [0-9]+'
 exec opstruss status web
 stdout '^default/web: running, pid [0-9]+ since .*, 0 restarts$'
 exec opstruss status flaky
-stdout '^default/flaky: running, pid [0-9]+ since .*, 2 restarts$'
+stdout '^default/flaky: running, pid [0-9]+ since 20[0-9-]+ [0-9:]+ [^ ]+, 2 restarts, last exit 1 at 20[0-9-]+ [0-9:]+ [^ ]+$'
 waitgrep '"type":"log","level":"info","address":"default/web","stream":"stdout","message":"hello hello"' .opstruss/logs/default/web.jsonl
 waitgrep '"message":"attempt 3"' .opstruss/logs/default/flaky.jsonl
 grep '"type":"service","level":"warn","address":"default/flaky","message":"exited with 1; restarting in 100ms"' .opstruss/logs/default/_daemon.jsonl

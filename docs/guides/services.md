@@ -46,8 +46,8 @@ foreground: it shows the output of the services, and Ctrl-C stops them.
 
 | Command | Shows |
 |---|---|
-| `opstruss status` | Each service with its pid, since when it runs, and its restarts |
-| `opstruss logs web` | What the service wrote; `-f` follows it |
+| `opstruss status` | Each service with its pid, since when it runs, and its restarts; once a program of it exited, with what and when, and while it waits to start again, in how long |
+| `opstruss logs web` | What the service wrote, with a line of the daemon each time it exited; `-f` follows it |
 | `opstruss list` | Each unit with its state |
 | `opstruss stop` | Stops the daemon and its services |
 
