@@ -7,6 +7,11 @@ updates:
     commit-message:
       prefix: chore
       include: scope
+    ignore:
+      # pflag 1.1 writes [=true|false] after every bool flag in help, which
+      # the help of opstruss leaves out.
+      - dependency-name: github.com/spf13/pflag
+        versions: [">= 1.1.0"]
   - package-ecosystem: npm
     directory: /docs
     schedule:
