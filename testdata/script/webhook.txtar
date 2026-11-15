@@ -1,7 +1,8 @@
 # A task with on: webhook runs when a request with the right signature
 # comes to daemon.listen of the daemon: accepted answers 202 with the id
 # of the run, wait answers with its outputs; if: leaves a request out with
-# 202 and no run, with: that the inputs do not take answers 422, and a
+# 202 and no run, with: that cannot be evaluated or that the inputs do
+# not take answers 422, and a
 # wrong signature 401, which the log of the daemon names.
 
 env HOME=$WORK/home
@@ -18,6 +19,8 @@ webhook POST /hooks/deploy '{"ref":"main","action":"skip"}' -bearer t0ken-for-ho
 stdout '^202 \{\}'
 webhook POST /hooks/deploy '{"ref":5}' -bearer t0ken-for-hooks
 stdout '^422 \{"error":"with: '
+webhook POST /hooks/deploy '{}' -bearer t0ken-for-hooks
+stdout '^422 \{"error":"with: ref: .*no such key: ref; event.body is empty"\}'
 webhook POST /hooks/deploy '{"ref":"main"}' -bearer wrong
 stdout '^401 '
 grep 'refused a request from 127.0.0.1:[0-9]+ with 401: the bearer token does not match' .opstruss/logs/default/_daemon.jsonl

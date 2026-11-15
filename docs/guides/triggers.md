@@ -83,7 +83,7 @@ opstruss stop      # stop the daemon, its runs, and its services
   | `respond: accepted`, the default | 202, `{"run": "<id>"}` once the run starts |
   | `respond: wait` | 200, or 500 when the run fails: `{"run", "outcome", "exit_code", "outputs"}`, each output [as the last event of the run has it](../reference/exit-codes-and-json#documents) |
   | `if:` is false | 202, `{}`, and no run |
-  | `with:` gives an input that the task refuses | 422, `{"error": "<why>"}` |
+  | `with:` cannot be evaluated, such as for a key the body lacks, or gives an input that the task refuses | 422, `{"error": "<why>"}` |
   | Another error before the run | 500, `{"error": "<why>"}` |
   | The task has 100 runs that have not ended | 503, with `Retry-After: 1` |
   | The daemon is stopping | 503 |

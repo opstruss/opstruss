@@ -184,8 +184,9 @@ func triggersOf(p *model.Project, name string) ([]*Trigger, error) {
 	return out, nil
 }
 
-// WithError is a with: of a trigger whose values the inputs of its task do
-// not take, so no run is made; a webhook answers it with 422.
+// WithError is a with: of a trigger that cannot be evaluated, or whose
+// values the inputs of its task do not take, so no run is made; a webhook
+// answers it with 422.
 type WithError struct{ Err error }
 
 func (e *WithError) Error() string { return e.Err.Error() }
@@ -258,7 +259,9 @@ func (e *engine) fire(ctx context.Context, t *Trigger, over map[string]any, ask 
 		if with != nil {
 			v, marks, err := expr.EvalMarked(anyMap(with), s)
 			if err != nil {
-				return nil, e.redact.Err(fmt.Errorf("with: %w", err))
+				// validate checked what with: names, so what fails now is
+				// the data it reads, such as a body without the key.
+				return nil, &WithError{e.redact.Err(fmt.Errorf("with: %w", err))}
 			}
 			e.hide(v, marks)
 			given, _ = v.(map[string]any)
