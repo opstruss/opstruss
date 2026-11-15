@@ -86,8 +86,7 @@ fi
 ["step","build","lint","finished","skipped","skipped"]
 ["step","build","flaky","running",null,"started"]
 ["step","build","flaky",null,null,"the program exited with 3"]
-["step","build","flaky","finished","failure","failed"]
-["step","build","flaky",null,null,"failed; continue_on_error goes on"]
+["step","build","flaky","finished","failure","failed; continue_on_error goes on"]
 ["step","build","each[a]","running",null,"started"]
 ["log","build","each[a]",null,null,"a"]
 ["step","build","each[a]","finished","success","success"]
@@ -104,7 +103,6 @@ fi
 build: started
 build: compile | compiling
 build: lint: skipped
-build: flaky: failed
 build: flaky: failed; continue_on_error goes on
 build: each[a] | a
 build: each[b] | b

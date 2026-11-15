@@ -874,7 +874,6 @@ func (tc *taskCtx) run(ctx context.Context, steps []*model.Step, d defaults, at 
 		res.changed = res.changed || r.changed
 		if r.outcome == failure || r.outcome == cancelled {
 			if (s.ContinueOnError || r.soft) && r.outcome == failure {
-				tc.e.sayTask(tc.label, label, "failed; continue_on_error goes on")
 				continue
 			}
 			res.outcome, res.approval = r.outcome, r.approval
@@ -924,6 +923,8 @@ func (tc *taskCtx) stepGroup(ctx context.Context, s *model.Step, label string, d
 	res := tc.stepOnce(ctx, s, label, d, scope)
 	msg := res.outcome
 	switch {
+	case res.outcome == failure && (s.ContinueOnError || res.soft):
+		msg = "failed; continue_on_error goes on"
 	case res.outcome == failure:
 		msg = "failed"
 	case res.outcome == success && res.part == failure:

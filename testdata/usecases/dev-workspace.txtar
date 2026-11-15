@@ -20,7 +20,7 @@ stdout '^valid$'
 # morning: api fast-forwards, web has diverged, infra is cloned; the brief
 # goes to the daily note beside what was written by hand
 exec opstruss -C ops morning
-stdout '^morning: Sync repositories\[acme/web\]: failed$'
+stdout '^morning: Sync repositories\[acme/web\]: failed; continue_on_error goes on$'
 exists code/infra/Makefile
 exec sh -c 'cat Notes/Daily/*.md'
 stdout '^Rapat jam 10 dengan tim infra\.$'
