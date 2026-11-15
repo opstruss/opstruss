@@ -42,7 +42,8 @@ answers:
 - Without `--yes`, `up` stops at the plan of a unit that would change,
   says `changes need approval: run up at a terminal, or with --yes` on
   stderr, and exits with 2, which a workflow can treat as "needs
-  approval".
+  approval". A task with `approval: ask` stops the same way, and names
+  itself in that line.
 - With `--yes`, it applies the changes of that run without asking.
 - 1 means that something failed; [Exit codes and JSON](../reference/exit-codes-and-json)
   has the rest.

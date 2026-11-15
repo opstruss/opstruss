@@ -43,10 +43,7 @@ func (a *app) unitCommands() []*cobra.Command {
 				if err != nil {
 					return err
 				}
-				// Without a terminal nothing could answer, so say what would.
-				if res.ExitCode == 2 && !req.Yes && !a.answers() {
-					fmt.Fprintf(a.stderr, "changes need approval: run %s at a terminal, or with --yes\n", use)
-				}
+				a.hintApproval(res.ExitCode, req.Yes, use)
 				return in.exit(res.ExitCode)
 			},
 		}
@@ -668,4 +665,12 @@ func (a *app) notice(msg string) {
 	a.erase()
 	a.write(a.stderr, msg+"\n", "")
 	a.draw()
+}
+
+// hintApproval says what would answer the approval that stopped command
+// with exit 2, since nothing could without a terminal.
+func (a *app) hintApproval(code int, yes bool, command string) {
+	if code == 2 && !yes && !a.answers() {
+		fmt.Fprintf(a.stderr, "changes need approval: run %s at a terminal, or with --yes\n", command)
+	}
 }

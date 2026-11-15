@@ -308,6 +308,7 @@ func (a *app) taskCommand(name string, tasks []*model.Task, ofUnits bool) *cobra
 		if err != nil {
 			return err
 		}
+		a.hintApproval(res.ExitCode, req.Yes, name)
 		return in.exit(res.ExitCode)
 	}
 	return cmd

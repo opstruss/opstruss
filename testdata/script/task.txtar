@@ -82,9 +82,12 @@ stdout '^  after: skipped$'
 # that stops for approval fails the task: step that calls it
 ! exec opstruss guarded
 stdout 'task guarded needs approval; stopped'
+stderr '^changes need approval: run guarded at a terminal, or with --yes$'
 exec opstruss guarded --yes
+! stderr 'changes need approval'
 ! exec opstruss release
 stdout '^default/web: needs approval, stopped at plan$'
+stderr '^changes need approval: run release at a terminal, or with --yes$'
 exec opstruss release-yes
 stdout '^default/web: up: done$'
 
