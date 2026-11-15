@@ -145,11 +145,13 @@ colors with a flag, as `tofu`, can color when `NO_COLOR` is not set.
 ## No keyboard
 
 A program gets no keyboard: its stdin is what `stdin:` writes, or
-nothing. At a terminal, a program that asks at `/dev/tty` itself, as
-`ssh`, `gpg`, or `chezmoi init` can, shows its question there but never
-gets the answer, so its unit runs until its `timeout`, 6 hours by
-default, or Ctrl-C stops it. Without a terminal, in CI, in the daemon,
-or for a trigger, opening `/dev/tty` fails.
+nothing, and it runs without a terminal, as a service does, also when
+the run shows on one. A program that asks at `/dev/tty` itself, as
+`ssh`, `gpg`, or `chezmoi init` can, fails at once, since opening
+`/dev/tty` fails: `Device not configured` on macOS, `No such device or
+address` on Linux. A program that runs `sudo` itself fails the same way
+when sudo asks for a password; [`sudo: true`](../guides/run-as-root) is
+how a program runs as root.
 
 Give a program its answers before it starts: an input, which a run at a
 terminal asks for when it is required and has no value, a `sensitive`
@@ -174,8 +176,8 @@ reads, and the program of a secret, always gets pipes.
   gutter, and 2 rows shorter. Its size stays as it was when the program
   started.
 - Its stdin is what `stdin:` gives, or nothing, as without `tty`, and
-  `/dev/tty` is still the terminal of the operator, which gives it [no
-  keyboard](#no-keyboard) either.
+  the terminal is not its controlling terminal, so opening `/dev/tty`
+  fails, as for any program: it gets [no keyboard](#no-keyboard) either.
 - The log gets the rows of that terminal, not each frame that the program
   drew: a row goes to the log once it leaves the top of the terminal, and
   the rows left go once the program ends. Until then, the rows that the

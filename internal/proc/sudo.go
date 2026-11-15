@@ -157,7 +157,7 @@ func (s Sudo) ready() (conn *net.UnixConn, dec *json.Decoder, ended func() strin
 		return nil, nil, nil, err
 	}
 	cmd := &exec.Cmd{Path: s.Path, Args: s.Args(), Env: s.Env, Stdin: theirs, Stdout: pw, Stderr: pw}
-	_, err = Start(cmd)
+	_, err = startGroup(cmd)
 	_ = theirs.Close()
 	_ = pw.Close()
 	if err != nil {
@@ -268,10 +268,10 @@ func socketPair() (*net.UnixConn, *os.File, error) {
 
 // Serve is opstruss __sudo, which sudo runs as root with the socket of
 // OpsTruss as its stdin: it takes one program and its descriptors, runs
-// it in a process group of its own, stops it as OpsTruss says or once the
-// socket closes, gives the operator back the files that root made in the
-// directories of the run, and says how the program ended. It returns its
-// own exit code; the program's goes through the socket.
+// it as Start does, stops it as OpsTruss says or once the socket closes,
+// gives the operator back the files that root made in the directories of
+// the run, and says how the program ended. It returns its own exit code;
+// the program's goes through the socket.
 func Serve(stderr io.Writer, exe string) int {
 	var st unix.Stat_t
 	if err := unix.Fstat(0, &st); err != nil || st.Mode&unix.S_IFMT != unix.S_IFSOCK {

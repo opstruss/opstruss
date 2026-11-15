@@ -1,6 +1,7 @@
-// Package proc runs each program as the leader of its own process group,
-// stops a group with a signal, a grace period, and a kill, and finds the
-// processes of this user that carry a marker in their environment.
+// Package proc runs each program as the leader of its own session and
+// process group, stops a group with a signal, a grace period, and a kill,
+// and finds the processes of this user that carry a marker in their
+// environment.
 package proc
 
 import (
@@ -52,14 +53,28 @@ func Kill(ctx context.Context) <-chan struct{} {
 	return ch
 }
 
-// Start starts cmd as the leader of a new process group, so a stop reaches
-// every program it starts, such as tofu under sh, and Ctrl-C at the
-// terminal reaches OpsTruss alone, which then stops each group itself.
+// Start starts cmd as the leader of a new session, and so of a new
+// process group, so a stop reaches every program it starts, such as tofu
+// under sh, and Ctrl-C at the terminal reaches OpsTruss alone, which then
+// stops each group itself. The session has no controlling terminal, as a
+// service has none: a program that opens /dev/tty to ask the operator
+// fails at once, where in a process group of the terminal of OpsTruss its
+// first read would stop it until the run ends.
 func Start(cmd *exec.Cmd) (Group, error) {
+	return startLeader(cmd, true)
+}
+
+// startGroup starts cmd as the leader of a new process group in the
+// session of OpsTruss, as sudo needs: its ticket belongs to the terminal.
+func startGroup(cmd *exec.Cmd) (Group, error) {
+	return startLeader(cmd, false)
+}
+
+func startLeader(cmd *exec.Cmd, session bool) (Group, error) {
 	if cmd.SysProcAttr == nil {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}
 	}
-	cmd.SysProcAttr.Setpgid = true
+	cmd.SysProcAttr.Setsid, cmd.SysProcAttr.Setpgid = session, !session
 	if err := cmd.Start(); err != nil {
 		return 0, err
 	}
@@ -112,8 +127,7 @@ func ExitCode(state *os.ProcessState) int {
 type Group int
 
 // Signal sends sig to every process in the group, then SIGCONT, so a
-// stopped process, such as one that read the terminal from the background,
-// gets it too, as a shell does for a stopped job. A group that Empty finds
+// stopped process gets it too, as a shell does for a stopped job. A group that Empty finds
 // empty takes no signal and is no error: on macOS, one whose processes
 // just exited and wait to be reaped answers EPERM.
 func (g Group) Signal(sig syscall.Signal) error {

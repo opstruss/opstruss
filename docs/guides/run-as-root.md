@@ -25,13 +25,12 @@ ticket of sudo while the run lasts. A run asks up to three times in all,
 and asks no more once sudo refuses the user, as for a user that sudoers
 does not name. Ctrl-C at the prompt stops the run.
 
-sudo keeps that ticket for the terminal, not for one program: while it
-lasts, a program of the run, or of that terminal, that runs `sudo` itself
-needs no password either, as after `sudo` at a shell. `sudo: true`
-chooses what OpsTruss starts as root; it does not keep other programs
-from sudo, so a plugin or a component from git is code that you trust.
-A program that runs `sudo` by itself is not part of what OpsTruss
-promises.
+sudo keeps that ticket for the terminal, as `timestamp_type=tty`, its
+default, says. The programs of the run have no terminal, so a program
+that runs `sudo` itself gets no ticket, and fails where sudo asks for a
+password: `sudo: true` chooses what runs as root. It does not keep other
+programs from sudo, as through a rule of sudoers without a password, so a
+plugin or a component from git is code that you trust.
 
 A run without a terminal, as in CI, the daemon, or a trigger, has no
 ticket to use and fails before the program starts; there, let sudo run

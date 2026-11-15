@@ -15,13 +15,20 @@ directory that has it in `PATH`. `opstruss doctor` shows where each
 program is found. The [Install](./getting-started/install#requirements)
 page lists what each plugin needs.
 
-## A unit runs and never ends
+## A program cannot open /dev/tty
+
+```text
+default/dotfiles | sh: /dev/tty: Device not configured
+```
 
 A program that asks a question at the terminal itself, as `Email?` of
-`chezmoi init` or a passphrase of `ssh`, waits for an answer that never
-reaches it: what you type shows, but the program gets [no
-keyboard](./reference/program-contract#no-keyboard). Press Ctrl-C, then
-give the answer through an input, `stdin:`, or a flag of the tool.
+`chezmoi init` or a passphrase of `ssh`, gets [no
+keyboard](./reference/program-contract#no-keyboard): it runs without a
+terminal, as a service does, so it fails where it would ask. Give the
+answer through an input, `stdin:`, or a flag of the tool, as `chezmoi
+init --promptString`. A program that runs `sudo` itself fails the same
+way, with `a terminal is required to read the password`: give its unit or
+step `sudo: true` instead.
 
 ## A unit is pending after a crash
 

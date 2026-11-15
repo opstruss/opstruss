@@ -6,12 +6,15 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/creack/pty"
 )
 
 // TestMain makes the test binary a program for the tests to find, because
@@ -30,6 +33,21 @@ func TestMain(m *testing.M) {
 		child.Env = append(os.Environ(), "PROC_HELPER=sleep")
 		if child.Start() == nil {
 			_ = child.Wait()
+		}
+		os.Exit(0)
+	case "terminal":
+		// A program that asks at /dev/tty, started as a run on a terminal
+		// starts one: it exits 3 when it had to be stopped.
+		cmd := exec.Command("sh", "-c", "read answer </dev/tty")
+		g, err := Start(cmd)
+		if err != nil {
+			os.Exit(2)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		stopped, _ := Wait(ctx, cmd, g, syscall.SIGKILL, 0)
+		cancel()
+		if stopped {
+			os.Exit(3)
 		}
 		os.Exit(0)
 	}
@@ -97,6 +115,22 @@ func marker() string {
 	b := make([]byte, 8)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+// TestStartWithoutTerminal: a program that reads /dev/tty while OpsTruss
+// runs on a terminal fails at once, since its session has no terminal,
+// where a process group of the terminal would stop at the read.
+func TestStartWithoutTerminal(t *testing.T) {
+	cmd := helper("terminal", "")
+	f, err := pty.Start(cmd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	go func() { _, _ = io.Copy(io.Discard, f) }()
+	if err := cmd.Wait(); err != nil {
+		t.Fatalf("the program that reads /dev/tty did not end by itself: %v", err)
+	}
 }
 
 func TestStopSignal(t *testing.T) {
