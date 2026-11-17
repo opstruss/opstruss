@@ -26,6 +26,16 @@ stderr 'names of three parts or more are reserved; to call a task of a package o
 stderr '^opstruss.yaml:16:9: tasks.again.steps\[0\].retyr: neither a key nor a task; did you mean retry\?$'
 ! stderr 'tasks.again.steps\[0\]: a step has exactly one'
 
+# a keyword written wrong with a value that is not a map, and a value near
+# one that a oneOf takes; a keyword, a task, and a built-in task with such a
+# value are written right
+! exec opstruss validate -C typos
+stderr '^opstruss.yaml:4:5: tasks.t.desciption: expected object, got string; did you mean description\?$'
+stderr '^opstruss.yaml:7:9: tasks.t.steps\[0\].shell: expected array or bash or node or pwsh or python or sh; did you mean bash\?$'
+stderr '^opstruss.yaml:8:9: tasks.t.steps\[0\].env: expected object, got string$'
+stderr '^opstruss.yaml:9:9: tasks.t.steps\[1\].test: expected object, got string$'
+stderr '^opstruss.yaml:10:9: tasks.t.steps\[2\].http: expected object, got string$'
+
 # a duration
 ! exec opstruss validate -C duration
 stderr '^opstruss.yaml:5:5: units.slow.timeout: "5 minutes" is not a duration such as 30s, 5m, or 1h30m$'
@@ -216,3 +226,16 @@ units:
   later:
     for_each: ${{ ['Bad Key'] }}
     run: [echo, "${{ each.key }}"]
+-- typos/opstruss.yaml --
+name: shop
+tasks:
+  t:
+    desciption: hello
+    steps:
+      - run: echo hi
+        shell: bsh
+        env: oops
+      - test: fast
+      - http: example.com
+  test:
+    run: echo test

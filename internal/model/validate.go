@@ -1002,6 +1002,25 @@ func schemaHint(path []string, msg string, doc map[string]any) (string, bool) {
 		// Another key of a task is a call of a task, which takes a map; users
 		// of other tools write these on the task.
 		return "rescue and always go with block, in a step: steps: [{block: [...], rescue: [...], always: [...]}]", true
+	case n >= 3 && strings.HasPrefix(msg, "expected object, got ") && slices.Contains([]string{"tasks", "steps", "block", "rescue", "always"}, path[n-3]):
+		// A key that is not a keyword reads as a call of a task, which takes
+		// a map, so a keyword written wrong with a value that is not one
+		// fails as a call. A keyword, a built-in task, a name with a dot,
+		// and a task of this file are written right.
+		key := path[n-1]
+		keys := jsonKeys(reflect.TypeFor[Step]())
+		if path[n-3] == "tasks" {
+			keys = jsonKeys(reflect.TypeFor[Task]())
+		}
+		tasks, _ := doc["tasks"].(map[string]any)
+		_, task := tasks[key]
+		_, builtin := builtins()[key]
+		_, ansible := ansibleHint(key)
+		near := expr.Nearest(key, slices.Sorted(maps.Keys(keys)))
+		if near == "" || keys[key] || task || builtin || ansible || strings.Contains(key, ".") {
+			return "", false
+		}
+		return msg + "; did you mean " + near + "?", true
 	case !isKeys:
 	case len(keys) == 0 && strings.HasPrefix(msg, "minItems"):
 		return "encryption_keys lists at least one key; without it, the data key is wrapped for the age key of the machine that makes it", true

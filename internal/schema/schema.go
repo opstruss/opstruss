@@ -55,7 +55,8 @@ type Problem struct {
 	Path    []string
 	Message string
 	// Known are the keys that the schema knows where a key is unknown, or
-	// the values of an enum that a value is not one of, for a hint.
+	// the strings of an enum or a oneOf that a value is not one of, for a
+	// hint.
 	Known []string
 }
 
@@ -163,7 +164,8 @@ func collect(e *jsonschema.ValidationError, out *[]Problem, doc any) {
 			collect(best, out, doc)
 			return
 		}
-		*out = append(*out, Problem{Path: e.InstanceLocation, Message: "expected " + alternatives(e)})
+		msg, values := alternatives(e)
+		*out = append(*out, Problem{Path: e.InstanceLocation, Message: "expected " + msg, Known: values})
 		return
 	}
 	for _, c := range e.Causes {
@@ -237,19 +239,25 @@ func deepest(e *jsonschema.ValidationError) int {
 }
 
 // alternatives names what a oneOf accepts, from the type and const errors
-// of its branches.
-func alternatives(e *jsonschema.ValidationError) string {
-	var want []string
+// of its branches, and the strings among them, which a typo is near.
+func alternatives(e *jsonschema.ValidationError) (string, []string) {
+	var want, values []string
+	value := func(w any) {
+		want = append(want, fmt.Sprintf("%v", w))
+		if s, ok := w.(string); ok {
+			values = append(values, s)
+		}
+	}
 	var walk func(*jsonschema.ValidationError)
 	walk = func(e *jsonschema.ValidationError) {
 		switch k := e.ErrorKind.(type) {
 		case *kind.Type:
 			want = append(want, k.Want...)
 		case *kind.Const:
-			want = append(want, fmt.Sprintf("%v", k.Want))
+			value(k.Want)
 		case *kind.Enum:
 			for _, w := range k.Want {
-				want = append(want, fmt.Sprintf("%v", w))
+				value(w)
 			}
 		}
 		for _, c := range e.Causes {
@@ -259,10 +267,12 @@ func alternatives(e *jsonschema.ValidationError) string {
 	walk(e)
 	slices.Sort(want)
 	want = slices.Compact(want)
+	slices.Sort(values)
+	values = slices.Compact(values)
 	if len(want) == 0 {
-		return "a different value"
+		return "a different value", values
 	}
-	return strings.Join(want, " or ")
+	return strings.Join(want, " or "), values
 }
 
 const (
