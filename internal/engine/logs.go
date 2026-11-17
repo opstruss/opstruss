@@ -144,7 +144,7 @@ func (e *engine) taskLogs(ctx context.Context, name string, follow bool) error {
 // all its events, or when the task ran inside the run of another, which
 // via names, the events of that task; with follow, until the run ends.
 func (e *engine) showRun(ctx context.Context, name string, r *record.Record, via string, follow bool) error {
-	head := "run " + r.Run + " at " + r.Started
+	head := "run " + r.Run + " at " + record.When(r.Started)
 	if via != "" {
 		head += " via " + via
 	}
@@ -258,7 +258,7 @@ func (e *engine) unitLogs(ctx context.Context, inst *instance, follow bool) (any
 			continue
 		}
 		what := cmp.Or(r.Task, r.Command)
-		e.say("unit", inst.address, "output of %s in run %s at %s", what, r.Run, r.Started)
+		e.say("unit", inst.address, "output of %s in run %s at %s", what, r.Run, record.When(r.Started))
 		printed := false
 		err := record.ReadRun(ctx, filepath.Join(e.root, "runs", e.p.StackName, r.Run), false, func(ev Event) {
 			if ev.Type == "log" && ev.Address == inst.address {

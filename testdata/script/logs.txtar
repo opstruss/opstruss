@@ -9,7 +9,7 @@ env HOME=$WORK/home
 exec opstruss up --yes site
 exec opstruss up --yes --force site
 exec opstruss logs site
-stdout '^default/site: output of up in run [0-9]{8}T[0-9]{6}Z-[0-9a-f]{8} at '
+stdout '^default/site: output of up in run [0-9]{8}T[0-9]{6}Z-[0-9a-f]{8} at 20[0-9]{2}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} \S+$'
 stdout '^default/site \| built 2$'
 ! stdout 'built 1'
 exec opstruss up --yes site
@@ -53,11 +53,11 @@ stderr '-f is for logs and runs <run>, which follow what is written, not for sta
 cd tasks
 exec opstruss build
 exec opstruss logs build
-stdout '^build: run [0-9]{8}T[0-9]{6}Z-[0-9a-f]{8} at \S+$'
+stdout '^build: run [0-9]{8}T[0-9]{6}Z-[0-9a-f]{8} at 20[0-9]{2}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} \S+$'
 stdout '^build \| building$'
 exec opstruss release
 exec opstruss logs build
-stdout '^build: run \S+ at \S+ via release$'
+stdout '^build: run \S+ at 20[0-9]{2}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} \S+ via release$'
 stdout '^build \| building$'
 ! stdout 'before'
 exec opstruss logs release
