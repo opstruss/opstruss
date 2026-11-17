@@ -95,12 +95,26 @@ stderr '^the tasks of the project are unknown: remote component task metadata ma
 stderr '^opstruss: remote component task metadata may be unavailable; run opstruss uses fetch first$'
 ! stderr 'unknown command'
 
+# a flag of a task of a project that does not load is unknown, with why
+# the project does not load; a task that is known has only its flag wrong
+! exec opstruss -C broken greet --who Ana
+stderr '^opstruss: unknown flag: --who$'
+stderr '^the tasks of the project are unknown: opstruss.yaml:1:1: yaml: '
+! exec opstruss -C unfetched greet --whoo Ana
+stderr '^opstruss: unknown flag: --whoo$'
+! stderr 'tasks of the project'
+
+-- broken/opstruss.yaml --
+name: [
 -- unfetched.yaml --
 name: shop
 uses:
   ops: github.com/opstruss/catalog@v1
 units:
   hello:
+    run: echo hi
+tasks:
+  greet:
     run: echo hi
 -- bad.yaml --
 name: shop

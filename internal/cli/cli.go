@@ -124,6 +124,15 @@ type app struct {
 	drawn int // the rows of the area at the bottom of the terminal that it shows now
 }
 
+// flagError is a flag that cmd could not parse.
+type flagError struct {
+	cmd *cobra.Command
+	err error
+}
+
+func (e *flagError) Error() string { return e.err.Error() }
+func (e *flagError) Unwrap() error { return e.err }
+
 // exitError ends a command that already wrote why it failed.
 type exitError struct{ code int }
 
@@ -164,14 +173,17 @@ func start(args []string, stdin io.Reader, terminal bool, stdout, stderr io.Writ
 	}
 	var exit *exitError
 	var probs model.Problems
-	// An unknown command may be a task of a project that does not load; one
-	// near a command keeps its suggestion first.
-	if err != nil && strings.HasPrefix(err.Error(), "unknown command") && a.loadErr != nil {
-		if strings.Contains(err.Error(), "; did you mean ") {
-			err = fmt.Errorf("%w\nthe tasks of the project are unknown: %v", err, a.loadErr)
-		} else {
-			err = a.loadErr
-		}
+	// An unknown command may be a task of a project that does not load,
+	// and so may a command that the root parses flags for; one near a
+	// command keeps its suggestion first.
+	var flag *flagError
+	switch {
+	case err == nil || a.loadErr == nil:
+	case errors.As(err, &flag) && !flag.cmd.HasParent(),
+		strings.HasPrefix(err.Error(), "unknown command") && strings.Contains(err.Error(), "; did you mean "):
+		err = fmt.Errorf("%w\nthe tasks of the project are unknown: %v", err, a.loadErr)
+	case strings.HasPrefix(err.Error(), "unknown command"):
+		err = a.loadErr
 	}
 	if err != nil && a.json && !errors.As(err, &exit) {
 		a.jsonError(ran, err)
@@ -327,6 +339,7 @@ func (a *app) root() *cobra.Command {
 			return nil
 		},
 	}
+	root.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error { return &flagError{cmd: cmd, err: err} })
 	pf := root.PersistentFlags()
 	pf.StringVar(&a.stack, "stack", "", "the stack to use; defaults to the only one, or $OPSTRUSS_STACK")
 	pf.StringArrayVar(&a.inputs, "input", nil, "set a project input, as name=value")
