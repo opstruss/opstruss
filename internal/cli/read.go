@@ -71,7 +71,7 @@ func (a *app) listCommand() *cobra.Command {
 				for _, t := range st.Tasks {
 					last := "never run"
 					if t.Run != "" {
-						last = t.Outcome + " in run " + t.Run
+						last = outcomeOf(root, t.Run, t.Outcome) + " in run " + t.Run
 					}
 					if t.Via != "" {
 						last += " via " + t.Via
@@ -234,17 +234,7 @@ func (a *app) runsCommand() *cobra.Command {
 					what = r.Task
 				}
 				started := record.When(r.Started)
-				// A run without an outcome runs, or ended without its
-				// record, which the next run marks.
-				outcome := r.Outcome
-				switch {
-				case outcome != "":
-				case record.Alive(root, r.Run):
-					outcome = "running"
-				default:
-					outcome = "interrupted"
-				}
-				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", r.Run, what, outcome, started)
+				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", r.Run, what, outcomeOf(root, r.Run, r.Outcome), started)
 			}
 			return tw.Flush()
 		},
@@ -253,6 +243,18 @@ func (a *app) runsCommand() *cobra.Command {
 	cmd.Flags().IntVar(&limit, "limit", 20, "list that many of the newest runs; 0 lists all")
 	cmd.AddCommand(a.cancelCommand(), a.rerunCommand())
 	return cmd
+}
+
+// outcomeOf is the outcome of run, or for a run without one, whether it
+// runs or ended without its record, which the next run marks.
+func outcomeOf(root, run, outcome string) string {
+	switch {
+	case outcome != "":
+		return outcome
+	case record.Alive(root, run):
+		return "running"
+	}
+	return "interrupted"
 }
 
 // rerunCommand runs a run again, as a run of its own command: in the

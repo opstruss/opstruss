@@ -49,6 +49,14 @@ stdout '^  stamp-it +success in run \S+ via up$'
 exec sh -c 'grep -l release .opstruss/runs/default/*/record.json | xargs cat'
 stdout '"tasks": \{\s+"greet": \{\s+"outcome": "success"\s+\},\s+"lint": \{\s+"outcome": "success"\s+\},\s+"maybe": \{\s+"outcome": "failure"'
 
+# a run that has not ended says so in list, as in runs
+exec opstruss hang &
+waitfile hanging
+exec opstruss list
+stdout '^  hang +running in run \S+$'
+exec touch done
+wait
+
 -- opstruss.yaml --
 name: shop
 outputs:
@@ -81,3 +89,5 @@ tasks:
         with: {fail: true}
   stamp-it:
     run: echo stamped
+  hang:
+    run: touch hanging; while [ ! -f done ]; do sleep 0.05; done
