@@ -177,7 +177,14 @@ func (c *checker) refs(path []string, v any, pl place) []string {
 				continue
 			}
 			units = append(units, name)
-			if len(r.Path) > 3 && r.Path[2] == "outputs" && !hasOutput(u, r.Path[3]) {
+			switch {
+			case len(r.Path) > 3 && r.Path[2] == "outputs" && u.Service != nil:
+				msg := fmt.Sprintf("unit %s is a service, which has no outputs; a step with task: status gives its state, pid, since, restarts, exit_code, exited, and next", name)
+				if slices.Contains(serviceStatus, r.Path[3]) {
+					msg += fmt.Sprintf(", as steps.<id>.units['%s'].outputs.%s", name, r.Path[3])
+				}
+				c.add(path, "%s (in ${{ %s }})", msg, r.Expr)
+			case len(r.Path) > 3 && r.Path[2] == "outputs" && !hasOutput(u, r.Path[3]):
 				c.add(path, "unit %s has no output %s (in ${{ %s }})", name, r.Path[3], r.Expr)
 			}
 		case "tasks":
@@ -306,6 +313,9 @@ func (c *checker) fact(path []string, name string, r expr.Ref, pl place) {
 		c.add(path, "opstruss.%s is only in a task that a unit uses (in ${{ %s }})", name, r.Expr)
 	}
 }
+
+// serviceStatus are the outputs of the status task of a service.
+var serviceStatus = []string{"state", "pid", "since", "restarts", "exit_code", "exited", "next"}
 
 // hasOutput says whether unit u may have output k: a run unit, a unit of
 // a plugin, and a unit that uses a component have the outputs they

@@ -449,6 +449,10 @@ func TestReferences(t *testing.T) {
 	tests := []struct{ yaml, want string }{
 		{"name: app\nunits:\n  a:\n    run: [x, \"${{ units.b.outputs.u }}\"]\n", "there is no unit b"},
 		{"name: app\nunits:\n  b:\n    run: [y]\n    outputs: {u: {from: stdout}}\n  a:\n    run: [x, \"${{ units.b.outputs.nope }}\"]\n", "unit b has no output nope"},
+		{"name: app\nunits:\n  web:\n    service: [y]\ntasks:\n  t:\n    run: [x, \"${{ units.web.outputs.exited }}\"]\n",
+			"unit web is a service, which has no outputs; a step with task: status gives its state, pid, since, restarts, exit_code, exited, and next, as steps.<id>.units['web'].outputs.exited"},
+		{"name: app\nunits:\n  web:\n    service: [y]\ntasks:\n  t:\n    run: [x, \"${{ units.web.outputs.url }}\"]\n",
+			"unit web is a service, which has no outputs; a step with task: status gives its state, pid, since, restarts, exit_code, exited, and next (in"},
 		{"name: app\nunits:\n  a:\n    run: [x, \"${{ units.b.outputs.u }}\"]\n  b:\n    run: [y, \"${{ units.a.outputs.u }}\"]\n    outputs: {u: {}}\n", "units a → b → a form a cycle"},
 		{"name: app\nunits:\n  a:\n    run: [x, \"${{ event.body }}\"]\n", "a unit cannot read event"},
 		{"name: app\nunits:\n  a:\n    run: [x, \"${{ opstruss.cwd }}\"]\n", "a unit cannot read opstruss.cwd"},
