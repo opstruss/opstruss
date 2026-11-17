@@ -14,6 +14,10 @@ stack runs those triggers.
 | `watch` | On changes of the files that `paths` matches, such as `src/**` (a directory alone matches no file in it), on lines of a service (`unit:`), or on lines of a program |
 | `after` | After a run of another task or command ends, by its `outcome` |
 
+In 1.0, only runs in the daemon start `after` tasks: a command run while
+no daemon of the stack is up starts none. A later 1.x also starts them
+after such runs.
+
 `if:` reads `event`, which says what happened, such as `event.paths` of
 a `watch` or `event.body` of a webhook; a run whose `if` is false is
 skipped. `batch` and `debounce` gather the events of a `watch` into one
