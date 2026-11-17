@@ -28,6 +28,16 @@ stdout '^github.com/opstruss/catalog@v1 +[0-9a-f]{7} +\(unchanged\)$'
 exec opstruss plan --locked
 ! stdout 'will run'
 
+# A pin that nothing reaches any more leaves the lock in uses update, which
+# says so.
+exec sh -c 'sed "s|catalog@v1|catalog@main|" opstruss.yaml > main.yaml && mv main.yaml opstruss.yaml'
+exec opstruss plan
+grep 'catalog@v1' opstruss.lock
+exec opstruss uses update
+stdout '^github.com/opstruss/catalog@main +[0-9a-f]{7} +\(unchanged\)$'
+stdout '^github.com/opstruss/catalog@v1 +[0-9a-f]{7} +\(dropped\)$'
+! grep 'catalog@v1' opstruss.lock
+
 # The path of a package names the same package as the catalog does.
 cp path.yaml opstruss.yaml
 exec opstruss plan

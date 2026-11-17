@@ -298,8 +298,9 @@ func (a *app) fetchSources(cmd *cobra.Command, update string) error {
 	_ = model.WriteEditorSchema(loaded...)
 	rows := []sourceRow{}
 	tw := tabwriter.NewWriter(a.stdout, 0, 0, 2, ' ', 0)
-	for _, key := range slices.Sorted(maps.Keys(session.Pins())) {
-		pin, old := session.Pins()[key], before.Sources[key]
+	pins := session.Pins()
+	for _, key := range slices.Sorted(maps.Keys(pins)) {
+		pin, old := pins[key], before.Sources[key]
 		if update != "" && old == pin {
 			// Update says what it left, as go get -u does.
 			if id, err := sources.Parse(key); err == nil && (update == "*" || slices.Contains(opts.UpdateGroups, id.Group())) {
@@ -315,6 +316,14 @@ func (a *app) fetchSources(cmd *cobra.Command, update string) error {
 			fmt.Fprintf(tw, "%s\t%s\t(new)\n", key, shortCommit(pin.Commit))
 		default:
 			fmt.Fprintf(tw, "%s\t%s → %s\n", key, shortCommit(old.Commit), shortCommit(pin.Commit))
+		}
+	}
+	if update != "" {
+		// A pin that nothing reaches any more left the lock.
+		for _, key := range slices.Sorted(maps.Keys(before.Sources)) {
+			if _, kept := pins[key]; !kept {
+				fmt.Fprintf(tw, "%s\t%s\t(dropped)\n", key, shortCommit(before.Sources[key].Commit))
+			}
 		}
 	}
 	if a.json {
