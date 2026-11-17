@@ -37,9 +37,10 @@ Up of stack default: 1 done
 Each input is a flag: `--version 1.2.0`. An input that is `required`
 and not given is asked for at a terminal, and without one the task
 stops with the flag to pass. A string, number, boolean, list, or object
-is checked against its type before anything runs, and reaches a program
-as `INPUT_<NAME>`, or as `${{ inputs.<name> }}` in `env:` and in a `run`
-list.
+is checked against its type before anything runs, and reaches the `run`
+of the task as `INPUT_<NAME>`, or as `${{ inputs.<name> }}` in `env:` and
+in a `run` list. A `run` step inside `steps:` gets no `INPUT_<NAME>`; give
+it the input through its `env:`, such as `VERSION: ${{ inputs.version }}`.
 
 ## Steps
 
