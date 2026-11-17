@@ -105,7 +105,12 @@ main() {
 			fail 'could not find the latest release'
 		case $latest in
 		"$repo"/releases/tag/v*) version=${latest#"$repo"/releases/tag/} which=', the latest' ;;
-		*) fail 'GitHub has no latest release yet; set OPSTRUSS_VERSION, such as 1.0.0-rc.1' ;;
+		*)
+			# The version goes to sh, not to curl, which runs first.
+			fail "GitHub has no latest release yet; pick a version at $repo/releases and run:
+
+  ${bold}curl -fsSL ${docs}install.sh | OPSTRUSS_VERSION=X.Y.Z sh${reset}"
+			;;
 		esac
 	fi
 	version=${version#v}

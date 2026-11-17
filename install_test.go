@@ -111,7 +111,8 @@ func TestInstallScript(t *testing.T) {
 		{name: "no-color", latest: latest, env: []string{"FORCE_COLOR=1", "NO_COLOR=1"},
 			lacks: []string{"\033["}},
 		{name: "only-candidates", latest: releasesURL, fail: true,
-			want: []string{"✗ GitHub has no latest release yet; set OPSTRUSS_VERSION, such as 1.0.0-rc.1\n"}},
+			want: []string{"✗ GitHub has no latest release yet; pick a version at https://github.com/opstruss/opstruss/releases and run:\n\n" +
+				"  curl -fsSL https://opstruss.github.io/install.sh | OPSTRUSS_VERSION=X.Y.Z sh\n"}},
 		{name: "no-release", env: []string{"OPSTRUSS_VERSION=9.9.9"}, fail: true,
 			want: []string{"✗ found no release v9.9.9\n"}},
 		{name: "no-archive", latest: latest, remove: "opstruss_1.2.3_linux_amd64.tar.gz", fail: true,
