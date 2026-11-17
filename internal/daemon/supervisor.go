@@ -237,6 +237,7 @@ func (sup *Supervisor) drop(s *service) {
 	sup.mu.Lock()
 	if sup.services[s.spec.Address] == s {
 		delete(sup.services, s.spec.Address)
+		_ = sup.reg.update(func(f *File) { delete(f.Services, s.spec.Address) })
 	}
 	sup.mu.Unlock()
 }
@@ -488,10 +489,10 @@ func (s *service) loop() {
 		}
 		s.sup.event("warn", addr, "exited with %d; restarting in %s", code, delay)
 		s.note("warn", fmt.Sprintf("exited with %d; starts again in %s", code, delay))
-		s.set("restarting", 0)
 		s.mu.Lock()
 		s.status.Next = time.Now().Add(delay).UTC()
 		s.mu.Unlock()
+		s.set("restarting", 0)
 		select {
 		case <-time.After(delay):
 		case <-s.stopped:
@@ -526,8 +527,33 @@ func (s *service) end(err error) {
 
 func (s *service) set(state string, pid int) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.status.State, s.status.PID, s.status.Since = state, pid, time.Now().UTC()
+	s.mu.Unlock()
+	s.publish()
+}
+
+// publish writes the status of s in <stack>.json, where list reads it in
+// another process, while s is the service at its address: one that another
+// start replaced says nothing more. The check needs no lock across the
+// write, as a start that replaces s runs its own only once s ended.
+func (s *service) publish() {
+	addr := s.spec.Address
+	s.sup.mu.Lock()
+	current := s.sup.services[addr] == s
+	s.sup.mu.Unlock()
+	if !current {
+		return
+	}
+	_ = s.sup.reg.update(func(f *File) {
+		if f.Services == nil {
+			f.Services = map[string]engine.ServiceStatus{}
+		}
+		// Read under the lock of the file, so that the last write is the
+		// latest status.
+		s.mu.Lock()
+		f.Services[addr] = s.status
+		s.mu.Unlock()
+	})
 }
 
 func (s *service) isStopping() bool {
@@ -686,6 +712,7 @@ func (s *service) start() (_ *child, err error) {
 	s.cur = c
 	s.status.State, s.status.PID, s.status.Since = "starting", pid, time.Now().UTC()
 	s.mu.Unlock()
+	s.publish()
 	s.sup.event("info", s.spec.Address, "started, pid %d", pid)
 	return c, nil
 }
@@ -777,10 +804,14 @@ func (s *service) watchReady(c *child) {
 // running marks c ready, when it is still the program of the service.
 func (s *service) running(c *child) {
 	s.mu.Lock()
-	if s.cur == c && s.status.State == "starting" {
+	changed := s.cur == c && s.status.State == "starting"
+	if changed {
 		s.status.State = "running"
 	}
 	s.mu.Unlock()
+	if changed {
+		s.publish()
+	}
 	s.readyOnce.Do(func() { s.ready <- nil })
 }
 

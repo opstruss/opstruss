@@ -75,13 +75,13 @@ type Ready struct {
 // ready yet), restarting, or stopped, its process, since when, and how
 // often it restarted.
 type ServiceStatus struct {
-	State    string
-	PID      int
-	Since    time.Time
-	Restarts int
-	ExitCode int       // of the last program that exited, once one did
-	Exited   time.Time // when it exited
-	Next     time.Time // when it starts again, while it waits to
+	State    string    `json:"state"`
+	PID      int       `json:"pid,omitzero"`
+	Since    time.Time `json:"since,omitzero"`
+	Restarts int       `json:"restarts,omitzero"`
+	ExitCode int       `json:"exit_code,omitzero"` // of the last program that exited, once one did
+	Exited   time.Time `json:"exited,omitzero"`    // when it exited
+	Next     time.Time `json:"next,omitzero"`      // when it starts again, while it waits to
 }
 
 // Defaults of ready: and of the restart policy.

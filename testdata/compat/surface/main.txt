@@ -810,6 +810,27 @@ schema daemon schedules[].next
 schema daemon schedules[].next type string
 schema daemon schedules[].task
 schema daemon schedules[].task type string
+schema daemon services
+schema daemon services type object
+schema daemon services.<name>
+schema daemon services.<name> type object
+schema daemon services.<name>.exit_code
+schema daemon services.<name>.exit_code type integer
+schema daemon services.<name>.exited
+schema daemon services.<name>.exited type string
+schema daemon services.<name>.next
+schema daemon services.<name>.next type string
+schema daemon services.<name>.pid
+schema daemon services.<name>.pid type integer
+schema daemon services.<name>.restarts
+schema daemon services.<name>.restarts type integer
+schema daemon services.<name>.since
+schema daemon services.<name>.since type string
+schema daemon services.<name>.state
+schema daemon services.<name>.state value "restarting"
+schema daemon services.<name>.state value "running"
+schema daemon services.<name>.state value "starting"
+schema daemon services.<name>.state value "stopped"
 schema daemon socket
 schema daemon socket type string
 schema daemon start

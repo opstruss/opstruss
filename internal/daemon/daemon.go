@@ -48,6 +48,9 @@ type File struct {
 	// TriggerError is why the last install of the triggers failed, until
 	// one succeeds.
 	TriggerError string `json:"trigger_error,omitempty"`
+	// Services is how each service of the daemon runs, by address, for
+	// the commands that read it in another process.
+	Services map[string]engine.ServiceStatus `json:"services,omitempty"`
 }
 
 // maxSocket is the longest path of a Unix socket: 104 bytes with its NUL

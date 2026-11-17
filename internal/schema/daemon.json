@@ -43,6 +43,23 @@
         },
         "required": ["task", "kind", "key"]
       }
+    },
+    "services": {
+      "description": "How each service of the daemon runs, by address, written each time that changes, as the status task of the service gives it.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "state": { "enum": ["starting", "running", "restarting", "stopped"] },
+          "pid": { "type": "integer", "minimum": 1 },
+          "since": { "type": "string", "format": "date-time" },
+          "restarts": { "type": "integer", "minimum": 1 },
+          "exit_code": { "type": "integer" },
+          "exited": { "type": "string", "format": "date-time" },
+          "next": { "type": "string", "format": "date-time", "description": "When the service starts again, while it is restarting." }
+        },
+        "required": ["state"]
+      }
     }
   },
   "required": ["version", "pid", "start", "started", "opstruss", "socket"]

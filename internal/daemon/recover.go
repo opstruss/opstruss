@@ -44,7 +44,7 @@ func (r *registry) update(fn func(*File)) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	next := r.f
-	next.Processes, next.Schedules = slices.Clone(r.f.Processes), slices.Clone(r.f.Schedules)
+	next.Processes, next.Schedules, next.Services = slices.Clone(r.f.Processes), slices.Clone(r.f.Schedules), maps.Clone(r.f.Services)
 	fn(&next)
 	if err := writeFile(r.path, next); err != nil {
 		return err
@@ -64,7 +64,7 @@ func (r *registry) files() File {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	f := r.f
-	f.Processes, f.Schedules = slices.Clone(f.Processes), slices.Clone(f.Schedules)
+	f.Processes, f.Schedules, f.Services = slices.Clone(f.Processes), slices.Clone(f.Schedules), maps.Clone(f.Services)
 	return f
 }
 
@@ -273,6 +273,9 @@ func status(root, stack, addr string) (engine.ServiceStatus, bool) {
 	f, err := Read(root, stack)
 	if err != nil {
 		return engine.ServiceStatus{}, false
+	}
+	if st, ok := f.Services[addr]; ok {
+		return st, true
 	}
 	for _, p := range slices.Backward(f.Processes) {
 		if p.Address != addr {

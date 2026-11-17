@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
 	"net"
 	"net/http"
@@ -19,6 +20,8 @@ import (
 	"github.com/opstruss/opstruss/internal/plugin"
 	"github.com/opstruss/opstruss/internal/proc"
 	"github.com/opstruss/opstruss/internal/record"
+	"github.com/opstruss/opstruss/internal/schema"
+	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
 // testSupervisor is a supervisor of stack default under a new root, with
@@ -159,6 +162,55 @@ func TestServiceRestartBackoff(t *testing.T) {
 	}
 	if err := sup.Stop(context.Background(), s.Address); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A command in another process reads from <stack>.json what Status says,
+// also while the service waits to start again, and nothing once it goes.
+func TestServiceStatusInFile(t *testing.T) {
+	first := firstDelay
+	firstDelay = time.Minute
+	t.Cleanup(func() { firstDelay = first })
+	sup, root, _ := testSupervisor(t)
+	lock, err := os.OpenFile(lockPath(root, "default"), os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = lock.Close() }()
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+		t.Fatal(err)
+	}
+	err = sup.reg.update(func(f *File) {
+		*f = File{Version: Version, PID: os.Getpid(), Start: "1", Started: time.Now().UTC().Format(time.RFC3339), OpsTruss: "v1", Socket: "s"}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := testService(t, root, "flappy", `exit 3`)
+	go func() { _ = sup.Start(context.Background(), s) }()
+	eventually(t, "restarting in the file", func() bool {
+		st, _ := status(root, "default", s.Address)
+		return st.State == "restarting"
+	})
+	want, _ := sup.Status(s.Address)
+	got, ok := status(root, "default", s.Address)
+	if !ok || got.ExitCode != 3 || got.Next.IsZero() || !got.Next.Equal(want.Next) {
+		t.Fatalf("status from the file %+v, from the daemon %+v", got, want)
+	}
+	data, _ := os.ReadFile(filePath(root, "default"))
+	doc, _ := jsonschema.UnmarshalJSON(bytes.NewReader(data))
+	if probs, err := schema.Validate(schema.Daemon, doc); err != nil || len(probs) > 0 {
+		t.Fatalf("schema: %v %v", probs, err)
+	}
+	if err := sup.Stop(context.Background(), s.Address); err != nil {
+		t.Fatal(err)
+	}
+	f, err := Read(root, "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := f.Services[s.Address]; ok {
+		t.Fatalf("a stopped service stays in the file: %+v", f.Services)
 	}
 }
 
