@@ -8,13 +8,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wit
 
 ### Upgrade notes
 
-- Tasks with `after:` also run after a command that runs without the daemon, as in CI; the command waits for them and exits with 1 when one fails, and `-d` leaves them to the daemon.
+- Tasks with `after:` also run after a command that runs without the daemon, as in CI; the command waits for them and exits with 1 when one fails, and `-d` leaves them to the daemon. ([#16](https://github.com/opstruss/opstruss/pull/16))
 
 ### Added
 
-- Global units and tasks: `global: true` makes one instance for the whole project rather than one per stack, which a run of a stack brings up when its units need it, and `--global` chooses them on the command line; needs `opstruss: "1.1"`.
-- `after: {task: init}` runs a task once `opstruss init` succeeds, so a fresh clone is ready with one command, and `event.stack` names the stack of the run that a task follows.
-- A key added after 1.0, in a file whose `opstruss:` is older, fails with the version it needs rather than as an unknown key.
+- Global units and tasks: `global: true` makes one instance for the whole project rather than one per stack, which a run of a stack brings up when its units need it, and `--global` chooses them on the command line; needs `opstruss: "1.1"`. ([#16](https://github.com/opstruss/opstruss/pull/16))
+- `after: {task: init}` runs a task once `opstruss init` succeeds, so a fresh clone is ready with one command, and `event.stack` names the stack of the run that a task follows. ([#16](https://github.com/opstruss/opstruss/pull/16))
+- A key added after 1.0, in a file whose `opstruss:` is older, fails with the version it needs rather than as an unknown key. ([#16](https://github.com/opstruss/opstruss/pull/16))
 
 ## [1.0.0] - 2026-11-18
 
