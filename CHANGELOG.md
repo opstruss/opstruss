@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wit
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-18
+
 The first release of OpsTruss: one binary that runs any tool as the units and tasks of a project, and hands the typed results of one to the next, on one machine.
 
 ### Added
@@ -24,4 +26,5 @@ The first release of OpsTruss: one binary that runs any tool as the units and ta
 - `sudo: true` runs a program as root through sudo, asking for the password at most once a run; plugins and components from git ask for it, and only the files of the project allow it.
 - Release builds for Linux and macOS on amd64 and arm64, with checksums, SBOMs, and build provenance, and a script that installs them; documentation at opstruss.github.io.
 
-[Unreleased]: https://github.com/opstruss/opstruss/commits/main
+[Unreleased]: https://github.com/opstruss/opstruss/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/opstruss/opstruss/releases/tag/v1.0.0
