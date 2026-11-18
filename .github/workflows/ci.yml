@@ -86,9 +86,9 @@ jobs:
           persist-credentials: false
       - run: sh docs/public/install.sh
         env:
-          OPSTRUSS_VERSION: 1.0.0-rc.1
+          OPSTRUSS_VERSION: 1.0.0
           OPSTRUSS_INSTALL_DIR: ${{ runner.temp }}/bin
-      - run: '"$RUNNER_TEMP/bin/opstruss" version | grep -F "opstruss v1.0.0-rc.1 "'
+      - run: '"$RUNNER_TEMP/bin/opstruss" version | grep -F "opstruss v1.0.0 "'
 
   build:
     runs-on: ubuntu-latest
