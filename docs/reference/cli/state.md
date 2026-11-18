@@ -10,6 +10,12 @@ title: opstruss state
 
 Read and repair the state of a stack without touching its storage.
 
+## Flags
+
+| Flag | Description |
+|---|---|
+| `--global` | use the global units, one for every stack, rather than a stack |
+
 ## Global flags
 
 | Flag | Description |

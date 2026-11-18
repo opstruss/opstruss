@@ -116,6 +116,12 @@ func (r *Run) environment(c *Call, write func(name string, data []byte) (string,
 	env["OPSTRUSS_CONTRACT"] = Contract
 	env["OPSTRUSS_PROJECT"] = r.Project
 	env["OPSTRUSS_STACK"] = r.Stack
+	switch {
+	case c.Stack != "":
+		env["OPSTRUSS_STACK"] = c.Stack
+	case c.Unit != nil && strings.HasPrefix(c.Unit.Address, model.GlobalScope+"/"):
+		env["OPSTRUSS_STACK"] = model.GlobalScope
+	}
 	if u := c.Unit; u != nil {
 		env["OPSTRUSS_ADDRESS"] = u.Address
 		env["OPSTRUSS_STATE_KEY"] = u.StateKey

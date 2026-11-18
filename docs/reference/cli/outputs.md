@@ -22,6 +22,7 @@ opstruss outputs [flags]
 
 | Flag | Description |
 |---|---|
+| `--global` | use the global units, one for every stack, rather than a stack |
 | `--show-sensitive` | print sensitive outputs as they are |
 
 ## Global flags

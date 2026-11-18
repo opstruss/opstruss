@@ -8,7 +8,7 @@ title: opstruss init
 
 # opstruss init
 
-Set up the project in this directory, adding only what is missing: opstruss.yaml, whose first line names its schema for editors, and .opstruss/ in .gitignore. Then check every stack as validate does, and fetch what the project uses, with the binaries for this machine, as uses fetch does, so that a fresh clone is ready to plan. Running it again is safe. With --stack, also make the state of that stack. The age key of this machine and the data key of a stack are made by the first command that needs them.
+Set up the project in this directory, adding only what is missing: opstruss.yaml, whose first line names its schema for editors, and .opstruss/ in .gitignore. Then check every stack as validate does, and fetch what the project uses, with the binaries for this machine, as uses fetch does, so that a fresh clone is ready to plan. Running it again is safe. With --stack, also make the state of that stack. Then run the tasks that follow init through after: {task: init}: the global ones, and those of the stack that --stack or the only stack chooses. The age key of this machine and the data key of a stack are made by the first command that needs them.
 
 ## Usage
 

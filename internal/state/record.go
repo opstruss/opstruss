@@ -40,6 +40,7 @@ type Record struct {
 	Digest    string                       `json:"digest,omitempty"`
 	Parts     map[string]string            `json:"parts,omitempty"` // a digest of each part of the definition, for plan to name what changed
 	Run       string                       `json:"run,omitempty"`
+	Stack     string                       `json:"stack,omitempty"` // of the run that wrote a record of a global unit; empty for one of the global scope
 	Updated   string                       `json:"updated,omitempty"`
 	Pending   *Attempt                     `json:"pending,omitempty"`
 	Abandoned []*Attempt                   `json:"abandoned,omitempty"`

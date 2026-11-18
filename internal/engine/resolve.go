@@ -666,7 +666,7 @@ func digestSource(id *sources.Identity, hash string) map[string]any {
 // the record give, so the digest changes when the value does and tells
 // nothing about it.
 func (e *engine) hashed(inst *instance, v any) (string, error) {
-	key, err := e.dataKey()
+	key, err := e.scopeEngine(inst.frame).dataKey()
 	if err != nil {
 		return "", err
 	}

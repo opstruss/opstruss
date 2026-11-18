@@ -1,0 +1,138 @@
+# after runs where the run it follows ran: the command line runs the tasks
+# that follow its commands, waits for them and their chains, and exits
+# with 1 when one fails; the daemon does the same for a run forwarded to
+# it, unless -d sent it.
+
+env HOME=$WORK/home
+
+# init runs the global tasks that follow it, and names --stack for the
+# tasks of the stacks
+exec opstruss init
+stdout '^next: run opstruss init --stack <stack> \(dev, prod\), which also runs prep$'
+stdout '^setup \| setup success$'
+! stdout '^prep'
+grep -count=1 setup ran.log
+
+# with a stack, the tasks of that stack follow too, with event.stack
+exec opstruss init --stack dev
+stdout '^setup \| setup dev success$'
+stdout '^prep \| prep dev$'
+
+# uses fetch starts nothing
+exec opstruss uses fetch
+! stdout setup
+
+# a run of the command line starts the tasks after it, and its chain
+exec opstruss up --stack dev --yes
+stdout '^dev/app: up: done$'
+stdout '^first \| first up$'
+stdout '^second \| second first$'
+stdout '^third \| third second$'
+stderr 'fourth.*3 deep in a chain of after, so it makes no run'
+! stdout '^fourth'
+
+# a global task follows the runs of every stack; a failure of it is the
+# exit code of the command
+! exec opstruss destroy --stack dev --yes
+stdout '^audit \| audit dev success$'
+stdout '^audit: failed$'
+! exec opstruss destroy --stack prod --yes
+stdout '^audit \| audit prod success$'
+
+# a task with on: still runs by hand
+exec opstruss setup
+stdout '^setup \| setup$'
+
+# a project of level 1.0 starts its after tasks in the command line too
+cd old
+exec opstruss up --yes
+stdout '^after-up \| followed$'
+cd ..
+
+# a run forwarded to the daemon waits for its after tasks; -d does not
+exec opstruss up -d --stack prod --yes
+exec opstruss up --stack prod --yes
+stdout '^first \| first up$'
+stdout '^third \| third second$'
+exec opstruss stop --stack prod
+
+# init that fails starts nothing
+cp broken.yaml opstruss.yaml
+! exec opstruss init
+! stdout setup
+
+-- opstruss.yaml --
+opstruss: "1.1"
+name: follow
+stacks:
+  dev: {}
+  prod: {}
+units:
+  app:
+    run: echo app
+tasks:
+  setup:
+    global: true
+    on:
+      after: {task: init}
+    run: [sh, -c, 'echo setup >> ran.log; echo setup $STACK $OUTCOME']
+    env:
+      STACK: "${{ has(event.stack) ? event.stack : '' }}"
+      OUTCOME: "${{ has(event.outcome) ? event.outcome : '' }}"
+  prep:
+    on:
+      after: {task: init}
+    run: [sh, -c, 'echo prep $STACK']
+    env:
+      STACK: ${{ event.stack }}
+  first:
+    on:
+      after: {task: up}
+    run: [sh, -c, 'echo first $TASK']
+    env:
+      TASK: ${{ event.task }}
+  second:
+    on:
+      after: {task: first}
+    run: [sh, -c, 'echo second $TASK']
+    env:
+      TASK: ${{ event.task }}
+  third:
+    on:
+      after: {task: second}
+    run: [sh, -c, 'echo third $TASK']
+    env:
+      TASK: ${{ event.task }}
+  fourth:
+    on:
+      after: {task: third}
+    run: echo fourth
+  audit:
+    global: true
+    on:
+      after: {task: destroy, outcome: any}
+    run: [sh, -c, 'echo audit $STACK $OUTCOME; exit 3']
+    env:
+      STACK: ${{ event.stack }}
+      OUTCOME: ${{ event.outcome }}
+-- broken.yaml --
+opstruss: "1.1"
+name: follow
+unitz: {}
+tasks:
+  setup:
+    global: true
+    on:
+      after: {task: init}
+    run: echo setup
+-- old/opstruss.yaml --
+opstruss: "1.0"
+name: old
+units:
+  app:
+    run: echo app
+tasks:
+  after-up:
+    on:
+      after: {task: up}
+    run: echo followed

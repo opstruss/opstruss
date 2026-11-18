@@ -286,7 +286,7 @@ stacks:
 func TestRules(t *testing.T) {
 	tests := []struct{ yaml, want string }{
 		{"units:\n  a:\n    run: [x]\n", "name: a project needs a name"},
-		{"name: app\nopstruss: \"1.1\"\n", "this file is for OpsTruss 1.1 or newer"},
+		{"name: app\nopstruss: \"1.2\"\n", "this file is for OpsTruss 1.2 or newer"},
 		{"name: app\nunits:\n  a:\n    run: [x]\n    service: [y]\n", "a unit has exactly one of run, service, or uses"},
 		{"name: app\nunits:\n  a:\n    run: [x]\n    restart: always\n", "restart is for service units"},
 		{"name: app\nunits:\n  a:\n    run: echo ${{ inputs.x }}\n", "${{ }} is not allowed in a script"},
@@ -381,6 +381,23 @@ func TestRules(t *testing.T) {
 		{"name: app\nunits:\n  a:\n    run: [x]\n    sources: [src/**, {exclude: '$x/**'}]\n", "units.a.sources[1].exclude: $x/**: "},
 		{"name: app\ntasks:\n  t:\n    run: [x]\n    on: {watch: {paths: ['$VAULT/*.md']}}\n", "tasks.t.on.watch.paths[0]: $VAULT/*.md: paths are read as written, relative to the file of the task, so $VAULT is not expanded"},
 		{"name: app\ninputs:\n  d: {type: string, default: x}\nunits:\n  a:\n    run: [x]\n    sources: [price$5.txt, a$, $$, b$/c]\n    generates: [dist/a$]\ntasks:\n  t:\n    run: [x]\n    on: {watch: {paths: ['${{ inputs.d }}/**']}}\n", ""},
+		{"name: app\nunits:\n  a:\n    global: true\n    run: [x]\n", "units.a.global: global needs opstruss: \"1.1\" or later in this file, which says 1.0"},
+		{"name: app\nopstruss: \"1.1\"\nunits:\n  a:\n    global: true\n    run: [x]\n    env: {S: \"${{ stack }}\"}\n", "global unit a reads stack"},
+		{"name: app\nopstruss: \"1.1\"\nunits:\n  a:\n    global: true\n    run: [x]\n    needs: [b]\n  b:\n    run: [y]\n", "global unit a needs b, which is per stack"},
+		{"name: app\nopstruss: \"1.1\"\nunits:\n  a:\n    global: true\n    run: [x]\n    env: {B: \"${{ units.b.outputs.o }}\"}\n  b:\n    run: [y]\n    outputs: {o: {from: stdout}}\n", "global unit a reads units.b, which is per stack"},
+		{"name: app\nopstruss: \"1.1\"\nunits:\n  a:\n    global: true\n    service: [x]\n", "a global unit runs without the daemon of a stack, so it cannot be a service"},
+		{"name: app\nopstruss: \"1.1\"\ninputs:\n  region: {type: string}\nstacks:\n  dev:\n    with: {region: eu}\nunits:\n  a:\n    global: true\n    run: [x]\n    env: {R: \"${{ inputs.region }}\"}\n", "global unit a reads inputs.region, which stack dev gives through with:"},
+		{"name: app\nopstruss: \"1.1\"\nlocals:\n  l: ${{ stack }}-x\nunits:\n  a:\n    global: true\n    run: [x]\n    env: {L: \"${{ locals.l }}\"}\n", "global unit a reads local l, which reads stack"},
+		{"name: app\nopstruss: \"1.1\"\nlocals:\n  l: ${{ inputs.owner }}\ninputs:\n  owner: {type: string, default: ops}\nunits:\n  a:\n    global: true\n    run: [x]\n    env: {L: \"${{ locals.l }}\"}\n", ""},
+		{"name: app\nopstruss: \"1.1\"\nunits:\n  a:\n    run: [x]\n    tasks:\n      t:\n        global: true\n        run: [y]\n", "global: is for the tasks of a project"},
+		{"name: app\nopstruss: \"1.1\"\ntasks:\n  t:\n    global: true\n    run: [x]\n    on: {every: 1m}\n", "a global task runs after other runs only, through after:; every runs in the daemon of a stack"},
+		{"name: app\nopstruss: \"1.1\"\ntasks:\n  t:\n    global: true\n    steps:\n      - task: u\n  u:\n    run: [x]\n", "global task t calls task u, which is per stack"},
+		{"name: app\nopstruss: \"1.1\"\nunits:\n  b:\n    run: [y]\ntasks:\n  t:\n    global: true\n    steps:\n      - task: up\n        units: [b]\n", "global task t names unit b, which is per stack"},
+		{"name: app\nopstruss: \"1.1\"\ntasks:\n  t:\n    run: [x]\n    on: {after: {task: init, outcome: any}}\n", "init is followed only once it succeeds"},
+		{"name: app\nopstruss: \"1.1\"\ntasks:\n  t:\n    run: [x]\n    on: {after: {task: init}}\n", ""},
+		{"name: app\ntasks:\n  t:\n    run: [x]\n    on: {after: {task: init}}\n", "after: {task: init} needs opstruss: \"1.1\" or later in this file, which says 1.0"},
+		{"name: app\ntasks:\n  t:\n    run: [x]\n    env: {S: \"${{ event.stack }}\"}\n    on: {after: {task: up}}\n", "event.stack needs opstruss: \"1.1\" or later in this file, which says 1.0"},
+		{"name: app\nopstruss: \"1.1\"\ntasks:\n  t:\n    run: [x]\n    env: {S: \"${{ event.stack }}\"}\n    on: {after: {task: up}}\n", ""},
 	}
 	for _, tt := range tests {
 		dir := write(t, map[string]string{"opstruss.yaml": tt.yaml})

@@ -124,6 +124,9 @@ type Result struct {
 	Outputs  map[string]any    // of a task, as written gives them
 	Record   *record.Record    // as the run finished it, also when its directory went
 	Inputs   map[string]string // --input of the run, which a rerun takes from the run it runs again
+	// Followers are the runs that this one makes through after:, which the
+	// process that ran it runs next.
+	Followers []*Follower
 }
 
 // Outcomes of units, tasks, and steps.
@@ -187,7 +190,10 @@ type engine struct {
 	insts  []*instance            // in graph order
 	byUnit map[string][]*instance // by the path of the unit
 	top    *frame                 // the project, where its units are
-	frames map[string]*frameSet   // instances of components, by the path of the unit that uses each
+	// global, in a run of a stack whose project declares global units or
+	// tasks, answers for their scope; see openGlobal.
+	global *engine
+	frames map[string]*frameSet // instances of components, by the path of the unit that uses each
 
 	moveFrom   map[string]*state.Record // the record a target of moved: starts from
 	moveFailed map[string]error         // targets whose move cannot happen
@@ -287,7 +293,19 @@ func loadContext(ctx context.Context, opts Options) (*engine, error) {
 	// check hides it.
 	red := secret.NewRedactor()
 	var short []string
-	values, err := p.ResolveInputs(opts.Inputs, opts.LookupEnv, func(name string, v any) {
+	given := opts.Inputs
+	if p.Global && opts.Event != nil && opts.Event.Trigger == "after" {
+		// A global task after a run of a stack takes the --input of that
+		// run that its scope has.
+		given = map[string]string{}
+		for k, v := range opts.Inputs {
+			if p.Inputs[k] != nil {
+				given[k] = v
+			}
+		}
+		opts.Inputs = given
+	}
+	values, err := p.ResolveInputs(given, opts.LookupEnv, func(name string, v any) {
 		if red.Add(v) {
 			short = append(short, "input "+name)
 		}
@@ -344,6 +362,14 @@ func loadContext(ctx context.Context, opts Options) (*engine, error) {
 	e.store.Opened = func(v any) { e.redact.Add(v) }
 	if e.host, err = state.HostID(); err != nil {
 		return nil, err
+	}
+	if !p.Global && !p.Undeclared && p.HasGlobal() {
+		if e.global, err = e.openGlobal(ctx); err != nil {
+			return nil, err
+		}
+		e.store.Global = e.global.store
+		own := e.releaseSources
+		e.releaseSources = func() { own(); e.global.releaseSources() }
 	}
 	loaded = true
 	return e, nil
@@ -406,6 +432,9 @@ func (e *engine) start(command, task string, with map[string]any, tr *Trigger) e
 		return err
 	}
 	e.run = run
+	if e.global != nil {
+		e.global.share(e)
+	}
 	return nil
 }
 
@@ -787,7 +816,8 @@ func (e *engine) stopAtPlan() {
 }
 
 func (e *engine) result() *Result {
-	return &Result{Run: e.runID, ExitCode: e.exit, Outcome: e.outcome, Outputs: e.outputs, Record: e.rec.Record()}
+	rec := e.rec.Record()
+	return &Result{Run: e.runID, ExitCode: e.exit, Outcome: e.outcome, Outputs: e.outputs, Record: rec, Followers: e.followers(rec)}
 }
 
 // username is the name of the user, read once.

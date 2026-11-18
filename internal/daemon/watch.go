@@ -15,7 +15,6 @@ import (
 	"github.com/opstruss/opstruss/internal/engine"
 	"github.com/opstruss/opstruss/internal/model"
 	"github.com/opstruss/opstruss/internal/plugin"
-	"github.com/opstruss/opstruss/internal/record"
 )
 
 // MaxDepth is how long a chain of after triggers grows.
@@ -303,6 +302,13 @@ func (t *triggers) source(ctx context.Context, w *watcher, spec *watchSpec) erro
 // lets the after triggers know how it ended; depth is how deep in a chain
 // of after triggers it is.
 func (t *triggers) fireEvent(b *bound, fields map[string]any, depth int) {
+	t.fireIn(b, "", fields, depth)
+}
+
+// fireIn is fireEvent for a run in stack, the scope of the task of a
+// trigger that follows another run: GlobalScope for a global task, which
+// reads the files for it; "" is the stack of the daemon.
+func (t *triggers) fireIn(b *bound, stack string, fields map[string]any, depth int) {
 	tr := b.tr
 	if err := t.begin(tr.Task); err != nil {
 		if errors.Is(err, errFull) {
@@ -316,50 +322,33 @@ func (t *triggers) fireEvent(b *bound, fields map[string]any, depth int) {
 		opts := b.snap.opts
 		opts.Event = &engine.TriggerEvent{Trigger: tr.Kind, Time: at, Fields: fields}
 		opts.Supervisor = t.d.sup
+		if stack != "" && stack != opts.Stack {
+			opts.Stack, opts.Model = stack, nil
+		}
 		res, err := engine.Fire(t.d.runs, opts, tr)
 		t.report(tr, at, res, err)
 		if res != nil {
-			t.ended(res.Record, depth)
+			t.ended(res.Followers, depth)
 		}
 	}()
 }
 
-// ended makes the runs of the after triggers installed last that the run
-// that ended matches, by the record it finished with, which a run that
-// only read does not keep on disk; depth is how deep in a chain that run
-// is.
-func (t *triggers) ended(rec *record.Record, depth int) {
-	if rec == nil {
-		return
-	}
-	run := rec.Run
-	name := rec.Task
-	if name == "" {
-		name = rec.Command
-	}
+// ended makes the runs after a run that ended, which the engine matched to
+// the after triggers of its project; depth is how deep in a chain of after
+// triggers that run is.
+func (t *triggers) ended(fs []*engine.Follower, depth int) {
 	t.mu.Lock()
 	snap := t.snap
 	t.mu.Unlock()
 	if snap == nil {
 		return
 	}
-	for _, tr := range snap.afters {
-		if tr.After != name || (tr.Unit != "" && rec.Units[tr.Unit] == nil) || (tr.Outcome != "any" && tr.Outcome != rec.Outcome) {
-			continue
-		}
+	for _, f := range fs {
 		if depth+1 > MaxDepth {
-			t.d.event("trigger", "warn", tr.Task, "%s: run %s is %d deep in a chain of after, so it makes no run", tr, run, depth)
+			t.d.event("trigger", "warn", f.Trigger.Task, "%s: run %v is %d deep in a chain of after, so it makes no run", f.Trigger, f.Fields["run"], depth)
 			continue
 		}
-		// event.outputs has the value of each output; a sensitive one has
-		// none in the record, so the run after it gets none.
-		outputs := map[string]any{}
-		for k, o := range rec.Outputs {
-			if v, ok := record.OutputValue(o); ok {
-				outputs[k] = v
-			}
-		}
-		t.fireEvent(&bound{tr: tr, snap: snap}, map[string]any{"task": name, "unit": tr.Unit, "outcome": rec.Outcome, "outputs": outputs, "run": run}, depth+1)
+		t.fireIn(&bound{tr: f.Trigger, snap: snap}, f.Stack, f.Fields, depth+1)
 	}
 }
 

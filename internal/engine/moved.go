@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/opstruss/opstruss/internal/failpoint"
+	"github.com/opstruss/opstruss/internal/model"
 	"github.com/opstruss/opstruss/internal/state"
 )
 
@@ -29,7 +30,14 @@ type movePair struct{ from, to string }
 // before leave them.
 func (e *engine) addMoves(f *frame) {
 	for _, m := range f.in.Moved {
-		from, to := f.address+"/"+m.From, f.address+"/"+m.To
+		base := f.address
+		if segs := model.ParseAddress(m.To); f.node == nil && e.global != nil && len(segs) > 0 {
+			if n := e.p.Nodes[segs[0].Unit]; n != nil && n.Unit.Global {
+				// A move to a global unit moves its record in its scope.
+				base = model.GlobalScope
+			}
+		}
+		from, to := base+"/"+m.From, base+"/"+m.To
 		pairs := []movePair{{from, to}}
 		for _, a := range slices.Sorted(maps.Keys(e.have)) {
 			if rest, ok := strings.CutPrefix(a, from+"/"); ok {
@@ -70,6 +78,10 @@ func (e *engine) previewMoves() {
 	e.moving = map[string]bool{}
 	e.pairs = nil
 	addrs, _ := e.store.Inventory()
+	if e.global != nil {
+		more, _ := e.global.store.Inventory()
+		addrs = append(addrs, more...)
+	}
 	e.have = map[string]bool{}
 	for _, a := range addrs {
 		e.have[a] = true

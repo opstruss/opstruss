@@ -13,7 +13,10 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/opstruss/opstruss/internal/api"
+	"github.com/opstruss/opstruss/internal/engine"
 	"github.com/opstruss/opstruss/internal/model"
+	"github.com/opstruss/opstruss/internal/record"
 	"github.com/opstruss/opstruss/internal/schema"
 	"github.com/opstruss/opstruss/internal/sources"
 	"github.com/opstruss/opstruss/internal/state"
@@ -35,8 +38,10 @@ func (a *app) initCommand() *cobra.Command {
 		Long: "Set up the project in this directory, adding only what is missing: opstruss.yaml, whose first line names " +
 			"its schema for editors, and .opstruss/ in .gitignore. Then check every stack as validate does, and fetch " +
 			"what the project uses, with the binaries for this machine, as uses fetch does, so that a fresh clone is " +
-			"ready to plan. Running it again is safe. With --stack, also make the state of that stack. The age key of " +
-			"this machine and the data key of a stack are made by the first command that needs them.",
+			"ready to plan. Running it again is safe. With --stack, also make the state of that stack. Then run the tasks " +
+			"that follow init through after: {task: init}: the global ones, and those of the stack that --stack or the " +
+			"only stack chooses. The age key of this machine and the data key of a stack are made by the first command " +
+			"that needs them.",
 		Example: `  mkdir shop && cd shop && opstruss init
   opstruss init --name shop
   git clone https://github.com/example/shop && cd shop && opstruss init`,
@@ -75,8 +80,18 @@ func (a *app) initCommand() *cobra.Command {
 					return failed(err)
 				}
 			}
+			follow, waiting, err := initFollowers(dir, a.stack)
+			if err != nil {
+				return err
+			}
 			if a.json {
-				return a.printJSON(res)
+				// The runs after init print their events first, as a run
+				// does, and the document of init comes last.
+				code := a.followInit(dir, follow)
+				if err := a.printJSON(res); err != nil {
+					return err
+				}
+				return exitCode(code)
 			}
 			wrote()
 			tw := tabwriter.NewWriter(a.stdout, 0, 0, 2, ' ', 0)
@@ -86,12 +101,17 @@ func (a *app) initCommand() *cobra.Command {
 			if err := tw.Flush(); err != nil {
 				return err
 			}
-			if slices.Contains(res.Wrote, model.FileName) {
+			switch {
+			case slices.Contains(res.Wrote, model.FileName):
 				fmt.Fprintf(a.stdout, "next: add units or tasks to %s, then run opstruss plan\n", model.FileName)
-			} else {
+			case len(waiting) > 0:
+				stacks, _ := model.Stacks(dir)
+				fmt.Fprintf(a.stdout, "next: run opstruss init --stack <stack> (%s), which also runs %s\n",
+					strings.Join(stacks, ", "), strings.Join(waiting, ", "))
+			default:
 				fmt.Fprintln(a.stdout, "next: run opstruss plan")
 			}
-			return nil
+			return exitCode(a.followInit(dir, follow))
 		},
 	}
 	cmd.Flags().StringVar(&name, "name", "", "the name of a new project; made from the directory's name when not given")
@@ -264,4 +284,68 @@ func initMeta(dir, stack string, res *initResult) error {
 	}
 	res.Wrote = append(res.Wrote, state.MetaKey(p.StackName))
 	return nil
+}
+
+// initFollowers are the runs that follow init through after: {task: init}:
+// those of the global tasks, and those of the tasks of the stack when
+// --stack or the only stack chooses one; waiting names the tasks of the
+// stacks that wait for --stack.
+func initFollowers(dir, stack string) ([]*engine.Follower, []string, error) {
+	if stack == "" {
+		if names, err := model.Stacks(dir); err == nil && len(names) == 1 {
+			stack = names[0]
+		}
+	}
+	scope := cmp.Or(stack, model.GlobalScope)
+	p, err := model.LoadWith(context.Background(), dir, scope, sources.Options{Discovery: true})
+	if err != nil {
+		return nil, nil, err
+	}
+	defer p.Close()
+	rec := &record.Record{Command: "init", Task: "init", Outcome: "success", Stack: scope}
+	fs := engine.Match(engine.AfterTriggers(p), rec, func(task string) bool { return p.Tasks[task] != nil && p.Tasks[task].Global })
+	var waiting []string
+	if stack == "" {
+		names, _ := model.Stacks(dir)
+		for _, s := range names {
+			all, err := model.Declarations(dir, s)
+			if err != nil {
+				continue
+			}
+			for _, t := range engine.AfterTriggers(all) {
+				if t.After == "init" && !all.Tasks[t.Task].Global && !slices.Contains(waiting, t.Task) {
+					waiting = append(waiting, t.Task)
+				}
+			}
+		}
+		slices.Sort(waiting)
+	}
+	return fs, waiting, nil
+}
+
+// followInit runs the runs after init and returns the code they end with.
+func (a *app) followInit(dir string, fs []*engine.Follower) int {
+	if len(fs) == 0 {
+		return 0
+	}
+	given, err := a.givenInputs()
+	if err != nil {
+		fmt.Fprintf(a.stderr, "opstruss: %v\n", err)
+		return 1
+	}
+	debug, _ := a.lookupEnv("OPSTRUSS_LOG")
+	req := api.Request{Locked: a.locked, Dir: dir, Cwd: a.cwd, Inputs: given, Environ: a.environ, Color: a.colorFor(a.stdout), Debug: debug == "debug"}
+	in := a.interrupts()
+	defer in.stop()
+	code := a.api().Follow(in.ctx, req, fs, 0, 0)
+	a.hintApproval(code, false, "init")
+	return code
+}
+
+// exitCode is the error of a command that ends with code, or nil for 0.
+func exitCode(code int) error {
+	if code == 0 {
+		return nil
+	}
+	return &exitError{code}
 }

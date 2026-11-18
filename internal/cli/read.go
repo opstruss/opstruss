@@ -179,6 +179,7 @@ reads inputs or locals needs the same --input as the up.`,
 		},
 	}
 	cmd.Flags().BoolVar(&show, "show-sensitive", false, "print sensitive outputs as they are")
+	a.globalFlag(cmd, false)
 	return cmd
 }
 
@@ -242,6 +243,7 @@ func (a *app) runsCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&follow, "follow", false, "go on with what a run that still runs writes, until it ends; -f is the same")
 	cmd.Flags().IntVar(&limit, "limit", 20, "list that many of the newest runs; 0 lists all")
 	cmd.AddCommand(a.cancelCommand(), a.rerunCommand())
+	a.globalFlag(cmd, true)
 	return cmd
 }
 

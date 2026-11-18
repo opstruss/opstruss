@@ -23,7 +23,7 @@ func readPlugin(projectDir, dir string, b *bound, src *sources.Session) (*Plugin
 	if err != nil {
 		return nil, nil, err
 	}
-	doc, probs, err := readDocument(projectDir, rel, schema.Plugin, src)
+	doc, probs, err := readDocument(projectDir, rel, schema.Plugin, "", src)
 	var pp Problems
 	if errors.As(err, &pp) {
 		probs, err = pp, nil
@@ -115,7 +115,7 @@ func (c *checker) pluginRules() {
 				c.add(at(path, "inputs", in), "%s is an argument of the tasks of a unit (--%s); name the input otherwise", in, in)
 			}
 		}
-		for k, set := range map[string]bool{"needs": len(t.Needs) > 0, "concurrency": t.Concurrency != nil, "internal": t.Internal} {
+		for k, set := range map[string]bool{"needs": len(t.Needs) > 0, "concurrency": t.Concurrency != nil, "internal": t.Internal, "global": t.Global} {
 			if set {
 				c.add(at(path, k), "%s is for the tasks of a project; a plugin task is one operation", k)
 			}
@@ -135,7 +135,7 @@ func (c *checker) pluginRules() {
 			}
 		}
 		c.task(path, t, false)
-		c.taskRefs(path, t)
+		c.taskRefs(path, t, "")
 	}
 	marks := map[string]any{}
 	if in := inputMarks(pl.Inputs); len(in) > 0 {

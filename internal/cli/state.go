@@ -23,6 +23,7 @@ func (a *app) stateCommand() *cobra.Command {
 		Args:  cobra.NoArgs,
 	}
 	cmd.AddCommand(a.stateList(), a.statePull(), a.statePush(), a.stateRm())
+	a.globalFlag(cmd, true)
 	return cmd
 }
 
@@ -32,7 +33,11 @@ func (a *app) store() (*model.Project, *state.Store, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	p, err := model.LoadWith(context.Background(), dir, a.stackName(), sources.Options{Locked: a.locked})
+	stack, err := a.scope(dir, "", nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	p, err := model.LoadWith(context.Background(), dir, stack, sources.Options{Locked: a.locked})
 	if err != nil {
 		return nil, nil, err
 	}

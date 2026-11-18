@@ -246,7 +246,7 @@ func (e *engine) unitLogs(ctx context.Context, inst *instance, follow bool) (any
 		}
 		return done, nil
 	}
-	runs, err := runRecords(e.root, e.p.StackName, 0)
+	runs, err := e.unitRuns(inst.address)
 	if err != nil {
 		return failed(err), nil
 	}
@@ -260,7 +260,7 @@ func (e *engine) unitLogs(ctx context.Context, inst *instance, follow bool) (any
 		what := cmp.Or(r.Task, r.Command)
 		e.say("unit", inst.address, "output of %s in run %s at %s", what, r.Run, record.When(r.Started))
 		printed := false
-		err := record.ReadRun(ctx, filepath.Join(e.root, "runs", e.p.StackName, r.Run), false, func(ev Event) {
+		err := record.ReadRun(ctx, filepath.Join(e.root, "runs", r.Stack, r.Run), false, func(ev Event) {
 			if ev.Type == "log" && ev.Address == inst.address {
 				printed = printed || ev.Level != "debug" || e.opts.Debug
 				e.replay(ev)

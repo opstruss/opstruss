@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 
+	"github.com/opstruss/opstruss/internal/schema"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -70,7 +71,7 @@ func newerFile(doc *yaml.Node, file string) error {
 	}
 	for i := 0; i+1 < len(doc.Content); i += 2 {
 		k, v := doc.Content[i], doc.Content[i+1]
-		if k.Value == "opstruss" && v.Kind == yaml.ScalarNode && v.Tag == "!!str" && level.MatchString(v.Value) && newerLevel(v.Value, Level) {
+		if k.Value == "opstruss" && v.Kind == yaml.ScalarNode && v.Tag == "!!str" && level.MatchString(v.Value) && schema.Newer(v.Value, Level) {
 			return Problems{{File: file, Line: k.Line, Column: k.Column, Path: "opstruss",
 				Message: fmt.Sprintf("this file is for OpsTruss %s or newer; this OpsTruss reads files up to %s: upgrade OpsTruss", v.Value, Level)}}
 		}

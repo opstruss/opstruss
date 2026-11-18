@@ -292,7 +292,7 @@ func (a *app) taskCommand(name string, tasks []*model.Task, ofUnits bool) *cobra
 		if len(units) > 0 && !ofUnits {
 			return fmt.Errorf("task %s of the project takes no units", name)
 		}
-		req, err := a.request(units)
+		req, err := a.requestFor(name, units)
 		if err != nil {
 			return err
 		}

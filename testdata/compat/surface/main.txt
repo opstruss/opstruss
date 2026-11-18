@@ -195,6 +195,7 @@ env XDG_CONFIG_HOME
 event after outcome
 event after outputs
 event after run
+event after stack
 event after task
 event after time
 event after trigger
@@ -241,6 +242,8 @@ flag opstruss --version type bool
 flag opstruss -C
 flag opstruss destroy --force
 flag opstruss destroy --force type bool
+flag opstruss destroy --global
+flag opstruss destroy --global type bool
 flag opstruss destroy --no-deps
 flag opstruss destroy --no-deps type bool
 flag opstruss destroy --yes
@@ -256,17 +259,25 @@ flag opstruss init -C
 flag opstruss list -C
 flag opstruss logs --follow
 flag opstruss logs --follow type bool
+flag opstruss logs --global
+flag opstruss logs --global type bool
 flag opstruss logs -C
 flag opstruss logs -f
+flag opstruss outputs --global
+flag opstruss outputs --global type bool
 flag opstruss outputs --show-sensitive
 flag opstruss outputs --show-sensitive type bool
 flag opstruss outputs -C
+flag opstruss plan --global
+flag opstruss plan --global type bool
 flag opstruss plan --no-deps
 flag opstruss plan --no-deps type bool
 flag opstruss plan -C
 flag opstruss run -C
 flag opstruss runs --follow
 flag opstruss runs --follow type bool
+flag opstruss runs --global
+flag opstruss runs --global type bool
 flag opstruss runs --limit
 flag opstruss runs --limit default 20
 flag opstruss runs --limit type int
@@ -281,6 +292,8 @@ flag opstruss runs rerun --yes
 flag opstruss runs rerun --yes short -y
 flag opstruss runs rerun --yes type bool
 flag opstruss runs rerun -C
+flag opstruss state --global
+flag opstruss state --global type bool
 flag opstruss state -C
 flag opstruss state list -C
 flag opstruss state pull -C
@@ -296,6 +309,8 @@ flag opstruss state rm --if-match type string
 flag opstruss state rm --tool
 flag opstruss state rm --tool type bool
 flag opstruss state rm -C
+flag opstruss status --global
+flag opstruss status --global type bool
 flag opstruss status --no-deps
 flag opstruss status --no-deps type bool
 flag opstruss status -C
@@ -303,6 +318,8 @@ flag opstruss stop -C
 flag opstruss unlock -C
 flag opstruss up --force
 flag opstruss up --force type bool
+flag opstruss up --global
+flag opstruss up --global type bool
 flag opstruss up --no-deps
 flag opstruss up --no-deps type bool
 flag opstruss up --yes
@@ -1116,6 +1133,9 @@ schema plugin tasks.<name>.for_each
 schema plugin tasks.<name>.for_each type array
 schema plugin tasks.<name>.for_each type object
 schema plugin tasks.<name>.for_each type string
+schema plugin tasks.<name>.global
+schema plugin tasks.<name>.global type boolean
+schema plugin tasks.<name>.global type object
 schema plugin tasks.<name>.if
 schema plugin tasks.<name>.if type boolean
 schema plugin tasks.<name>.if type string
@@ -2021,6 +2041,9 @@ schema project tasks.<name>.for_each
 schema project tasks.<name>.for_each type array
 schema project tasks.<name>.for_each type object
 schema project tasks.<name>.for_each type string
+schema project tasks.<name>.global
+schema project tasks.<name>.global type boolean
+schema project tasks.<name>.global type object
 schema project tasks.<name>.if
 schema project tasks.<name>.if type boolean
 schema project tasks.<name>.if type string
@@ -2638,6 +2661,8 @@ schema project units.<name>.generates
 schema project units.<name>.generates type array
 schema project units.<name>.generates[]
 schema project units.<name>.generates[] type string
+schema project units.<name>.global
+schema project units.<name>.global type boolean
 schema project units.<name>.if
 schema project units.<name>.if type boolean
 schema project units.<name>.if type string
@@ -2870,6 +2895,9 @@ schema project units.<name>.tasks.<name>.for_each
 schema project units.<name>.tasks.<name>.for_each type array
 schema project units.<name>.tasks.<name>.for_each type object
 schema project units.<name>.tasks.<name>.for_each type string
+schema project units.<name>.tasks.<name>.global
+schema project units.<name>.tasks.<name>.global type boolean
+schema project units.<name>.tasks.<name>.global type object
 schema project units.<name>.tasks.<name>.if
 schema project units.<name>.tasks.<name>.if type boolean
 schema project units.<name>.tasks.<name>.if type string
@@ -3983,6 +4011,8 @@ schema record source.remote.repository
 schema record source.remote.repository value "github.com/opstruss/catalog"
 schema record source.uses
 schema record source.uses type string
+schema record stack
+schema record stack type string
 schema record state_key
 schema record state_key type string
 schema record tombstone

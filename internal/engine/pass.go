@@ -35,6 +35,11 @@ func (e *engine) unitPass(ctx context.Context, op string, p pass) (map[string]an
 	e.mu.Lock()
 	e.kv = e.newKV()
 	e.mu.Unlock()
+	if g := e.global; g != nil {
+		g.mu.Lock()
+		g.kv = g.newKV()
+		g.mu.Unlock()
+	}
 	e.pass = p
 	e.answers = nil
 	e.resetUnits()
@@ -65,9 +70,9 @@ func (e *engine) unitPass(ctx context.Context, op string, p pass) (map[string]an
 		if addrs, err := e.store.Inventory(); err == nil && len(addrs) == 0 {
 			if hint := e.triggerHint(op); hint != "" && e.opts.Install != nil {
 				// The daemon names who runs the triggers once they are installed.
-				e.unitsHint = "the project declares no units" + hint
+				e.unitsHint = e.noUnits() + hint
 			} else {
-				e.say("run", "", "the project declares no units%s", hint)
+				e.say("run", "", "%s%s", e.noUnits(), hint)
 			}
 		}
 	}
@@ -342,7 +347,12 @@ func (e *engine) setInPass(v bool) {
 	e.mu.Unlock()
 }
 
-func (e *engine) short(addr string) string { return strings.TrimPrefix(addr, e.p.StackName+"/") }
+func (e *engine) short(addr string) string {
+	if e.global != nil && isGlobal(addr) {
+		return strings.TrimPrefix(addr, model.GlobalScope+"/")
+	}
+	return strings.TrimPrefix(addr, e.p.StackName+"/")
+}
 
 // outputMarksNow marks the sensitive outputs of outputsNow.
 func (inst *instance) outputMarksNow() map[string]any {

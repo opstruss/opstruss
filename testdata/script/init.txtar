@@ -101,7 +101,7 @@ stdout '^wrote \.gitignore$'
 exists nogit/.gitignore
 -- want/opstruss.yaml --
 # yaml-language-server: $schema=.opstruss/schema.json
-opstruss: "1.0"
+opstruss: "1.1"
 name: my_app-2
 -- want/gitignore --
 .opstruss/

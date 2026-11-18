@@ -29,6 +29,7 @@ opstruss logs backup       # the last run of the task backup
 | Flag | Description |
 |---|---|
 | `--follow` | go on with what services, plugins, and runs of the tasks write, until Ctrl-C; -f is the same |
+| `--global` | use the global units, one for every stack, rather than a stack |
 
 ## Global flags
 

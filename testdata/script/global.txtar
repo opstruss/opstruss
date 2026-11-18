@@ -1,0 +1,174 @@
+# A global unit is one for every stack: a run of a stack brings it up when
+# its units need it, once, with its record in _global; other stacks find
+# it unchanged, and it runs without --stack when named or with --global.
+
+env HOME=$WORK/home
+
+# the run of prod brings up tools, which zone needs, and not extra
+exec opstruss up --stack prod --yes
+stdout '^_global/tools: up: done$'
+stdout '^prod/zone \| zone us ran$'
+! stdout extra
+grep -count=1 run runs.log
+grep '"stack": "prod"' .opstruss/state/_global/tools/state.json
+
+# dev finds tools unchanged
+exec opstruss up --stack dev --yes
+stdout '^_global/tools: unchanged$'
+stdout '^dev/zone \| zone eu ran$'
+grep -count=1 run runs.log
+
+# a global unit runs without --stack, also one that no unit needs
+exec opstruss up extra --yes
+stdout '^_global/extra: up: done$'
+! stdout zone
+exec opstruss plan --global
+stdout '^_global/extra: unchanged$'
+stdout '^_global/tools: unchanged$'
+! stdout zone
+
+# without a stack the project asks for one, and names --global
+! exec opstruss plan
+stderr 'choose one with --stack, or --global for its global units$'
+! exec opstruss up tools zone
+stderr 'choose one with --stack'
+! exec opstruss plan --global --stack dev
+stderr '^opstruss: --global and --stack each choose where the run is; give one of them$'
+
+# a change of a global unit asks, also in a stack with approval: auto
+cp changed.yaml opstruss.yaml
+! exec opstruss up --stack dev
+stdout '^_global/tools: needs approval, stopped at plan$'
+stdout '^dev/zone: skipped: _global/tools stopped at plan$'
+stderr 'changes need approval'
+exec opstruss up --stack dev --yes
+stdout '^_global/tools: up: done$'
+grep -count=2 run runs.log
+
+# logs of a global unit find the run of the stack that ran it
+exec opstruss logs tools
+stdout '^_global/tools: output of up in run '
+
+# the destroy of a stack leaves the global units
+exec opstruss destroy --stack dev --yes
+stdout '^dev/zone: '
+! stdout tools
+exists .opstruss/state/_global/tools/state.json
+
+# destroy --global warns of the stacks that still need them
+exec opstruss destroy --global --yes
+stderr 'zone of stack prod still needs it; take that down first with opstruss destroy --stack prod zone'
+stdout '^_global/tools: destroy: done$'
+grep gone runs.log
+! exists .opstruss/state/_global/tools/state.json
+
+# two runs of stacks that need tools at once run it once, under its lock
+exec opstruss up --stack dev --yes &
+exec opstruss up --stack prod --yes &
+wait
+grep -count=3 run runs.log
+
+# a move to a global unit moves its record in its scope, under the locks
+# of the run, which then finds it unchanged
+cp moved.yaml opstruss.yaml
+exec opstruss up --stack prod --yes
+stdout '^_global/kit: moved from _global/tools$'
+stdout '^_global/kit: unchanged$'
+grep -count=3 run runs.log
+
+# a project without global units says so for --global
+cd plain
+exec opstruss plan --global
+stderr '^the project declares no global units$'
+
+-- opstruss.yaml --
+opstruss: "1.1"
+name: glob
+stacks:
+  dev:
+    approval: auto
+    with: {region: eu}
+  prod:
+    with: {region: us}
+inputs:
+  region: {type: string, required: true}
+units:
+  tools:
+    global: true
+    run: echo run >> runs.log && sleep 1 && echo ran
+    destroy: echo gone >> runs.log
+    outputs:
+      v: {from: stdout}
+  extra:
+    global: true
+    run: echo extra
+  zone:
+    needs: [tools]
+    run: [sh, -c, 'echo zone $REGION $V']
+    env:
+      REGION: ${{ inputs.region }}
+      V: ${{ units.tools.outputs.v }}
+-- changed.yaml --
+opstruss: "1.1"
+name: glob
+stacks:
+  dev:
+    approval: auto
+    with: {region: eu}
+  prod:
+    with: {region: us}
+inputs:
+  region: {type: string, required: true}
+units:
+  tools:
+    global: true
+    run: echo run >> runs.log && sleep 1 && echo ran
+    destroy: echo gone >> runs.log
+    revision: "2"
+    outputs:
+      v: {from: stdout}
+  extra:
+    global: true
+    run: echo extra
+  zone:
+    needs: [tools]
+    run: [sh, -c, 'echo zone $REGION $V']
+    env:
+      REGION: ${{ inputs.region }}
+      V: ${{ units.tools.outputs.v }}
+-- moved.yaml --
+opstruss: "1.1"
+name: glob
+stacks:
+  dev:
+    approval: auto
+    with: {region: eu}
+  prod:
+    with: {region: us}
+inputs:
+  region: {type: string, required: true}
+units:
+  kit:
+    global: true
+    run: echo run >> runs.log && sleep 1 && echo ran
+    destroy: echo gone >> runs.log
+    revision: "2"
+    outputs:
+      v: {from: stdout}
+  extra:
+    global: true
+    run: echo extra
+  zone:
+    needs: [kit]
+    run: [sh, -c, 'echo zone $REGION $V']
+    env:
+      REGION: ${{ inputs.region }}
+      V: ${{ units.kit.outputs.v }}
+moved:
+  - {from: tools, to: kit}
+-- plain/opstruss.yaml --
+opstruss: "1.1"
+name: plain
+units:
+  a:
+    run: echo a

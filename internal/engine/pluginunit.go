@@ -273,7 +273,7 @@ func (e *engine) statusPass(ctx context.Context, patterns []string) (map[string]
 		return nil, nil, err
 	}
 	if len(e.p.Units) == 0 {
-		e.say("run", "", "the project declares no units")
+		e.say("run", "", "%s", e.noUnits())
 	}
 	out, marks := map[string]any{}, map[string]any{}
 	for _, inst := range insts {

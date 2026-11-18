@@ -30,6 +30,7 @@ opstruss runs 4b2e91d0 -f  # follow a run that goes on
 | Flag | Description |
 |---|---|
 | `--follow` | go on with what a run that still runs writes, until it ends; -f is the same |
+| `--global` | use the global units, one for every stack, rather than a stack |
 | `--limit int` | list that many of the newest runs; 0 lists all (default 20) |
 
 ## Global flags

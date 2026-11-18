@@ -61,8 +61,7 @@ type triggers struct {
 // environment of that install. An event is handled with one snapshot from
 // its if: to its run, and a run keeps the snapshot it began with.
 type snapshot struct {
-	opts   engine.Options // with Model
-	afters []*engine.Trigger
+	opts engine.Options // with Model
 }
 
 // same reports whether events handled with s and o end the same: the same
@@ -158,11 +157,6 @@ func (t *triggers) install(opts engine.Options) (err error) {
 		return err
 	}
 	snap := &snapshot{opts: opts}
-	for _, tr := range list {
-		if tr.Kind == "after" {
-			snap.afters = append(snap.afters, tr)
-		}
-	}
 	changed := !prev.same(snap)
 	type planned struct {
 		id   string
@@ -524,7 +518,7 @@ func (t *triggers) fire(s *source, at time.Time) {
 		res, err := engine.Fire(t.d.runs, opts, tr)
 		t.report(tr, at, res, err)
 		if res != nil {
-			t.ended(res.Record, 0)
+			t.ended(res.Followers, 0)
 		}
 	}()
 }

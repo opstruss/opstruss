@@ -747,6 +747,11 @@
           "default": "6h"
         },
         "protect": { "description": "Refuse to destroy the unit, and a plan of its plugin that deletes or replaces it.", "type": "boolean" },
+        "global": {
+          "description": "One instance of the unit for the whole project rather than one per stack, which a run of a stack brings up when its units need it.",
+          "type": "boolean",
+          "x-since": "1.1"
+        },
         "retry": {
           "$ref": "#/$defs/retry",
           "description": "Running the program again when it fails."
@@ -875,6 +880,13 @@
         "internal": {
           "description": "Leave the task out of the commands and the MCP tools; other tasks and its own on: still run it.",
           "type": "boolean"
+        },
+        "global": {
+          "description": "Run the task once for the whole project rather than in a stack, reading only what is the same for every stack; an object is a call of a task named global in uses:.",
+          "oneOf": [
+            { "type": "boolean", "x-since": "1.1" },
+            { "$ref": "#/$defs/call" }
+          ]
         }
       },
       "patternProperties": { "^x-": true },
@@ -1186,7 +1198,7 @@
       "type": "object",
       "properties": {
         "task": {
-          "description": "The task, or the command such as up, whose runs this task follows.",
+          "description": "The task, or the command such as up or init, whose runs this task follows.",
           "type": "string",
           "minLength": 1
         },

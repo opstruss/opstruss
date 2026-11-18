@@ -28,6 +28,7 @@ opstruss destroy web        # web and the units that read it
 | Flag | Description |
 |---|---|
 | `--force` | run destroy although pass values differ from those recorded |
+| `--global` | use the global units, one for every stack, rather than a stack |
 | `--no-deps` | leave out the units that depend on the ones named |
 | `-y`, `--yes` | approve the changes of this run, as in CI |
 

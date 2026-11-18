@@ -40,6 +40,8 @@ type InputValue struct {
 func (p *Project) ResolveInputs(given map[string]string, lookupEnv func(string) (string, bool), known func(name string, v any)) (map[string]InputValue, error) {
 	for _, name := range slices.Sorted(maps.Keys(given)) {
 		switch in := p.Inputs[name]; {
+		case in == nil && p.Global && len(p.stackWith[name]) > 0:
+			return nil, fmt.Errorf("--input %s: the global units and tasks have no input %s; only the with: of a stack gives it", name, name)
 		case in == nil:
 			return nil, fmt.Errorf("--input %s: the project has no input %s%s", name, name, p.taskFlagHint(name))
 		case in.Sensitive:

@@ -38,10 +38,13 @@ type Call struct {
 	// root unless Env sets them; an operator who is root runs it as is.
 	Sudo bool
 
-	Task   string         // OPSTRUSS_TASK
-	Reason string         // OPSTRUSS_REASON
-	Digest string         // OPSTRUSS_DIGEST, for up
-	Unit   *Unit          // for the programs of a unit
+	Task   string // OPSTRUSS_TASK
+	Reason string // OPSTRUSS_REASON
+	Digest string // OPSTRUSS_DIGEST, for up
+	Unit   *Unit  // for the programs of a unit
+	// Stack is the scope of a program that a global task runs in a run of
+	// a stack: OPSTRUSS_STACK, as for the programs of a global unit.
+	Stack  string
 	Inputs map[string]any // INPUT_* and OPSTRUSS_INPUTS, for the program of a task or plugin
 	Plan   bool           // asks for OPSTRUSS_PLAN
 
