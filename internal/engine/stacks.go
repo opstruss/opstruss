@@ -38,7 +38,7 @@ func (e *engine) undeclaredStacks() []string {
 	var out []string
 	for _, d := range entries {
 		stack := d.Name()
-		if !d.IsDir() || slices.Contains(names, stack) {
+		if !d.IsDir() || slices.Contains(names, stack) || stack == model.GlobalScope {
 			continue
 		}
 		st := &state.Store{Backend: e.store.Backend, Stack: stack}

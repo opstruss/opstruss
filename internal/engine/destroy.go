@@ -151,6 +151,7 @@ func (e *engine) destroyPass(ctx context.Context) ([]*leftover, error) {
 		e.say("run", "", "stack %s has no units to destroy", e.p.StackName)
 	}
 	e.keepPlan(records, items)
+	e.warnStacksNeed(items)
 	// Nothing is destroyed while one of the units is protected, rather than
 	// the units that depend on it going first.
 	protected := false
@@ -180,11 +181,28 @@ func framesOfDestroy(e *engine, items []*leftover) []string {
 	return out
 }
 
-// records reads every record of the stack, tombstones left out.
+// records reads every record of the stack, tombstones left out, and in a
+// run of a stack those of the global units it picked, which the run
+// destroys only when they are named.
 func (e *engine) records(skip map[string]bool) ([]*leftover, error) {
 	addrs, err := e.store.Inventory()
 	if err != nil {
 		return nil, err
+	}
+	if e.global != nil {
+		more, err := e.global.store.Inventory()
+		if err != nil {
+			return nil, err
+		}
+		for _, a := range more {
+			var names, keys []string
+			for _, s := range model.ParseAddress(e.short(a)) {
+				names, keys = append(names, s.Unit), append(keys, s.Key)
+			}
+			if n := e.p.Nodes[names[0]]; n != nil && n.Unit.Global && e.sel.picked(strings.Join(names, "/"), keys, false) {
+				addrs = append(addrs, a)
+			}
+		}
 	}
 	var out []*leftover
 	for _, addr := range addrs {
@@ -602,6 +620,11 @@ func (e *engine) approvalOf(def *model.Unit) string {
 	own := ""
 	if def != nil {
 		own = def.Approval
+	}
+	// A change of a global unit reaches every stack, so the stack does not
+	// approve it.
+	if globalDef(def) {
+		return cmp.Or(own, "ask")
 	}
 	return cmp.Or(own, e.stackApproval(), "ask")
 }

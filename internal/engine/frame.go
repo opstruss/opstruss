@@ -27,6 +27,7 @@ type frame struct {
 	each      any
 	eachMarks any    // the marks of each: what of each.value is sensitive
 	address   string // <stack>, or the address of the instance, such as <stack>/site[eu]
+	global    bool   // in GlobalScope: a global unit of a run of a stack, or what it holds
 }
 
 // frameSet is the instances of a component unit in a pass, or why they
@@ -90,7 +91,7 @@ func (e *engine) framesOf(n *model.Node) ([]*frame, error) {
 	}
 	defer close(fs.ready)
 	var frames []*frame
-	parents, err := e.framesOf(n.Parent)
+	parents, err := e.parentFrames(n)
 	for _, pf := range parents {
 		keys, items, marks, kerr := e.keysOf(pf, n)
 		if kerr != nil {
@@ -103,7 +104,7 @@ func (e *engine) framesOf(n *model.Node) ([]*frame, error) {
 				id += "[" + k + "]"
 			}
 			frames = append(frames, &frame{node: n, in: n.Component(), parent: pf, key: k, each: items[k], eachMarks: itemMarks(marks, k),
-				address: pf.address + "/" + id})
+				address: pf.address + "/" + id, global: pf.global})
 		}
 	}
 	if err != nil {
@@ -168,23 +169,27 @@ func (e *engine) scopeOf(f *frame, n *model.Node, address string, each map[strin
 // units.<name> holding the units in names, and the marks of what is
 // sensitive there.
 func (e *engine) frameScope(f *frame, names []string, dir, address string, each map[string]any, eachMarks any) *expr.Scope {
-	k := e.passKV()
+	sc := e.scopeEngine(f)
+	k := sc.passKV()
 	inputs, inputMarks := e.inputsAndMarks(f)
 	facts := e.facts(nil)
 	if address != "" {
 		facts["address"], facts["dir"] = address, dir
 	}
 	units, unitMarks := e.unitsView(f, names)
-	vars := map[string]any{"stack": e.p.StackName, "inputs": inputs, "locals": k.localsOf(f, inputs), "opstruss": facts,
-		"units": units, "secrets": e.secrets}
+	vars := map[string]any{"inputs": inputs, "locals": k.localsOf(f, inputs), "opstruss": facts,
+		"units": units, "secrets": sc.secrets}
+	if !f.global {
+		vars["stack"] = e.p.StackName
+	}
 	if each != nil {
 		vars["each"] = each
 	}
 	marks := map[string]any{}
-	if len(e.secrets) > 0 {
+	if len(sc.secrets) > 0 {
 		marks["secrets"] = true
 	}
-	for name, m := range map[string]map[string]any{"inputs": inputMarks, "locals": e.localMarksOf(f, inputMarks, k), "units": unitMarks} {
+	for name, m := range map[string]map[string]any{"inputs": inputMarks, "locals": sc.localMarksOf(f, inputMarks, k), "units": unitMarks} {
 		if len(m) > 0 {
 			marks[name] = m
 		}
@@ -210,7 +215,8 @@ func (e *engine) inputsOf(f *frame) map[string]any {
 // uses the component gives from a sensitive value.
 func (e *engine) inputsAndMarks(f *frame) (map[string]any, map[string]any) {
 	if f.node == nil {
-		return e.inputs, e.inputMarks
+		sc := e.scopeEngine(f)
+		return sc.inputs, sc.inputMarks
 	}
 	s := e.useScope(f)
 	out, marks := map[string]any{}, map[string]any{}
@@ -333,7 +339,7 @@ func (e *engine) unitsView(f *frame, names []string) (map[string]any, map[string
 			}
 			byKey, marks := map[string]any{}, map[string]any{}
 			for _, inst := range insts {
-				if inst.frame == f {
+				if sameLevel(inst.frame, f) {
 					byKey[inst.key] = inst.view()
 					if m := inst.viewMarks(); m != nil {
 						marks[inst.key] = m
@@ -353,7 +359,7 @@ func (e *engine) unitsView(f *frame, names []string) (map[string]any, map[string
 		}
 		byKey, marks := map[string]any{}, map[string]any{}
 		for _, g := range frames {
-			if g.parent == f {
+			if sameLevel(g.parent, f) {
 				var m any
 				byKey[g.key], m = e.componentView(g)
 				if m != nil {
@@ -367,17 +373,25 @@ func (e *engine) unitsView(f *frame, names []string) (map[string]any, map[string
 	// expanded read their records. Inside one, units are expanded in graph
 	// order, so the units an expression may read are expanded already.
 	if !inPass {
-		var addrs []string
+		inventory := map[*state.Store][]string{}
 		for _, name := range names {
-			if _, ok := views[name]; ok || e.p.Nodes[f.child(name)] == nil {
+			n := e.p.Nodes[f.child(name)]
+			if _, ok := views[name]; ok || n == nil {
 				continue
 			}
-			if addrs == nil {
-				addrs, _ = e.store.Inventory()
+			// A global unit read from the project has its record in its scope.
+			st, base := e.store, f.address
+			if f.node == nil && n.Unit.Global && e.global != nil {
+				st, base = e.global.store, model.GlobalScope
+			}
+			addrs, read := inventory[st]
+			if !read {
+				addrs, _ = st.Inventory()
+				inventory[st] = addrs
 			}
 			byKey, marks := map[string]any{}, map[string]any{}
 			for _, a := range addrs {
-				rest, ok := strings.CutPrefix(a, f.address+"/")
+				rest, ok := strings.CutPrefix(a, base+"/")
 				if !ok || strings.Contains(rest, "/") {
 					continue
 				}
@@ -605,7 +619,7 @@ func (e *engine) changingUnit(f *frame, name string, rest []string) []*instance 
 		e.mu.Lock()
 		defer e.mu.Unlock()
 		for _, up := range e.byUnit[n.Path] {
-			if up.frame == f && (!keyed || up.key == key) && (up.plan.run || len(up.plan.waitFor) > 0) && e.sel.has(up) {
+			if sameLevel(up.frame, f) && (!keyed || up.key == key) && up.plan.uncertain() && e.sel.has(up) {
 				out = append(out, up)
 			}
 		}
@@ -613,7 +627,7 @@ func (e *engine) changingUnit(f *frame, name string, rest []string) []*instance 
 	}
 	frames, _ := e.framesOf(n)
 	for _, g := range frames {
-		if g.parent != f || keyed && g.key != key {
+		if !sameLevel(g.parent, f) || keyed && g.key != key {
 			continue
 		}
 		switch {
@@ -628,7 +642,7 @@ func (e *engine) changingUnit(f *frame, name string, rest []string) []*instance 
 		default:
 			e.mu.Lock()
 			for _, inst := range e.inside(g) {
-				if (inst.plan.run || len(inst.plan.waitFor) > 0) && e.sel.has(inst) {
+				if inst.plan.uncertain() && e.sel.has(inst) {
 					out = append(out, inst)
 				}
 			}
@@ -739,7 +753,7 @@ func (e *engine) writeFrame(f *frame) error {
 	if rec != nil && same(rec.Source, src) && same(rec.Inputs, inputs) {
 		return nil
 	}
-	next := &state.Record{Kind: "component", Source: src, Inputs: inputs, Run: e.runID, Updated: time.Now().UTC().Format(time.RFC3339)}
+	next := &state.Record{Kind: "component", Source: src, Inputs: inputs, Run: e.runID, Stack: e.runStack(f.address), Updated: time.Now().UTC().Format(time.RFC3339)}
 	if len(hidden) > 0 {
 		next.Hidden = map[string][]string{state.PartInputs: hidden}
 	}
@@ -756,7 +770,8 @@ func (e *engine) writeFrame(f *frame) error {
 // addr is in, innermost first.
 func (e *engine) frameAddresses(addr string) []string {
 	var out []string
-	for i := strings.LastIndex(addr, "/"); i > len(e.p.StackName); i = strings.LastIndex(addr[:i], "/") {
+	scope, _, _ := strings.Cut(addr, "/")
+	for i := strings.LastIndex(addr, "/"); i > len(scope); i = strings.LastIndex(addr[:i], "/") {
 		out = append(out, addr[:i])
 	}
 	return out

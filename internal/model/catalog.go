@@ -117,7 +117,7 @@ func (c *checker) readCatalog(root string) (*Catalog, error) {
 	if err != nil {
 		return nil, err
 	}
-	doc, probs, err := readDocument(base, rel, schema.Catalog, c.p.Sources)
+	doc, probs, err := readDocument(base, rel, schema.Catalog, "", c.p.Sources)
 	var pp Problems
 	switch {
 	case errors.As(err, &pp):

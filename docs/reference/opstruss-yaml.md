@@ -256,6 +256,7 @@ A unit: something that up brings up and destroy takes away, with exactly one of 
 | `approval` | one of `ask`, `auto` | ask to wait for approval of changes to this unit, auto to apply them without asking. |
 | `timeout` | string | How long a program of the unit may run; 6h by default. |
 | `protect` | boolean | Refuse to destroy the unit, and a plan of its plugin that deletes or replaces it. |
+| `global` (since 1.1) | boolean | One instance of the unit for the whole project rather than one per stack, which a run of a stack brings up when its units need it. |
 | `retry` | [Retry](#retry) | Running the program again when it fails. |
 
 ## Unit › ready {#unit-ready}
@@ -303,6 +304,7 @@ Exactly one of run, steps, or one call of a task.
 | `changed_when` | string or boolean | A condition on the outputs that says whether the task changed something. |
 | `continue_on_error` | boolean | Record a failure and go on. |
 | `internal` | boolean | Leave the task out of the commands and the MCP tools; other tasks and its own on: still run it. |
+| `global` (since 1.1) | boolean or object | Run the task once for the whole project rather than in a stack, reading only what is the same for every stack; an object is a call of a task named global in uses:. |
 
 Any other key is a call of a task by that name, with its inputs as the value.
 
@@ -421,7 +423,7 @@ Running after a run of another task or command ends.
 
 | Key | Type | Description |
 |---|---|---|
-| `task` (required) | string | The task, or the command such as up, whose runs this task follows. |
+| `task` (required) | string | The task, or the command such as up or init, whose runs this task follows. |
 | `unit` | string | Only runs that touched this unit. |
 | `outcome` | one of `success`, `failure`, `any` | Which runs: success, failure, or any; success by default. |
 | `if` | string or boolean | A condition on the event that skips the run when false. |

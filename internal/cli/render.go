@@ -13,6 +13,7 @@ import (
 	"github.com/opstruss/opstruss/internal/ansi"
 	"github.com/opstruss/opstruss/internal/engine"
 	"github.com/opstruss/opstruss/internal/expr"
+	"github.com/opstruss/opstruss/internal/model"
 	"github.com/opstruss/opstruss/internal/record"
 	"github.com/opstruss/opstruss/internal/secret"
 )
@@ -775,7 +776,7 @@ func (r *renderer) count(ev engine.Event) {
 		r.ended[ev.Task] = map[string]int{}
 	}
 	r.ended[ev.Task][kind]++
-	if stack, _, ok := strings.Cut(ev.Address, "/"); ok {
+	if stack, _, ok := strings.Cut(ev.Address, "/"); ok && (!isGlobalAddr(ev.Address) || r.ended["\x00stack"] == nil) {
 		r.ended["\x00stack"] = map[string]int{stack: 1}
 	}
 }
@@ -799,7 +800,11 @@ func (r *renderer) summary(color bool) string {
 				parts = append(parts, paint(color, k.code, fmt.Sprintf("%d %s", n, k.kind)))
 			}
 		}
-		title := map[string]string{"up": "Up", "destroy": "Destroy"}[op] + " of stack " + text(stack, color) + ":"
+		of := " of stack " + text(stack, color)
+		if stack == model.GlobalScope {
+			of = " of the global units"
+		}
+		title := map[string]string{"up": "Up", "destroy": "Destroy"}[op] + of + ":"
 		fmt.Fprintf(&b, "\n%s %s\n", paint(color, bold, title), strings.Join(parts, ", "))
 	}
 	r.ended = map[string]map[string]int{}

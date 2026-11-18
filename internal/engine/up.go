@@ -58,7 +58,7 @@ func runCommand(ctx context.Context, opts Options, op string) (*Result, error) {
 			e.warn("", "%s", msg)
 		}
 	}
-	if err := e.syncKey(); err != nil {
+	if err := e.syncKeys(); err != nil {
 		e.fail("", err)
 	} else if _, _, err := e.unitPass(ctx, op, pass{units: opts.Units, yes: opts.Yes, force: opts.Force, noDeps: opts.NoDeps, source: "--yes"}); err != nil {
 		e.fail("", err)
@@ -164,8 +164,14 @@ func (e *engine) sayPlan(inst *instance) {
 // found, at its address without keys.
 func (e *engine) broken(path string, err error) *instance {
 	n := e.p.Nodes[path]
-	return &instance{unit: path, keys: make([]string, strings.Count(path, "/")+1), address: e.p.StackName + "/" + path, node: n,
-		frame: e.top, def: n.Def(), dir: n.Dir(), done: make(chan struct{}), plan: plan{err: err}}
+	f := e.top
+	if root := e.p.Nodes[strings.Split(path, "/")[0]]; root != nil {
+		if frames, ferr := e.parentFrames(root); ferr == nil && len(frames) == 1 {
+			f = frames[0]
+		}
+	}
+	return &instance{unit: path, keys: make([]string, strings.Count(path, "/")+1), address: f.address + "/" + path, node: n,
+		frame: f, def: n.Def(), dir: n.Dir(), done: make(chan struct{}), plan: plan{err: err}}
 }
 
 func (e *engine) preview(ctx context.Context, inst *instance) {
@@ -874,7 +880,7 @@ func (e *engine) turn(ctx context.Context, inst *instance, leave func()) {
 		return
 	}
 	done := &state.Record{ID: next.ID, StateKey: next.StateKey, Kind: r.kind(), Source: attempt.Source, Inputs: attempt.Inputs,
-		Destroy: destroy, Needs: attempt.Needs, Outputs: res.Outputs, Digest: p.digest, Parts: p.parts, Run: e.runID,
+		Destroy: destroy, Needs: attempt.Needs, Outputs: res.Outputs, Digest: p.digest, Parts: p.parts, Run: e.runID, Stack: e.runStack(addr),
 		Updated: time.Now().UTC().Format(time.RFC3339), Abandoned: next.Abandoned,
 		Hidden: withHidden(attempt.Hidden, map[string][]string{state.PartOutputs: slices.Sorted(maps.Keys(outMarks))}, state.PartOutputs, state.PartRawOutput)}
 	err = failpoint.Fail("up-before-put")

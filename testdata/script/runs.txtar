@@ -9,14 +9,17 @@
 
 env HOME=$WORK/home
 
-# plan, status, and logs are not kept
+# plan, status, and logs are not kept; the run of the task after plan is
 exec opstruss plan
+exists planned
+rm planned
 exec opstruss status
 exec opstruss logs
 exec opstruss runs
-! stdout .
+stdout -count=1 '^20'
+stdout ' noted '
 exec sh -c 'ls -A .opstruss/runs/default'
-! stdout .
+stdout -count=1 '^20'
 
 # a finished run keeps two files, and artifacts/ only with something in it
 exec opstruss up --yes
@@ -33,7 +36,7 @@ stdout '^report.txt$'
 exec sh -c 'r=$(grep -l "\"task\": \"keep\"" .opstruss/runs/default/*/record.json); r=${r%/record.json}; r=${r##*/}; opstruss runs ${r#*-} && opstruss runs $(printf %.20s $r)'
 stdout '"task": "keep"|keep'
 ! exec opstruss runs 2026
-stderr '^opstruss: run 2026 matches [0-9TZ]+-[0-9a-f]+, [0-9TZ]+-[0-9a-f]+; give more of its id$'
+stderr '^opstruss: run 2026 matches [0-9TZ]+-[0-9a-f]+(, [0-9TZ]+-[0-9a-f]+)+; give more of its id$'
 ! exec opstruss runs abc
 stderr 'stack default has no run abc'
 

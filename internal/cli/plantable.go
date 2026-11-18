@@ -8,8 +8,12 @@ import (
 	"unicode/utf8"
 
 	"github.com/opstruss/opstruss/internal/engine"
+	"github.com/opstruss/opstruss/internal/model"
 	"github.com/opstruss/opstruss/internal/record"
 )
+
+// isGlobalAddr says whether addr is of a global unit.
+func isGlobalAddr(addr string) bool { return strings.HasPrefix(addr, model.GlobalScope+"/") }
 
 // planTable gathers the plan lines of the units at a terminal until the
 // plan is done, then prints them as one table: the units in a column, their
@@ -268,6 +272,13 @@ func (t *planTable) print(color bool) string {
 		}
 	}
 	width := 0
+	stack := ""
+	for _, row := range rows {
+		if !isGlobalAddr(row.addr) {
+			stack, _, _ = strings.Cut(row.addr, "/")
+			break
+		}
+	}
 	for _, row := range shown {
 		width = max(width, utf8.RuneCountInString(unitName(row.addr)))
 	}
@@ -276,7 +287,12 @@ func (t *planTable) print(color bool) string {
 	for _, row := range shown {
 		name := unitName(row.addr)
 		pad := strings.Repeat(" ", width-utf8.RuneCountInString(name))
-		fmt.Fprintf(&b, "  %s %s%s  %s\n", paint(color, row.code, row.mark), text(name, color), pad, text(row.text, color))
+		label := ""
+		if stack != "" && isGlobalAddr(row.addr) {
+			// A global unit in the run of a stack is one for every stack.
+			label = paint(color, dim, "global · ")
+		}
+		fmt.Fprintf(&b, "  %s %s%s  %s%s\n", paint(color, row.code, row.mark), text(name, color), pad, label, text(row.text, color))
 		if row.hint != "" {
 			b.WriteString(under + paint(color, dim, "→ "+text(row.hint, color)) + "\n")
 		}
@@ -317,11 +333,14 @@ func (t *planTable) print(color bool) string {
 		}
 		parts = append(parts, paint(color, s.code, part))
 	}
-	stack, _, _ := strings.Cut(rows[0].addr, "/")
 	if len(shown) > 0 {
 		b.WriteString("\n")
 	}
-	fmt.Fprintf(&b, "%s %s\n\n", paint(color, bold, t.title+" of stack "+text(stack, color)+":"), strings.Join(parts, ", "))
+	of := " of stack " + text(stack, color)
+	if stack == "" {
+		of = " of the global units"
+	}
+	fmt.Fprintf(&b, "%s %s\n\n", paint(color, bold, t.title+of+":"), strings.Join(parts, ", "))
 	return b.String()
 }
 

@@ -21,6 +21,7 @@ opstruss state list
 | Flag | Description |
 |---|---|
 | `-C dir` | run as if OpsTruss started in dir; a -C after another is relative to it |
+| `--global` | use the global units, one for every stack, rather than a stack |
 | `--input stringArray` | set a project input, as name=value |
 | `--json` | print JSON |
 | `--locked` | require existing dependency pins without changing opstruss.lock |

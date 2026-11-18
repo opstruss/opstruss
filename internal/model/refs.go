@@ -13,6 +13,7 @@ import (
 
 	"github.com/opstruss/opstruss/internal/expr"
 	"github.com/opstruss/opstruss/internal/graph"
+	"github.com/opstruss/opstruss/internal/schema"
 )
 
 // planFacts are the facts known when a plan is made, the only ones that if,
@@ -26,8 +27,12 @@ var EventFields = map[string][]string{
 	"every":    nil,
 	"webhook":  {"method", "path", "headers", "query", "body"},
 	"watch":    {"unit", "stream", "line", "paths"},
-	"after":    {"task", "unit", "outcome", "outputs", "run"},
+	"after":    {"task", "unit", "outcome", "outputs", "run", "stack"},
 }
+
+// EventSince are the fields of event that came after 1.0, by the level
+// that added each, which a file of an older level cannot read.
+var EventSince = map[string]string{"stack": "1.1"}
 
 // triggerEvent is what event holds in a run of trigger kind, w for a
 // watch: what its source gives, also data, the JSON of a line that a call
@@ -84,6 +89,9 @@ func (c *checker) taskEvent(t *Task) ([]string, string) {
 // event.outputs would always be empty.
 func (c *checker) afterEvent(a *After) ([]string, string) {
 	fields := triggerEvent("after", nil)
+	if a.Task == "init" {
+		return slices.DeleteFunc(fields, func(f string) bool { return f == "unit" || f == "outputs" }), ""
+	}
 	if c.p == nil || c.p.Tasks[a.Task] == nil || c.p.Tasks[a.Task].ForEach == nil {
 		return fields, ""
 	}
@@ -99,6 +107,7 @@ type place struct {
 	forUnit bool             // a task that a unit uses, whose expressions read state_key and reason
 	event   []string         // the fields of event there, or nil when any may be
 	fanOut  string           // a task with for_each that after follows there, which gives event no outputs
+	global  string           // in a global unit or task, which this names, as "global unit tools"
 }
 
 var readable = map[string][]string{
@@ -140,6 +149,16 @@ func (c *checker) refs(path []string, v any, pl place) []string {
 		if !slices.Contains(readable[pl.kind], root) {
 			c.add(path, "%s cannot read %s (in ${{ %s }})", placeNames[pl.kind], root, r.Expr)
 			continue
+		}
+		if root == "stack" && c.p != nil && c.p.component && c.p.readsStack == nil {
+			pr := c.p.problem(path, "reads stack")
+			c.p.readsStack = &pr
+		}
+		if pl.global != "" {
+			if w := c.globalRead(r); w != "" {
+				c.add(path, "%s %s (in ${{ %s }})", pl.global, w, r.Expr)
+				continue
+			}
 		}
 		name := ""
 		if len(r.Path) > 1 {
@@ -231,8 +250,17 @@ func (c *checker) refs(path []string, v any, pl place) []string {
 						who, pl.fanOut, pl.fanOut, r.Expr)
 					continue
 				}
-				c.add(path, "%s no event.%s; event has %s%s (in ${{ %s }})", who, name, andList(pl.event),
-					expr.DidYouMean(name, pl.event), r.Expr)
+				// The fields that the level of the file cannot read yet are
+				// left out of the hint.
+				fields := slices.DeleteFunc(slices.Clone(pl.event), func(f string) bool {
+					return EventSince[f] != "" && schema.Newer(EventSince[f], c.level())
+				})
+				c.add(path, "%s no event.%s; event has %s%s (in ${{ %s }})", who, name, andList(fields),
+					expr.DidYouMean(name, fields), r.Expr)
+				continue
+			}
+			if since := EventSince[name]; since != "" && (pl.event == nil || slices.Contains(pl.event, name)) {
+				c.since(path, "event."+name, since)
 			}
 		case "opstruss":
 			c.fact(path, name, r, pl)
@@ -435,34 +463,42 @@ func (c *checker) references() {
 	for _, name := range slices.Sorted(maps.Keys(p.Units)) {
 		u, path := p.Units[name], []string{"units", name}
 		each := u.ForEach != nil
+		global := ""
+		if u.Global && !p.component {
+			global = "global unit " + name
+		}
 		for key, v := range unitValues(u) {
-			pl := place{kind: "unit", each: each}
+			pl := place{kind: "unit", each: each, global: global}
 			switch key {
 			case "retry.until":
 				pl.kind = "until"
 			case "if":
 				pl.kind = "cond"
 			case "for_each":
-				pl = place{kind: "cond"}
+				pl = place{kind: "cond", global: global}
 			}
 			c.refs(at(path, strings.Split(key, ".")...), v, pl)
 		}
 		for _, tn := range slices.Sorted(maps.Keys(u.Tasks)) {
-			c.taskRefs(at(path, "tasks", tn), u.Tasks[tn])
+			c.taskRefs(at(path, "tasks", tn), u.Tasks[tn], global)
 		}
 	}
 
 	calls := map[string][]string{}
 	for _, name := range slices.Sorted(maps.Keys(p.Tasks)) {
 		t := p.Tasks[name]
-		c.taskRefs([]string{"tasks", name}, t)
+		global := ""
+		if t.Global && !p.component {
+			global = "global task " + name
+		}
+		c.taskRefs([]string{"tasks", name}, t, global)
 		if t.On != nil {
 			for i, s := range t.On.Schedule {
 				sp := []string{"tasks", name, "on", "schedule"}
 				if len(t.On.Schedule) > 1 {
 					sp = at(sp, strconv.Itoa(i))
 				}
-				pl := place{kind: "trigger", event: triggerEvent("schedule", nil)}
+				pl := place{kind: "trigger", event: triggerEvent("schedule", nil), global: global}
 				c.refs(at(sp, "if"), condition(s.If), pl)
 				c.refs(at(sp, "with"), s.With, pl)
 			}
@@ -472,12 +508,12 @@ func (c *checker) references() {
 					wp = at(wp, strconv.Itoa(i))
 				}
 				for call, args := range w.Calls {
-					c.refs(at(wp, call), args, place{kind: "install"})
+					c.refs(at(wp, call), args, place{kind: "install", global: global})
 				}
 				for j, it := range w.Paths {
-					c.refs(at(wp, "paths", strconv.Itoa(j)), it.Pattern, place{kind: "install"})
+					c.refs(at(wp, "paths", strconv.Itoa(j)), it.Pattern, place{kind: "install", global: global})
 				}
-				pl := place{kind: "trigger", event: triggerEvent("watch", w)}
+				pl := place{kind: "trigger", event: triggerEvent("watch", w), global: global}
 				c.refs(at(wp, "if"), condition(w.If), pl)
 				c.refs(at(wp, "with"), w.With, pl)
 			}
@@ -486,7 +522,7 @@ func (c *checker) references() {
 				if len(t.On.After) > 1 {
 					ap = at(ap, strconv.Itoa(i))
 				}
-				pl := place{kind: "trigger"}
+				pl := place{kind: "trigger", global: global}
 				pl.event, pl.fanOut = c.afterEvent(a)
 				c.refs(at(ap, "if"), condition(a.If), pl)
 				c.refs(at(ap, "with"), a.With, pl)
@@ -496,8 +532,8 @@ func (c *checker) references() {
 				if len(t.On.Webhook) > 1 {
 					wp = at(wp, strconv.Itoa(i))
 				}
-				c.refs(at(wp, "secret"), w.Secret, place{kind: "install"})
-				pl := place{kind: "trigger", event: triggerEvent("webhook", nil)}
+				c.refs(at(wp, "secret"), w.Secret, place{kind: "install", global: global})
+				pl := place{kind: "trigger", event: triggerEvent("webhook", nil), global: global}
 				c.refs(at(wp, "if"), condition(w.If), pl)
 				c.refs(at(wp, "with"), w.With, pl)
 			}
@@ -556,8 +592,8 @@ func walkSteps(steps []*Step, fn func(*Step)) {
 	}
 }
 
-func (c *checker) taskRefs(path []string, t *Task) {
-	pl := place{kind: "task", each: t.ForEach != nil, task: t, steps: map[string]*Step{}, forUnit: c.usedByUnit(path)}
+func (c *checker) taskRefs(path []string, t *Task, global string) {
+	pl := place{kind: "task", each: t.ForEach != nil, task: t, steps: map[string]*Step{}, forUnit: c.usedByUnit(path), global: global}
 	pl.event, pl.fanOut = c.taskEvent(t)
 	if c.plugin != nil {
 		pl.kind = "plugin"

@@ -49,6 +49,7 @@ func (n *Node) Def() *Unit {
 	for a := n.Parent; a != nil; a = a.Parent {
 		au := a.Unit
 		u.Protect = u.Protect || au.Protect
+		u.Global = u.Global || au.Global
 		switch {
 		case au.Approval == "ask":
 			u.Approval = "ask"

@@ -41,12 +41,20 @@ var contracts = map[string]string{
 // another type or another value, only adds lines. root is the root of the
 // repository.
 func surface(root string) ([]string, error) {
+	lines, _, err := surfaceLevels(root)
+	return lines, err
+}
+
+// surfaceLevels is surface with the level that added each line that came
+// after 1.0 and records one: x-since in a schema, or the level of a field
+// of event.
+func surfaceLevels(root string) ([]string, map[string]string, error) {
 	var lines []string
-	w := &schemaWalk{dir: filepath.Join(root, "internal", "schema"), files: map[string]map[string]any{}}
+	w := &schemaWalk{dir: filepath.Join(root, "internal", "schema"), files: map[string]map[string]any{}, since: map[string]string{}}
 	for short, file := range contracts {
 		doc, err := w.load(file)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		w.prefix = "schema " + short
 		w.walk(file, doc, "", nil)
@@ -55,7 +63,7 @@ func surface(root string) ([]string, error) {
 
 	builtins, err := builtinLines(filepath.Join(root, "internal", "model", "builtin.yaml"))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	lines = append(lines, builtins...)
 
@@ -67,18 +75,26 @@ func surface(root string) ([]string, error) {
 
 	exprs, err := expr.Surface()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	lines = append(lines, exprs...)
 	lines = append(lines, model.Surface()...)
 
 	docs, err := referenceLines(filepath.Join(root, "docs", "reference"))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	lines = append(lines, docs...)
 	slices.Sort(lines)
-	return slices.Compact(lines), nil
+	since := w.since
+	for kind, fields := range model.EventFields {
+		for _, f := range fields {
+			if lvl := model.EventSince[f]; lvl != "" {
+				since["event "+kind+" "+f] = lvl
+			}
+		}
+	}
+	return slices.Compact(lines), since, nil
 }
 
 // schemaWalk writes the lines of the keys of a schema, under the paths a
@@ -90,6 +106,10 @@ type schemaWalk struct {
 	files  map[string]map[string]any
 	prefix string
 	lines  []string
+	// since is the level that added each line under a key with x-since,
+	// and level that of the key the walk is in.
+	since map[string]string
+	level string
 }
 
 func (w *schemaWalk) load(file string) (map[string]any, error) {
@@ -177,19 +197,49 @@ func (w *schemaWalk) walk(file string, n map[string]any, path string, seen []str
 // type and value that it takes, and its default, then the keys under it.
 func (w *schemaWalk) key(file, path string, v any, seen []string) {
 	id := w.prefix + " " + path
-	w.lines = append(w.lines, id)
 	node, ok := v.(map[string]any)
+	outer := w.level
+	defer func() { w.level = outer }()
+	if lvl := sinceOf(node); lvl != "" {
+		w.level = lvl
+	}
+	add := func(line string) {
+		w.lines = append(w.lines, line)
+		if w.level != "" {
+			w.since[line] = w.level
+		}
+	}
+	add(id)
 	if !ok {
-		w.lines = append(w.lines, id+" type any")
+		add(id + " type any")
 		return
 	}
 	for _, fact := range w.takes(file, node, seen) {
-		w.lines = append(w.lines, id+" "+fact)
+		add(id + " " + fact)
 	}
 	if d, ok := w.defaultOf(file, node); ok {
-		w.lines = append(w.lines, id+" default "+encode(d))
+		add(id + " default " + encode(d))
 	}
 	w.walk(file, node, path, seen)
+}
+
+// sinceOf is the x-since of the schema of a key, also when one of its
+// alternatives writes it, as a key that is new beside a call.
+func sinceOf(n map[string]any) string {
+	if s, ok := n["x-since"].(string); ok {
+		return s
+	}
+	for _, k := range []string{"oneOf", "anyOf"} {
+		alts, _ := n[k].([]any)
+		for _, alt := range alts {
+			if m, ok := alt.(map[string]any); ok {
+				if s, ok := m["x-since"].(string); ok {
+					return s
+				}
+			}
+		}
+	}
+	return ""
 }
 
 // takes is each type and each value that n takes, as "type <type>" and

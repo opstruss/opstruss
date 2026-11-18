@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/opstruss/opstruss/internal/cli"
+	"github.com/opstruss/opstruss/internal/schema"
 	"github.com/spf13/cobra"
 )
 
@@ -99,7 +100,7 @@ func TestCommandPages(t *testing.T) {
 // those that except.txt there lets go, each with the reason in a comment
 // above it.
 func TestSurface(t *testing.T) {
-	lines, err := surface("../..")
+	lines, since, err := surfaceLevels("../..")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,6 +122,37 @@ func TestSurface(t *testing.T) {
 			t.Errorf("%s: %q is gone", filepath.Base(f), line)
 		}
 	}
+	// What a file writes and the newest frozen copy has not records the
+	// level that added it, which a file of an older level cannot use.
+	slices.SortFunc(frozen, func(a, b string) int {
+		va, vb := strings.TrimSuffix(filepath.Base(a), ".txt"), strings.TrimSuffix(filepath.Base(b), ".txt")
+		switch {
+		case schema.Newer(va, vb):
+			return 1
+		case schema.Newer(vb, va):
+			return -1
+		}
+		return 0
+	})
+	newest := frozen[len(frozen)-1]
+	version := strings.TrimSuffix(filepath.Base(newest), ".txt")
+	old := readLines(t, newest)
+	for _, line := range lines {
+		if gated(line) && !slices.Contains(old, line) && !schema.Newer(since[line], version) {
+			t.Errorf("%q came after %s, so it needs the level that adds it, as x-since in its schema", line, version)
+		}
+	}
+}
+
+// gated says whether a line of the surface is what a file writes, which a
+// file of an older level than the one that added it cannot use.
+func gated(line string) bool {
+	for _, p := range []string{"schema project ", "schema plugin ", "schema catalog ", "builtin ", "function ", "macro ", "variable ", "event "} {
+		if strings.HasPrefix(line, p) {
+			return true
+		}
+	}
+	return false
 }
 
 func TestGone(t *testing.T) {

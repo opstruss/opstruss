@@ -20,6 +20,7 @@ opstruss status [unit]... [flags]
 
 | Flag | Description |
 |---|---|
+| `--global` | use the global units, one for every stack, rather than a stack |
 | `--no-deps` | leave out the units that the ones named depend on |
 
 ## Global flags

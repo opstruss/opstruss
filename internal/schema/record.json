@@ -22,6 +22,7 @@
       "additionalProperties": { "type": "string" }
     },
     "run": { "$ref": "#/$defs/run" },
+    "stack": { "type": "string", "description": "The stack of the run that wrote a record of a global unit; empty for a run of the global scope." },
     "updated": { "type": "string", "format": "date-time" },
     "pending": { "$ref": "#/$defs/attempt" },
     "abandoned": { "type": "array", "items": { "$ref": "#/$defs/attempt" } },

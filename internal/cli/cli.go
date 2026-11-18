@@ -103,6 +103,7 @@ type app struct {
 	loadErr    error  // why the project's tasks are not commands
 	dir        string
 	detach     bool // -d: run in the daemon of the stack, started when none runs
+	global     bool // --global: the global units and tasks, one for every stack, rather than a stack
 	follow     bool // -f: logs goes on with what is written
 	stack      string
 	inputs     []string
@@ -561,6 +562,52 @@ func (a *app) completions(root *cobra.Command) {
 			c.ValidArgsFunction = runs
 		}
 	}
+}
+
+// globalFlag gives cmd --global, which chooses the global scope.
+func (a *app) globalFlag(cmd *cobra.Command, persistent bool) {
+	fs := cmd.Flags()
+	if persistent {
+		fs = cmd.PersistentFlags()
+	}
+	fs.BoolVar(&a.global, "global", false, "use the global units, one for every stack, rather than a stack")
+}
+
+// scope is the stack that a command with task and targets runs in: that
+// of --stack; the global scope for --global, or for targets that are all
+// global units or a global task, which need no stack; or what
+// $OPSTRUSS_STACK or the only stack gives.
+func (a *app) scope(dir, task string, targets []string) (string, error) {
+	switch {
+	case a.global && a.stack != "":
+		return "", errors.New("--global and --stack each choose where the run is; give one of them")
+	case a.global:
+		return model.GlobalScope, nil
+	case a.stack != "":
+		return a.stack, nil
+	case (task != "" || len(targets) > 0) && allGlobal(dir, task, targets):
+		return model.GlobalScope, nil
+	}
+	return a.stackName(), nil
+}
+
+// allGlobal says whether task, a global task of the project, or else
+// every target, a global unit or task, is in the global scope.
+func allGlobal(dir, task string, targets []string) bool {
+	gp, err := model.Declarations(dir, model.GlobalScope)
+	if err != nil {
+		return false
+	}
+	if task != "" && gp.Tasks[task] != nil {
+		return len(targets) == 0
+	}
+	for _, t := range targets {
+		segs := model.ParseAddress(t)
+		if len(segs) == 0 || gp.Units[segs[0].Unit] == nil && (len(segs) > 1 || gp.Tasks[t] == nil) {
+			return false
+		}
+	}
+	return len(targets) > 0
 }
 
 func (a *app) stackName() string {

@@ -60,31 +60,32 @@ type Problem struct {
 	Known []string
 }
 
-// compiler holds the compiled schemas, which known reads again by their
-// location; mu guards it.
-var (
-	compiler *jsonschema.Compiler
-	mu       sync.Mutex
-)
+// mu guards the compilers, which known reads again by location.
+var mu sync.Mutex
 
-var compiled = sync.OnceValues(func() (map[Kind]*jsonschema.Schema, error) {
+// compile compiles every schema for files of level, whose x-since keys
+// newer than it fail.
+func compile(level string) (map[Kind]*jsonschema.Schema, *jsonschema.Compiler, error) {
+	mu.Lock()
+	defer mu.Unlock()
 	c := jsonschema.NewCompiler()
-	compiler = c
+	c.RegisterVocabulary(sinceVocabulary(level))
+	c.AssertVocabs()
 	entries, err := files.ReadDir(".")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	for _, e := range entries {
 		data, err := files.ReadFile(e.Name())
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(data))
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w", e.Name(), err)
+			return nil, nil, fmt.Errorf("%s: %w", e.Name(), err)
 		}
 		if err := c.AddResource(base+e.Name(), doc); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	out := map[Kind]*jsonschema.Schema{}
@@ -92,17 +93,24 @@ var compiled = sync.OnceValues(func() (map[Kind]*jsonschema.Schema, error) {
 		APIInitialize, APIRequest, APIResult, APIQuestion, APIApproval, APIAsk, APIAnswer, APIEvent} {
 		s, err := c.Compile(base + string(k))
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		out[k] = s
 	}
-	return out, nil
-})
+	return out, c, nil
+}
 
 // Validate checks doc, a decoded YAML or JSON document, against the schema
-// of k.
-func Validate(k Kind, doc any) ([]Problem, error) {
-	schemas, err := compiled()
+// of k, for a file at the level that its opstruss: says.
+func Validate(k Kind, doc any) ([]Problem, error) { return ValidateAt(k, doc, LevelOf(doc)) }
+
+// ValidateAt checks doc against the schema of k for a file of level, as an
+// include file, which has the level of its root.
+func ValidateAt(k Kind, doc any, level string) ([]Problem, error) {
+	if !levelled[k] {
+		level = Newest
+	}
+	schemas, _, err := compiledAt(level)
 	if err != nil {
 		return nil, err
 	}
@@ -283,9 +291,13 @@ const (
 // known returns the keys of the properties of the schema at url, which
 // the compiler has compiled already.
 func known(url string) []string {
+	_, c, err := compiledAt(Newest)
+	if err != nil {
+		return nil
+	}
 	mu.Lock()
 	defer mu.Unlock()
-	s, err := compiler.Compile(url)
+	s, err := c.Compile(url)
 	if err != nil {
 		return nil
 	}
@@ -327,6 +339,12 @@ func leaf(e *jsonschema.ValidationError) []Problem {
 		return []Problem{{Path: at, Message: fmt.Sprintf("%q does not match %s", k.Got, k.Want)}}
 	case *kind.FalseSchema:
 		return []Problem{{Path: at, Message: "not allowed here"}}
+	case *kindSince:
+		key := ""
+		if len(at) > 0 {
+			key = at[len(at)-1] + " "
+		}
+		return []Problem{{Path: at, Message: key + k.LocalizedString(printer)}}
 	}
 	return []Problem{{Path: at, Message: e.ErrorKind.LocalizedString(printer)}}
 }

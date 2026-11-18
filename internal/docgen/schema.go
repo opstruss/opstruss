@@ -249,6 +249,9 @@ func (p *page) render(pages map[string]*page) string {
 			if required[k] {
 				key += " (required)"
 			}
+			if v := sinceOfObject(props.get(k)); v != "" {
+				key += " (since " + v + ")"
+			}
 			fmt.Fprintf(&b, "| %s | %s | %s |\n", key, p.typeOf(pages, p.file, props.get(k)), prose(p.describe(p.file, props.get(k))))
 		}
 		if extra, ok := s.node.get("additionalProperties").(*object); ok && strings.HasSuffix(extra.str("$ref"), "/call") {
@@ -283,4 +286,25 @@ func words(name string) string {
 		b.WriteRune(r)
 	}
 	return b.String()
+}
+
+// sinceOfObject is the level that added a key, which its schema or one of
+// its alternatives writes as x-since.
+func sinceOfObject(v any) string {
+	o, ok := v.(*object)
+	if !ok {
+		return ""
+	}
+	if s := o.str("x-since"); s != "" {
+		return s
+	}
+	for _, k := range []string{"oneOf", "anyOf"} {
+		alts, _ := o.get(k).([]any)
+		for _, alt := range alts {
+			if a, ok := alt.(*object); ok && a.str("x-since") != "" {
+				return a.str("x-since")
+			}
+		}
+	}
+	return ""
 }

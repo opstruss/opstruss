@@ -50,6 +50,7 @@
         },
         "run": { "type": "string" },
         "debug": { "type": "boolean" },
+        "detach": { "type": "boolean" },
         "show_sensitive": { "type": "boolean" }
       },
       "required": ["dir"],

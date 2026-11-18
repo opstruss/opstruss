@@ -251,18 +251,24 @@ func (d *Daemon) Serve(ctx context.Context) error {
 			defer d.active.Add(-1)
 			x := api.New(h)
 			x.Supervisor, x.Daemon = d.sup, true
+			// The runs after a run forwarded here wait in the queue of their
+			// task, as those of triggers do; the caller waits for them,
+			// unless -d sent it.
+			x.Queue = func(task string) (func(), error) {
+				if err := d.trig.begin(task); err != nil {
+					return nil, err
+				}
+				return func() { d.trig.end(task) }, nil
+			}
+			x.Later = func(fs []*engine.Follower) { d.trig.ended(fs, 0) }
+			x.Log = func(level, task, msg string) { d.event("trigger", level, task, "%s", msg) }
 			// An up, also one run again, installs the triggers again from
 			// the files as they are now, with what its caller brings and the
 			// inputs of that up.
 			x.Install = func(r api.Request, inputs map[string]string) error {
 				return d.trig.install(runOptions(r.Dir, r.Stack, inputs, r.Environ, r.Locked))
 			}
-			res, err := x.Call(ctx, method, r)
-			if res != nil && res.Record != nil {
-				// A run forwarded here starts a chain of after triggers.
-				d.trig.ended(res.Record, 0)
-			}
-			return res, err
+			return x.Call(ctx, method, r)
 		}}
 	go d.accept(d.runs, srv)
 	select {

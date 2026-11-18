@@ -79,12 +79,16 @@ and stays while they run; Ctrl-C stops them.`
 	plan := command("plan", "Show what up would do and why, without changing anything", "", "preview", "diff")
 	plan.Example = `  opstruss plan
   opstruss plan --stack prod --json`
+	logs := a.logsCommand()
+	for _, cmd := range []*cobra.Command{plan, up, destroy, status, logs} {
+		a.globalFlag(cmd, false)
+	}
 	return []*cobra.Command{
 		plan,
 		up,
 		destroy,
 		status,
-		a.logsCommand(),
+		logs,
 	}
 }
 
@@ -125,7 +129,11 @@ func (a *app) logsCommand() *cobra.Command {
 
 // request is a call of the engine API about the project and stack of
 // this command, with the units named.
-func (a *app) request(units []string) (api.Request, error) {
+func (a *app) request(units []string) (api.Request, error) { return a.requestFor("", units) }
+
+// requestFor is request for the task of a command, which with the units
+// decides the scope of the run.
+func (a *app) requestFor(task string, units []string) (api.Request, error) {
 	dir, err := a.projectDir()
 	if err != nil {
 		return api.Request{Locked: a.locked}, err
@@ -134,8 +142,15 @@ func (a *app) request(units []string) (api.Request, error) {
 	if err != nil {
 		return api.Request{Locked: a.locked}, err
 	}
+	stack, err := a.scope(dir, task, units)
+	if err != nil {
+		return api.Request{Locked: a.locked}, err
+	}
+	if stack == model.GlobalScope && a.detach {
+		return api.Request{Locked: a.locked}, errors.New("-d runs in the daemon of a stack, and the global units and tasks run without one")
+	}
 	debug, _ := a.lookupEnv("OPSTRUSS_LOG")
-	return api.Request{Locked: a.locked, Dir: dir, Cwd: a.cwd, Stack: a.stackName(), Inputs: given, Environ: a.environ, Units: units,
+	return api.Request{Locked: a.locked, Dir: dir, Cwd: a.cwd, Stack: stack, Inputs: given, Environ: a.environ, Units: units, Detach: a.detach,
 		Color: a.colorFor(a.stdout),
 		Debug: debug == "debug"}, nil
 }

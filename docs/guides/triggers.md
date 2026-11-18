@@ -12,11 +12,40 @@ stack runs those triggers.
 | `every` | At an interval, such as `5m` |
 | `webhook` | On an HTTP request to the daemon whose signature checks out |
 | `watch` | On changes of the files that `paths` matches, such as `src/**` (a directory alone matches no file in it), on lines of a service (`unit:`), or on lines of a program |
-| `after` | After a run of another task or command ends, by its `outcome` |
+| `after` | After a run of another task or command ends, by its `outcome`, also after `opstruss init` |
 
-In 1.0, only runs in the daemon start `after` tasks: a command run while
-no daemon of the stack is up starts none. A later 1.x also starts them
-after such runs.
+`after` runs where the run it follows ran: the command line runs the
+tasks that follow a command it ran, and the daemon those that follow its
+runs. The command waits for them and their own `after` tasks, at most
+three deep, and exits with 1 when one of them failed, or 2 when one
+stopped for approval; `-d` leaves them to the daemon without waiting. A
+task of a stack follows the runs of its stack; a [global
+task](./structure-a-project#global-units-and-tasks) follows the runs of
+every stack and runs once for the project.
+
+```yaml
+tasks:
+  setup:
+    global: true
+    on:
+      after: {task: init}       # a fresh clone is ready after opstruss init
+    steps:
+      - task: up
+        units: [tools]
+  notify:
+    on:
+      after: {task: destroy, outcome: any}
+    http:
+      method: POST
+      url: ${{ secrets.webhook_url }}
+      body: ${{ event }}
+```
+
+`after: {task: init}` follows an `init` that succeeded; a task of a stack
+follows it when `init --stack` or the only stack chooses one, and `init`
+says `next: run opstruss init --stack <stack>` otherwise. `uses fetch`
+starts nothing. OpsTruss 1.0 starts `after` tasks only after runs in the
+daemon.
 
 `if:` reads `event`, which says what happened, such as `event.paths` of
 a `watch` or `event.body` of a webhook; a run whose `if` is false is
@@ -36,7 +65,7 @@ Every run has `event.time`, when it was due or its event came, and
 | `watch` of a service (`unit:`) | `unit`, `stream`, and `line`; with `batch` or `debounce`, `lines`, `count`, and `truncated` instead of `line` |
 | `watch` of `paths` | `paths`, each `{path, op}` with `op` `create`, `write`, `remove`, or `rename`, and `count`; with `batch` or `debounce`, also `truncated` |
 | `watch` of a program | `line`, and `data` when the line is JSON |
-| `after` | `task`, `unit`, `outcome`, and `outputs` of the run it follows: the value of each output, and none of a sensitive one or of a task with `for_each` ([tasks](./tasks#for-each-item)); `run`, the id of that run, as `opstruss runs <run>` takes it |
+| `after` | `task`, `unit`, `outcome`, and `outputs` of the run it follows: the value of each output, and none of a sensitive one or of a task with `for_each` ([tasks](./tasks#for-each-item)); `run`, the id of that run, as `opstruss runs <run>` takes it; `stack`, the stack of that run, empty for one of the global units (since 1.1). After `init`, `task`, `outcome`, and `stack` only |
 
 `validate` refuses a field that no trigger of the task gives, such as
 `event.run`, or `event.outputs` when each `after` of the task follows a

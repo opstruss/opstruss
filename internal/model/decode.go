@@ -129,7 +129,7 @@ func decodeCalls(b []byte, v any) (Calls, error) {
 	var calls Calls
 	for k, m := range raw {
 		switch {
-		case known[k]:
+		case known[k] && (k != "global" || !isObject(m)):
 			fields[k] = m
 		case strings.HasPrefix(k, "x-"):
 		default:
@@ -151,6 +151,13 @@ func decodeCalls(b []byte, v any) (Calls, error) {
 		return nil, err
 	}
 	return calls, decodeJSON(fb, v)
+}
+
+// isObject says whether m is a JSON object: global: with one is a call of
+// a task named so in uses:, as 1.0 read it, rather than the key of 1.1.
+func isObject(m json.RawMessage) bool {
+	b := bytes.TrimSpace(m)
+	return len(b) > 0 && b[0] == '{'
 }
 
 // assertConditions writes each condition of assert.that as the expression

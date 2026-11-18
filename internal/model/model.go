@@ -239,6 +239,9 @@ type Unit struct {
 	Timeout     string             `json:"timeout,omitempty"`
 	Protect     bool               `json:"protect,omitempty"`
 	Retry       *Retry             `json:"retry,omitempty"`
+	// Global makes one instance for the project, in GlobalScope, rather
+	// than one per stack.
+	Global bool `json:"global,omitempty"`
 
 	// Target is what uses: names, once the project is checked.
 	Target *Target `json:"-"`
@@ -278,7 +281,9 @@ type Task struct {
 	ChangedWhen     any                `json:"changed_when,omitempty"`
 	ContinueOnError bool               `json:"continue_on_error,omitempty"`
 	Internal        bool               `json:"internal,omitempty"`
-	Calls           Calls              `json:"-"`
+	// Global runs the task in GlobalScope rather than in a stack.
+	Global bool  `json:"global,omitempty"`
+	Calls  Calls `json:"-"`
 }
 
 // Concurrency limits runs of a task; Group gives one lock per value.

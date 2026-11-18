@@ -55,6 +55,12 @@ func (inst *instance) unplanned() bool {
 	return inst.plan.err != nil || len(inst.plan.waitFor) > 0
 }
 
+// uncertain says whether the outputs of the instance of p may change in
+// this run: it runs, it waits for outputs of others, or another run holds
+// it, as a run of another stack does a global unit, whose outputs are
+// read at its turn.
+func (p plan) uncertain() bool { return p.run || len(p.waitFor) > 0 || p.locked != "" }
+
 // plan is what the run will do to an instance.
 type plan struct {
 	run      bool              // up runs its program
@@ -186,6 +192,9 @@ type selection struct {
 	all    bool
 	picks  map[string][]pick // by the path of a unit that runs
 	frames map[string][]pick // the instances of components picked by name, by the path of the unit that uses each
+	// outside are the global units that all leaves out in a run of a
+	// stack: those that its units do not need, and every one for destroy.
+	outside map[string]bool
 }
 
 // pick is how a unit is picked: patterns of the keys of the components it
@@ -204,6 +213,9 @@ func (e *engine) selectUnits(destroy bool) error {
 	e.sel = s
 	if len(e.pass.units) == 0 {
 		s.all = true
+		if e.global != nil {
+			s.outside = e.globalsOutside(destroy)
+		}
 		return nil
 	}
 	type item struct {
@@ -289,6 +301,48 @@ func (e *engine) selectUnits(destroy bool) error {
 	return nil
 }
 
+// globalsOutside are the global units that a run of a stack leaves out
+// when it names none: for destroy every one, since a stack never takes
+// down what other stacks need, and otherwise those that no unit of the
+// stack needs, through needs or what it reads, also through other global
+// units.
+func (e *engine) globalsOutside(destroy bool) map[string]bool {
+	globalRoot := func(path string) (string, bool) {
+		root, _, _ := strings.Cut(path, "/")
+		n := e.p.Nodes[root]
+		return root, n != nil && n.Unit.Global
+	}
+	needed := map[string]bool{}
+	if !destroy {
+		seen := map[string]bool{}
+		var walk func(path string)
+		walk = func(path string) {
+			for _, d := range e.p.Deps[path] {
+				if seen[d] {
+					continue
+				}
+				seen[d] = true
+				if root, ok := globalRoot(d); ok {
+					needed[root] = true
+				}
+				walk(d)
+			}
+		}
+		for _, path := range e.p.Order {
+			if _, ok := globalRoot(path); !ok {
+				walk(path)
+			}
+		}
+	}
+	out := map[string]bool{}
+	for name, n := range e.p.Nodes {
+		if n.Parent == nil && n.Unit.Global && !needed[name] {
+			out[name] = true
+		}
+	}
+	return out
+}
+
 // sharedDepth is how many components the units at paths a and b are both
 // in.
 func sharedDepth(a, b string) int {
@@ -318,7 +372,8 @@ func (s *selection) named(inst *instance) bool { return s.picked(inst.unit, inst
 // picked, by a name when named is set.
 func (s *selection) picked(path string, keys []string, named bool) bool {
 	if s.all {
-		return true
+		root, _, _ := strings.Cut(path, "/")
+		return !s.outside[root]
 	}
 	for _, pk := range s.picks[path] {
 		if (!named || pk.named) && pk.matches(keys) {
@@ -332,7 +387,8 @@ func (s *selection) picked(path string, keys []string, named bool) bool {
 // tasks then run.
 func (s *selection) hasFrame(f *frame) bool {
 	if s.all {
-		return true
+		root, _, _ := strings.Cut(f.node.Path, "/")
+		return !s.outside[root]
 	}
 	for _, pk := range s.frames[f.node.Path] {
 		if pk.matches(f.keys()) {
@@ -355,7 +411,7 @@ func (pk pick) matches(keys []string) bool {
 // one per key.
 func (e *engine) expand(path string) ([]*instance, error) {
 	n := e.p.Nodes[path]
-	frames, err := e.framesOf(n.Parent)
+	frames, err := e.parentFrames(n)
 	if err != nil {
 		return nil, err
 	}

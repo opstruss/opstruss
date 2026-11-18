@@ -70,7 +70,8 @@ func (e *engine) callByName(ctx context.Context, p progSpec, name string, args m
 				unitRun: p.unitRun, marks: marks, tty: p.tty, stop: p.stop, step: p.step != ""})
 			return r, r.outputs, nil
 		}
-		r := e.builtinCall(ctx, name, t.Task, in, marks, dir, given, p.at(), p.failedWhen != nil)
+		// kv of a global unit or task is the memory of its scope.
+		r := e.scopeEngine(p.frame).builtinCall(ctx, name, t.Task, in, marks, dir, given, p.at(), p.failedWhen != nil)
 		return r, r.outputs, nil
 	})
 }

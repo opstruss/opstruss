@@ -64,6 +64,9 @@ var keywords = func() map[string]bool {
 	for _, t := range []reflect.Type{reflect.TypeFor[Step](), reflect.TypeFor[Task](), reflect.TypeFor[Watch](), reflect.TypeFor[Secret]()} {
 		maps.Copy(k, jsonKeys(t))
 	}
+	// A key added after 1.0 loses to a name in uses:, which 1.0 let a
+	// task call: global is a key as a boolean and a call as an object.
+	delete(k, "global")
 	return k
 }()
 
@@ -215,18 +218,6 @@ func (c *checker) root() {
 	}
 }
 
-func newerLevel(a, b string) bool {
-	parse := func(s string) (int, int) {
-		maj, mn, _ := strings.Cut(s, ".")
-		x, _ := strconv.Atoi(maj)
-		y, _ := strconv.Atoi(mn)
-		return x, y
-	}
-	am, an := parse(a)
-	bm, bn := parse(b)
-	return am > bm || am == bm && an > bn
-}
-
 func (c *checker) uses() {
 	// An alias reads the declaration it names, so aliases come last.
 	alias := func(name string) bool { return isAlias(c.p.Uses[name].Source) }
@@ -297,7 +288,8 @@ func (c *checker) uses() {
 }
 
 func (c *checker) stacks() {
-	if c.p.component {
+	// The global scope has none of what the stacks give.
+	if c.p.component || c.p.Global {
 		return
 	}
 	for _, s := range slices.Sorted(maps.Keys(c.p.Stacks)) {
@@ -514,10 +506,14 @@ func (c *checker) units() {
 			c.add(at(path, "outputs"), "outputs: is for run units; other units get their outputs from what they run")
 		}
 		for i, n := range u.Needs {
-			if c.p.Units[n] == nil {
+			switch dep := c.p.Units[n]; {
+			case dep == nil:
 				c.add(at(path, "needs", strconv.Itoa(i)), "there is no unit %s", n)
+			case u.Global && !dep.Global && !c.p.component:
+				c.add(at(path, "needs", strconv.Itoa(i)), "global unit %s needs %s, which is per stack; a global unit needs only global units", name, n)
 			}
 		}
+		c.globalUnit(path, name, u)
 		// A for_each written out is checked as up checks the value of one
 		// that an expression gives.
 		if u.ForEach != nil && literal(u.ForEach) {
@@ -626,6 +622,7 @@ func (c *checker) tasks() {
 			c.warn(path, "task %s of the project hides the task %s of its units at the command line; give one of them another name", name, name)
 		}
 		c.task(path, t, !c.p.component)
+		c.globalTask(path, name, t)
 		if t.On == nil {
 			continue
 		}
@@ -750,6 +747,10 @@ func (c *checker) watches(path []string, on *Triggers, dir string) {
 		}
 		if a.Unit != "" && c.p.Units[a.Unit] == nil {
 			c.add(at(ap, "unit"), "there is no unit %s", a.Unit)
+		}
+		if a.Task == "init" {
+			c.afterInit(ap, a)
+			continue
 		}
 		if c.p.Tasks[a.Task] == nil && !slices.Contains(StandardTasks, a.Task) && !c.unitTask(a.Task) {
 			c.add(at(ap, "task"), "there is no task %s", a.Task)
@@ -877,6 +878,9 @@ func (c *checker) task(path []string, t *Task, project bool) {
 	}
 	if t.On != nil && !project {
 		c.add(at(path, "on"), "on: is only in project tasks")
+	}
+	if t.Global && !project && c.plugin == nil {
+		c.add(at(path, "global"), "global: is for the tasks of a project; a task of a unit or a component runs where its unit is")
 	}
 	c.steps(at(path, "steps"), t.Steps, map[string]bool{})
 }

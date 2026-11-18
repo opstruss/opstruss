@@ -22,7 +22,7 @@ import (
 const FileName = "opstruss.yaml"
 
 // Level is the newest level of opstruss: this OpsTruss reads.
-const Level = "1.0"
+const Level = schema.Newest
 
 // DefaultStack is the one stack of a project without stacks:.
 const DefaultStack = "default"
@@ -45,6 +45,9 @@ type Project struct {
 	// still has state in .opstruss/state/: its units and tasks are left
 	// out, so each record is an orphan that destroy takes down.
 	Undeclared bool
+	// Global says that the project is read for GlobalScope: only its
+	// global units and tasks, with nothing that differs by stack.
+	Global bool
 
 	// Order is the paths of the units that run, through the components
 	// that units use, in an order where each comes after the units it
@@ -69,6 +72,17 @@ type Project struct {
 	origins   map[string]origin
 	base      string
 	component bool
+
+	// top is what the files of the project write in each section of
+	// names, before what a stack adds, and stackWith the stacks that give
+	// each input through with:; perStack, once found, what of it a global
+	// unit or task cannot read.
+	top       map[string]map[string]any
+	stackWith map[string][]string
+	perStack  *perStack
+	// readsStack is where a component first reads stack, which a global
+	// unit that uses it cannot.
+	readsStack *Problem
 }
 
 type origin struct {
@@ -107,7 +121,7 @@ func Find(dir string) (string, error) {
 // Stacks returns the stack names of the project in dir.
 func Stacks(dir string) ([]string, error) {
 	// Problems against the schema are for Load to report with the rest.
-	root, _, err := readDocument(dir, FileName, schema.Project, nil)
+	root, _, err := readDocument(dir, FileName, schema.Project, "", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +187,7 @@ func LoadWith(ctx context.Context, dir, stack string, opts sources.Options) (*Pr
 		session.Close()
 		return nil, err
 	}
-	if !opts.Discovery && !p.Undeclared {
+	if !opts.Discovery && !p.Undeclared && !p.Global {
 		// It only helps editors, so a failure to write it fails nothing.
 		_ = WriteEditorSchema(p)
 	}
@@ -202,18 +216,25 @@ func readProject(dir, stack string, session *sources.Session, check bool) (*Proj
 	if real, err := filepath.EvalSymlinks(dir); err == nil {
 		dir = real
 	}
-	root, probs, err := readDocument(dir, FileName, schema.Project, nil)
+	root, probs, err := readDocument(dir, FileName, schema.Project, "", nil)
 	if err != nil {
 		return nil, err
 	}
 	names := stackNames(root.value)
-	undeclared := stack != "" && !slices.Contains(names, stack) && HasState(dir, stack)
-	if !undeclared {
+	global := stack == GlobalScope
+	undeclared := !global && stack != "" && !slices.Contains(names, stack) && HasState(dir, stack)
+	if !undeclared && !global {
+		want := stack
 		if stack, err = chooseStack(names, stack); err != nil {
+			if want == "" {
+				if gp, gerr := Declarations(dir, GlobalScope); gerr == nil && len(gp.Units)+len(gp.Tasks) > 0 {
+					err = fmt.Errorf("%w, or --global for its global units", err)
+				}
+			}
 			return nil, err
 		}
 	}
-	p := &Project{Sources: session, Dir: dir, StackName: stack, Undeclared: undeclared, doc: map[string]any{}, root: root, origins: map[string]origin{}, base: dir}
+	p := &Project{Sources: session, Dir: dir, StackName: stack, Undeclared: undeclared, Global: global, doc: map[string]any{}, root: root, origins: map[string]origin{}, base: dir}
 	for k, v := range root.value {
 		if k == "include" || k == "stacks" || strings.HasPrefix(k, "x-") {
 			continue
@@ -222,9 +243,13 @@ func readProject(dir, stack string, session *sources.Session, check bool) (*Proj
 		p.originsOf(root, []string{k}, v)
 	}
 	probs = append(probs, p.include(root, []string{"include"})...)
-	stackDoc, _ := mapAt(root.value, "stacks", stack)
-	probs = append(probs, p.include(root, []string{"stacks", stack, "include"})...)
-	p.overlay(root, stack, stackDoc)
+	p.top, p.stackWith = sections(p.doc), stackInputs(root.value)
+	var stackDoc map[string]any
+	if !global {
+		stackDoc, _ = mapAt(root.value, "stacks", stack)
+		probs = append(probs, p.include(root, []string{"stacks", stack, "include"})...)
+		p.overlay(root, stack, stackDoc)
+	}
 	if len(probs) > 0 {
 		return nil, probs
 	}
@@ -232,6 +257,9 @@ func readProject(dir, stack string, session *sources.Session, check bool) (*Proj
 		for _, k := range []string{"units", "tasks", "outputs"} {
 			delete(p.doc, k)
 		}
+	}
+	if global {
+		p.keepGlobal()
 	}
 	if err := decodeValue(p.doc, &p.File); err != nil {
 		return nil, err
@@ -279,7 +307,7 @@ func readComponent(base, dir, stack string, session *sources.Session, owner *sou
 			return nil, nil, err
 		}
 	}
-	root, probs, err := readDocument(base, rel, schema.Project, session)
+	root, probs, err := readDocument(base, rel, schema.Project, "", session)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -346,6 +374,28 @@ func ValidateWith(ctx context.Context, dir string, opts sources.Options) (Proble
 		once(&warns, p.Warnings)
 		loaded = append(loaded, p)
 	}
+	if len(loaded) > 0 && loaded[0].HasGlobal() {
+		// The global scope reads less than a stack, so a problem of a
+		// global unit may show there again, at the same place.
+		at := map[string]bool{}
+		for _, pr := range all {
+			at[fmt.Sprintf("%s:%d:%d", pr.File, pr.Line, pr.Column)] = true
+		}
+		p, err := LoadSession(dir, GlobalScope, session)
+		var probs Problems
+		switch {
+		case errors.As(err, &probs):
+			for _, pr := range probs {
+				if !at[fmt.Sprintf("%s:%d:%d", pr.File, pr.Line, pr.Column)] {
+					once(&all, Problems{pr})
+				}
+			}
+		case err != nil:
+			return nil, err
+		default:
+			once(&warns, p.Warnings)
+		}
+	}
 	if len(all) > 0 {
 		return warns, all
 	}
@@ -357,10 +407,11 @@ func ValidateWith(ctx context.Context, dir string, opts sources.Options) (Proble
 }
 
 // readDocument reads and parses a file, and returns how it differs from
-// its schema; the document comes back with them, so the files it includes
-// are still checked.  A file inside a source that src fetched is named by
-// its address in problems, not by the path of its copy in the cache.
-func readDocument(dir, rel string, k schema.Kind, src *sources.Session) (*document, Problems, error) {
+// its schema at level, or at the level that the file says when level is
+// empty; the document comes back with them, so the files it includes are
+// still checked.  A file inside a source that src fetched is named by its
+// address in problems, not by the path of its copy in the cache.
+func readDocument(dir, rel string, k schema.Kind, level string, src *sources.Session) (*document, Problems, error) {
 	data, err := os.ReadFile(filepath.Join(dir, rel))
 	if err != nil {
 		return nil, nil, err
@@ -376,7 +427,10 @@ func readDocument(dir, rel string, k schema.Kind, src *sources.Session) (*docume
 		return nil, nil, err
 	}
 	doc.file = rel
-	found, err := schema.Validate(k, doc.value)
+	if level == "" {
+		level = schema.LevelOf(doc.value)
+	}
+	found, err := schema.ValidateAt(k, doc.value, level)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -487,7 +541,7 @@ func (p *Project) include(d *document, path []string) Problems {
 					continue
 				}
 			}
-			inc, ip, err := readDocument(p.base, filepath.Join(p.rel(), filepath.FromSlash(m)), schema.Include, p.Sources)
+			inc, ip, err := readDocument(p.base, filepath.Join(p.rel(), filepath.FromSlash(m)), schema.Include, schema.LevelOf(p.root.value), p.Sources)
 			var pp Problems
 			switch {
 			case errors.As(err, &pp):

@@ -213,6 +213,9 @@ func (e *engine) programCall(p progSpec, s *expr.Scope) (*plugin.Call, error) {
 		c.PluginDir = p.plugin.dir
 	}
 	c.Secret = p.secret || p.plugin != nil && p.plugin.secret
+	if p.frame != nil && p.frame.global && e.global != nil {
+		c.Stack = model.GlobalScope
+	}
 	return c, nil
 }
 

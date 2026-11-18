@@ -29,9 +29,21 @@ type Store struct {
 	// decrypted, so the run hides it in what it writes out, as destroy prints
 	// what it kept.
 	Opened func(v any)
+	// Global, in a run of a stack that reaches global units, is the store
+	// of their scope: the records, locks, and tools of addresses in it go
+	// there, each with the _meta and data key of that scope.
+	Global *Store
 
 	mu   sync.Mutex
 	meta *Meta
+}
+
+// at is the store that holds address: Global for an address of its scope.
+func (s *Store) at(address string) *Store {
+	if s.Global != nil && strings.HasPrefix(address, s.Global.Stack+"/") {
+		return s.Global
+	}
+	return s
 }
 
 // Key names of a stack.
@@ -131,6 +143,9 @@ func (s *Store) checkAddress(address string) error {
 // Get returns the record at address and its etag, or nil when there is
 // none.
 func (s *Store) Get(address string) (*Record, string, error) {
+	if g := s.at(address); g != s {
+		return g.Get(address)
+	}
 	if err := s.checkAddress(address); err != nil {
 		return nil, "", err
 	}
@@ -154,6 +169,9 @@ func (s *Store) Get(address string) (*Record, string, error) {
 // Put writes the record at address when it still has etag, or, with an
 // empty etag, when there is no record yet.
 func (s *Store) Put(address string, r *Record, etag string) (string, error) {
+	if g := s.at(address); g != s {
+		return g.Put(address, r, etag)
+	}
 	if err := s.checkAddress(address); err != nil {
 		return "", err
 	}
@@ -170,6 +188,9 @@ func (s *Store) Put(address string, r *Record, etag string) (string, error) {
 
 // Encode is a record as Put writes it: its sensitive values encrypted.
 func (s *Store) Encode(r *Record) ([]byte, error) {
+	if g := s.at(r.Address); g != s {
+		return g.Encode(r)
+	}
 	sealed, err := s.sealRecord(r)
 	if err != nil {
 		return nil, err
@@ -216,6 +237,9 @@ func (s *Store) ReplaceMeta(data []byte, etag string) (string, error) {
 
 // Delete removes the record at address when it still has etag.
 func (s *Store) Delete(address, etag string) error {
+	if g := s.at(address); g != s {
+		return g.Delete(address, etag)
+	}
 	if err := s.checkAddress(address); err != nil {
 		return err
 	}
@@ -227,6 +251,9 @@ func (s *Store) Delete(address, etag string) error {
 
 // Lock takes the lock of an address without waiting.
 func (s *Store) Lock(address string, h Holder) (string, error) {
+	if g := s.at(address); g != s {
+		return g.Lock(address, h)
+	}
 	if err := s.checkAddress(address); err != nil {
 		return "", err
 	}
@@ -281,6 +308,9 @@ func (s *Store) Inventory() ([]string, error) {
 // <stack>/_forgotten/<run>/. On a tombstone it removes the tombstone, so
 // the name can be used again.
 func (s *Store) Forget(address, run string) (string, error) {
+	if g := s.at(address); g != s {
+		return g.Forget(address, run)
+	}
 	r, etag, err := s.Get(address)
 	if err != nil {
 		return "", err
@@ -307,6 +337,9 @@ func (s *Store) Forget(address, run string) (string, error) {
 // ForgetTool moves tool/, the tool's own state of a local unit, to
 // <stack>/_forgotten/<run>/<unit>/tool, where no new unit takes it.
 func (s *Store) ForgetTool(address, run string) error {
+	if g := s.at(address); g != s {
+		return g.ForgetTool(address, run)
+	}
 	l, ok := s.Backend.(*Local)
 	if !ok {
 		return nil

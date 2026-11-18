@@ -100,7 +100,7 @@ A plugin's `plan` writes `$OPSTRUSS_PLAN`:
 
 | Variable | Is |
 |---|---|
-| `OPSTRUSS_PROJECT`, `OPSTRUSS_STACK` | The project and the stack |
+| `OPSTRUSS_PROJECT`, `OPSTRUSS_STACK` | The project and the stack; `_global` for the programs of a global unit or task, also in a run of a stack (since 1.1) |
 | `OPSTRUSS_ADDRESS` | The address of the unit, such as `prod/web` |
 | `OPSTRUSS_TASK`, `OPSTRUSS_RUN` | The task, and the id of the run |
 | `OPSTRUSS_RUN_PARENTS` | The ids of the runs that started this one, nearest last |

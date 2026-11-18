@@ -185,7 +185,7 @@ func (e *engine) task(ctx context.Context, name string, inputs map[string]any) *
 	e.rootTask = name
 	c := call{yes: e.opts.Yes, source: "--yes", top: !e.trigger}
 	var res *taskResult
-	if err := e.syncKey(); err != nil {
+	if err := e.syncKeys(); err != nil {
 		e.emit(Event{Type: "task", Level: "error", Task: name, Message: err.Error()})
 		res = failed(err)
 	} else if t := e.p.Tasks[name]; t != nil {
@@ -236,7 +236,7 @@ func (e *engine) unitTasks(ctx context.Context, name string, patterns []string, 
 	}
 	if len(results) == 0 {
 		if len(e.p.Units) == 0 {
-			e.say("run", "", "the project declares no units")
+			e.say("run", "", "%s", e.noUnits())
 			return &taskResult{outcome: success, outputs: map[string]any{}}, nil
 		}
 		return nil, fmt.Errorf("there is no task %s in the project or in a unit", name)
@@ -428,6 +428,10 @@ func (e *engine) previewQuiet() {
 func (e *engine) callTask(ctx context.Context, name string, t *model.Task, dir string, given map[string]any, c call) *taskResult {
 	if c.step {
 		c.id = int(e.calls.Add(1))
+	}
+	if t.Global && e.global != nil && c.frame == nil && c.unit == nil && c.plugin == nil {
+		// A global task of a run of a stack reads what its scope holds.
+		c.frame = e.global.top
 	}
 	label := name
 	switch f := c.where(e); {
@@ -643,7 +647,7 @@ func (e *engine) need(ctx context.Context, name string, f *frame) *taskResult {
 	e.mu.Unlock()
 	o.once.Do(func() {
 		c := call{yes: e.pass.yes}
-		if f.node != nil {
+		if f.node != nil || f.global {
 			c.frame = f
 		}
 		o.res = e.callTask(ctx, name, f.in.Tasks[name], f.in.DirOf("tasks."+name), nil, c)
@@ -1336,17 +1340,15 @@ func flagHint(decl map[string]*model.Input, given map[string]any, err error) err
 // the locals and units there; marks and taskMarks say which inputs and
 // outputs of tasks are sensitive.
 func (e *engine) taskScope(dir string, inputs, marks, tasks, taskMarks map[string]any, c call) *expr.Scope {
-	f, k := c.where(e), e.newKV()
-	own := e.inputsOf(f)
+	f := c.where(e)
+	sc := e.scopeEngine(f)
+	k := sc.newKV()
+	own, ownMarks := e.inputsAndMarks(f)
 	all := maps.Clone(own)
 	maps.Copy(all, inputs)
-	ownMarks := e.inputMarks
-	if f.node != nil {
-		_, ownMarks = e.inputsAndMarks(f)
-	}
 	inputMarks := maps.Clone(ownMarks)
 	maps.Copy(inputMarks, marks)
-	localMarks := e.localMarksOf(f, ownMarks, k)
+	localMarks := sc.localMarksOf(f, ownMarks, k)
 	facts := e.facts(c.unit)
 	if c.unit == nil && f.node != nil {
 		facts["address"] = f.address
@@ -1354,10 +1356,13 @@ func (e *engine) taskScope(dir string, inputs, marks, tasks, taskMarks map[strin
 	facts["dir"], facts["artifacts"], facts["temp"] = dir, e.run.Artifacts, e.run.Temp
 	facts["cwd"] = e.opts.Cwd
 	units, unitMarks := e.unitsView(f, slices.Sorted(maps.Keys(f.in.Units)))
-	s := &expr.Scope{Dir: dir, Vars: map[string]any{"stack": e.p.StackName, "inputs": all, "locals": k.localsOf(f, own),
-		"opstruss": facts, "units": units, "tasks": tasks, "steps": map[string]any{}, "secrets": e.secrets, "event": e.event},
+	s := &expr.Scope{Dir: dir, Vars: map[string]any{"inputs": all, "locals": k.localsOf(f, own),
+		"opstruss": facts, "units": units, "tasks": tasks, "steps": map[string]any{}, "secrets": sc.secrets, "event": e.event},
 		Marks: map[string]any{}}
-	if len(e.secrets) > 0 {
+	if !f.global {
+		s.Vars["stack"] = e.p.StackName
+	}
+	if len(sc.secrets) > 0 {
 		s.Marks["secrets"] = true
 	}
 	for name, m := range map[string]map[string]any{"inputs": inputMarks, "locals": localMarks, "tasks": taskMarks, "units": unitMarks} {
