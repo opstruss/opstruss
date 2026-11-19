@@ -47,6 +47,23 @@ default/web: waiting for the lock held by run 20261027T124725Z-0069f2ad (pid 412
 Each unit has a lock, so two runs never change it at once. Let the other
 run end, or cancel it with `opstruss runs cancel <run>`.
 
+In a [plugin backend](./guides/share-state#locks), a lock stays when its
+holder dies. The next run takes over one whose holder ran on this machine
+and no longer runs; one of another machine stays until
+`opstruss unlock <unit>` lets it go, once nothing of that run still runs
+there.
+
+## A stack has no state in its backend
+
+```text
+opstruss: stack prod has no state in s3://acme-opstruss/platform/; start it there with opstruss init --stack prod, or move its state there with opstruss state migrate --stack prod
+```
+
+A stack starts in a plugin backend only with
+`opstruss init --stack <stack>`. Check the bucket and the prefix first: a
+checkout that names another place than the team does would start an
+empty copy of the stack.
+
 ## context changed
 
 ```text

@@ -39,6 +39,10 @@ var (
 // HolderVersion is the version of a holder, which a local state.lock holds.
 const HolderVersion = 1
 
+// DaemonRun is the run of the holder of the lease of a daemon, which is no
+// run of its own.
+const DaemonRun = "daemon"
+
 // Holder says who holds a lock.
 type Holder struct {
 	Version  int    `json:"version"`
@@ -47,12 +51,23 @@ type Holder struct {
 	Hostname string `json:"hostname"`
 	User     string `json:"user"`
 	PID      int    `json:"pid"`
-	Started  string `json:"started"`
-	Since    string `json:"since"`
+	// Start is when the process started, as the system keeps it: it only
+	// compares with the start of the same pid on the same host, which a pid
+	// that another process took has another of.
+	Start   string `json:"start,omitempty"`
+	Started string `json:"started"`
+	Since   string `json:"since"`
 }
 
 func (h Holder) String() string {
-	s := fmt.Sprintf("run %s (pid %d on %s", h.Run, h.PID, h.Hostname)
+	if h.Run == "" && h.PID == 0 {
+		return "another run"
+	}
+	who := "run " + h.Run
+	if h.Run == DaemonRun {
+		who = "the daemon"
+	}
+	s := fmt.Sprintf("%s (pid %d on %s", who, h.PID, h.Hostname)
 	if since, err := time.Parse(time.RFC3339, h.Since); err == nil {
 		s += fmt.Sprintf(", for %s", time.Since(since).Round(time.Second))
 	}
@@ -60,9 +75,12 @@ func (h Holder) String() string {
 }
 
 // LockedError is the error of Lock on a key that another holder has.
+// Token is that holder's, with which a lock proven stale is released; a
+// local lock, which is never stale, has none.
 type LockedError struct {
 	Key    string
 	Holder Holder
+	Token  string
 }
 
 func (e *LockedError) Error() string { return fmt.Sprintf("%s is locked by %s", e.Key, e.Holder) }

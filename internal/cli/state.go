@@ -27,25 +27,44 @@ func (a *app) stateCommand() *cobra.Command {
 	return cmd
 }
 
-// store opens the state of the project's stack in its local backend.
-func (a *app) store() (*model.Project, *state.Store, error) {
+// store opens the state of the project's stack in its backend. A plugin
+// backend runs as the engine runs it, with the inputs and secrets that its
+// with: reads; one that does not match what this checkout kept the stack in
+// is only a warning, since these commands are what repairs it.
+func (a *app) store() (*model.Project, *state.Store, func(), error) {
 	dir, err := a.projectDir()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	stack, err := a.scope(dir, "", nil)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	p, err := model.LoadWith(context.Background(), dir, stack, sources.Options{Locked: a.locked})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	s, err := state.Open(state.NewLocal(filepath.Join(dir, ".opstruss", "state")), p.StackName, p.Name)
+	if b := p.Backend; b == nil || b.Local {
+		s, err := state.Open(state.NewLocal(filepath.Join(dir, ".opstruss", "state")), p.StackName, p.Name)
+		if err != nil {
+			p.Close()
+			return nil, nil, nil, err
+		}
+		return p, s, p.Close, nil
+	}
+	p.Close()
+	req, err := a.request(nil)
 	if err != nil {
-		p.Close()
+		return nil, nil, nil, err
 	}
-	return p, s, err
+	h, err := a.api().State(context.Background(), req)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if h.Warning != nil {
+		fmt.Fprintf(a.stderr, "warning: %s\n", h.Warning)
+	}
+	return h.Project, h.Store, h.Close, nil
 }
 
 // holder describes this command as the holder of a lock.
@@ -99,11 +118,11 @@ func (a *app) stateList() *cobra.Command {
 		Long:  "List the addresses that have a record: orphans, pending and abandoned attempts, and tombstones too; then the keys of kv.",
 		Args:  cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error {
-			p, s, err := a.store()
+			p, s, done, err := a.store()
 			if err != nil {
 				return err
 			}
-			defer p.Close()
+			defer done()
 			addrs, err := s.Inventory()
 			if err != nil {
 				return err
@@ -184,11 +203,11 @@ func (a *app) statePull() *cobra.Command {
 		Long:  "Print a key as stored, and its etag on stderr; key is an address without the stack, _meta, or _kv/<name>.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			p, s, err := a.store()
+			_, s, done, err := a.store()
 			if err != nil {
 				return err
 			}
-			defer p.Close()
+			defer done()
 			key, _, _ := s.KeyOf(args[0])
 			data, etag, err := s.Backend.Get(key)
 			if errors.Is(err, state.ErrNotExist) {
@@ -218,11 +237,11 @@ func (a *app) statePush() *cobra.Command {
 			if ifMatch == "" && !force {
 				return errors.New("push needs --if-match <etag> from state pull, or --force, so a stale copy is refused")
 			}
-			p, s, err := a.store()
+			_, s, done, err := a.store()
 			if err != nil {
 				return err
 			}
-			defer p.Close()
+			defer done()
 			data, err := io.ReadAll(cmd.InOrStdin())
 			if err != nil {
 				return err
@@ -295,11 +314,11 @@ func (a *app) stateRm() *cobra.Command {
 		Long: "Forget a record without destroying anything, leaving a tombstone; on a tombstone, remove it; or remove a key of kv.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) (err error) {
-			p, s, err := a.store()
+			_, s, done, err := a.store()
 			if err != nil {
 				return err
 			}
-			defer p.Close()
+			defer done()
 			if name, ok := strings.CutPrefix(args[0], "_kv/"); ok {
 				return a.rmKV(s, name, ifMatch, force)
 			}

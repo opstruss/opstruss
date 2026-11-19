@@ -48,7 +48,7 @@ opstruss [flags]
 | [`opstruss uses`](./uses) | List the sources of the project and their pins |
 | [`opstruss state`](./state) | Read and repair the records of a stack |
 | [`opstruss stop`](./stop) | Stop the daemon of the stack and its services |
-| [`opstruss unlock`](./unlock) | Forget a leftover service so up can start it again |
+| [`opstruss unlock`](./unlock) | Release a stale lock, or forget a leftover service |
 | [`opstruss version`](./version) | Print the version |
 | [`opstruss run`](./run) | Run a task of the project by name |
 

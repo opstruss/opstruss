@@ -66,7 +66,10 @@ func runCommand(ctx context.Context, opts Options, op string) (*Result, error) {
 	// An up in the daemon installs the triggers again, also when a unit
 	// waits for approval, and says so when it cannot.
 	if op == "up" && opts.Install != nil {
-		if err := opts.Install(opts.Inputs); err != nil {
+		var lease *LeaseError
+		if err := opts.Install(opts.Inputs); errors.As(err, &lease) {
+			e.warn("", "%v", err)
+		} else if err != nil {
 			e.failWith(Event{Type: "trigger", Level: "error", Message: err.Error()})
 		} else if e.unitsHint != "" {
 			e.say("run", "", "%s", e.unitsHint)
@@ -208,7 +211,7 @@ func (e *engine) preview(ctx context.Context, inst *instance) {
 			return
 		}
 	}
-	if h, held, err := e.store.Held(inst.address); err != nil {
+	if h, held, err := e.store.Held(inst.address, e.holder); err != nil {
 		inst.plan.err = err
 		return
 	} else if held {
@@ -883,6 +886,9 @@ func (e *engine) turn(ctx context.Context, inst *instance, leave func()) {
 		Destroy: destroy, Needs: attempt.Needs, Outputs: res.Outputs, Digest: p.digest, Parts: p.parts, Run: e.runID, Stack: e.runStack(addr),
 		Updated: time.Now().UTC().Format(time.RFC3339), Abandoned: next.Abandoned,
 		Hidden: withHidden(attempt.Hidden, map[string][]string{state.PartOutputs: slices.Sorted(maps.Keys(outMarks))}, state.PartOutputs, state.PartRawOutput)}
+	if r.service != nil {
+		done.Host, done.Hostname = e.host, hostname()
+	}
 	err = failpoint.Fail("up-before-put")
 	if err == nil {
 		etag, err = e.store.Put(addr, done, etag)

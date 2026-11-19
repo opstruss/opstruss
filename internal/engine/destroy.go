@@ -510,6 +510,11 @@ func (e *engine) destroyOne(ctx context.Context, l *leftover) string {
 		}
 		approval = source
 	}
+	if service {
+		if err := e.serviceElsewhere(addr, rec); err != nil {
+			return fail(err)
+		}
+	}
 	e.begin("unit", addr, "destroy", "", "destroy: started")
 	rec.Pending = &state.Attempt{Op: "destroy", Run: e.runID, Holder: e.holder, Approval: approval, Source: rec.Source, Destroy: rec.Destroy, Inputs: rec.Inputs, Hidden: rec.Hidden}
 	if etag, err = e.store.Put(addr, rec, etag); err != nil {

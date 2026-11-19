@@ -1,0 +1,10 @@
+opstruss: "1.1"
+name: fakebackend
+description: A backend for tests that keeps each key as a file in a directory
+requires: [fakebackend]
+inputs:
+  dir: {type: string, required: true}
+  break: {type: string}
+  token: {type: string, sensitive: true}
+backend:
+  run: [fakebackend]

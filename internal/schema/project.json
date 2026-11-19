@@ -41,7 +41,7 @@
     },
     "backend": {
       "$ref": "#/$defs/backend",
-      "description": "Where the state of the stacks is kept: local, in .opstruss/state/, the only backend of this version."
+      "description": "Where the state of the stacks and of the global scope is kept: local, in .opstruss/state/, or a plugin backend."
     },
     "secrets": {
       "$ref": "#/$defs/secrets",
@@ -462,7 +462,7 @@
         },
         "backend": {
           "$ref": "#/$defs/backend",
-          "description": "Where the state of this stack is kept: local, the only backend of this version."
+          "description": "Where the state of this stack is kept, in place of the backend of the project: local, or a plugin backend."
         },
         "approval": {
           "$ref": "#/$defs/approval",
@@ -477,21 +477,23 @@
       "additionalProperties": false
     },
     "backend": {
-      "description": "Where the state of a stack is kept: local; a backend plugin is not supported in this version.",
+      "description": "Where the state of a stack is kept: local, in .opstruss/state/, or a plugin backend that keeps it elsewhere, such as in S3.",
       "oneOf": [
         { "const": "local" },
         {
           "type": "object",
           "properties": {
             "uses": {
-              "description": "The plugin of the backend; not supported in this version.",
+              "description": "The plugin of the backend: a source, or a name in uses:, pinned in opstruss.lock.",
               "type": "string",
-              "minLength": 1
+              "minLength": 1,
+              "x-since": "1.1"
             },
-            "with": { "description": "Inputs of the backend plugin.", "type": "object" },
+            "with": { "description": "Inputs of the backend plugin, read before the state opens: inputs, secrets from sops or env, and locals of those only.", "type": "object", "x-since": "1.1" },
             "pass": {
               "$ref": "#/$defs/pass",
-              "description": "Variables of the environment that the backend plugin gets."
+              "description": "Variables of the environment that the backend plugin gets.",
+              "x-since": "1.1"
             }
           },
           "required": ["uses"],

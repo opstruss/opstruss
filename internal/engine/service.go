@@ -232,6 +232,9 @@ func (e *engine) serviceOf(inst *instance, r *resolved, rec *state.Record) (*Ser
 // startService runs the turn of a service unit: its supervisor stops the
 // one that runs, starts this one, and waits until it is ready.
 func (e *engine) startService(ctx context.Context, inst *instance, r *resolved, rec *state.Record) (*plugin.Result, error) {
+	if err := e.serviceElsewhere(inst.address, rec); err != nil {
+		return nil, err
+	}
 	s, err := e.serviceOf(inst, r, rec)
 	if err != nil {
 		return nil, err
@@ -244,6 +247,18 @@ func (e *engine) startService(ctx context.Context, inst *instance, r *resolved, 
 		e.say("unit", inst.address, "%s, pid %d", st.State, st.PID)
 	}
 	return &plugin.Result{Changed: true}, nil
+}
+
+// serviceElsewhere refuses a service that the daemon of another host
+// keeps, as its record says in a stack that shares its state through a
+// plugin backend.
+func (e *engine) serviceElsewhere(addr string, rec *state.Record) error {
+	if _, shared := e.store.Backend.(*pluginBackend); !shared || rec == nil || rec.Host == "" || rec.Host == e.host {
+		return nil
+	}
+	short := e.short(addr)
+	return fmt.Errorf("the service %s runs on %s, whose daemon keeps it; up and destroy it there, or, once that host is gone for good, forget its record with opstruss state rm %s",
+		short, cmp.Or(rec.Hostname, "another host"), short)
 }
 
 // serviceStatus is the status of a service unit: its state, pid, since
@@ -299,20 +314,92 @@ func Unlock(ctx context.Context, opts Options) (*Result, error) {
 
 func (e *engine) unlock() error {
 	if len(e.opts.Units) != 1 {
-		return errors.New("unlock takes the name of one unit")
+		return errors.New("unlock takes the name of one unit, or _daemon, _kv, or _meta")
 	}
-	name := e.opts.Units[0]
-	addr := e.p.StackName + "/" + name
-	forgot, err := e.services().Forget(addr)
+	name, scope := e.opts.Units[0], e.p.StackName
+	addr := scope + "/" + name
+	var key string
+	switch name {
+	case "_daemon":
+		if e.p.Global {
+			return errors.New("the global scope has no daemon, so no lease of one")
+		}
+		key = state.DaemonLockKey(scope)
+	case "_kv":
+		key = state.KVLockKey(scope)
+	case "_meta":
+		key = state.MetaLockKey(scope)
+	default:
+		key = state.LockKey(addr)
+	}
+	var did []string
+	released, err := e.releaseStale(addr, key)
 	if err != nil {
 		return err
 	}
-	if len(forgot) == 0 {
-		return fmt.Errorf("nothing is left of %s that is not proven its own, so there is nothing to forget", name)
+	if released != "" {
+		did = append(did, released)
 	}
-	for _, f := range forgot {
-		e.say("unit", addr, "forgot %s", f)
+	if !strings.HasPrefix(name, "_") {
+		forgot, err := e.services().Forget(addr)
+		if err != nil {
+			return err
+		}
+		for _, f := range forgot {
+			e.say("unit", addr, "forgot %s", f)
+			did = append(did, "forgot "+f)
+		}
 	}
-	e.touch(name, &record.Unit{Outcome: success, Changed: true, Plan: "unlock: forgot " + strings.Join(forgot, "; ")})
+	if len(did) == 0 {
+		if strings.HasPrefix(name, "_") {
+			return fmt.Errorf("%s is not locked, so there is nothing to release", name)
+		}
+		return fmt.Errorf("%s is not locked, and nothing is left of its service that is not proven its own, so there is nothing to forget", name)
+	}
+	e.touch(name, &record.Unit{Outcome: success, Changed: true, Plan: "unlock: " + strings.Join(did, "; ")})
 	return nil
+}
+
+// releaseStale releases the lock key of a plugin backend whose holder is
+// gone, as the holder's token: one that died on this host at once, one of
+// another host once the operator agrees. It says what it did, or "" for a
+// lock that nobody holds; a local lock is never stale.
+func (e *engine) releaseStale(addr, key string) (string, error) {
+	pb, ok := e.store.Backend.(*pluginBackend)
+	if !ok {
+		return "", nil
+	}
+	token, err := pb.tryLock(key, e.holder)
+	var le *state.LockedError
+	switch {
+	case err == nil:
+		return "", pb.Unlock(key, token)
+	case !errors.As(err, &le):
+		return "", err
+	}
+	h := le.Holder
+	switch {
+	case h.Host == e.host && !e.holderDead(h):
+		return "", fmt.Errorf("the lock of %s is held by %s, which still runs on this host; wait for it, or stop it", addr, h)
+	case h.Host != e.host && !e.opts.Yes:
+		q := Question{Op: "unlock", Address: addr, Summary: "locked by " + h.String()}
+		ok, err := false, error(nil)
+		if e.opts.Approve != nil {
+			ok, err = e.opts.Approve(e.ctx, q)
+		}
+		if err != nil {
+			return "", err
+		}
+		if !ok {
+			return "", fmt.Errorf("the lock of %s is held by %s on another host, whose programs may still run; once you are sure they stopped, release it with opstruss unlock --yes", addr, h)
+		}
+	}
+	if err := pb.Unlock(key, le.Token); err != nil {
+		if errors.Is(err, state.ErrNotHolder) {
+			return "", fmt.Errorf("the lock of %s changed hands meanwhile; run unlock again to see who holds it now", addr)
+		}
+		return "", err
+	}
+	e.say("unit", addr, "released the lock that %s held", h)
+	return "released the lock of " + h.String(), nil
 }

@@ -127,11 +127,16 @@ func (r *Run) environment(c *Call, write func(name string, data []byte) (string,
 		env["OPSTRUSS_STATE_KEY"] = u.StateKey
 	}
 	if !inRun {
-		// A program outside a run gets its inputs as INPUT_* only.
+		// A program outside a run gets its inputs as INPUT_* only, no file
+		// that would outlive an OpsTruss that was killed; that of a plugin
+		// backend, a program of a plugin, also its directory.
 		for name, v := range c.Inputs {
 			if s := expr.Text(v); v != nil && len(s) <= MaxInputEnv {
 				env[model.InputEnv(name)] = s
 			}
+		}
+		if c.Backend {
+			env["OPSTRUSS_PLUGIN_DIR"] = c.PluginDir
 		}
 		return env, nil
 	}

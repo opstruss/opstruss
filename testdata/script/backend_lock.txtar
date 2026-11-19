@@ -1,0 +1,52 @@
+# A lock of a plugin backend outlives its holder: one whose holder died on
+# this host is taken over, one of another host is released with unlock,
+# by the token of its holder, and one that still runs here stays.
+
+env HOME=$WORK/home
+exec opstruss init --stack default
+exec opstruss up --yes web
+stdout '^default/web \| web ran$'
+
+# a holder that died on this host: its lock is taken over without asking
+exec sh -c 'printf "{\"holder\":{\"version\":1,\"run\":\"20260101T000000Z-dead0001\",\"host\":\"%s\",\"hostname\":\"here\",\"pid\":999999,\"start\":\"1\",\"since\":\"2026-01-01T00:00:00Z\"},\"token\":\"t-dead\"}" "$(cat $HOME/.opstruss/host-id)" > store/default/web/state.lock'
+exec opstruss up --force --yes web
+stderr 'took over the lock default/web/state.lock of run 20260101T000000Z-dead0001 \(pid 999999 on here, for .*\), which no longer runs$'
+stdout '^default/web \| web ran$'
+! exists store/default/web/state.lock
+
+# a holder of another host: plan leaves the unit out, unlock asks, and
+# --yes releases it
+exec sh -c 'printf "{\"holder\":{\"version\":1,\"run\":\"20260101T000000Z-away0001\",\"host\":\"elsewhere\",\"hostname\":\"far\",\"pid\":4242,\"start\":\"1\",\"since\":\"2026-01-01T00:00:00Z\"},\"token\":\"t-away\"}" > store/default/web/state.lock'
+exec opstruss plan web
+stdout 'default/web: locked by run 20260101T000000Z-away0001 \(pid 4242 on far, for '
+! exec opstruss unlock web
+stderr 'the lock of default/web is held by run 20260101T000000Z-away0001 \(pid 4242 on far, for .*\) on another host, whose programs may still run; once you are sure they stopped, release it with opstruss unlock --yes$'
+exists store/default/web/state.lock
+exec opstruss unlock web --yes
+stdout 'released the lock that run 20260101T000000Z-away0001 \(pid 4242 on far, for .*\) held$'
+! exists store/default/web/state.lock
+
+# a holder that still runs on this host keeps its lock
+exec opstruss up --yes slow &
+exec sh -c 'until [ -f store/default/slow/state.lock ]; do sleep 0.1; done'
+! exec opstruss unlock slow
+stderr 'the lock of default/slow is held by run .* \(pid [0-9]+ on .*\), which still runs on this host; wait for it, or stop it$'
+wait
+exists store/default/slow/state.json
+! exists store/default/slow/state.lock
+
+# the lease of the daemon is free while no daemon runs
+! exec opstruss unlock _daemon
+stderr '_daemon is not locked, so there is nothing to release$'
+
+-- opstruss.yaml --
+opstruss: "1.1"
+name: shop
+backend:
+  uses: ./testplugins/fakebackend
+  with: {dir: store}
+units:
+  web:
+    run: echo web ran
+  slow:
+    run: sleep 2

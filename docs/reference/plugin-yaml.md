@@ -24,7 +24,7 @@ Keys that start with x- are left for your own use.
 | `outputs` | `tool` or map of [Output](opstruss-yaml#output) | Outputs that up writes, or tool when the code of the user in the tool names them. |
 | `tasks` | map of [Task](opstruss-yaml#task) | The tasks of the plugin: the standard tasks plan, up, destroy, status, and logs, hooks such as exec, and tasks of its own. |
 | `bin` | map of map of [bin](#bin) | Binaries that OpsTruss downloads for the plugin, by name and platform, such as linux/amd64 or darwin/arm64, which its programs find in PATH; OpsTruss reads only the platform it runs on. |
-| `backend` | [backend](#backend) | A backend that keeps the state of stacks; not supported yet. |
+| `backend` (since 1.1) | [backend](#backend) | A backend that keeps the state of stacks: a program that answers the backend protocol on its stdin and stdout, which backend: uses runs. |
 
 ## bin {#bin}
 
@@ -37,10 +37,10 @@ Binaries that OpsTruss downloads for the plugin, by name and platform, such as l
 
 ## backend {#backend}
 
-A backend that keeps the state of stacks; not supported yet.
+A backend that keeps the state of stacks: a program that answers the backend protocol on its stdin and stdout, which backend: uses runs.
 
 | Key | Type | Description |
 |---|---|---|
-| `run` (required) | string or list of string | The program of the backend. |
+| `run` (required) | string or list of string | The program of the backend, started once for each command that opens the state. |
 
 :::

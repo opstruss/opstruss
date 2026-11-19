@@ -1,0 +1,135 @@
+# What keeps a checkout from starting a second copy of a stack that a
+# plugin backend shares: the probe at init, backend.json, the records of
+# the local backend, and the tool state that only tool/ would keep.
+
+env HOME=$WORK/home
+env FAKE_TOKEN=s3cr3t-t0ken-for-the-backend
+
+# the probe refuses a storage that deletes whatever if_match says
+cd broken
+! exec opstruss init --stack default
+stderr 'does not keep the contract that the state needs, probe step 2: delete with another etag is a conflict: it succeeded$'
+! exists ../bstore/default/_meta
+! exists .opstruss/state/default/backend.json
+
+# with: reads a secret from env, which backend.json keeps as written; the
+# stderr of the backend is a warning of the run
+cd ../one
+exec opstruss init --stack default
+grep '"token": "\$\{\{ secrets.token \}\}"' .opstruss/state/default/backend.json
+! grep s3cr3t .opstruss/state/default/backend.json
+exec opstruss up --yes
+stdout '^default/web \| web ran$'
+stderr '^backend ../testplugins/fakebackend: fakebackend: get$'
+
+# backend.json that names another place stops a run
+cp ../moved.yaml opstruss.yaml
+! exec opstruss plan
+stderr 'this checkout keeps the state of stack default in fake:.*/store through ../testplugins/fakebackend, and the project now names fake:.*/store2 through ../testplugins/fakebackend; move it with opstruss state migrate --stack default$'
+! exec opstruss outputs
+stderr 'move it with opstruss state migrate --stack default$'
+! exec opstruss doctor
+stdout 'stack default keeps its state in fake:.*/store2, which passes the probe'
+stdout 'this checkout keeps the state of stack default in fake:'
+
+# a stack with records in the local backend stops when the project names
+# a plugin backend
+cd ../local
+exec opstruss up --yes
+stdout '^default/web \| web ran$'
+cp ../one.yaml opstruss.yaml
+! exec opstruss plan
+stderr 'stack default has a record in the local backend of this checkout, and the project now keeps its state in fake:.*/store; move it there with opstruss state migrate --stack default$'
+! exec opstruss init --stack default
+stderr 'move it there with opstruss state migrate --stack default$'
+
+# the tool of a state: tool unit needs a place of its own
+cd ../tool
+exec opstruss init --stack default
+! exec opstruss plan
+stdout 'plugin ../testplugins/faketool keeps the state of its tool in tool/, which only the local backend has'
+
+# the global scope keeps its state in the backend of the project, which
+# init starts once the project has global units
+cd ../global
+exec opstruss init
+stdout '^wrote _global/_meta in fake:.*/gstore$'
+exec opstruss init --stack prod
+stdout '^wrote prod/_meta in fake:.*/gstore$'
+! stdout '_global/_meta'
+exec opstruss up --stack prod --yes
+stdout '^_global/tools: up: done$'
+exists ../gstore/_global/tools/state.json
+exists ../gstore/prod/zone/state.json
+exists .opstruss/state/_global/backend.json
+
+-- broken/opstruss.yaml --
+opstruss: "1.1"
+name: shop
+backend:
+  uses: ../testplugins/fakebackend
+  with: {dir: ../bstore, break: delete-if-match}
+units:
+  web:
+    run: echo web ran
+-- one/opstruss.yaml --
+opstruss: "1.1"
+name: shop
+secrets:
+  token: {env: FAKE_TOKEN}
+backend:
+  uses: ../testplugins/fakebackend
+  with: {dir: ../store, token: "${{ secrets.token }}", break: stderr}
+units:
+  web:
+    run: echo web ran
+-- moved.yaml --
+opstruss: "1.1"
+name: shop
+backend:
+  uses: ../testplugins/fakebackend
+  with: {dir: ../store2}
+units:
+  web:
+    run: echo web ran
+outputs:
+  hello: {value: hi}
+-- local/opstruss.yaml --
+opstruss: "1.1"
+name: shop
+units:
+  web:
+    run: echo web ran
+-- one.yaml --
+opstruss: "1.1"
+name: shop
+backend:
+  uses: ../testplugins/fakebackend
+  with: {dir: ../store}
+units:
+  web:
+    run: echo web ran
+-- tool/opstruss.yaml --
+opstruss: "1.1"
+name: shop
+backend:
+  uses: ../testplugins/fakebackend
+  with: {dir: ../tstore}
+units:
+  infra:
+    uses: ../testplugins/faketool
+-- global/opstruss.yaml --
+opstruss: "1.1"
+name: shop
+backend:
+  uses: ../testplugins/fakebackend
+  with: {dir: ../gstore}
+stacks:
+  prod: {}
+units:
+  tools:
+    global: true
+    run: echo tools
+  zone:
+    needs: [tools]
+    run: echo zone

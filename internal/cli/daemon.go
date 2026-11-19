@@ -259,19 +259,27 @@ func (a *app) stopCommand() *cobra.Command {
 	}
 }
 
-// unlockCommand forgets what is left of a service that cannot be proven
-// its own, which keeps up from starting it and stop from finishing.
+// unlockCommand releases a stale lock of a plugin backend, and forgets
+// what is left of a service that cannot be proven its own, which keeps up
+// from starting it and stop from finishing.
 func (a *app) unlockCommand() *cobra.Command {
-	return &cobra.Command{
+	var yes bool
+	cmd := &cobra.Command{
 		Use:   "unlock <unit>",
-		Short: "Forget a leftover service so up can start it again",
-		Long:  "Forget what is left of a service that cannot be proven its own, so up starts it again.",
-		Args:  cobra.ExactArgs(1),
+		Short: "Release a stale lock, or forget a leftover service",
+		Long: "Release the lock of a unit that a plugin backend keeps after its holder died, as the holder's token: " +
+			"one whose holder ran on this host and no longer runs at once, one of another host once you agree, or with --yes. " +
+			"_daemon names the lease of the daemon of the stack, _kv the lock of kv, and _meta that of _meta. " +
+			"For a unit, also forget what is left of its service that cannot be proven its own, so up starts it again.",
+		Example: `  opstruss unlock web --stack prod
+  opstruss unlock _daemon --stack prod --yes`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, units []string) error {
 			req, err := a.request(units)
 			if err != nil {
 				return err
 			}
+			req.Yes = yes
 			in := a.interrupts()
 			defer in.stop()
 			res, err := a.call(in.ctx, "unlock", req)
@@ -281,4 +289,7 @@ func (a *app) unlockCommand() *cobra.Command {
 			return in.exit(res.ExitCode)
 		},
 	}
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "release a lock that a host other than this one holds without asking, as in CI")
+	a.globalFlag(cmd, false)
+	return cmd
 }

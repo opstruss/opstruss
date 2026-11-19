@@ -1,13 +1,14 @@
 # CI with GitHub Actions
 
-::: warning The state lives on one machine
-This version keeps the state of each stack in `.opstruss/` of the
-machine that runs it. A GitHub-hosted runner starts empty every time:
+::: warning Where the state lives
+Without a plugin backend, each stack keeps its state in `.opstruss/` of
+the machine that runs it. A GitHub-hosted runner starts empty every time:
 it has neither the records of the units nor the state of the OpenTofu
 modules, so an `up` there would make every resource again. Run `up`
-only on a self-hosted runner on the machine that holds the state, and
-use GitHub-hosted runners to check the files. A shared state comes in a
-later version.
+there only with a [shared state](./share-state), from 1.1 on, in which
+OpenTofu keeps its own state in a backend of its own too; otherwise on a
+self-hosted runner on the machine that holds the state, with
+GitHub-hosted runners to check the files.
 :::
 
 ## A workflow

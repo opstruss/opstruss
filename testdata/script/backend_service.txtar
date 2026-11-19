@@ -1,0 +1,37 @@
+# A service of a stack that a plugin backend shares runs on the host whose
+# daemon started it: the daemon of another host, even with the lease, does
+# not start it again or destroy it, and names that host.
+
+env HOME=$WORK/home1
+cd one
+exec opstruss init --stack default
+exec opstruss up -d --yes
+stdout '^default/web: up: done'
+exec opstruss stop
+
+env HOME=$WORK/home2
+cd ../two
+! exec opstruss up -d --yes
+stderr '^default/web: the service web runs on .*, whose daemon keeps it; up and destroy it there, or, once that host is gone for good, forget its record with opstruss state rm web$'
+! exec opstruss destroy --yes
+stderr '^default/web: the service web runs on '
+exec opstruss stop
+
+-- one/opstruss.yaml --
+opstruss: "1.1"
+name: shop
+backend:
+  uses: ../testplugins/fakebackend
+  with: {dir: ../store}
+units:
+  web:
+    service: sleep 30
+-- two/opstruss.yaml --
+opstruss: "1.1"
+name: shop
+backend:
+  uses: ../testplugins/fakebackend
+  with: {dir: ../store}
+units:
+  web:
+    service: sleep 30

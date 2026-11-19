@@ -50,9 +50,10 @@ func (s *Store) at(address string) *Store {
 func MetaKey(stack string) string           { return stack + "/_meta" }
 func RecordKey(address string) string       { return address + "/state.json" }
 func LockKey(address string) string         { return address + "/state.lock" }
-func metaLockKey(stack string) string       { return stack + "/_meta.lock" }
+func MetaLockKey(stack string) string       { return stack + "/_meta.lock" }
 func kvKey(stack, name string) string       { return stack + "/_kv/" + name }
-func kvLockKey(stack string) string         { return stack + "/_kv.lock" }
+func KVLockKey(stack string) string         { return stack + "/_kv.lock" }
+func DaemonLockKey(stack string) string     { return stack + "/_daemon.lock" }
 func forgottenKey(stack, run string) string { return stack + "/_forgotten/" + run }
 
 // IncompleteError is a stack whose records have no _meta.
@@ -86,6 +87,14 @@ func Open(b Backend, stack, project string) (*Store, error) {
 	}
 	s.meta = m
 	return s, nil
+}
+
+// HasMeta reports whether the stack had _meta when it opened, or has made
+// it since.
+func (s *Store) HasMeta() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.meta != nil
 }
 
 // Writable reports whether runs may write this stack: not when its _meta
@@ -209,10 +218,10 @@ func (s *Store) MetaData() ([]byte, string, error) {
 }
 
 // LockMeta takes the lock of _meta without waiting, for a write of it.
-func (s *Store) LockMeta(h Holder) (string, error) { return s.Backend.Lock(metaLockKey(s.Stack), h) }
+func (s *Store) LockMeta(h Holder) (string, error) { return s.Backend.Lock(MetaLockKey(s.Stack), h) }
 
 // UnlockMeta releases the lock of _meta.
-func (s *Store) UnlockMeta(token string) error { return s.Backend.Unlock(metaLockKey(s.Stack), token) }
+func (s *Store) UnlockMeta(token string) error { return s.Backend.Unlock(MetaLockKey(s.Stack), token) }
 
 // ReplaceMeta writes _meta, with the data key in its envelopes, when it
 // still has etag, or makes it when etag is empty and there is none; the
@@ -261,12 +270,14 @@ func (s *Store) Lock(address string, h Holder) (string, error) {
 }
 
 // Held reports whether another holder has the lock of an address, and who,
-// without taking it, for a plan that only looks.
-func (s *Store) Held(address string) (Holder, bool, error) {
-	if l, ok := s.Backend.(*Local); ok {
+// for a plan that only looks. A plugin backend has no look without taking
+// the lock, so h takes it for a moment, and names who would hold it if
+// the program dies before it lets go.
+func (s *Store) Held(address string, h Holder) (Holder, bool, error) {
+	if l, ok := s.at(address).Backend.(*Local); ok {
 		return l.Held(LockKey(address))
 	}
-	token, err := s.Lock(address, Holder{})
+	token, err := s.Lock(address, h)
 	var le *LockedError
 	switch {
 	case err == nil:
@@ -359,7 +370,7 @@ func (s *Store) ForgetTool(address, run string) error {
 // record from one address to another. A tool/ that moved already is left
 // as it is, so a move that was interrupted can be repeated.
 func (s *Store) MoveTool(from, to string) error {
-	l, ok := s.Backend.(*Local)
+	l, ok := s.at(from).Backend.(*Local)
 	if !ok {
 		return nil
 	}
@@ -380,7 +391,7 @@ func (s *Store) MoveTool(from, to string) error {
 // ToolDir is tool/ of address, the directory where a plugin with state:
 // tool keeps the tool's own state; only the local backend has one.
 func (s *Store) ToolDir(address string) (string, bool) {
-	l, ok := s.Backend.(*Local)
+	l, ok := s.at(address).Backend.(*Local)
 	if !ok {
 		return "", false
 	}
@@ -401,9 +412,9 @@ func (s *Store) RemoveTool(address string) error {
 func (s *Store) KeyOf(key string) (data, lock string, address string) {
 	switch {
 	case key == "_meta":
-		return MetaKey(s.Stack), metaLockKey(s.Stack), ""
+		return MetaKey(s.Stack), MetaLockKey(s.Stack), ""
 	case strings.HasPrefix(key, "_kv/"):
-		return kvKey(s.Stack, strings.TrimPrefix(key, "_kv/")), kvLockKey(s.Stack), ""
+		return kvKey(s.Stack, strings.TrimPrefix(key, "_kv/")), KVLockKey(s.Stack), ""
 	}
 	address = s.Stack + "/" + key
 	return RecordKey(address), LockKey(address), address

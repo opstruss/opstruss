@@ -109,6 +109,13 @@ type Daemon struct {
 	sup  *Supervisor
 	trig *triggers
 
+	// lease is the lease of a stack that a plugin backend keeps, once this
+	// daemon took it; leaseErr why it has none: an *engine.LeaseError, or
+	// what failed, which the next install tries again.
+	leaseMu  sync.Mutex
+	lease    *engine.Lease
+	leaseErr error
+
 	// runs ends the calls and the runs of triggers, as the daemon stops.
 	runs       context.Context
 	cancelRuns context.CancelCauseFunc
@@ -197,10 +204,48 @@ func Start(opts Options) (_ *Daemon, err error) {
 	d.runs, d.cancelRuns = context.WithCancelCause(runs)
 	d.trig = &triggers{d: d, sources: map[string]*source{}, pending: map[string]int{}}
 	d.trig.hooks = &webhooks{t: d.trig}
+	d.sup.leased = d.leased
 	// What fails here is in the log; the up that started the daemon
 	// installs the triggers again and says so.
 	_ = d.trig.install(runOptions(opts.Dir, opts.Stack, opts.Inputs, opts.Environ, opts.Locked))
 	return d, nil
+}
+
+// takeLease takes the lease of the stack for this daemon, once: one that
+// another daemon holds stays its own until this one starts again.
+func (d *Daemon) takeLease(opts engine.Options) error {
+	d.leaseMu.Lock()
+	defer d.leaseMu.Unlock()
+	var held *engine.LeaseError
+	if d.lease != nil || errors.As(d.leaseErr, &held) {
+		return d.leaseErr
+	}
+	d.lease, d.leaseErr = engine.TakeLease(opts)
+	switch {
+	case errors.As(d.leaseErr, &held):
+		d.say("warn", "%v", d.leaseErr)
+	case d.leaseErr != nil:
+		d.say("warn", "the lease of the stack: %v", d.leaseErr)
+	}
+	return d.leaseErr
+}
+
+// leased says why this daemon does not keep the triggers and services of
+// its stack, or nil.
+func (d *Daemon) leased() error {
+	d.leaseMu.Lock()
+	defer d.leaseMu.Unlock()
+	return d.leaseErr
+}
+
+// releaseLease lets the lease go as the daemon stops.
+func (d *Daemon) releaseLease() {
+	d.leaseMu.Lock()
+	defer d.leaseMu.Unlock()
+	if err := d.lease.Release(); err != nil {
+		d.say("warn", "the lease of the stack stays held: %v", err)
+	}
+	d.lease = nil
 }
 
 // runOptions are the options of a run of the project in dir, with the
@@ -284,6 +329,7 @@ func (d *Daemon) Serve(ctx context.Context) error {
 	d.trig.close()
 	d.calls.Wait()
 	d.sup.stopAll()
+	d.releaseLease()
 	d.say("info", "daemon stopped")
 	d.close()
 	return nil

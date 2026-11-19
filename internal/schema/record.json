@@ -23,6 +23,8 @@
     },
     "run": { "$ref": "#/$defs/run" },
     "stack": { "type": "string", "description": "The stack of the run that wrote a record of a global unit; empty for a run of the global scope." },
+    "host": { "type": "string", "description": "Of a service: the host id of the host whose daemon keeps it." },
+    "hostname": { "type": "string", "description": "Of a service: the name of that host." },
     "updated": { "type": "string", "format": "date-time" },
     "pending": { "$ref": "#/$defs/attempt" },
     "abandoned": { "type": "array", "items": { "$ref": "#/$defs/attempt" } },
@@ -121,6 +123,7 @@
         "hostname": { "type": "string" },
         "user": { "type": "string" },
         "pid": { "type": "integer", "minimum": 0 },
+        "start": { "description": "When the process started, as the system keeps it: only for comparing with the same pid on the same host.", "type": "string" },
         "started": { "type": "string", "format": "date-time" },
         "since": { "type": "string", "format": "date-time" }
       },

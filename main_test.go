@@ -35,12 +35,13 @@ import (
 
 func TestMain(m *testing.M) {
 	testscript.Main(m, map[string]func(){
-		"opstruss":  func() { fixtureAssets(); os.Exit(cli.Main()) },
-		"fakecloud": func() { os.Exit(fakecloud(os.Args[1:])) },
-		"fakeapi":   func() { os.Exit(fakeapi(os.Args[1:])) },
-		"fakesops":  func() { os.Exit(fakesops(os.Args[1:])) },
-		"lines":     func() { os.Exit(lines(os.Args[1:])) },
-		"sudo":      func() { os.Exit(fakesudo(os.Args[1:])) },
+		"opstruss":    func() { fixtureAssets(); os.Exit(cli.Main()) },
+		"fakecloud":   func() { os.Exit(fakecloud(os.Args[1:])) },
+		"fakebackend": func() { os.Exit(fakebackend(os.Args[1:])) },
+		"fakeapi":     func() { os.Exit(fakeapi(os.Args[1:])) },
+		"fakesops":    func() { os.Exit(fakesops(os.Args[1:])) },
+		"lines":       func() { os.Exit(lines(os.Args[1:])) },
+		"sudo":        func() { os.Exit(fakesudo(os.Args[1:])) },
 	})
 }
 

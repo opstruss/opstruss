@@ -40,6 +40,12 @@ func (e *engine) resolveSecret(name string) (any, error) {
 	if e.run == nil && !e.trigger {
 		return nil, errors.New("secrets are read only in a run")
 	}
+	return e.secretFrom(name)
+}
+
+// secretFrom reads secret name from its source; one from a program only
+// in a run.
+func (e *engine) secretFrom(name string) (any, error) {
 	src, dir := e.p.Secrets[name], e.p.DirOf("secrets."+name)
 	s := e.newKV().scope(&expr.Scope{Dir: dir, Vars: map[string]any{"stack": e.p.StackName, "inputs": e.inputs,
 		"locals": e.locals, "opstruss": e.facts(nil)}, Marks: map[string]any{"inputs": e.inputMarks, "locals": e.localMarks}})

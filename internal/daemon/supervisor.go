@@ -58,6 +58,9 @@ type Supervisor struct {
 	say         func(record.Event) // the daemon's log
 	watch       func(record.Event) // the terminal of a daemon in the foreground, or nil
 	kill        <-chan struct{}    // closed when what stops the services is to kill them at once
+	// leased, in a daemon, says why it starts no service: another daemon
+	// holds the lease of a stack that checkouts share.
+	leased func() error
 
 	recovered chan struct{} // closed once what a daemon that ended left is stopped
 	done      chan struct{} // closed once the supervisor stops
@@ -170,6 +173,11 @@ func (sup *Supervisor) Start(ctx context.Context, spec *engine.Service) error {
 	case <-sup.recovered:
 	case <-ctx.Done():
 		return context.Cause(ctx)
+	}
+	if sup.leased != nil {
+		if err := sup.leased(); err != nil {
+			return err
+		}
 	}
 	addr := spec.Address
 	sup.mu.Lock()

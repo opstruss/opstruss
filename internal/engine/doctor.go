@@ -31,7 +31,7 @@ type Report struct {
 // Check is one finding: ok; skip when only a run can check it; warn for
 // what may matter; error for what fails a run.
 type Check struct {
-	Check   string   `json:"check"` // program, sops, key, env, state, processes, or sudo
+	Check   string   `json:"check"` // program, sops, key, env, state, backend, processes, or sudo
 	Status  string   `json:"status"`
 	Message string   `json:"message"`
 	Name    string   `json:"name,omitempty"` // the program or the variable
@@ -48,7 +48,14 @@ func (r *Report) Failed() bool {
 // programs of requires:, the data key and sops, the variables that
 // plugins ask for, where .opstruss is, and the list of processes.
 func Doctor(opts Options) (*Report, error) {
+	opts.report = true
 	e, err := e0(opts)
+	var be *backendError
+	if errors.As(err, &be) {
+		// What needs the state is unknown without it, so the backend is
+		// all that doctor says.
+		return &Report{Stack: be.scope, Checks: []*Check{{Check: "backend", Status: "error", Name: be.name, Message: err.Error()}}}, nil
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -62,6 +69,10 @@ func Doctor(opts Options) (*Report, error) {
 	d.environment()
 	d.pluginPaths()
 	d.state()
+	d.backend(e)
+	if e.global != nil {
+		d.backend(e.global)
+	}
 	for _, msg := range e.undeclaredStacks() {
 		d.add(&Check{Check: "state", Status: "warn", Message: msg})
 	}
@@ -506,6 +517,30 @@ func (d *doctor) state() {
 		d.add(&Check{Check: "state", Status: "ok", Name: fs, Message: fmt.Sprintf("%s is on a local filesystem (%s)", name, fs)})
 	default:
 		d.add(&Check{Check: "state", Status: "ok", Message: name + " is on a local filesystem"})
+	}
+}
+
+// backend says where the scope of e keeps its state: a plugin backend
+// also runs the probe, and says whether the scope has its _meta there and
+// matches what this checkout kept it in.
+func (d *doctor) backend(e *engine) {
+	what := scopeText(e.p.StackName)
+	pb, ok := e.store.Backend.(*pluginBackend)
+	if !ok {
+		d.add(&Check{Check: "backend", Status: "ok", Name: "local", Message: what + " keeps its state in the local backend, in .opstruss/state/"})
+		if e.originErr != nil {
+			d.add(&Check{Check: "backend", Status: "error", Name: "local", Message: e.originErr.Error()})
+		}
+		return
+	}
+	if err := state.Probe(pb, state.NewHolder(state.NewRunID(), e.host)); err != nil {
+		d.add(&Check{Check: "backend", Status: "error", Name: pb.name, Message: e.redact.Log(fmt.Sprintf(
+			"%s keeps its state in %s, which does not keep the contract that the state needs, %v", what, pb.location, err))})
+		return
+	}
+	d.add(&Check{Check: "backend", Status: "ok", Name: pb.name, Message: fmt.Sprintf("%s keeps its state in %s, which passes the probe", what, pb.location)})
+	if e.originErr != nil {
+		d.add(&Check{Check: "backend", Status: "error", Name: pb.name, Message: e.originErr.Error()})
 	}
 }
 

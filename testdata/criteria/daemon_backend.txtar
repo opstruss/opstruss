@@ -1,0 +1,58 @@
+# Daemon: of two daemons of one stack that share a plugin backend, only
+# the one with the lease installs the triggers, so each tick runs once;
+# one killed with -9 and started again on the same host takes its lease
+# back without an operator.
+
+env HOME=$WORK/home
+cd one
+exec opstruss init --stack default
+exec opstruss up -d --yes
+cd ../two
+exec opstruss up -d --yes
+stderr 'holds the lease of the stack'
+
+# a few ticks, all of them runs of daemon one
+waitgrep '(?s)(one.*){4}' ../ticks
+exec opstruss stop
+cd ../one
+exec opstruss stop
+cd ..
+exec sh -c 'grep -c . ticks > lines; grep -l "\"task\": *\"tick\"" one/.opstruss/runs/default/*/record.json | wc -l | tr -d " " > runs; cmp lines runs'
+! exec sh -c 'grep -l "\"task\": *\"tick\"" two/.opstruss/runs/default/*/record.json'
+! grep two ticks
+
+# killed with -9, daemon one leaves its lease; started again, it takes it
+# back, and the ticks go on
+cd one
+exec opstruss up -d --yes
+waitgrep '(?s)(one.*){6}' ../ticks
+exec sh -c 'kill -9 $(sed -n "s/.*\"pid\": *\([0-9][0-9]*\).*/\1/p" .opstruss/daemon/default.json | head -n 1)'
+exists ../store/default/_daemon.lock
+exec opstruss up -d --yes
+! stderr 'holds the lease'
+waitgrep '(?s)(one.*){9}' ../ticks
+exec opstruss stop
+! exists ../store/default/_daemon.lock
+
+-- one/opstruss.yaml --
+opstruss: "1.1"
+name: shop
+backend:
+  uses: ../testplugins/fakebackend
+  with: {dir: ../store}
+tasks:
+  tick:
+    on:
+      every: 1s
+    run: echo one >> ../ticks
+-- two/opstruss.yaml --
+opstruss: "1.1"
+name: shop
+backend:
+  uses: ../testplugins/fakebackend
+  with: {dir: ../store}
+tasks:
+  tick:
+    on:
+      every: 1s
+    run: echo two >> ../ticks

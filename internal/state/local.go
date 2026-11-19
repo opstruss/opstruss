@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 )
 
 // Local is the local backend: a key is a file under its root, normally
@@ -172,7 +173,8 @@ func (l *Local) Delete(key string, ifMatch string) error {
 	return syncDir(filepath.Dir(p))
 }
 
-// List returns the keys under prefix, without backups and temporary files.
+// List returns the keys under prefix, without backups, temporary files,
+// and backend.json, which is not a key of the state.
 func (l *Local) List(prefix string) ([]string, error) {
 	base, err := l.path(strings.TrimSuffix(prefix, "/"))
 	if err != nil {
@@ -191,7 +193,7 @@ func (l *Local) List(prefix string) ([]string, error) {
 			return err
 		}
 		key := filepath.ToSlash(rel)
-		if strings.HasPrefix(d.Name(), ".tmp-") || isBackup(key) {
+		if strings.HasPrefix(d.Name(), ".tmp-") || isBackup(key) || key == path.Dir(key)+"/"+BackendFileName && !strings.Contains(path.Dir(key), "/") {
 			return nil
 		}
 		keys = append(keys, key)
@@ -291,12 +293,20 @@ func writeHolder(f *os.File, h Holder) error {
 	return err
 }
 
+// readHolder reads who holds the lock of f. A holder writes itself just
+// after it takes the lock, so a file that does not hold one yet is read
+// again for a moment.
 func readHolder(f *os.File) Holder {
-	var h Holder
 	buf := make([]byte, 4096)
-	n, _ := f.ReadAt(buf, 0)
-	_ = json.Unmarshal(buf[:n], &h)
-	return h
+	for range 50 {
+		var h Holder
+		n, _ := f.ReadAt(buf, 0)
+		if json.Unmarshal(buf[:n], &h) == nil && h.Run != "" {
+			return h
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	return Holder{}
 }
 
 func (l *Local) Unlock(key, token string) error {

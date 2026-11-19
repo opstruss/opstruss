@@ -85,6 +85,10 @@ type Options struct {
 	Started func(run string)
 	// RerunOf is the run that this one runs again, as runs rerun does.
 	RerunOf string
+
+	// report says that the caller reports what is wrong with the backend
+	// of the stack, as doctor does, rather than stopping on it.
+	report bool
 }
 
 // Question is a change that waits for approval, or with Items, several
@@ -162,23 +166,27 @@ type engine struct {
 	inputs   map[string]any
 	locals   map[string]any
 	store    *state.Store
-	root     string // the project's .opstruss
-	runID    string
-	parents  []string
-	host     string
-	holder   state.Holder
-	started  time.Time
-	run      *plugin.Run
-	sudo     sudoSession
-	parallel int
-	sel      *selection
-	pass     pass
-	passMu   sync.Mutex
-	read     map[string]string // digests of the exact plans read in this run, by address; empty when not exact
-	answers  map[string]string // digests of the plans of the pass approved at the terminal before its turns, by address; empty for a no
-	rec      *record.Run
-	touched  map[string]*record.Unit
-	ran      map[string]*record.Task // the tasks of the project that ran inside the run, through task:, needs, or a unit
+	backends *backends // where the scopes of the run keep their state, shared with its global scope
+	// originErr is why the backend of the scope does not match what this
+	// checkout last kept it in, for doctor, which reports it.
+	originErr error
+	root      string // the project's .opstruss
+	runID     string
+	parents   []string
+	host      string
+	holder    state.Holder
+	started   time.Time
+	run       *plugin.Run
+	sudo      sudoSession
+	parallel  int
+	sel       *selection
+	pass      pass
+	passMu    sync.Mutex
+	read      map[string]string // digests of the exact plans read in this run, by address; empty when not exact
+	answers   map[string]string // digests of the plans of the pass approved at the terminal before its turns, by address; empty for a no
+	rec       *record.Run
+	touched   map[string]*record.Unit
+	ran       map[string]*record.Task // the tasks of the project that ran inside the run, through task:, needs, or a unit
 
 	rootTask string
 	needed   map[string]*taskOnce // tasks of needs, which run once per run
@@ -283,9 +291,11 @@ func loadContext(ctx context.Context, opts Options) (*engine, error) {
 	}
 	releaseSources := p.Sources.Retain()
 	p.Close()
+	bs := &backends{}
 	loaded := false
 	defer func() {
 		if !loaded {
+			bs.close()
 			releaseSources()
 		}
 	}()
@@ -321,7 +331,7 @@ func loadContext(ctx context.Context, opts Options) (*engine, error) {
 			inputMarks[k] = true
 		}
 	}
-	e := &engine{releaseSources: releaseSources, opts: opts, p: p, inputs: inputs, root: filepath.Join(p.Dir, ".opstruss"),
+	e := &engine{releaseSources: func() { bs.close(); releaseSources() }, backends: bs, opts: opts, p: p, inputs: inputs, root: filepath.Join(p.Dir, ".opstruss"),
 		redact: red, inputMarks: inputMarks, tooShort: short,
 		started: time.Now().UTC(), parallel: DefaultParallel, byUnit: map[string][]*instance{},
 		read: map[string]string{}, needed: map[string]*taskOnce{},
@@ -354,13 +364,10 @@ func loadContext(ctx context.Context, opts Options) (*engine, error) {
 			return nil, fmt.Errorf("runs nest at most %d deep, through %s", MaxDepth, strings.Join(e.parents, ", "))
 		}
 	}
-	if e.store, err = state.Open(state.NewLocal(filepath.Join(e.root, "state")), p.StackName, p.Name); err != nil {
+	if e.host, err = state.HostID(); err != nil {
 		return nil, err
 	}
-	e.store.Key = e.dataKey
-	e.store.Known = func(_, _ string, v any) bool { return e.redact.Contains(v) }
-	e.store.Opened = func(v any) { e.redact.Add(v) }
-	if e.host, err = state.HostID(); err != nil {
+	if e.store, err = e.openStore(p); err != nil {
 		return nil, err
 	}
 	if !p.Global && !p.Undeclared && p.HasGlobal() {
@@ -394,10 +401,14 @@ func (e *engine) start(command, task string, with map[string]any, tr *Trigger) e
 		rec.Parent = e.parents[len(e.parents)-1]
 	}
 	rec.Hostname, rec.User = hostname(), username()
-	var err error
-	if e.rec, err = record.Create(e.root, state.NewRunID, rec, e.sink()); err != nil {
+	created, err := record.Create(e.root, state.NewRunID, rec, e.sink())
+	if err != nil {
 		return err
 	}
+	// A plugin backend may write its stderr into the run at any time.
+	e.mu.Lock()
+	e.rec = created
+	e.mu.Unlock()
 	e.runID = e.rec.ID()
 	e.control()
 	e.emit(Event{Type: "run", Level: "info", Task: rec.Task, Status: record.Running, Message: "started"})
