@@ -32,9 +32,9 @@ stacks:
   scope; a stack may name its own, or `backend: local`.
 - `with:` is read before the state opens, so it reads only inputs, secrets
   from `sops` or `env`, and locals of those.
-- A project with [global units](./structure-a-project) and a stack with a
-  plugin backend keeps the global scope in a plugin backend too: write
-  `backend:` at the top rather than in the stacks.
+- A project with [global units or tasks](./structure-a-project) and a
+  stack with a plugin backend keeps the global scope in a plugin backend
+  too: write `backend:` at the top rather than in the stacks.
 
 ## Start a stack there
 
@@ -42,7 +42,7 @@ A stack starts in a plugin backend with `init`, never with a first run:
 
 ```sh
 opstruss init --stack prod    # checks the bucket, then writes prod/_meta there
-opstruss init                 # the same for the global scope, when the project has global units
+opstruss init                 # the same for the global scope, when the project has global units or tasks
 ```
 
 `init` first runs a probe of the backend: a few writes, deletes, and

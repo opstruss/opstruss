@@ -24,8 +24,12 @@ stderr 'backend.uses: ./testplugins/fakecloud is not a backend: a backend uses a
 
 cp global.yaml opstruss.yaml
 ! exec opstruss validate
-stderr 'stacks.prod.backend: stack prod keeps its state in a plugin backend while the global units of the project keep theirs in the local backend of each checkout'
+stderr 'stacks.prod.backend: stack prod keeps its state in a plugin backend while the global units and tasks of the project keep theirs in the local backend of each checkout, which another checkout does not read'
 ! stderr 'stacks.dev'
+
+cp globaltask.yaml opstruss.yaml
+! exec opstruss validate
+stderr 'stacks.prod.backend: stack prod keeps its state in a plugin backend while the global units and tasks of the project keep theirs in the local backend of each checkout, which another checkout does not read'
 
 cp globalinput.yaml opstruss.yaml
 ! exec opstruss validate
@@ -82,6 +86,22 @@ units:
   tools:
     global: true
     run: echo tools
+-- globaltask.yaml --
+opstruss: "1.1"
+name: shop
+stacks:
+  prod:
+    backend:
+      uses: ./testplugins/fakebackend
+      with: {dir: store}
+units:
+  web:
+    run: echo web
+tasks:
+  remember:
+    global: true
+    steps:
+      - kv: {key: last, value: hello}
 -- globalinput.yaml --
 opstruss: "1.1"
 name: shop

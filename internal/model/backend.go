@@ -70,25 +70,19 @@ func (c *checker) backendPackage(uses string) (*Package, error) {
 	return nil, fmt.Errorf("uses: declares no %s%s", uses, expr.DidYouMean(uses, slices.Collect(maps.Keys(c.p.Packages))))
 }
 
-// globalBackend keeps the records of global units where every checkout
-// finds them: a stack that shares its state through a plugin backend needs
+// globalBackend keeps the state of the global scope where every checkout
+// finds it: a stack that shares its state through a plugin backend needs
 // the global scope, which uses the backend at the top of the project, to
-// share its state too, or each checkout would make the global units again.
+// share its state too, or each checkout would make the global units again
+// and keep its own kv of the global tasks.
 func (c *checker) globalBackend() {
 	p := c.p
-	if _, plugin := p.root.value["backend"].(map[string]any); plugin {
-		return
-	}
-	global := false
-	for _, v := range p.top["units"] {
-		global = global || isGlobal(v)
-	}
-	if !global {
+	if _, plugin := p.root.value["backend"].(map[string]any); plugin || !p.HasGlobal() {
 		return
 	}
 	for _, s := range slices.Sorted(maps.Keys(p.Stacks)) {
 		if b := p.Stacks[s].Backend; b != nil && !b.Local {
-			c.add([]string{"stacks", s, "backend"}, "stack %s keeps its state in a plugin backend while the global units of the project keep theirs in the local backend of each checkout, which would make them again; write the backend at the top of %s, which the global scope uses, and backend: local in the stacks that keep their state here", s, FileName)
+			c.add([]string{"stacks", s, "backend"}, "stack %s keeps its state in a plugin backend while the global units and tasks of the project keep theirs in the local backend of each checkout, which another checkout does not read; write the backend at the top of %s, which the global scope uses, and backend: local in the stacks that keep their state here", s, FileName)
 		}
 	}
 }

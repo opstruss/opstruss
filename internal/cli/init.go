@@ -38,7 +38,7 @@ func (a *app) initCommand() *cobra.Command {
 			"its schema for editors, and .opstruss/ in .gitignore. Then check every stack as validate does, and fetch " +
 			"what the project uses, with the binaries for this machine, as uses fetch does, so that a fresh clone is " +
 			"ready to plan. Running it again is safe. With --stack, also make the state of that stack, and always that of " +
-			"the global units of the project, in a plugin backend once a probe of it passed; a stack starts there only so. Then run the tasks " +
+			"the global units and tasks of the project, in a plugin backend once a probe of it passed; a stack starts there only so. Then run the tasks " +
 			"that follow init through after: {task: init}: the global ones, and those of the stack that --stack or the " +
 			"only stack chooses. The age key of this machine and the data key of a stack are made by the first command " +
 			"that needs them.",
@@ -74,10 +74,10 @@ func (a *app) initCommand() *cobra.Command {
 			if err := a.initSources(cmd.Context(), dir, &res); err != nil {
 				return failed(err)
 			}
-			// The global scope has _meta once the project has global units,
-			// and only an explicit --stack makes that of a stack, not
-			// $OPSTRUSS_STACK.
-			if gp, err := model.Declarations(dir, model.GlobalScope); err == nil && len(gp.Units) > 0 {
+			// The global scope has _meta once the project has global units
+			// or tasks, as a run opens it then, and only an explicit --stack
+			// makes that of a stack, not $OPSTRUSS_STACK.
+			if gp, err := model.Declarations(dir, model.GlobalScope); err == nil && gp.HasGlobal() {
 				if err := a.initState(cmd.Context(), dir, model.GlobalScope, &res); err != nil {
 					return failed(err)
 				}

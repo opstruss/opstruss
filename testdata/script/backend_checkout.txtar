@@ -63,6 +63,17 @@ exists ../gstore/_global/tools/state.json
 exists ../gstore/prod/zone/state.json
 exists .opstruss/state/_global/backend.json
 
+# a global task alone opens the global scope too, so init starts it, and
+# its kv is in the backend that every checkout reads
+cd ../globaltask
+exec opstruss init --stack prod
+stdout '^wrote _global/_meta in fake:.*/kstore$'
+stdout '^wrote prod/_meta in fake:.*/kstore$'
+exec opstruss plan --stack prod
+exec opstruss remember
+exists ../kstore/_global/_kv/last
+! exists .opstruss/state/_global/_kv/last
+
 -- broken/opstruss.yaml --
 opstruss: "1.1"
 name: shop
@@ -133,3 +144,19 @@ units:
   zone:
     needs: [tools]
     run: echo zone
+-- globaltask/opstruss.yaml --
+opstruss: "1.1"
+name: shop
+backend:
+  uses: ../testplugins/fakebackend
+  with: {dir: ../kstore}
+stacks:
+  prod: {}
+units:
+  web:
+    run: echo web ran
+tasks:
+  remember:
+    global: true
+    steps:
+      - kv: {key: last, value: hello}
