@@ -249,16 +249,17 @@ func (e *engine) startService(ctx context.Context, inst *instance, r *resolved, 
 	return &plugin.Result{Changed: true}, nil
 }
 
-// serviceElsewhere refuses a service that the daemon of another host
-// keeps, as its record says in a stack that shares its state through a
-// plugin backend.
+// serviceElsewhere refuses a service that the daemon of another checkout
+// keeps, on this host or another, as its record says in a stack that
+// shares its state through a plugin backend: only that daemon has the
+// service and the notes of what is left of it.
 func (e *engine) serviceElsewhere(addr string, rec *state.Record) error {
-	if _, shared := e.store.Backend.(*pluginBackend); !shared || rec == nil || rec.Host == "" || rec.Host == e.host {
+	if _, shared := e.store.Backend.(*pluginBackend); !shared || rec == nil || rec.Host == "" || rec.Host == e.host && rec.Checkout == e.p.Dir {
 		return nil
 	}
 	short := e.short(addr)
-	return fmt.Errorf("the service %s runs on %s, whose daemon keeps it; up and destroy it there, or, once that host is gone for good, forget its record with opstruss state rm %s",
-		short, cmp.Or(rec.Hostname, "another host"), short)
+	return fmt.Errorf("the service %s runs from %s on %s, whose daemon keeps it; up and destroy it there, or, once that checkout is gone for good, forget its record with opstruss state rm %s",
+		short, rec.Checkout, cmp.Or(rec.Hostname, "another host"), short)
 }
 
 // serviceStatus is the status of a service unit: its state, pid, since

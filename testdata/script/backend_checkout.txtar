@@ -8,7 +8,7 @@ env FAKE_TOKEN=s3cr3t-t0ken-for-the-backend
 # the probe refuses a storage that deletes whatever if_match says
 cd broken
 ! exec opstruss init --stack default
-stderr 'does not keep the contract that the state needs, probe step 2: delete with another etag is a conflict: it succeeded$'
+stderr 'does not keep the contract that the state needs, probe step 2: delete with an old etag is a conflict: it succeeded$'
 ! exists ../bstore/default/_meta
 ! exists .opstruss/state/default/backend.json
 

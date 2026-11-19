@@ -887,7 +887,7 @@ func (e *engine) turn(ctx context.Context, inst *instance, leave func()) {
 		Updated: time.Now().UTC().Format(time.RFC3339), Abandoned: next.Abandoned,
 		Hidden: withHidden(attempt.Hidden, map[string][]string{state.PartOutputs: slices.Sorted(maps.Keys(outMarks))}, state.PartOutputs, state.PartRawOutput)}
 	if r.service != nil {
-		done.Host, done.Hostname = e.host, hostname()
+		done.Host, done.Hostname, done.Checkout = e.host, hostname(), e.p.Dir
 	}
 	err = failpoint.Fail("up-before-put")
 	if err == nil {

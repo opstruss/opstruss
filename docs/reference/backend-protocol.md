@@ -88,9 +88,12 @@ waits for its answer, and sends the next; the first is `initialize`.
 `opstruss init` and `opstruss doctor` try the contract before a stack
 starts in a backend, on keys under `_probe/<id>/` that no stack reads:
 
-1. `put` with `if_none_match`, then `get` gives what it wrote, with its
-   etag; a second `put` with `if_none_match` is a `conflict`.
-2. `put` and `delete` with another etag are a `conflict`.
+1. `put` with `if_none_match` of a key as deep as a record,
+   `_probe/<id>/unit/state.json`, then `get` gives what it wrote, with its
+   etag, and `list` of the prefix gives the key; a second `put` with
+   `if_none_match` is a `conflict`.
+2. `put` with the etag writes, and `get` gives what it wrote, with its new
+   etag; `put` and `delete` with the old etag are a `conflict`.
 3. `delete` with the etag, then `get` is `not_found`.
 4. A second `lock` is `locked`, with the holder and the token of the
    first.

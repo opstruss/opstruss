@@ -288,9 +288,9 @@ func (s *Store) Held(address string, h Holder) (Holder, bool, error) {
 	return Holder{}, false, err
 }
 
-// Unlock releases the lock of an address.
+// Unlock releases the lock of an address, in the store that Lock took it.
 func (s *Store) Unlock(address, token string) error {
-	return s.Backend.Unlock(LockKey(address), token)
+	return s.at(address).Backend.Unlock(LockKey(address), token)
 }
 
 // Inventory returns every address in the stack that has a record,

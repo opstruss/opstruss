@@ -103,5 +103,6 @@ The daemon of a stack whose state is shared holds the lease of the
 stack, `_daemon`, while it runs: only that daemon installs the triggers
 and keeps the services, so a schedule runs once. A daemon of another
 checkout runs what it is asked, as an `up`, and says which machine holds
-the lease. A service runs on the machine whose daemon started it, and
-`up` or `destroy` of it from another one is refused with that machine.
+the lease. A service runs from the checkout whose daemon started it, and
+`up` or `destroy` of it from another checkout, on that machine or
+another, is refused with its directory and machine.

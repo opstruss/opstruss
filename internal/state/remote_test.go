@@ -12,13 +12,18 @@ import (
 )
 
 // memServer answers the backend protocol from memory, as a plugin backend
-// does on its stdin and stdout; deleteAny breaks the contract as storage
-// does that ignores If-Match on delete.
+// does on its stdin and stdout. Each flag breaks the contract as some
+// storage does: deleteAny ignores If-Match on delete, matchNone refuses
+// every put with If-Match, listNone lists nothing, and flatList lists only
+// the keys right under the prefix, as a listing with a delimiter does.
 type memServer struct {
 	mu        sync.Mutex
 	keys      map[string]string
 	locks     map[string][2]string // holder JSON, token
 	deleteAny bool
+	matchNone bool
+	listNone  bool
+	flatList  bool
 	protocol  int
 	silent    string // a method it never answers
 	deaf      bool   // reads no request after initialize
@@ -84,7 +89,7 @@ func (m *memServer) answer(method string, p map[string]any) (any, string) {
 		}
 		return map[string]any{"data": v, "etag": ETag([]byte(v))}, ""
 	case "put":
-		if none, _ := p["if_none_match"].(bool); none && ok || str("if_match") != "" && (!ok || ETag([]byte(v)) != str("if_match")) {
+		if none, _ := p["if_none_match"].(bool); none && ok || str("if_match") != "" && (!ok || ETag([]byte(v)) != str("if_match") || m.matchNone) {
 			return nil, "conflict"
 		}
 		m.keys[key] = str("data")
@@ -100,13 +105,17 @@ func (m *memServer) answer(method string, p map[string]any) (any, string) {
 		return map[string]any{}, ""
 	case "list":
 		keys := []string{}
+		listed := func(k string) bool {
+			rest, under := strings.CutPrefix(k, str("prefix"))
+			return under && !m.listNone && (!m.flatList || !strings.Contains(rest, "/"))
+		}
 		for k := range m.keys {
-			if strings.HasPrefix(k, str("prefix")) {
+			if listed(k) {
 				keys = append(keys, k)
 			}
 		}
 		for k := range m.locks {
-			if strings.HasPrefix(k, str("prefix")) {
+			if listed(k) {
 				keys = append(keys, k)
 			}
 		}
@@ -249,26 +258,34 @@ func TestRemoteBroken(t *testing.T) {
 }
 
 func TestProbe(t *testing.T) {
-	r, err := dial(t, &memServer{}, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := Probe(r, Holder{Run: "r1"}); err != nil {
-		t.Fatal(err)
-	}
-	if keys, _ := r.List("_probe/"); len(keys) > 0 {
-		t.Fatalf("the probe left %v", keys)
-	}
-	r, err = dial(t, &memServer{deleteAny: true}, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = Probe(r, Holder{Run: "r1"})
-	var pe *ProbeError
-	if !errors.As(err, &pe) || pe.Step != 2 || !strings.Contains(err.Error(), "delete with another etag is a conflict") {
-		t.Fatalf("a storage that deletes whatever etag: %v", err)
-	}
-	if keys, _ := r.List("_probe/"); len(keys) > 0 {
-		t.Fatalf("the failed probe left %v", keys)
+	for _, c := range []struct {
+		name string
+		m    *memServer
+		step int
+		what string // in the error of the step; none passes
+	}{
+		{"a storage that keeps the contract", &memServer{}, 0, ""},
+		{"a storage that deletes whatever etag", &memServer{deleteAny: true}, 2, "delete with an old etag is a conflict: it succeeded"},
+		{"a storage that refuses every put with an etag", &memServer{matchNone: true}, 2, "put with the etag: the key changed since it was read"},
+		{"a storage that lists nothing", &memServer{listNone: true}, 1, "list of the prefix gives the key"},
+		{"a storage that lists one level", &memServer{flatList: true}, 1, "list of the prefix gives the key"},
+	} {
+		r, err := dial(t, c.m, time.Minute)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = Probe(r, Holder{Run: "r1"})
+		var pe *ProbeError
+		switch {
+		case c.step == 0 && err != nil:
+			t.Errorf("%s: %v", c.name, err)
+		case c.step != 0 && (!errors.As(err, &pe) || pe.Step != c.step || !strings.Contains(err.Error(), c.what)):
+			t.Errorf("%s: %v, not step %d: %s", c.name, err, c.step, c.what)
+		}
+		c.m.mu.Lock()
+		if len(c.m.keys)+len(c.m.locks) > 0 {
+			t.Errorf("%s: the probe left %v and the locks %v", c.name, c.m.keys, c.m.locks)
+		}
+		c.m.mu.Unlock()
 	}
 }

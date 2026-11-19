@@ -3702,6 +3702,8 @@ schema record abandoned[].source.uses
 schema record abandoned[].source.uses type string
 schema record address
 schema record address type string
+schema record checkout
+schema record checkout type string
 schema record destroy
 schema record destroy type object
 schema record destroy.binaries

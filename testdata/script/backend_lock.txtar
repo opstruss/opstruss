@@ -39,6 +39,35 @@ exists store/default/slow/state.json
 ! exec opstruss unlock _daemon
 stderr '_daemon is not locked, so there is nothing to release$'
 
+# a global unit takes and releases its lock in the backend of the project,
+# also in a run of a stack that keeps its own state in the local backend
+cd mixed
+exec opstruss init
+exec opstruss plan --stack dev
+stdout '^_global/zone: will run: new$'
+! exists ../gstore/_global/zone/state.lock
+exec opstruss up --stack dev --yes
+stdout '^_global/zone \| zone ran$'
+exists ../gstore/_global/zone/state.json
+! exists ../gstore/_global/zone/state.lock
+exists .opstruss/state/dev/site/state.json
+
+-- mixed/opstruss.yaml --
+opstruss: "1.1"
+name: mixed
+backend:
+  uses: ../testplugins/fakebackend
+  with: {dir: ../gstore}
+stacks:
+  dev:
+    backend: local
+units:
+  zone:
+    global: true
+    run: echo zone ran
+  site:
+    needs: [zone]
+    run: echo site ran
 -- opstruss.yaml --
 opstruss: "1.1"
 name: shop

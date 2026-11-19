@@ -25,6 +25,7 @@
     "stack": { "type": "string", "description": "The stack of the run that wrote a record of a global unit; empty for a run of the global scope." },
     "host": { "type": "string", "description": "Of a service: the host id of the host whose daemon keeps it." },
     "hostname": { "type": "string", "description": "Of a service: the name of that host." },
+    "checkout": { "type": "string", "description": "Of a service: the directory of the project on that host, whose daemon keeps it." },
     "updated": { "type": "string", "format": "date-time" },
     "pending": { "$ref": "#/$defs/attempt" },
     "abandoned": { "type": "array", "items": { "$ref": "#/$defs/attempt" } },
