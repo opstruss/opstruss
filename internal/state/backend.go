@@ -26,6 +26,14 @@ type Backend interface {
 	Unlock(key, token string) error
 }
 
+// Scanner is a backend that gives every key under a prefix with its content
+// in one operation, as list gives the keys: the capability scan of a plugin
+// backend. One without it returns errors.ErrUnsupported, and the store
+// lists and gets instead.
+type Scanner interface {
+	Scan(prefix string) (map[string][]byte, error)
+}
+
 var (
 	// ErrNotExist is the error of Get and Delete on a key that is absent.
 	ErrNotExist = errors.New("no such key")

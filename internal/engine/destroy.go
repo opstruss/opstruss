@@ -29,7 +29,6 @@ type leftover struct {
 	unit    string   // the path of its unit, as the address names it
 	keys    []string // the keys of its address, one per segment
 	record  *state.Record
-	etag    string // of the record as it was read
 	forget  bool
 	reason  string
 	cause   string      // why, as a word: requested, gone, or removed
@@ -80,7 +79,7 @@ func (l *leftover) view() map[string]any {
 		action = "forget"
 	}
 	v := map[string]any{"changes": []any{map[string]any{"action": action}}, "outputs": []any{}, "exact": true,
-		"digest": destroyDigest(action, l.address, l.etag), "summary": l.summary(), "reason": l.cause}
+		"digest": destroyDigest(action, l.address, l.record.Sum), "summary": l.summary(), "reason": l.cause}
 	if l.auto && !l.forget {
 		v["approval"] = "auto"
 	}
@@ -108,11 +107,12 @@ func (l *leftover) planOutcome() string {
 	return success
 }
 
-// destroyDigest is the digest of destroying the record at addr with etag,
-// or of forgetting it: the same while neither the operation nor the
-// record changes, so yes: true approves only what task: plan showed.
-func destroyDigest(action, addr, etag string) string {
-	sum := sha256.Sum256([]byte(action + "\n" + addr + "\n" + etag))
+// destroyDigest is the digest of destroying the record at addr with the
+// sum of what was read, or of forgetting it: the same while neither the
+// operation nor the record changes, so yes: true approves only what task:
+// plan showed.
+func destroyDigest(action, addr, read string) string {
+	sum := sha256.Sum256([]byte(action + "\n" + addr + "\n" + read))
 	return "sha256:v1:" + hex.EncodeToString(sum[:])
 }
 
@@ -122,7 +122,11 @@ func (e *engine) destroyPass(ctx context.Context) ([]*leftover, error) {
 	if err := e.selectUnits(true); err != nil {
 		return nil, err
 	}
-	records, err := e.records(nil)
+	snap, err := e.store.Snapshot()
+	if err != nil {
+		return nil, err
+	}
+	records, err := e.records(snap, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -185,20 +189,13 @@ func framesOfDestroy(e *engine, items []*leftover) []string {
 	return out
 }
 
-// records reads every record of the stack, tombstones left out, and in a
-// run of a stack those of the global units it picked, which the run
-// destroys only when they are named.
-func (e *engine) records(skip map[string]bool) ([]*leftover, error) {
-	addrs, err := e.store.Inventory()
-	if err != nil {
-		return nil, err
-	}
-	if e.global != nil {
-		more, err := e.global.store.Inventory()
-		if err != nil {
-			return nil, err
-		}
-		for _, a := range more {
+// records reads every record of the stack in snap, tombstones left out,
+// and in a run of a stack those of the global units it picked, which the
+// run destroys only when they are named.
+func (e *engine) records(snap *state.Snapshot, skip map[string]bool) ([]*leftover, error) {
+	addrs := snap.Inventory()
+	if g := snap.Global(); g != nil {
+		for _, a := range g.Inventory() {
 			var names, keys []string
 			for _, s := range model.ParseAddress(e.short(a)) {
 				names, keys = append(names, s.Unit), append(keys, s.Key)
@@ -213,14 +210,14 @@ func (e *engine) records(skip map[string]bool) ([]*leftover, error) {
 		if skip[addr] {
 			continue
 		}
-		rec, etag, err := e.store.Get(addr)
+		rec, err := snap.Get(addr)
 		if err != nil {
 			return nil, err
 		}
 		if rec == nil || rec.Tombstone != nil {
 			continue
 		}
-		l := &leftover{address: addr, record: rec, etag: etag, done: make(chan struct{})}
+		l := &leftover{address: addr, record: rec, done: make(chan struct{})}
 		var names []string
 		for _, s := range model.ParseAddress(e.short(addr)) {
 			names, l.keys = append(names, s.Unit), append(l.keys, s.Key)
@@ -248,7 +245,7 @@ func (e *engine) previewLeftovers() []*leftover {
 		planned[inst.address] = true
 		waits = waits || e.sel.has(inst) && inst.plan.err != nil
 	}
-	records, err := e.records(planned)
+	records, err := e.records(e.snap, planned)
 	if err != nil {
 		e.fail("", err)
 		return nil
@@ -502,7 +499,7 @@ func (e *engine) destroyOne(ctx context.Context, l *leftover) string {
 	}
 	approval := e.approvalOf(l.def)
 	if approval != "auto" {
-		source, why, _ := e.approves(ctx, Question{Op: "destroy", Address: addr, Summary: l.summary()}, destroyDigest("delete", addr, etag), -1)
+		source, why, _ := e.approves(ctx, Question{Op: "destroy", Address: addr, Summary: l.summary()}, destroyDigest("delete", addr, rec.Sum), -1)
 		if why != "" && errors.Is(ctx.Err(), context.Canceled) {
 			// The run was interrupted while the unit waited for its answer.
 			e.ended(addr, "destroy", cancelled, "interrupted before its approval")
@@ -594,7 +591,12 @@ func (e *engine) stillNeeded(l *leftover) error {
 	if e.pass.noDeps && l.cause == "requested" {
 		return nil
 	}
-	recs, err := e.records(map[string]bool{l.address: true})
+	// The records as they are now, after the pending mark of l.
+	snap, err := e.store.Snapshot()
+	if err != nil {
+		return err
+	}
+	recs, err := e.records(snap, map[string]bool{l.address: true})
 	if err != nil {
 		return err
 	}

@@ -41,14 +41,13 @@ func (e *engine) undeclaredStacks() []string {
 		if !d.IsDir() || slices.Contains(names, stack) || stack == model.GlobalScope {
 			continue
 		}
-		st := &state.Store{Backend: e.store.Backend, Stack: stack}
-		addrs, err := st.Inventory()
+		snap, err := (&state.Store{Backend: e.store.Backend, Stack: stack}).Snapshot()
 		if err != nil {
 			continue
 		}
 		n := 0
-		for _, a := range addrs {
-			if r, _, err := st.Get(a); err == nil && r != nil && r.Tombstone == nil {
+		for _, a := range snap.Inventory() {
+			if r, err := snap.Get(a); err == nil && r != nil && r.Tombstone == nil {
 				n++
 			}
 		}

@@ -165,14 +165,25 @@ func (s *Store) Get(address string) (*Record, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	r, err := DecodeRecord(data, address)
+	r, err := s.decode(data, address)
 	if err != nil {
 		return nil, "", err
 	}
-	if err := s.openRecord(r); err != nil {
-		return nil, "", fmt.Errorf("%s: %w", address, err)
-	}
 	return r, etag, nil
+}
+
+// decode reads the record at address as the backend keeps it, with the
+// sensitive values that the run can open opened.
+func (s *Store) decode(data []byte, address string) (*Record, error) {
+	r, err := DecodeRecord(data, address)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.openRecord(r); err != nil {
+		return nil, fmt.Errorf("%s: %w", address, err)
+	}
+	r.Sum = ETag(data)
+	return r, nil
 }
 
 // Put writes the record at address when it still has etag, or, with an
@@ -301,9 +312,14 @@ func (s *Store) Inventory() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	return inventory(s.Stack, keys), nil
+}
+
+// inventory is the addresses of stack whose records are among keys.
+func inventory(stack string, keys []string) []string {
 	var addrs []string
 	for _, k := range keys {
-		rest := strings.TrimPrefix(k, s.Stack+"/")
+		rest := strings.TrimPrefix(k, stack+"/")
 		// tool/ holds the tool's own files, whatever their names; no unit
 		// is named tool.
 		if strings.HasPrefix(rest, "_") || !strings.HasSuffix(k, "/state.json") || strings.Contains("/"+rest, "/tool/") {
@@ -311,7 +327,7 @@ func (s *Store) Inventory() ([]string, error) {
 		}
 		addrs = append(addrs, strings.TrimSuffix(k, "/state.json"))
 	}
-	return addrs, nil
+	return addrs
 }
 
 // Forget leaves a tombstone at address instead of its record, without

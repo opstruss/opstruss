@@ -57,6 +57,10 @@ type Record struct {
 	// has the data key keeps them in Sensitive, encrypted, and gives them
 	// back in their parts, in plain text, with their names here.
 	Hidden map[string][]string `json:"-"`
+	// Sum is the hash of the data that a Store read the record from: it
+	// names that version of the record, as an etag does, also in a
+	// snapshot, which has no etags.
+	Sum string `json:"-"`
 }
 
 // Source is where the program of a unit comes from.

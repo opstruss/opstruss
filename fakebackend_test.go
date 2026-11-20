@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"cmp"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -23,9 +24,14 @@ import (
 // there is none, which holds its holder and token, so a lock outlives its
 // holder as one in S3 does. A flock on .flock in the directory makes each
 // operation one step for every process that shares it, as two checkouts
-// do. $INPUT_BREAK names a rule of the contract to break, for the probe:
+// do, and .calls in it gets a line for each operation, its method and key
+// or prefix, for tests that count them. It has the capability scan unless
+// $INPUT_SCAN is false. $INPUT_BREAK names a rule of the contract to break,
+// for the probe:
 //
 //	delete-if-match   delete a key whatever if_match says
+//	lock-unlisted     leave the locks out of list and scan
+//	scan-error        answer scan with an error
 //	stderr            write each method to stderr
 func fakebackend(_ []string) int {
 	dir, broken := os.Getenv("INPUT_DIR"), os.Getenv("INPUT_BREAK")
@@ -41,7 +47,7 @@ func fakebackend(_ []string) int {
 		fmt.Fprintf(os.Stderr, "fakebackend: %v\n", err)
 		return 1
 	}
-	fb := &fakeStore{dir: dir, broken: broken}
+	fb := &fakeStore{dir: dir, broken: broken, scan: os.Getenv("INPUT_SCAN") != "false"}
 	in := bufio.NewReaderSize(os.Stdin, 1<<20)
 	out := json.NewEncoder(os.Stdout)
 	for {
@@ -80,6 +86,7 @@ func fakebackend(_ []string) int {
 
 type fakeStore struct {
 	dir, broken string
+	scan        bool
 }
 
 // serve answers one request: a result, or a JSON-RPC error with the code
@@ -93,10 +100,14 @@ func (fb *fakeStore) serve(method string, params map[string]any) (any, int, stri
 		if p, _ := params["protocol"].(float64); p != 1 {
 			return nil, -32000, fmt.Sprintf("fakebackend speaks protocol 1, not %v", params["protocol"]), nil
 		}
-		return map[string]any{"protocol": 1, "location": "fake:" + fb.dir, "capabilities": map[string]any{}}, 0, "", nil
+		return map[string]any{"protocol": 1, "location": "fake:" + fb.dir, "capabilities": map[string]any{"scan": fb.scan}}, 0, "", nil
+	}
+	if method == "scan" && !fb.scan {
+		return nil, -32601, "fakebackend has no method scan", nil
 	}
 	key := str("key")
-	if method == "list" {
+	listing := method == "list" || method == "scan"
+	if listing {
 		key = strings.TrimSuffix(str("prefix"), "/")
 	}
 	file, err := fb.path(key)
@@ -108,12 +119,15 @@ func (fb *fakeStore) serve(method string, params map[string]any) (any, int, stri
 		return nil, -32000, err.Error(), nil
 	}
 	defer unlock()
+	if err := fb.log(method, cmp.Or(str("key"), str("prefix"))); err != nil {
+		return nil, -32000, err.Error(), nil
+	}
 	var data []byte
 	var readErr error
-	if method != "list" {
+	if !listing {
 		data, readErr = os.ReadFile(file)
 	}
-	exists := method != "list" && readErr == nil
+	exists := !listing && readErr == nil
 	if readErr != nil && !errors.Is(readErr, fs.ErrNotExist) {
 		return nil, -32000, readErr.Error(), nil
 	}
@@ -146,8 +160,12 @@ func (fb *fakeStore) serve(method string, params map[string]any) (any, int, stri
 			return nil, -32000, err.Error(), nil
 		}
 		return map[string]any{}, 0, "", nil
-	case "list":
-		var keys []string
+	case "list", "scan":
+		if method == "scan" && fb.broken == "scan-error" {
+			return nil, -32000, "the storage stopped answering", nil
+		}
+		keys := []string{}
+		items := []map[string]any{}
 		err := filepath.WalkDir(file, func(p string, d fs.DirEntry, err error) error {
 			if errors.Is(err, fs.ErrNotExist) {
 				return nil
@@ -156,11 +174,26 @@ func (fb *fakeStore) serve(method string, params map[string]any) (any, int, stri
 				return err
 			}
 			rel, err := filepath.Rel(fb.dir, p)
-			keys = append(keys, filepath.ToSlash(rel))
+			if err != nil {
+				return err
+			}
+			k := filepath.ToSlash(rel)
+			if fb.broken == "lock-unlisted" && strings.HasSuffix(k, ".lock") {
+				return nil
+			}
+			if method == "list" {
+				keys = append(keys, k)
+				return nil
+			}
+			data, err := os.ReadFile(p)
+			items = append(items, map[string]any{"key": k, "data": string(data)})
 			return err
 		})
 		if err != nil {
 			return nil, -32000, err.Error(), nil
+		}
+		if method == "scan" {
+			return map[string]any{"items": items}, 0, "", nil
 		}
 		slices.Sort(keys)
 		return map[string]any{"keys": keys}, 0, "", nil
@@ -200,6 +233,19 @@ func (fb *fakeStore) path(key string) (string, error) {
 		return "", fmt.Errorf("invalid key %q", key)
 	}
 	return filepath.Join(fb.dir, filepath.FromSlash(key)), nil
+}
+
+// log adds the operation to .calls.
+func (fb *fakeStore) log(method, key string) error {
+	f, err := os.OpenFile(filepath.Join(fb.dir, ".calls"), os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o600)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(f, "%s %s\n", method, key)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	return err
 }
 
 // flock makes one operation of every process that shares the directory

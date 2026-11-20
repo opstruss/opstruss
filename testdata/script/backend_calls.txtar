@@ -1,0 +1,169 @@
+# The operations that plan and up make in a plugin backend: plan reads each
+# scope at once, the same for 3 units and 30, and up takes a turn only for
+# the units it runs and those after them.
+
+env HOME=$WORK/home
+
+# plan with scan: as many operations for 30 units as for 3
+cd three
+exec opstruss init --stack default
+exec opstruss up --yes
+rm store/.calls
+exec opstruss plan
+exec env LC_ALL=C sort store/.calls
+cmp stdout ../plan.calls
+cd ../thirty
+exec opstruss init --stack default
+exec opstruss up --yes
+rm store/.calls
+exec opstruss plan
+exec env LC_ALL=C sort store/.calls
+cmp stdout ../plan.calls
+
+# plan without scan: list, and a get for each unit with a record
+cd ../noscan
+exec opstruss init --stack default
+exec opstruss up --yes
+rm store/.calls
+exec opstruss plan
+exec env LC_ALL=C sort store/.calls
+cmp stdout ../noscan.calls
+
+# up: five operations for the unit that runs, three for the turn of the
+# unit after it, and none for the unit that does not change; another run
+# may hold the lock of that one meanwhile
+cd ../three
+env OPSTRUSS_PARALLEL=1
+cp ../two.txt a.txt
+rm store/.calls
+exec opstruss up --yes
+stdout '^default/b: unchanged$'
+stdout '^default/c: unchanged$'
+exists store/default/b/state.lock
+exec env LC_ALL=C sort store/.calls
+cmp stdout ../up.calls
+rm store/default/b/state.lock
+
+# the probe refuses a backend whose list leaves out the locks that are held,
+# from which plan would take a held unit for a free one
+cd ../unlisted
+! exec opstruss init --stack default
+stderr 'does not keep the contract that the state needs, probe step 4: list of the prefix gives the key _probe/[0-9a-f]+/unit/state.lock of the lock that is held, not \[\]$'
+
+# a scan that fails fails the plan, which runs nothing
+cd ../three
+cp ../scanerror.yaml opstruss.yaml
+! exec opstruss up --yes
+stderr 'backend scan default/: the storage stopped answering'
+! stdout 'default/a'
+
+-- three/opstruss.yaml --
+opstruss: "1.1"
+name: three
+backend:
+  uses: ../testplugins/fakebackend
+  with: {dir: store}
+units:
+  a:
+    # takes the lock of b as a run of another host would
+    run: |
+      cat a.txt
+      if [ "$(cat a.txt)" = two ]; then
+        printf '{"holder":{"version":1,"run":"20260101T000000Z-away0001","host":"elsewhere","hostname":"far","pid":4242,"since":"2026-01-01T00:00:00Z"},"token":"t-away"}' > store/default/b/state.lock
+      fi
+    sources: [a.txt]
+  b:
+    run: echo b
+    timeout: 3s
+  c:
+    needs: [a]
+    run: echo c
+-- three/a.txt --
+one
+-- two.txt --
+two
+-- plan.calls --
+get default/_meta
+scan default/
+-- up.calls --
+get default/_meta
+get default/a/state.json
+get default/c/state.json
+lock default/a/state.lock
+lock default/c/state.lock
+put default/a/state.json
+put default/a/state.json
+scan default/
+unlock default/a/state.lock
+unlock default/c/state.lock
+-- unlisted/opstruss.yaml --
+opstruss: "1.1"
+name: unlisted
+backend:
+  uses: ../testplugins/fakebackend
+  with: {dir: store, break: lock-unlisted}
+units:
+  a: {run: echo a}
+-- scanerror.yaml --
+opstruss: "1.1"
+name: three
+backend:
+  uses: ../testplugins/fakebackend
+  with: {dir: store, break: scan-error}
+units:
+  a:
+    run: cat a.txt
+    sources: [a.txt]
+-- noscan.calls --
+get default/_meta
+get default/a/state.json
+get default/b/state.json
+get default/c/state.json
+list default/
+-- noscan/opstruss.yaml --
+opstruss: "1.1"
+name: noscan
+backend:
+  uses: ../testplugins/fakebackend
+  with: {dir: store, scan: false}
+units:
+  a: {run: echo a}
+  b: {run: echo b}
+  c: {run: echo c}
+-- thirty/opstruss.yaml --
+opstruss: "1.1"
+name: thirty
+backend:
+  uses: ../testplugins/fakebackend
+  with: {dir: store}
+units:
+  u01: {run: echo u01}
+  u02: {run: echo u02}
+  u03: {run: echo u03}
+  u04: {run: echo u04}
+  u05: {run: echo u05}
+  u06: {run: echo u06}
+  u07: {run: echo u07}
+  u08: {run: echo u08}
+  u09: {run: echo u09}
+  u10: {run: echo u10}
+  u11: {run: echo u11}
+  u12: {run: echo u12}
+  u13: {run: echo u13}
+  u14: {run: echo u14}
+  u15: {run: echo u15}
+  u16: {run: echo u16}
+  u17: {run: echo u17}
+  u18: {run: echo u18}
+  u19: {run: echo u19}
+  u20: {run: echo u20}
+  u21: {run: echo u21}
+  u22: {run: echo u22}
+  u23: {run: echo u23}
+  u24: {run: echo u24}
+  u25: {run: echo u25}
+  u26: {run: echo u26}
+  u27: {run: echo u27}
+  u28: {run: echo u28}
+  u29: {run: echo u29}
+  u30: {run: echo u30}

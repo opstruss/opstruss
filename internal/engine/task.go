@@ -404,13 +404,18 @@ func readFlags(decl map[string]*model.Input, flags map[string]any) (map[string]a
 // previewQuiet expands the units and reads their records, for the tasks of
 // units, which do not plan them.
 func (e *engine) previewQuiet() {
+	// A record that cannot be read leaves its unit without one.
+	snap, snapErr := e.store.Snapshot()
 	for _, path := range e.p.Order {
 		insts, err := e.expand(path)
 		if err != nil {
 			continue
 		}
 		for _, inst := range insts {
-			if rec, _, err := e.store.Get(inst.address); err == nil {
+			if snapErr != nil {
+				break
+			}
+			if rec, err := snap.Get(inst.address); err == nil {
 				inst.record = rec
 			}
 		}

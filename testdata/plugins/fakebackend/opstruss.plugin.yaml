@@ -5,6 +5,7 @@ requires: [fakebackend]
 inputs:
   dir: {type: string, required: true}
   break: {type: string}
+  scan: {type: boolean}
   token: {type: string, sensitive: true}
 backend:
   run: [fakebackend]

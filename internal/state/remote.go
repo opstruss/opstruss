@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 )
@@ -35,8 +36,9 @@ type Remote struct {
 	Ended func() error
 
 	// Location is where the program keeps the state, without credentials,
-	// as initialize said.
+	// as initialize said, and CanScan whether it named the capability scan.
 	Location string
+	CanScan  bool
 
 	mu    sync.Mutex
 	next  int64
@@ -80,8 +82,11 @@ func (r *Remote) Open() error {
 	r.lines, r.done = make(chan []byte), make(chan struct{})
 	go r.readLines()
 	var res struct {
-		Protocol int    `json:"protocol"`
-		Location string `json:"location"`
+		Protocol     int    `json:"protocol"`
+		Location     string `json:"location"`
+		Capabilities struct {
+			Scan bool `json:"scan"`
+		} `json:"capabilities"`
 	}
 	if err := r.call("initialize", map[string]any{"protocol": BackendProtocol}, &res); err != nil {
 		return err
@@ -94,7 +99,7 @@ func (r *Remote) Open() error {
 	case res.Location == "":
 		return r.broken(errors.New("the backend gave no location in its answer to initialize"))
 	}
-	r.Location = res.Location
+	r.Location, r.CanScan = res.Location, res.Capabilities.Scan
 	return nil
 }
 
@@ -305,6 +310,34 @@ func (r *Remote) List(prefix string) ([]string, error) {
 	}
 	slices.Sort(res.Keys)
 	return res.Keys, nil
+}
+
+// Scan gives every key under prefix with its content, which a program
+// without the capability scan does not: then it is errors.ErrUnsupported.
+func (r *Remote) Scan(prefix string) (map[string][]byte, error) {
+	if !r.CanScan {
+		return nil, errors.ErrUnsupported
+	}
+	var res struct {
+		Items []struct {
+			Key  string  `json:"key"`
+			Data *string `json:"data"`
+		} `json:"items"`
+	}
+	if err := r.call("scan", map[string]any{"prefix": prefix}, &res); err != nil {
+		return nil, answer("scan", prefix, err, nil)
+	}
+	out := make(map[string][]byte, len(res.Items))
+	for _, it := range res.Items {
+		switch {
+		case !strings.HasPrefix(it.Key, prefix):
+			return nil, opError("scan", prefix, fmt.Errorf("the answer has the key %s, which is not under the prefix", it.Key))
+		case it.Data == nil:
+			return nil, opError("scan", prefix, fmt.Errorf("the answer has no data for %s", it.Key))
+		}
+		out[it.Key] = []byte(*it.Data)
+	}
+	return out, nil
 }
 
 func (r *Remote) Lock(key string, h Holder) (string, error) {

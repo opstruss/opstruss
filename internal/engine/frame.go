@@ -373,21 +373,27 @@ func (e *engine) unitsView(f *frame, names []string) (map[string]any, map[string
 	// expanded read their records. Inside one, units are expanded in graph
 	// order, so the units an expression may read are expanded already.
 	if !inPass {
-		inventory := map[*state.Store][]string{}
+		// Read once, and only when a unit needs it; records that cannot be
+		// read are none.
+		var snap *state.Snapshot
+		var snapErr error
 		for _, name := range names {
 			n := e.p.Nodes[f.child(name)]
 			if _, ok := views[name]; ok || n == nil {
 				continue
 			}
-			// A global unit read from the project has its record in its scope.
-			st, base := e.store, f.address
-			if f.node == nil && n.Unit.Global && e.global != nil {
-				st, base = e.global.store, model.GlobalScope
+			if snap == nil && snapErr == nil {
+				snap, snapErr = e.store.Snapshot()
 			}
-			addrs, read := inventory[st]
-			if !read {
-				addrs, _ = st.Inventory()
-				inventory[st] = addrs
+			var addrs []string
+			// A global unit read from the project has its record in its scope.
+			base := f.address
+			switch {
+			case snapErr != nil:
+			case f.node == nil && n.Unit.Global && snap.Global() != nil:
+				addrs, base = snap.Global().Inventory(), model.GlobalScope
+			default:
+				addrs = snap.Inventory()
 			}
 			byKey, marks := map[string]any{}, map[string]any{}
 			for _, a := range addrs {
@@ -399,7 +405,7 @@ func (e *engine) unitsView(f *frame, names []string) (map[string]any, map[string
 				if seg.Unit != name {
 					continue
 				}
-				if rec, _, err := e.store.Get(a); err == nil && rec != nil && rec.Tombstone == nil {
+				if rec, err := snap.Get(a); err == nil && rec != nil && rec.Tombstone == nil {
 					out := rec.Outputs
 					if out == nil {
 						out = map[string]any{}
@@ -800,15 +806,15 @@ func (e *engine) dropFrame(ctx context.Context, addr string) error {
 	if err != nil || rec == nil || rec.Kind != "component" || rec.Tombstone != nil {
 		return err
 	}
-	addrs, err := e.store.Inventory()
+	snap, err := e.store.Snapshot()
 	if err != nil {
 		return err
 	}
-	for _, a := range addrs {
+	for _, a := range snap.Inventory() {
 		if !strings.HasPrefix(a, addr+"/") {
 			continue
 		}
-		if r, _, err := e.store.Get(a); err != nil || r != nil && r.Tombstone == nil {
+		if r, err := snap.Get(a); err != nil || r != nil && r.Tombstone == nil {
 			return err
 		}
 	}

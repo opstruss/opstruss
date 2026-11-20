@@ -77,10 +77,9 @@ func (e *engine) previewMoves() {
 	e.moveFailed = map[string]error{}
 	e.moving = map[string]bool{}
 	e.pairs = nil
-	addrs, _ := e.store.Inventory()
-	if e.global != nil {
-		more, _ := e.global.store.Inventory()
-		addrs = append(addrs, more...)
+	addrs := e.snap.Inventory()
+	if g := e.snap.Global(); g != nil {
+		addrs = append(addrs, g.Inventory()...)
 	}
 	e.have = map[string]bool{}
 	for _, a := range addrs {
@@ -96,10 +95,10 @@ func (e *engine) previewMove(from, to string) {
 		e.moveFailed[to] = err
 		return
 	}
-	fr, _, err := e.store.Get(from)
+	fr, err := e.snap.Get(from)
 	var tr *state.Record
 	if err == nil {
-		tr, _, err = e.store.Get(to)
+		tr, err = e.snap.Get(to)
 	}
 	src := e.moveFrom[from]
 	if src == nil && fr != nil && fr.Tombstone == nil {

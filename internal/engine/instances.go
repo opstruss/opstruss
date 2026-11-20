@@ -55,6 +55,13 @@ func (inst *instance) unplanned() bool {
 	return inst.plan.err != nil || len(inst.plan.waitFor) > 0
 }
 
+// ran says whether the turn of inst ran its program or destroyed attempts
+// of other runs.
+func (inst *instance) ran() bool {
+	p := inst.turnPlan
+	return p != nil && (p.run || len(p.teardown) > 0)
+}
+
 // uncertain says whether the outputs of the instance of p may change in
 // this run: it runs, it waits for outputs of others, or another run holds
 // it, as a run of another stack does a global unit, whose outputs are
@@ -74,6 +81,7 @@ type plan struct {
 	locked   string            // the holder of the address, for another run
 	digest   string            // the digest trigger, which the record keeps
 	teardown []string          // runs whose attempts up destroys after it succeeds
+	contract bool              // the record has another destroy contract, which up writes
 	err      error
 
 	emptySources []string // patterns of sources that match no file

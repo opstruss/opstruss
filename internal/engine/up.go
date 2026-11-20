@@ -178,7 +178,7 @@ func (e *engine) broken(path string, err error) *instance {
 }
 
 func (e *engine) preview(ctx context.Context, inst *instance) {
-	rec, _, err := e.store.Get(inst.address)
+	rec, err := e.snap.Get(inst.address)
 	e.movesMu.Lock()
 	moved, moveErr := e.moveFrom[inst.address], e.moveFailed[inst.address]
 	e.movesMu.Unlock()
@@ -211,7 +211,7 @@ func (e *engine) preview(ctx context.Context, inst *instance) {
 			return
 		}
 	}
-	if h, held, err := e.store.Held(inst.address, e.holder); err != nil {
+	if h, held, err := e.snap.Held(inst.address, e.holder); err != nil {
 		inst.plan.err = err
 		return
 	} else if held {
@@ -351,6 +351,7 @@ func (e *engine) decide(ctx context.Context, inst *instance, r *resolved, rec *s
 	if rec != nil {
 		// Attempts with the contract up writes become part of the record.
 		destroy := e.destroyContract(inst, r)
+		p.contract = !same(rec.Destroy, destroy)
 		for _, a := range rec.Abandoned {
 			if !sameTarget(a.Destroy, destroy) {
 				if err := e.checkDestroy(ctx, a.Destroy); err != nil {
@@ -575,7 +576,7 @@ func (e *engine) turns(ctx context.Context) {
 			}
 			delete(left, inst)
 			moved = true
-			if skip := e.skips(inst); skip {
+			if skip := e.skips(ctx, inst); skip {
 				end(inst)
 				continue
 			}
@@ -596,9 +597,10 @@ func (e *engine) turns(ctx context.Context) {
 	}
 }
 
-// skips finishes inst without its turn when it is not selected, or when an
-// instance it depends on did not succeed.
-func (e *engine) skips(inst *instance) bool {
+// skips finishes inst without its turn when it is not selected, when an
+// instance it depends on did not succeed, or when its turn would find what
+// its plan found (quiet): then it takes no lock and reads nothing.
+func (e *engine) skips(ctx context.Context, inst *instance) bool {
 	if !e.sel.has(inst) {
 		e.finish(inst, success, false, nil, nil)
 		return true
@@ -614,7 +616,35 @@ func (e *engine) skips(inst *instance) bool {
 			return true
 		}
 	}
-	return false
+	if !e.quiet(inst) {
+		return false
+	}
+	if errors.Is(ctx.Err(), context.Canceled) {
+		e.finish(inst, cancelled, false, nil, nil)
+		e.ended(inst.address, "up", cancelled, "interrupted before its turn")
+		return true
+	}
+	rec := inst.record
+	e.finish(inst, success, false, rec.Outputs, hiddenMarks(rec.Hidden[state.PartOutputs]))
+	e.ended(inst.address, "up", success, "unchanged")
+	return true
+}
+
+// quiet says whether the plan of inst is all that its turn would do: it
+// changes nothing, exactly, with the destroy contract of the record, and no
+// instance it depends on ran in this run. What changed in its files since
+// the plan waits for the next run, so what runs is what was approved.
+func (e *engine) quiet(inst *instance) bool {
+	p := inst.plan
+	if !p.exact() || p.inexact || p.run || len(p.teardown) > 0 || p.contract || e.moveFailed[inst.address] != nil {
+		return false
+	}
+	for _, d := range inst.deps {
+		if d.ran() {
+			return false
+		}
+	}
+	return true
 }
 
 // turn is the turn of one instance: it takes the address lock, plans again

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 )
 
@@ -26,8 +27,9 @@ func (e *ProbeError) Unwrap() error { return e.Err }
 // Probe tries the contract on keys of its own under _probe/<id>/, which no
 // stack reads, since initialize proves none of it: conditional puts and
 // deletes, a read after each write, a list as deep as inventory needs, and
-// locks with their holder and a token of each lock's own. What a failed
-// step leaves it removes as it can.
+// locks with their holder and a token of each lock's own, which list only
+// while they are held; scan as list, when the backend gives it. What a
+// failed step leaves it removes as it can.
 func Probe(b Backend, h Holder) (err error) {
 	dir := "_probe/" + NewID() + "/"
 	// As deep under dir as a record is under its stack, so that a list that
@@ -78,6 +80,20 @@ func Probe(b Backend, h Holder) (err error) {
 	case !slices.Contains(keys, key):
 		return fail(1, fmt.Sprintf("list of the prefix gives the key %s, not %v", key, keys), nil)
 	}
+	// scan, when the backend gives it, is tried as list is.
+	scan := func(string) (map[string][]byte, error) { return nil, errors.ErrUnsupported }
+	if sc, ok := b.(Scanner); ok {
+		scan = sc.Scan
+	}
+	items, err := scan(dir)
+	scans := !errors.Is(err, errors.ErrUnsupported)
+	switch {
+	case !scans:
+	case err != nil:
+		return fail(1, "scan", err)
+	case !bytes.Equal(items[key], first) || len(items) != 1:
+		return fail(1, fmt.Sprintf("scan of the prefix gives the key %s with what put wrote, not %v", key, slices.Sorted(maps.Keys(items))), nil)
+	}
 	if _, err := b.Put(key, first, ""); !errors.Is(err, ErrConflict) {
 		return fail(1, "put of a key that exists, with if_none_match, is a conflict", unexpected(err))
 	}
@@ -117,6 +133,23 @@ func Probe(b Backend, h Holder) (err error) {
 	if !errors.As(err, &le) || le.Token != token || le.Holder.Run != h.Run {
 		return fail(4, "a second lock is locked, with the holder and token of the first", unexpected(err))
 	}
+	// A plan sees the locks that are held in what it listed.
+	keys, err = b.List(dir)
+	switch {
+	case err != nil:
+		return fail(4, "list", err)
+	case !slices.Contains(keys, lock):
+		return fail(4, fmt.Sprintf("list of the prefix gives the key %s of the lock that is held, not %v", lock, keys), nil)
+	}
+	if scans {
+		items, err := scan(dir)
+		switch {
+		case err != nil:
+			return fail(4, "scan", err)
+		case items[lock] == nil:
+			return fail(4, fmt.Sprintf("scan of the prefix gives the key %s of the lock that is held, not %v", lock, slices.Sorted(maps.Keys(items))), nil)
+		}
+	}
 
 	if err := b.Unlock(lock, "probe-"+newToken()); !errors.Is(err, ErrNotHolder) {
 		return fail(5, "unlock with another token is a conflict", unexpected(err))
@@ -144,6 +177,15 @@ func Probe(b Backend, h Holder) (err error) {
 		return fail(6, "list", err)
 	case len(keys) > 0:
 		return fail(6, fmt.Sprintf("list after the probe is empty, not %v", keys), nil)
+	}
+	if scans {
+		items, err := scan(dir)
+		switch {
+		case err != nil:
+			return fail(6, "scan", err)
+		case len(items) > 0:
+			return fail(6, fmt.Sprintf("scan after the probe is empty, not %v", slices.Sorted(maps.Keys(items))), nil)
+		}
 	}
 	return nil
 }
