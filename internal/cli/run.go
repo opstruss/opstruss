@@ -271,6 +271,8 @@ func askVerb(q engine.Question) string {
 		return "Destroy"
 	case q.Op == "task":
 		return "Run"
+	case q.Op == "unlock":
+		return "Release the lock of"
 	}
 	return "Apply"
 }

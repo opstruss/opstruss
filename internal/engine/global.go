@@ -51,7 +51,8 @@ func (e *engine) openGlobal(ctx context.Context) (g *engine, err error) {
 	g = &engine{releaseSources: release, opts: opts, p: gp, inputs: map[string]any{}, root: e.root,
 		redact: e.redact, inputMarks: map[string]any{}, started: e.started, parallel: e.parallel, byUnit: map[string][]*instance{},
 		read: map[string]string{}, needed: map[string]*taskOnce{}, touched: map[string]*record.Unit{}, ran: map[string]*record.Task{},
-		hashes: map[string]string{}, frames: map[string]*frameSet{}, sopsFiles: map[string]any{}, event: e.event, host: e.host}
+		hashes: map[string]string{}, frames: map[string]*frameSet{}, sopsFiles: map[string]any{}, event: e.event, host: e.host,
+		backends: e.backends}
 	for k, v := range values {
 		g.inputs[k] = v.Value
 		if gp.Inputs[k].Sensitive {
@@ -70,20 +71,19 @@ func (e *engine) openGlobal(ctx context.Context) (g *engine, err error) {
 		}
 	}
 	g.top = &frame{in: gp, address: model.GlobalScope, global: true}
-	// One backend for both scopes: the locks that a run takes in one are
-	// released, and waited for, in the same place.
-	if g.store, err = state.Open(e.store.Backend, model.GlobalScope, gp.Name); err != nil {
+	// The scopes share a backend that resolves alike: the locks that a run
+	// takes in one are released, and waited for, in the same place.
+	if g.store, err = g.openStore(gp); err != nil {
 		return nil, err
 	}
-	g.store.Key = g.dataKey
-	g.store.Known = func(_, _ string, v any) bool { return e.redact.Contains(v) }
-	g.store.Opened = func(v any) { e.redact.Add(v) }
 	return g, nil
 }
 
 // share gives g, the global scope of the run of e, what the run started:
 // its context, record, holder, and programs.
 func (g *engine) share(e *engine) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	g.ctx, g.run, g.runID, g.rec, g.holder, g.parents, g.trigger = e.ctx, e.run, e.runID, e.rec, e.holder, e.parents, e.trigger
 }
 

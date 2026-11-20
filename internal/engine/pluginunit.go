@@ -91,8 +91,14 @@ func (e *engine) resolvePlugin(inst *instance, r *resolved, s *expr.Scope) error
 	}
 	pu := &pluginUnit{target: t, dir: t.Package.Dir, inputs: inputs, hash: hash}
 	if pl.State == "tool" {
-		if dir, ok := e.store.ToolDir(inst.address); ok {
+		dir, ok := e.store.ToolDir(inst.address)
+		switch b := inputs["backend"]; {
+		case ok:
 			pu.tool = dir
+		case pl.Inputs["backend"] == nil:
+			return fmt.Errorf("plugin %s keeps the state of its tool in tool/, which only the local backend has, and it has no input backend for a place of the tool's own; keep the state of this stack in the local backend, or use a plugin that takes one", t.Package.Name)
+		case b == nil || b == "":
+			return fmt.Errorf("the state of this stack is in a plugin backend, where tool/ is not: give the tool a backend of its own through input backend, once in the uses: declaration of %s", t.Package.Name)
 		}
 	}
 	ps := e.pluginScope(pu.dir, inputs, inputMarks, inst)

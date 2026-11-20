@@ -123,6 +123,7 @@ var readable = map[string][]string{
 	"secret":       {"inputs", "locals", "stack", "opstruss"},
 	"trigger":      {"inputs", "locals", "units", "secrets", "stack", "event", "opstruss"},
 	"install":      {"inputs", "locals", "units", "secrets", "stack", "opstruss"},
+	"backend":      {"inputs", "locals", "secrets"},
 }
 
 var placeNames = map[string]string{
@@ -130,6 +131,7 @@ var placeNames = map[string]string{
 	"task": "a task", "check": "failed_when, changed_when, and retry.until", "output": "project outputs",
 	"plugin": "a plugin task", "plugin-check": "failed_when, changed_when, and retry.until of a plugin task",
 	"secret": "secret sources", "trigger": "if and with of a trigger", "install": "what the daemon reads as it installs a trigger",
+	"backend": "with of a backend, read before the state opens,",
 }
 
 // refs checks the expressions in v, written at path, and returns the units
@@ -178,6 +180,12 @@ func (c *checker) refs(path []string, v any, pl place) []string {
 				c.add(path, "a trigger reads only the secrets that sops and env hold, and local %s reads one that a program gives, which runs only in a run (in ${{ %s }})", name, r.Expr)
 			case trigger && name == "" && c.programLocal(""):
 				c.add(path, "a trigger reads locals by name, as locals.<name>, since a local reads a secret that a program gives (in ${{ %s }})", r.Expr)
+			case pl.kind == "backend" && name == "":
+				c.add(path, "with of a backend reads locals by name, as locals.<name> (in ${{ %s }})", r.Expr)
+			case pl.kind == "backend":
+				if why := c.backendLocal(name, map[string]bool{}); why != "" {
+					c.add(path, "with of a backend reads inputs, secrets from sops or env, and locals of those only, as it is read before the state opens; local %s %s (in ${{ %s }})", name, why, r.Expr)
+				}
 			case slices.Contains(readable[pl.kind], "secrets"):
 				// What reads secrets reads the locals that do as well.
 			case name != "" && c.secretLocal(name):
@@ -234,6 +242,12 @@ func (c *checker) refs(path []string, v any, pl place) []string {
 				c.add(path, "there is no secret %s (in ${{ %s }})", name, r.Expr)
 			case (pl.kind == "trigger" || pl.kind == "install") && fromProgram(c.p.Secrets[name]):
 				c.add(path, "a trigger reads only the secrets that sops and env hold, and %s comes from a program, which runs only in a run (in ${{ %s }})", name, r.Expr)
+			case pl.kind == "backend" && fromProgram(c.p.Secrets[name]):
+				c.add(path, "with of a backend reads only the secrets that sops and env hold, as it is read before the state opens, and %s comes from a program, which runs only in a run (in ${{ %s }})", name, r.Expr)
+			case pl.kind == "backend":
+				if why := c.backendSecret(name, map[string]bool{}); why != "" {
+					c.add(path, "with of a backend reads inputs, secrets from sops or env, and locals of those only, as it is read before the state opens; secret %s, %s (in ${{ %s }})", name, why, r.Expr)
+				}
 			}
 		case "each":
 			if !pl.each {

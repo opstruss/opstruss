@@ -1,0 +1,97 @@
+# Checkout: a new checkout of a stack that a plugin backend shares plans
+# what the first one left there: an orphan, an up that did not finish,
+# whose lock its dead holder left, an abandoned attempt, and a tombstone,
+# and makes nothing at the address of the tombstone.
+
+[!failpoints] skip 'needs a build with -tags failpoints'
+env HOME=$WORK/home
+env AWS_PROFILE=a
+
+cd one
+exec opstruss init --stack default
+exec opstruss up --yes
+exec fakecloud check ../cloud-a ../store
+stdout '^4 resources, each with a record$'
+
+# an up killed past its pending mark leaves its lock in the backend
+env OPSTRUSS_FAILPOINT=up-before-program=kill
+! exec opstruss up pending --yes --force
+env OPSTRUSS_FAILPOINT=
+exists ../store/default/pending/state.lock
+
+# an attempt killed in context a, then an up from b, is abandoned
+env OPSTRUSS_FAILPOINT=program-started=kill
+! exec opstruss up fresh --yes --force
+env OPSTRUSS_FAILPOINT=
+env AWS_PROFILE=b
+! exec opstruss up fresh --yes
+stdout '^default/fresh: up: done$'
+env AWS_PROFILE=a
+
+# a forgotten unit leaves a tombstone
+exec opstruss state rm gone
+stdout 'forgotten; a tombstone stays'
+
+# the second checkout plans all of it, and takes over the lock of the dead
+# holder on this host; the tombstone stops its address
+cd ../two
+env AWS_PROFILE=b
+exec ls ../cloud-a
+cp stdout ../before
+! exec opstruss plan
+stderr '^default/old: orphan: its unit is no longer in the files'
+stdout '^default/pending: will run: up of run .* did not finish'
+stdout '^default/fresh: will destroy the attempts of '
+stdout '^default/gone: error: this address was forgotten in run '
+stderr 'took over the lock default/pending/state.lock of run .*, which no longer runs'
+! exists ../store/default/pending/state.lock
+exec opstruss state pull fresh
+stdout '"abandoned"'
+env AWS_PROFILE=a
+! exec opstruss up --yes
+stdout '^default/pending: up: done$'
+stdout '^default/gone: error: this address was forgotten'
+exec ls ../cloud-a
+cmp stdout ../before
+
+-- one/opstruss.yaml --
+opstruss: "1.1"
+name: shop
+backend:
+  uses: ../testplugins/fakebackend
+  with: {dir: ../store}
+units:
+  old: &unit
+    run: fakecloud up "../cloud-$AWS_PROFILE"
+    destroy: fakecloud destroy "../cloud-$AWS_PROFILE"
+    pass: [AWS_PROFILE]
+    outputs:
+      id: {}
+  pending: *unit
+  gone: *unit
+  fresh:
+    run: sleep 0.3; fakecloud up "../cloud-$AWS_PROFILE"
+    destroy: fakecloud destroy "../cloud-$AWS_PROFILE"
+    pass: [AWS_PROFILE]
+    outputs:
+      id: {}
+-- two/opstruss.yaml --
+opstruss: "1.1"
+name: shop
+backend:
+  uses: ../testplugins/fakebackend
+  with: {dir: ../store}
+units:
+  pending: &unit
+    run: fakecloud up "../cloud-$AWS_PROFILE"
+    destroy: fakecloud destroy "../cloud-$AWS_PROFILE"
+    pass: [AWS_PROFILE]
+    outputs:
+      id: {}
+  gone: *unit
+  fresh:
+    run: sleep 0.3; fakecloud up "../cloud-$AWS_PROFILE"
+    destroy: fakecloud destroy "../cloud-$AWS_PROFILE"
+    pass: [AWS_PROFILE]
+    outputs:
+      id: {}

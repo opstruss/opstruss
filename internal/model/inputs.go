@@ -38,20 +38,33 @@ type InputValue struct {
 // nil, gets the value of each sensitive input before it is checked, so the
 // caller can hide it also in the error the check gives.
 func (p *Project) ResolveInputs(given map[string]string, lookupEnv func(string) (string, bool), known func(name string, v any)) (map[string]InputValue, error) {
+	out, _, err := p.resolveInputs(given, lookupEnv, known, false)
+	return out, err
+}
+
+// ResolveSomeInputs is ResolveInputs for what reads only some inputs, such
+// as the backend of the state: a required input without a value is left
+// out and named, to fail only where it is read.
+func (p *Project) ResolveSomeInputs(given map[string]string, lookupEnv func(string) (string, bool), known func(name string, v any)) (map[string]InputValue, []string, error) {
+	return p.resolveInputs(given, lookupEnv, known, true)
+}
+
+func (p *Project) resolveInputs(given map[string]string, lookupEnv func(string) (string, bool), known func(name string, v any), some bool) (map[string]InputValue, []string, error) {
 	for _, name := range slices.Sorted(maps.Keys(given)) {
 		switch in := p.Inputs[name]; {
 		case in == nil && p.Global && len(p.stackWith[name]) > 0:
-			return nil, fmt.Errorf("--input %s: the global units and tasks have no input %s; only the with: of a stack gives it", name, name)
+			return nil, nil, fmt.Errorf("--input %s: the global units and tasks have no input %s; only the with: of a stack gives it", name, name)
 		case in == nil:
-			return nil, fmt.Errorf("--input %s: the project has no input %s%s", name, name, p.taskFlagHint(name))
+			return nil, nil, fmt.Errorf("--input %s: the project has no input %s%s", name, name, p.taskFlagHint(name))
 		case in.Sensitive:
-			return nil, fmt.Errorf("--input %s: input %s is sensitive, so it is not taken from the command line, which shell history and the list of processes keep; give it through env: or the stack", name, name)
+			return nil, nil, fmt.Errorf("--input %s: input %s is sensitive, so it is not taken from the command line, which shell history and the list of processes keep; give it through env: or the stack", name, name)
 		}
 	}
 	if known == nil {
 		known = func(string, any) {}
 	}
 	out := map[string]InputValue{}
+	var missing []string
 	for _, name := range slices.Sorted(maps.Keys(p.Inputs)) {
 		in := p.Inputs[name]
 		var v any
@@ -59,7 +72,7 @@ func (p *Project) ResolveInputs(given map[string]string, lookupEnv func(string) 
 		if text, ok := given[name]; ok {
 			parsed, err := ParseText(text, in.Type)
 			if err != nil {
-				return nil, fmt.Errorf("--input %s: %w", name, err)
+				return nil, nil, fmt.Errorf("--input %s: %w", name, err)
 			}
 			v, from = parsed, "--input"
 		} else if sv, ok := p.Stack.With[name]; ok {
@@ -73,21 +86,24 @@ func (p *Project) ResolveInputs(given map[string]string, lookupEnv func(string) 
 			}
 			parsed, err := ParseText(text, in.Type)
 			if err != nil {
-				return nil, fmt.Errorf("input %s: %s: %w", name, in.Env, err)
+				return nil, nil, fmt.Errorf("input %s: %s: %w", name, in.Env, err)
 			}
 			v, from = parsed, "env"
 		} else if in.Default != nil {
 			from = "default"
+		} else if in.Required && some {
+			missing = append(missing, name)
+			continue
 		}
 		c, err := in.Conform(v)
 		if err != nil {
-			return nil, fmt.Errorf("input %s: %w", name, err)
+			return nil, nil, fmt.Errorf("input %s: %w", name, err)
 		}
 		if c != nil {
 			out[name] = InputValue{Value: c, From: from}
 		}
 	}
-	return out, nil
+	return out, missing, nil
 }
 
 func lookup(lookupEnv func(string) (string, bool), name string) (string, bool) {

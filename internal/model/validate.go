@@ -147,6 +147,7 @@ func (c *checker) file() {
 
 	}
 	c.uses()
+	c.backend()
 	c.stacks()
 	c.units()
 	c.tasks()
@@ -1216,9 +1217,6 @@ func (c *checker) moves() {
 // the schema already.
 func (c *checker) unsupported() {
 	p := c.p
-	if p.Backend != nil && !p.Backend.Local {
-		c.add([]string{"backend"}, "plugin backends are not supported yet")
-	}
 	if p.MCP != nil {
 		c.add([]string{"mcp"}, "not supported yet")
 	}

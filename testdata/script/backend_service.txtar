@@ -1,0 +1,67 @@
+# A service of a stack that a plugin backend shares runs from the checkout
+# whose daemon started it: another checkout, on this host or another, even
+# with the lease, does not start it again or destroy it, and names where it
+# runs.
+
+env HOME=$WORK/home1
+cd one
+exec opstruss init --stack default
+exec opstruss up -d --yes
+stdout '^default/web: up: done'
+
+# another checkout on this host, while the daemon of the first keeps it
+cd ../two
+! exec opstruss destroy --yes
+stderr '^default/web: the service web runs from .*/one on .*, whose daemon keeps it; up and destroy it there, or, once that checkout is gone for good, forget its record with opstruss state rm web$'
+exists ../store/default/web/state.json
+# nor turn it into another kind of unit
+cp opstruss.yaml service.yaml
+cp run.yaml opstruss.yaml
+! exec opstruss up --yes
+stderr '^default/web: the service web runs from .*/one on '
+grep '"kind": "service"' ../store/default/web/state.json
+cp service.yaml opstruss.yaml
+cd ../one
+exec opstruss stop
+
+# and once that daemon stopped, with the lease
+cd ../two
+! exec opstruss up -d --yes
+stderr '^default/web: the service web runs from .*/one on '
+exec opstruss stop
+
+# another host
+env HOME=$WORK/home2
+! exec opstruss up -d --yes
+stderr '^default/web: the service web runs from .*/one on '
+! exec opstruss destroy --yes
+stderr '^default/web: the service web runs from .*/one on '
+exec opstruss stop
+
+-- one/opstruss.yaml --
+opstruss: "1.1"
+name: shop
+backend:
+  uses: ../testplugins/fakebackend
+  with: {dir: ../store}
+units:
+  web:
+    service: sleep 30
+-- two/opstruss.yaml --
+opstruss: "1.1"
+name: shop
+backend:
+  uses: ../testplugins/fakebackend
+  with: {dir: ../store}
+units:
+  web:
+    service: sleep 30
+-- two/run.yaml --
+opstruss: "1.1"
+name: shop
+backend:
+  uses: ../testplugins/fakebackend
+  with: {dir: ../store}
+units:
+  web:
+    run: echo web ran

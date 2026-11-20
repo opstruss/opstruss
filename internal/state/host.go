@@ -8,10 +8,17 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/opstruss/opstruss/internal/proc"
 )
 
-// started is when this process started, kept with every lock it takes.
-var started = time.Now().UTC()
+// started is when this process started, kept with every lock it takes,
+// and start the same as the system keeps it, which a lock compares with to
+// tell that its holder died; it is empty where the system does not say.
+var (
+	started  = time.Now().UTC()
+	start, _ = proc.StartTime(os.Getpid())
+)
 
 // HostID returns the random id of this machine for this user, kept in
 // ~/.opstruss/host-id and made the first time; hostnames can repeat across
@@ -51,7 +58,7 @@ func HostID() (string, error) {
 
 // NewHolder describes this process as the holder of a lock for run.
 func NewHolder(run, hostID string) Holder {
-	h := Holder{Version: HolderVersion, Run: run, Host: hostID, PID: os.Getpid(),
+	h := Holder{Version: HolderVersion, Run: run, Host: hostID, PID: os.Getpid(), Start: start,
 		Started: started.Format(time.RFC3339Nano), Since: time.Now().UTC().Format(time.RFC3339)}
 	h.Hostname, _ = os.Hostname()
 	if u, err := user.Current(); err == nil {

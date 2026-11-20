@@ -19,7 +19,6 @@ import (
 	"github.com/opstruss/opstruss/internal/record"
 	"github.com/opstruss/opstruss/internal/schema"
 	"github.com/opstruss/opstruss/internal/sources"
-	"github.com/opstruss/opstruss/internal/state"
 	"github.com/spf13/cobra"
 )
 
@@ -38,7 +37,8 @@ func (a *app) initCommand() *cobra.Command {
 		Long: "Set up the project in this directory, adding only what is missing: opstruss.yaml, whose first line names " +
 			"its schema for editors, and .opstruss/ in .gitignore. Then check every stack as validate does, and fetch " +
 			"what the project uses, with the binaries for this machine, as uses fetch does, so that a fresh clone is " +
-			"ready to plan. Running it again is safe. With --stack, also make the state of that stack. Then run the tasks " +
+			"ready to plan. Running it again is safe. With --stack, also make the state of that stack, and always that of " +
+			"the global units and tasks of the project, in a plugin backend once a probe of it passed; a stack starts there only so. Then run the tasks " +
 			"that follow init through after: {task: init}: the global ones, and those of the stack that --stack or the " +
 			"only stack chooses. The age key of this machine and the data key of a stack are made by the first command " +
 			"that needs them.",
@@ -74,9 +74,16 @@ func (a *app) initCommand() *cobra.Command {
 			if err := a.initSources(cmd.Context(), dir, &res); err != nil {
 				return failed(err)
 			}
-			// Only an explicit --stack makes _meta, not $OPSTRUSS_STACK.
+			// The global scope has _meta once the project has global units
+			// or tasks, as a run opens it then, and only an explicit --stack
+			// makes that of a stack, not $OPSTRUSS_STACK.
+			if gp, err := model.Declarations(dir, model.GlobalScope); err == nil && gp.HasGlobal() {
+				if err := a.initState(cmd.Context(), dir, model.GlobalScope, &res); err != nil {
+					return failed(err)
+				}
+			}
 			if a.stack != "" {
-				if err := initMeta(dir, a.stack, &res); err != nil {
+				if err := a.initState(cmd.Context(), dir, a.stack, &res); err != nil {
 					return failed(err)
 				}
 			}
@@ -260,29 +267,40 @@ func (a *app) initSources(ctx context.Context, dir string, res *initResult) erro
 	return nil
 }
 
-// initMeta makes the _meta of a stack, which the local backend otherwise
-// makes with the stack's first record. It reads only the declarations:
-// init has checked every stack, and loading one would write the editor
-// schema of that stack alone over the one of every stack.
-func initMeta(dir, stack string, res *initResult) error {
-	p, err := model.Declarations(dir, stack)
+// initState makes the _meta of scope, which the local backend otherwise
+// makes with its first record: in a plugin backend once it passed the
+// probe, with backend.json. It reads the project without the schema for
+// editors, which init wrote for every stack, and loading one would write
+// for that stack alone.
+func (a *app) initState(ctx context.Context, dir, scope string, res *initResult) error {
+	session, err := sources.Begin(ctx, dir, sources.Options{Locked: a.locked})
 	if err != nil {
 		return err
 	}
-	b := state.NewLocal(filepath.Join(dir, ".opstruss", "state"))
-	if _, _, err := b.Get(state.MetaKey(p.StackName)); err == nil {
-		return nil
-	} else if !errors.Is(err, state.ErrNotExist) {
+	p, err := model.LoadSession(dir, scope, session)
+	if err == nil {
+		err = session.Finish()
+	}
+	if err != nil {
+		session.Close()
 		return err
 	}
-	s, err := state.Open(b, p.StackName, p.Name)
+	defer p.Close()
+	given, err := a.givenInputs()
 	if err != nil {
 		return err
 	}
-	if err := s.EnsureMeta(); err != nil {
+	req := api.Request{Locked: a.locked, Dir: dir, Cwd: a.cwd, Stack: scope, Inputs: given, Environ: a.environ}
+	out, err := a.api().InitState(ctx, req, p)
+	if err != nil {
 		return err
 	}
-	res.Wrote = append(res.Wrote, state.MetaKey(p.StackName))
+	for _, w := range out.Wrote {
+		if out.Location != "" {
+			w += " in " + out.Location
+		}
+		res.Wrote = append(res.Wrote, w)
+	}
 	return nil
 }
 

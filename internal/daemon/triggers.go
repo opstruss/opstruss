@@ -133,6 +133,14 @@ func (t *triggers) install(opts engine.Options) (err error) {
 		}
 		_ = t.d.reg.update(func(f *File) { f.TriggerError = msg })
 	}()
+	// Only the daemon that holds the lease of a shared stack installs.
+	if err := t.d.takeLease(opts); err != nil {
+		var held *engine.LeaseError
+		if !errors.As(err, &held) {
+			err = fmt.Errorf("triggers: the lease of the stack: %w; no trigger is installed", err)
+		}
+		return err
+	}
 	// What cannot be prepared changes nothing.
 	kept := "no trigger is installed"
 	if len(old) > 0 {

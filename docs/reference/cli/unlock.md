@@ -8,13 +8,27 @@ title: opstruss unlock
 
 # opstruss unlock
 
-Forget what is left of a service that cannot be proven its own, so up starts it again.
+Release the lock of a unit that a plugin backend keeps after its holder died, as the holder's token: one whose holder ran on this host and no longer runs at once, one of another host once you agree, or with --yes. \_daemon names the lease of the daemon of the stack, \_kv the lock of kv, and \_meta that of \_meta. For a unit, also forget what is left of its service that cannot be proven its own, so up starts it again.
 
 ## Usage
 
 ```text
-opstruss unlock <unit>
+opstruss unlock <unit> [flags]
 ```
+
+## Examples
+
+```sh
+opstruss unlock web --stack prod
+opstruss unlock _daemon --stack prod --yes
+```
+
+## Flags
+
+| Flag | Description |
+|---|---|
+| `--global` | use the global units, one for every stack, rather than a stack |
+| `-y`, `--yes` | release a lock that a host other than this one holds without asking, as in CI |
 
 ## Global flags
 

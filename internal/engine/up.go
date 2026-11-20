@@ -66,7 +66,10 @@ func runCommand(ctx context.Context, opts Options, op string) (*Result, error) {
 	// An up in the daemon installs the triggers again, also when a unit
 	// waits for approval, and says so when it cannot.
 	if op == "up" && opts.Install != nil {
-		if err := opts.Install(opts.Inputs); err != nil {
+		var lease *LeaseError
+		if err := opts.Install(opts.Inputs); errors.As(err, &lease) {
+			e.warn("", "%v", err)
+		} else if err != nil {
 			e.failWith(Event{Type: "trigger", Level: "error", Message: err.Error()})
 		} else if e.unitsHint != "" {
 			e.say("run", "", "%s", e.unitsHint)
@@ -208,7 +211,7 @@ func (e *engine) preview(ctx context.Context, inst *instance) {
 			return
 		}
 	}
-	if h, held, err := e.store.Held(inst.address); err != nil {
+	if h, held, err := e.store.Held(inst.address, e.holder); err != nil {
 		inst.plan.err = err
 		return
 	} else if held {
@@ -703,6 +706,14 @@ func (e *engine) turn(ctx context.Context, inst *instance, leave func()) {
 	}
 	e.debug(addr, "took the lock; digest %s; %s", p.digest, p.summary())
 	destroy := e.destroyContract(inst, r)
+	if p.run || len(p.teardown) > 0 || rec != nil && !same(rec.Destroy, destroy) {
+		// Only the checkout that keeps a service writes its record, whatever
+		// the unit is now.
+		if err := e.serviceElsewhere(addr, rec); err != nil {
+			failed(err)
+			return
+		}
+	}
 	if !p.run && len(p.teardown) == 0 {
 		leave()
 		// A destroy contract that changed alone is written without running.
@@ -791,6 +802,11 @@ func (e *engine) turn(ctx context.Context, inst *instance, leave func()) {
 		}
 	}
 	next.Pending = attempt
+	if r.service != nil {
+		// Before it starts, so a last write that fails still names the
+		// service and the daemon that keeps it.
+		next.Kind, next.Host, next.Hostname, next.Checkout = r.kind(), e.host, hostname(), e.p.Dir
+	}
 	if data, err := e.store.Encode(next); err != nil || len(data)+plugin.MaxOutputs > MaxRecord {
 		if err != nil {
 			failed(err)
@@ -883,6 +899,9 @@ func (e *engine) turn(ctx context.Context, inst *instance, leave func()) {
 		Destroy: destroy, Needs: attempt.Needs, Outputs: res.Outputs, Digest: p.digest, Parts: p.parts, Run: e.runID, Stack: e.runStack(addr),
 		Updated: time.Now().UTC().Format(time.RFC3339), Abandoned: next.Abandoned,
 		Hidden: withHidden(attempt.Hidden, map[string][]string{state.PartOutputs: slices.Sorted(maps.Keys(outMarks))}, state.PartOutputs, state.PartRawOutput)}
+	if r.service != nil {
+		done.Host, done.Hostname, done.Checkout = e.host, hostname(), e.p.Dir
+	}
 	err = failpoint.Fail("up-before-put")
 	if err == nil {
 		etag, err = e.store.Put(addr, done, etag)

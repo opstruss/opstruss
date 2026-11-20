@@ -315,6 +315,11 @@ flag opstruss status --no-deps
 flag opstruss status --no-deps type bool
 flag opstruss status -C
 flag opstruss stop -C
+flag opstruss unlock --global
+flag opstruss unlock --global type bool
+flag opstruss unlock --yes
+flag opstruss unlock --yes short -y
+flag opstruss unlock --yes type bool
 flag opstruss unlock -C
 flag opstruss up --force
 flag opstruss up --force type bool
@@ -3640,6 +3645,8 @@ schema record abandoned[].holder.run
 schema record abandoned[].holder.run type string
 schema record abandoned[].holder.since
 schema record abandoned[].holder.since type string
+schema record abandoned[].holder.start
+schema record abandoned[].holder.start type string
 schema record abandoned[].holder.started
 schema record abandoned[].holder.started type string
 schema record abandoned[].holder.user
@@ -3695,6 +3702,8 @@ schema record abandoned[].source.uses
 schema record abandoned[].source.uses type string
 schema record address
 schema record address type string
+schema record checkout
+schema record checkout type string
 schema record destroy
 schema record destroy type object
 schema record destroy.binaries
@@ -3794,6 +3803,10 @@ schema record destroy.tty
 schema record destroy.tty type boolean
 schema record digest
 schema record digest type string
+schema record host
+schema record host type string
+schema record hostname
+schema record hostname type string
 schema record id
 schema record id type string
 schema record inputs
@@ -3930,6 +3943,8 @@ schema record pending.holder.run
 schema record pending.holder.run type string
 schema record pending.holder.since
 schema record pending.holder.since type string
+schema record pending.holder.start
+schema record pending.holder.start type string
 schema record pending.holder.started
 schema record pending.holder.started type string
 schema record pending.holder.user

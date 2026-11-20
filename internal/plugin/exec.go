@@ -59,6 +59,9 @@ type Call struct {
 	// Secret marks the program of a secret source, which gets no
 	// OPSTRUSS_ARTIFACTS, where the secret would stay with the run.
 	Secret bool
+	// Backend marks the program of a plugin backend, which lives outside
+	// any run, as Prepare prepares it, with OPSTRUSS_PLUGIN_DIR.
+	Backend bool
 
 	Outputs map[string]*model.Output // a stream that an output reads stays out of the log
 	// TTY gives the program a terminal of that size for its stdout and

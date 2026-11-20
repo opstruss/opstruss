@@ -1,0 +1,113 @@
+# Of the daemons of a stack that a plugin backend shares, the one that
+# holds the lease installs the triggers and services; another runs what
+# it is asked and says who has the lease, without taking it over.
+
+env HOME=$WORK/home
+cd one
+exec opstruss init --stack default
+exec opstruss up -d --yes
+daemonrun default
+exists ../store/default/_daemon.lock
+
+cd ../two
+exec opstruss up -d --yes
+stdout 'default/web: unchanged'
+stderr 'the daemon of stack default on .* holds the lease of the stack, so its triggers and services run there; once that host is gone for good, release it with opstruss unlock _daemon --stack default$'
+exec opstruss list
+stderr 'holds the lease of the stack'
+
+# the lease stays with daemon one until it stops, and daemon two does not
+# take it over while it runs
+cd ../one
+exec opstruss stop
+! exists ../store/default/_daemon.lock
+cd ../two
+exec opstruss up -d --yes
+stderr 'holds the lease of the stack'
+exec opstruss stop
+exec opstruss up -d --yes
+! stderr 'holds the lease'
+exists ../store/default/_daemon.lock
+exec opstruss stop
+! exists ../store/default/_daemon.lock
+
+# the lease goes back to the backend that granted it, whatever the files
+# say by the time the daemon stops
+exec opstruss up -d --yes
+exists ../store/default/_daemon.lock
+cp opstruss.yaml shared.yaml
+cp other.yaml opstruss.yaml
+exec opstruss stop
+! exists ../store/default/_daemon.lock
+cp shared.yaml opstruss.yaml
+
+# a daemon keeps the backend it took its lease from: once the files keep
+# the state of its stack elsewhere, it runs nothing until it starts again
+cd ../three
+exec opstruss up -d --yes
+cp plugin.yaml opstruss.yaml
+exec opstruss init --stack default
+! exec opstruss up -d --yes
+stderr 'the daemon of stack default took the lease of its triggers and services from the local backend, and the files now keep the state of the stack in fake:.*store3 through ../testplugins/fakebackend; start the daemon again, with opstruss stop and then up$'
+! exists ../store3/default/_daemon.lock
+exec opstruss stop
+exec opstruss up -d --yes
+exists ../store3/default/_daemon.lock
+exec opstruss stop
+
+-- one/opstruss.yaml --
+opstruss: "1.1"
+name: shop
+backend:
+  uses: ../testplugins/fakebackend
+  with: {dir: ../store}
+units:
+  web:
+    run: echo web ran
+tasks:
+  tick:
+    on:
+      schedule: "0 0 1 1 *"
+    run: echo tick
+-- two/opstruss.yaml --
+opstruss: "1.1"
+name: shop
+backend:
+  uses: ../testplugins/fakebackend
+  with: {dir: ../store}
+units:
+  web:
+    run: echo web ran
+tasks:
+  tick:
+    on:
+      schedule: "0 0 1 1 *"
+    run: echo tick
+-- two/other.yaml --
+opstruss: "1.1"
+name: shop
+backend:
+  uses: ../testplugins/fakebackend
+  with: {dir: ../store2}
+units:
+  web:
+    run: echo web ran
+-- three/opstruss.yaml --
+opstruss: "1.1"
+name: shop
+tasks:
+  tick:
+    on:
+      schedule: "0 0 1 1 *"
+    run: echo tick
+-- three/plugin.yaml --
+opstruss: "1.1"
+name: shop
+backend:
+  uses: ../testplugins/fakebackend
+  with: {dir: ../store3}
+tasks:
+  tick:
+    on:
+      schedule: "0 0 1 1 *"
+    run: echo tick

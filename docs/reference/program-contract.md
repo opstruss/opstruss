@@ -16,7 +16,9 @@ what a script or a plugin can rely on.
 
 `INPUT_*` reaches the program that is the body of a task or a plugin. A
 `run` inside `steps:` gets values through `env:`, so each value reaches
-only the program that names it.
+only the program that names it. The program of a plugin backend gets the
+inputs that `with:` of `backend:` gives, and none of the facts of a run,
+as the [backend protocol](./backend-protocol) says.
 
 ## The state file
 

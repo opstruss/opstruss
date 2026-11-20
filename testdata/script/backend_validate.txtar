@@ -1,0 +1,175 @@
+# validate checks a plugin backend before any run opens it: its level,
+# what with: reads before the state opens, the plugin it uses, and where
+# the global units keep their state.
+
+env HOME=$WORK/home
+
+cp old.yaml opstruss.yaml
+! exec opstruss validate
+stderr 'backend.uses: uses needs opstruss: "1.1" or later in this file, which says 1.0'
+
+cp reads.yaml opstruss.yaml
+! exec opstruss validate
+stderr 'backend.with.dir: with of a backend, read before the state opens, cannot read stack \(in \$\{\{ stack \}\}\)'
+stderr 'backend.with.token: with of a backend reads only the secrets that sops and env hold, as it is read before the state opens, and made comes from a program, which runs only in a run'
+stderr 'backend.with.break: with of a backend reads inputs, secrets from sops or env, and locals of those only, as it is read before the state opens; local where reads stack'
+
+cp kv.yaml opstruss.yaml
+! exec opstruss validate
+stderr 'backend.with.dir: with of a backend cannot call kv\(\), which reads the state that the backend opens'
+
+cp secretkv.yaml opstruss.yaml
+! exec opstruss validate
+stderr 'backend.with.token: with of a backend reads inputs, secrets from sops or env, and locals of those only, as it is read before the state opens; secret token, whose source calls kv\(\) \(in \$\{\{ secrets.token \}\}\)'
+stderr 'backend.with.break: with of a backend reads inputs, secrets from sops or env, and locals of those only, as it is read before the state opens; local key reads secret key, whose source reads stack \(in \$\{\{ locals.key \}\}\)'
+
+cp notbackend.yaml opstruss.yaml
+! exec opstruss validate
+stderr 'backend.uses: ./testplugins/fakecloud is not a backend: a backend uses a plugin whose opstruss.plugin.yaml has backend:'
+
+cp global.yaml opstruss.yaml
+! exec opstruss validate
+stderr 'stacks.prod.backend: stack prod keeps its state in a plugin backend while the global units and tasks of the project keep theirs in the local backend of each checkout, which another checkout does not read'
+! stderr 'stacks.dev'
+
+cp globaltask.yaml opstruss.yaml
+! exec opstruss validate
+stderr 'stacks.prod.backend: stack prod keeps its state in a plugin backend while the global units and tasks of the project keep theirs in the local backend of each checkout, which another checkout does not read'
+
+cp globalinput.yaml opstruss.yaml
+! exec opstruss validate
+stderr 'backend.with.dir: the backend of the project, which the global scope uses, reads inputs.store, which stacks dev, prod give through with:'
+
+cp oldplugin.yaml opstruss.yaml
+! exec opstruss validate
+stderr 'plugins/old/opstruss.plugin.yaml:2:1: backend: backend needs opstruss: "1.1" or later in this file, which says 1.0'
+
+cp good.yaml opstruss.yaml
+exec opstruss validate
+
+# what with reads opens the backend: a local that reads a secret from env
+env TOKEN=t0
+exec opstruss init --stack prod
+stdout '^wrote prod/_meta in fake:'
+
+-- old.yaml --
+name: shop
+backend:
+  uses: ./testplugins/fakebackend
+  with: {dir: store}
+-- reads.yaml --
+opstruss: "1.1"
+name: shop
+secrets:
+  made: {run: echo made}
+locals:
+  where: "${{ stack }}"
+backend:
+  uses: ./testplugins/fakebackend
+  with:
+    dir: "${{ stack }}"
+    token: "${{ secrets.made }}"
+    break: "${{ locals.where }}"
+-- kv.yaml --
+opstruss: "1.1"
+name: shop
+backend:
+  uses: ./testplugins/fakebackend
+  with:
+    dir: "${{ kv('where') }}"
+-- secretkv.yaml --
+opstruss: "1.1"
+name: shop
+secrets:
+  token: {sops: "${{ kv('file') }}.sops.yaml"}
+  key: {sops: keys.sops.yaml, field: "${{ stack }}"}
+locals:
+  key: "${{ secrets.key }}"
+backend:
+  uses: ./testplugins/fakebackend
+  with: {dir: store, token: "${{ secrets.token }}", break: "${{ locals.key }}"}
+units:
+  web:
+    run: echo web
+-- notbackend.yaml --
+opstruss: "1.1"
+name: shop
+backend:
+  uses: ./testplugins/fakecloud
+-- global.yaml --
+opstruss: "1.1"
+name: shop
+stacks:
+  dev:
+    backend: local
+  prod:
+    backend:
+      uses: ./testplugins/fakebackend
+      with: {dir: store}
+units:
+  tools:
+    global: true
+    run: echo tools
+-- globaltask.yaml --
+opstruss: "1.1"
+name: shop
+stacks:
+  prod:
+    backend:
+      uses: ./testplugins/fakebackend
+      with: {dir: store}
+units:
+  web:
+    run: echo web
+tasks:
+  remember:
+    global: true
+    steps:
+      - kv: {key: last, value: hello}
+-- globalinput.yaml --
+opstruss: "1.1"
+name: shop
+inputs:
+  store: {type: string}
+stacks:
+  dev:
+    with: {store: dev-store}
+  prod:
+    with: {store: prod-store}
+backend:
+  uses: ./testplugins/fakebackend
+  with: {dir: "${{ inputs.store }}"}
+units:
+  tools:
+    global: true
+    run: echo tools
+-- good.yaml --
+opstruss: "1.1"
+name: shop
+inputs:
+  store: {type: string, default: store}
+secrets:
+  token: {env: TOKEN}
+locals:
+  dir: "${{ inputs.store }}"
+  token: "${{ secrets.token }}"
+stacks:
+  dev:
+    backend: local
+  prod: {}
+backend:
+  uses: ./testplugins/fakebackend
+  with: {dir: "${{ locals.dir }}", token: "${{ locals.token }}"}
+units:
+  tools:
+    global: true
+    run: echo tools
+-- oldplugin.yaml --
+opstruss: "1.1"
+name: shop
+backend:
+  uses: ./plugins/old
+-- plugins/old/opstruss.plugin.yaml --
+name: old
+backend:
+  run: [fakebackend]

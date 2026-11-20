@@ -86,6 +86,9 @@ text differs; `destroy` removes it.
 - A plugin with `up` can be the `uses:` of a unit. Without `plan`, the unit
   runs when its definition changes; without `destroy`, `destroy` forgets
   its record.
+- A plugin with `backend:` keeps the state of stacks elsewhere, as `s3`
+  does; its program speaks the [backend protocol](../reference/backend-protocol)
+  rather than running tasks.
 - Any other name is a task of the plugin, which a step calls as
   `note.<task>: {…}` and a unit uses as `uses: note.<task>`.
 - `plan`, `up`, and `destroy` run only for a unit, under its lock, so a

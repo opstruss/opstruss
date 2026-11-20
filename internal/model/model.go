@@ -94,6 +94,9 @@ type Backend struct {
 	Uses  string         `json:"uses,omitempty"`
 	With  map[string]any `json:"with,omitempty"`
 	Pass  []string       `json:"pass,omitempty"`
+
+	// Package is the plugin that Uses names, once the project is checked.
+	Package *Package `json:"-"`
 }
 
 // EncryptionKey is an entry of encryption_keys, which opens the data key

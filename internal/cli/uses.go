@@ -103,6 +103,9 @@ func (a *app) listSources(ctx context.Context) error {
 			}
 			rows[name+"@"+stack] = row
 		}
+		if b := p.Backend; b != nil && strings.HasPrefix(b.Uses, "github.com/") {
+			rows["backend@"+stack] = sourceRow{Scope: stack, Name: "backend", Kind: "plugin", Source: b.Uses, Cache: "unlocked"}
+		}
 		for _, name := range slices.Sorted(maps.Keys(p.Units)) {
 			src := p.Units[name].Uses
 			if strings.HasPrefix(src, "github.com/") {

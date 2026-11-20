@@ -70,12 +70,13 @@
       }
     },
     "backend": {
-      "description": "A backend that keeps the state of stacks; not supported yet.",
+      "description": "A backend that keeps the state of stacks: a program that answers the backend protocol on its stdin and stdout, which backend: uses runs.",
       "type": "object",
+      "x-since": "1.1",
       "properties": {
         "run": {
           "$ref": "project.json#/$defs/command",
-          "description": "The program of the backend."
+          "description": "The program of the backend, started once for each command that opens the state."
         }
       },
       "required": ["run"],

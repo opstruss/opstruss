@@ -15,6 +15,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wit
 - Global units and tasks: `global: true` makes one instance for the whole project rather than one per stack, which a run of a stack brings up when its units need it, and `--global` chooses them on the command line; needs `opstruss: "1.1"` ([#16](https://github.com/opstruss/opstruss/pull/16)).
 - `after: {task: init}` runs a task once `opstruss init` succeeds, so a fresh clone is ready with one command, and `event.stack` names the stack of the run that a task follows ([#16](https://github.com/opstruss/opstruss/pull/16)).
 - A key added after 1.0, in a file whose `opstruss:` is older, fails with the version it needs rather than as an unknown key ([#16](https://github.com/opstruss/opstruss/pull/16)).
+- Plugin backends: `backend: {uses, with, pass}` keeps the state of the stacks in a plugin, as `s3` of the catalog, so a team and CI share records and locks; `opstruss init` starts a stack there once a probe of the storage passed; needs `opstruss: "1.1"` ([#17](https://github.com/opstruss/opstruss/pull/17)).
+- `opstruss unlock <unit>` releases a lock that a dead holder left in a plugin backend, after a question or with `--yes`; the next run takes over one whose holder died on the same machine ([#17](https://github.com/opstruss/opstruss/pull/17)).
+- In a plugin backend, only the daemon that holds the lease of a stack installs its triggers and services ([#17](https://github.com/opstruss/opstruss/pull/17)).
+
+### Fixed
+
+- A run that waits for a lock of the local backend, just taken by another, names that run rather than an empty holder ([#17](https://github.com/opstruss/opstruss/pull/17)).
 
 ## [1.0.0] - 2026-11-18
 

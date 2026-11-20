@@ -1,0 +1,43 @@
+# A service whose last write failed once it started keeps its kind and
+# the checkout whose daemon runs it in the pending record: another
+# checkout does not destroy it, and the first one stops it.
+
+[!failpoints] skip 'needs a build with -tags failpoints'
+env HOME=$WORK/home
+cd one
+exec opstruss init --stack default
+env OPSTRUSS_FAILPOINT=up-before-put=fail
+! exec opstruss up -d --yes
+stderr 'writing the record: failpoint up-before-put'
+env OPSTRUSS_FAILPOINT=
+grep '"kind": "service"' ../store/default/web/state.json
+grep '"checkout": ".*one"' ../store/default/web/state.json
+
+cd ../two
+! exec opstruss destroy --yes
+stderr '^default/web: the service web runs from .*/one on '
+
+cd ../one
+exec opstruss destroy --yes
+stdout '^default/web: destroy: stopped$'
+! exists ../store/default/web/state.json
+exec opstruss stop
+
+-- one/opstruss.yaml --
+opstruss: "1.1"
+name: shop
+backend:
+  uses: ../testplugins/fakebackend
+  with: {dir: ../store}
+units:
+  web:
+    service: sleep 30
+-- two/opstruss.yaml --
+opstruss: "1.1"
+name: shop
+backend:
+  uses: ../testplugins/fakebackend
+  with: {dir: ../store}
+units:
+  web:
+    service: sleep 30

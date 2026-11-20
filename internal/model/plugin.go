@@ -77,9 +77,6 @@ func (c *checker) pluginRules() {
 			c.add([]string{"bin", name}, "no binary for platform %s", sources.Platform())
 		}
 	}
-	if pl.Backend != nil {
-		c.add([]string{"backend"}, "plugin backends are not supported yet")
-	}
 	unit := pl.Tasks["up"] != nil
 	c.pluginInputs([]string{"inputs"}, pl.Inputs)
 	for _, name := range slices.Sorted(maps.Keys(pl.Inputs)) {

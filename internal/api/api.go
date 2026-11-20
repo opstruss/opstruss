@@ -298,6 +298,20 @@ func (a *API) Doctor(_ context.Context, r Request) (*engine.Report, error) {
 	return engine.Doctor(a.options(r))
 }
 
+// InitState makes the _meta of the stack, or of the global scope, as init
+// does, from p, the project as init read it.
+func (a *API) InitState(_ context.Context, r Request, p *model.Project) (*engine.StateInit, error) {
+	o := a.options(r)
+	o.Model = p
+	return engine.InitState(o)
+}
+
+// State opens the state of the stack, or of the global scope, for opstruss
+// state.
+func (a *API) State(_ context.Context, r Request) (*engine.StateHandle, error) {
+	return engine.OpenState(a.options(r))
+}
+
 // Status returns the tasks and units of the stack.
 func (a *API) Status(_ context.Context, r Request) (*engine.Status, error) {
 	return engine.List(a.options(r))

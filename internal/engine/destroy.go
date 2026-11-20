@@ -59,6 +59,10 @@ func (l *leftover) summary() string {
 	return "will be destroyed: " + l.reason
 }
 
+// serviceContract reports whether d is the destroy contract of a service,
+// which its supervisor stops: the only one without a program to run.
+func serviceContract(d *state.Destroy) bool { return d != nil && d.Run == nil }
+
 // noDestroy reports whether destroy of rec runs no program: it has no destroy
 // contract, no attempt left to destroy, and no service to stop.
 func noDestroy(rec *state.Record) bool {
@@ -477,14 +481,15 @@ func (e *engine) destroyOne(ctx context.Context, l *leftover) string {
 	// contract, so that contract is destroyed too, before the last one; so
 	// is one with the same contract whose outputs, which name what it made,
 	// differ from the last ones.
-	if a := rec.Pending; a != nil && a.Op == "up" && a.Destroy != nil &&
+	starting := rec.Pending != nil && rec.Pending.Op == "up" && serviceContract(rec.Pending.Destroy)
+	if a := rec.Pending; a != nil && a.Op == "up" && a.Destroy != nil && !starting &&
 		(!same(a.Destroy, rec.Destroy) || parsed(a.Outputs) && !same(a.Outputs, rec.Outputs)) {
 		rec.Abandoned = append(rec.Abandoned, a)
 	}
 	contracts := slices.Clone(rec.Abandoned)
 	// A service is destroyed by stopping it in its supervisor; its destroy
-	// contract says how.
-	service := rec.Kind == "service"
+	// contract says how. So is one whose start did not finish.
+	service := rec.Kind == "service" || starting
 	if rec.Destroy != nil && !service {
 		contracts = append(contracts, &state.Attempt{Source: rec.Source, Inputs: rec.Inputs, Outputs: rec.Outputs, Destroy: rec.Destroy, Hidden: rec.Hidden})
 	}
@@ -509,6 +514,11 @@ func (e *engine) destroyOne(ctx context.Context, l *leftover) string {
 			return skipped
 		}
 		approval = source
+	}
+	if service {
+		if err := e.serviceElsewhere(addr, rec); err != nil {
+			return fail(err)
+		}
 	}
 	e.begin("unit", addr, "destroy", "", "destroy: started")
 	rec.Pending = &state.Attempt{Op: "destroy", Run: e.runID, Holder: e.holder, Approval: approval, Source: rec.Source, Destroy: rec.Destroy, Inputs: rec.Inputs, Hidden: rec.Hidden}

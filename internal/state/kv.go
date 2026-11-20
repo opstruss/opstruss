@@ -192,10 +192,10 @@ func (s *Store) KVInfos() ([]KVInfo, error) {
 
 // KVLock takes the lock of the memory of the stack without waiting; one
 // lock holds every name, since a local lock file is never removed.
-func (s *Store) KVLock(h Holder) (string, error) { return s.Backend.Lock(kvLockKey(s.Stack), h) }
+func (s *Store) KVLock(h Holder) (string, error) { return s.Backend.Lock(KVLockKey(s.Stack), h) }
 
 // KVUnlock releases the lock of the memory of the stack.
-func (s *Store) KVUnlock(token string) error { return s.Backend.Unlock(kvLockKey(s.Stack), token) }
+func (s *Store) KVUnlock(token string) error { return s.Backend.Unlock(KVLockKey(s.Stack), token) }
 
 // KVPut writes value under name, still at etag, or removes it when value
 // is nil; ttl, when above zero, makes it expire. The caller holds the lock,

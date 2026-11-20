@@ -41,10 +41,17 @@ type Record struct {
 	Parts     map[string]string            `json:"parts,omitempty"` // a digest of each part of the definition, for plan to name what changed
 	Run       string                       `json:"run,omitempty"`
 	Stack     string                       `json:"stack,omitempty"` // of the run that wrote a record of a global unit; empty for one of the global scope
-	Updated   string                       `json:"updated,omitempty"`
-	Pending   *Attempt                     `json:"pending,omitempty"`
-	Abandoned []*Attempt                   `json:"abandoned,omitempty"`
-	Tombstone *Tombstone                   `json:"tombstone,omitempty"`
+	// Host, Hostname, and Checkout name the daemon that keeps a service, in
+	// a stack that shares its state: its host id, the name of that host, and
+	// the directory of the project there, since each checkout has a daemon
+	// of its own.
+	Host      string     `json:"host,omitempty"`
+	Hostname  string     `json:"hostname,omitempty"`
+	Checkout  string     `json:"checkout,omitempty"`
+	Updated   string     `json:"updated,omitempty"`
+	Pending   *Attempt   `json:"pending,omitempty"`
+	Abandoned []*Attempt `json:"abandoned,omitempty"`
+	Tombstone *Tombstone `json:"tombstone,omitempty"`
 
 	// Hidden names, by part, the values that are sensitive. A Store that
 	// has the data key keeps them in Sensitive, encrypted, and gives them

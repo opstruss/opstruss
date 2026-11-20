@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OpsTruss backend.json",
+  "description": "The plugin backend that this checkout last kept the state of a scope in, in .opstruss/state/<scope>/backend.json: its source with the pin, its with and pass as written, and the location it gave. No file means the local backend. Readers ignore fields they do not know.",
+  "type": "object",
+  "properties": {
+    "version": { "type": "integer", "minimum": 1 },
+    "uses": { "description": "The source of the plugin, as the backend names it.", "type": "string", "minLength": 1 },
+    "commit": { "description": "The commit that opstruss.lock pins the source to.", "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "hash": { "description": "The hash of the source at that commit, as opstruss.lock keeps it.", "type": "string" },
+    "with": { "description": "The inputs of the plugin as written, with their expressions.", "type": "object" },
+    "pass": { "type": "array", "items": { "type": "string" } },
+    "location": { "description": "Where the plugin keeps the state, as it answered initialize.", "type": "string", "minLength": 1 }
+  },
+  "required": ["version", "uses", "location"]
+}

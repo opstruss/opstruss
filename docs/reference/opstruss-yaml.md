@@ -23,7 +23,7 @@ Keys that start with x- are left for your own use.
 | `locals` | object | Named values computed from inputs and other locals, read as locals.&lt;name&gt;. |
 | `outputs` | map of string or [Project outputs](#project-outputs) | Outputs of the project, which opstruss outputs prints and a project that uses it as a component reads. They are evaluated when read, from the stored outputs of the units and the inputs of that command; an output that reads inputs or locals needs the same --input as the up. |
 | `stacks` | map of [Stack](#stack) | The stacks of the project: copies of its units, each with its inputs and its own state. |
-| `backend` | `local` or [Backend](#backend) | Where the state of the stacks is kept: local, in .opstruss/state/, the only backend of this version. |
+| `backend` | `local` or [Backend](#backend) | Where the state of the stacks and of the global scope is kept: local, in .opstruss/state/, or a plugin backend. |
 | `secrets` | map of [Secret](#secret) | Secrets of the project, read as secrets.&lt;name&gt; and hidden in what OpsTruss writes. |
 | `encryption_keys` | list of string or [Encryption keys](#encryption-keys) | What opens the data key of each stack, which encrypts sensitive values in the state. |
 | `daemon` | [Daemon](#daemon) | Settings of the daemon of each stack. |
@@ -164,19 +164,19 @@ A stack: a copy of the units of the project with its own inputs and state.
 | `encryption_keys` | list of string or [Encryption keys](#encryption-keys) | What opens the data key of this stack, instead of those of the project. |
 | `daemon` | [Daemon](#daemon) | Settings of the daemon of this stack. |
 | `mcp` | `false` or [MCP](#mcp) | Reserved for opstruss mcp in this stack; not supported in this version, which refuses it. |
-| `backend` | `local` or [Backend](#backend) | Where the state of this stack is kept: local, the only backend of this version. |
+| `backend` | `local` or [Backend](#backend) | Where the state of this stack is kept, in place of the backend of the project: local, or a plugin backend. |
 | `approval` | one of `ask`, `auto` | ask to wait for approval of changes in this stack, auto to apply them without asking. |
 | `include` | list of string | Files merged into the project in this stack only. |
 
 ## Backend {#backend}
 
-Where the state of a stack is kept: local; a backend plugin is not supported in this version.
+Where the state of a stack is kept: local, in .opstruss/state/, or a plugin backend that keeps it elsewhere, such as in S3.
 
 | Key | Type | Description |
 |---|---|---|
-| `uses` (required) | string | The plugin of the backend; not supported in this version. |
-| `with` | object | Inputs of the backend plugin. |
-| `pass` | list of string | Variables of the environment that the backend plugin gets. |
+| `uses` (required) (since 1.1) | string | The plugin of the backend: a source, or a name in uses:, pinned in opstruss.lock. |
+| `with` (since 1.1) | object | Inputs of the backend plugin, read before the state opens: inputs, secrets from sops or env, and locals of those only. |
+| `pass` (since 1.1) | list of string | Variables of the environment that the backend plugin gets. |
 
 ## Secret {#secret}
 

@@ -36,6 +36,8 @@ const (
 	Run     Kind = "run.json"
 	Event   Kind = "event.json"
 	Daemon  Kind = "daemon.json"
+	// BackendFile is .opstruss/state/<scope>/backend.json.
+	BackendFile Kind = "backend.json"
 
 	// The params and results of the socket of a daemon.
 	APIInitialize Kind = "api.json#/$defs/initialize"
@@ -89,7 +91,7 @@ func compile(level string) (map[Kind]*jsonschema.Schema, *jsonschema.Compiler, e
 		}
 	}
 	out := map[Kind]*jsonschema.Schema{}
-	for _, k := range []Kind{Project, Include, Plugin, Catalog, Lock, Record, Meta, Run, Event, Daemon,
+	for _, k := range []Kind{Project, Include, Plugin, Catalog, Lock, Record, Meta, Run, Event, Daemon, BackendFile,
 		APIInitialize, APIRequest, APIResult, APIQuestion, APIApproval, APIAsk, APIAnswer, APIEvent} {
 		s, err := c.Compile(base + string(k))
 		if err != nil {

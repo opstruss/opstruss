@@ -119,6 +119,15 @@ func (f *Foreground) Forget(addr string) ([]string, error) {
 	return Forget(f.root(), f.Stack, addr)
 }
 
+// CheckBackend says why a run that keeps the state of the stack in backend
+// does not run in the daemon that this process became, or nil.
+func (f *Foreground) CheckBackend(backend string) error {
+	if d := f.daemon(); d != nil {
+		return d.sup.CheckBackend(backend)
+	}
+	return nil
+}
+
 // Started reports whether this process became the daemon of the stack.
 func (f *Foreground) Started() bool { return f.daemon() != nil }
 

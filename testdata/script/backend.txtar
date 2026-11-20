@@ -1,0 +1,77 @@
+# A stack keeps its state in a plugin backend: init --stack makes its
+# _meta there once the backend passed the probe, and a second checkout
+# finds what the first one did, without records of its own.
+
+env HOME=$WORK/home
+
+# a run before init stops: the stack has no state there
+cd one
+! exec opstruss plan
+stderr 'stack default has no state in fake:.*store; start it there with opstruss init --stack default, or move its state there with opstruss state migrate --stack default$'
+
+exec opstruss init --stack default
+stdout '^wrote default/_meta in fake:.*store$'
+exists ../store/default/_meta
+exists .opstruss/state/default/backend.json
+grep '"location": "fake:' .opstruss/state/default/backend.json
+grep '"uses": "../testplugins/fakebackend"' .opstruss/state/default/backend.json
+
+exec opstruss up --yes
+stdout '^default/web \| web ran$'
+exists ../store/default/web/state.json
+! exists .opstruss/state/default/web
+
+# a second checkout finds the record, so nothing runs again
+cd ../two
+exec opstruss plan
+stdout '^default/web: unchanged$'
+exists .opstruss/state/default/backend.json
+exec opstruss state list
+stdout '^default/web\s+ok$'
+
+# destroy from the second checkout takes the unit down there
+exec opstruss destroy --yes
+stdout '^default/web \| web gone$'
+! exists ../store/default/web/state.json
+
+# init needs only the inputs that the backend reads
+cd ../three
+! exec opstruss init --stack default
+stderr 'input store: required'
+! exists ../store3
+exec opstruss init --stack default --input store=../store3
+stdout '^wrote default/_meta in fake:.*store3$'
+
+-- one/opstruss.yaml --
+opstruss: "1.1"
+name: shop
+backend:
+  uses: ../testplugins/fakebackend
+  with: {dir: ../store}
+units:
+  web:
+    run: echo web ran
+    destroy: echo web gone
+-- two/opstruss.yaml --
+opstruss: "1.1"
+name: shop
+backend:
+  uses: ../testplugins/fakebackend
+  with: {dir: ../store}
+units:
+  web:
+    run: echo web ran
+    destroy: echo web gone
+-- three/opstruss.yaml --
+opstruss: "1.1"
+name: shop
+inputs:
+  store: {required: true}
+  token: {required: true}
+backend:
+  uses: ../testplugins/fakebackend
+  with: {dir: "${{ inputs.store }}"}
+units:
+  web:
+    run: echo $TOKEN
+    env: {TOKEN: "${{ inputs.token }}"}
