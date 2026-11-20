@@ -34,6 +34,14 @@ exec opstruss destroy --yes
 stdout '^default/web \| web gone$'
 ! exists ../store/default/web/state.json
 
+# init needs only the inputs that the backend reads
+cd ../three
+! exec opstruss init --stack default
+stderr 'input store: required'
+! exists ../store3
+exec opstruss init --stack default --input store=../store3
+stdout '^wrote default/_meta in fake:.*store3$'
+
 -- one/opstruss.yaml --
 opstruss: "1.1"
 name: shop
@@ -54,3 +62,16 @@ units:
   web:
     run: echo web ran
     destroy: echo web gone
+-- three/opstruss.yaml --
+opstruss: "1.1"
+name: shop
+inputs:
+  store: {required: true}
+  token: {required: true}
+backend:
+  uses: ../testplugins/fakebackend
+  with: {dir: "${{ inputs.store }}"}
+units:
+  web:
+    run: echo $TOKEN
+    env: {TOKEN: "${{ inputs.token }}"}

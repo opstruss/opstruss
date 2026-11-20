@@ -18,6 +18,11 @@ cp kv.yaml opstruss.yaml
 ! exec opstruss validate
 stderr 'backend.with.dir: with of a backend cannot call kv\(\), which reads the state that the backend opens'
 
+cp secretkv.yaml opstruss.yaml
+! exec opstruss validate
+stderr 'backend.with.token: with of a backend reads inputs, secrets from sops or env, and locals of those only, as it is read before the state opens; secret token, whose source calls kv\(\) \(in \$\{\{ secrets.token \}\}\)'
+stderr 'backend.with.break: with of a backend reads inputs, secrets from sops or env, and locals of those only, as it is read before the state opens; local key reads secret key, whose source reads stack \(in \$\{\{ locals.key \}\}\)'
+
 cp notbackend.yaml opstruss.yaml
 ! exec opstruss validate
 stderr 'backend.uses: ./testplugins/fakecloud is not a backend: a backend uses a plugin whose opstruss.plugin.yaml has backend:'
@@ -41,6 +46,11 @@ stderr 'plugins/old/opstruss.plugin.yaml:2:1: backend: backend needs opstruss: "
 
 cp good.yaml opstruss.yaml
 exec opstruss validate
+
+# what with reads opens the backend: a local that reads a secret from env
+env TOKEN=t0
+exec opstruss init --stack prod
+stdout '^wrote prod/_meta in fake:'
 
 -- old.yaml --
 name: shop
@@ -67,6 +77,20 @@ backend:
   uses: ./testplugins/fakebackend
   with:
     dir: "${{ kv('where') }}"
+-- secretkv.yaml --
+opstruss: "1.1"
+name: shop
+secrets:
+  token: {sops: "${{ kv('file') }}.sops.yaml"}
+  key: {sops: keys.sops.yaml, field: "${{ stack }}"}
+locals:
+  key: "${{ secrets.key }}"
+backend:
+  uses: ./testplugins/fakebackend
+  with: {dir: store, token: "${{ secrets.token }}", break: "${{ locals.key }}"}
+units:
+  web:
+    run: echo web
 -- notbackend.yaml --
 opstruss: "1.1"
 name: shop
@@ -128,13 +152,14 @@ secrets:
   token: {env: TOKEN}
 locals:
   dir: "${{ inputs.store }}"
+  token: "${{ secrets.token }}"
 stacks:
   dev:
     backend: local
   prod: {}
 backend:
   uses: ./testplugins/fakebackend
-  with: {dir: "${{ locals.dir }}", token: "${{ secrets.token }}"}
+  with: {dir: "${{ locals.dir }}", token: "${{ locals.token }}"}
 units:
   tools:
     global: true

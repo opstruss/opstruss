@@ -37,6 +37,11 @@ type Supervisor interface {
 	// Forget forgets what is left of the service at addr that cannot be
 	// proven its own, as opstruss unlock does, and says what that was.
 	Forget(addr string) ([]string, error)
+	// CheckBackend says why a run that keeps the state of the stack in
+	// backend, as the files name it now, cannot run here, or nil: a daemon
+	// keeps the triggers and services of its stack with the lease that it
+	// took from one backend, until it starts again.
+	CheckBackend(backend string) error
 }
 
 // Service is a service as its supervisor runs it: the program, and those
@@ -232,9 +237,6 @@ func (e *engine) serviceOf(inst *instance, r *resolved, rec *state.Record) (*Ser
 // startService runs the turn of a service unit: its supervisor stops the
 // one that runs, starts this one, and waits until it is ready.
 func (e *engine) startService(ctx context.Context, inst *instance, r *resolved, rec *state.Record) (*plugin.Result, error) {
-	if err := e.serviceElsewhere(inst.address, rec); err != nil {
-		return nil, err
-	}
 	s, err := e.serviceOf(inst, r, rec)
 	if err != nil {
 		return nil, err
@@ -295,6 +297,7 @@ func (noSupervisor) Start(context.Context, *Service) error { return errNoSupervi
 func (noSupervisor) Stop(context.Context, string) error    { return nil }
 func (noSupervisor) Status(string) (ServiceStatus, bool)   { return ServiceStatus{}, false }
 func (noSupervisor) Forget(string) ([]string, error)       { return nil, nil }
+func (noSupervisor) CheckBackend(string) error             { return nil }
 
 // Unlock forgets what is left of the service of the one unit named that
 // cannot be proven its own, such as a process group whose leader is gone,

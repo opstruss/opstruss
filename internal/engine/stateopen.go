@@ -26,7 +26,7 @@ type StateInit struct {
 // A scope that has _meta keeps it, and one whose state this checkout keeps
 // elsewhere is refused, as a run refuses it.
 func InitState(opts Options) (*StateInit, error) {
-	opts.report = true
+	opts.report, opts.stateOnly = true, true
 	e, err := load(opts)
 	if err != nil {
 		return nil, err

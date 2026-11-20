@@ -204,7 +204,7 @@ func Start(opts Options) (_ *Daemon, err error) {
 	d.runs, d.cancelRuns = context.WithCancelCause(runs)
 	d.trig = &triggers{d: d, sources: map[string]*source{}, pending: map[string]int{}}
 	d.trig.hooks = &webhooks{t: d.trig}
-	d.sup.leased = d.leased
+	d.sup.leased, d.sup.backend = d.leased, d.sameBackend
 	// What fails here is in the log; the up that started the daemon
 	// installs the triggers again and says so.
 	_ = d.trig.install(runOptions(opts.Dir, opts.Stack, opts.Inputs, opts.Environ, opts.Locked))
@@ -236,6 +236,19 @@ func (d *Daemon) leased() error {
 	d.leaseMu.Lock()
 	defer d.leaseMu.Unlock()
 	return d.leaseErr
+}
+
+// sameBackend says why a run that keeps the state of the stack in backend
+// does not run in this daemon, or nil: it took the lease of its triggers
+// and services from another backend, and keeps it until it stops.
+func (d *Daemon) sameBackend(backend string) error {
+	d.leaseMu.Lock()
+	defer d.leaseMu.Unlock()
+	if d.lease == nil || d.lease.Backend == backend {
+		return nil
+	}
+	return fmt.Errorf("the daemon of stack %s took the lease of its triggers and services from %s, and the files now keep the state of the stack in %s; start the daemon again, with opstruss stop and then up",
+		d.opts.Stack, d.lease.Backend, backend)
 }
 
 // releaseLease lets the lease go as the daemon stops.

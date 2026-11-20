@@ -244,6 +244,10 @@ func (c *checker) refs(path []string, v any, pl place) []string {
 				c.add(path, "a trigger reads only the secrets that sops and env hold, and %s comes from a program, which runs only in a run (in ${{ %s }})", name, r.Expr)
 			case pl.kind == "backend" && fromProgram(c.p.Secrets[name]):
 				c.add(path, "with of a backend reads only the secrets that sops and env hold, as it is read before the state opens, and %s comes from a program, which runs only in a run (in ${{ %s }})", name, r.Expr)
+			case pl.kind == "backend":
+				if why := c.backendSecret(name, map[string]bool{}); why != "" {
+					c.add(path, "with of a backend reads inputs, secrets from sops or env, and locals of those only, as it is read before the state opens; secret %s, %s (in ${{ %s }})", name, why, r.Expr)
+				}
 			}
 		case "each":
 			if !pl.each {

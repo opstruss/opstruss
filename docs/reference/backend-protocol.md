@@ -78,7 +78,11 @@ waits for its answer, and sends the next; the first is `initialize`.
   `token`. A lock stays when its holder dies, so another process, as
   `opstruss unlock`, can let it go. `unlock` lets go only with the token
   of the lock: `conflict` for another token, `not_found` for a lock that
-  is not there.
+  is not there. A token is of one lock alone: a lock taken again, also
+  by the same holder, gets another token, so an unlock that read the
+  token of the lock before does not let it go. A program whose token
+  comes from the content of an object, as an ETag of S3, keeps a random
+  value in each lock.
 - Any other error fails the operation, with its `message`. A method that
   the program does not know is error `-32601`, so a later version can add
   methods as capabilities.
@@ -98,7 +102,7 @@ starts in a backend, on keys under `_probe/<id>/` that no stack reads:
 4. A second `lock` is `locked`, with the holder and the token of the
    first.
 5. `unlock` with another token is a `conflict`; with the token, the lock
-   goes, and can be taken again.
+   goes, and the same holder takes it again with another token.
 6. `list` of the prefix is empty.
 
 A storage that fails a step, such as one that deletes an object whose

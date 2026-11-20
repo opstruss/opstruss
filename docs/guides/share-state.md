@@ -31,7 +31,9 @@ stacks:
 - `backend:` at the top is the backend of every stack, and of the global
   scope; a stack may name its own, or `backend: local`.
 - `with:` is read before the state opens, so it reads only inputs, secrets
-  from `sops` or `env`, and locals of those.
+  from `sops` or `env`, and locals of those; so do the `sops` and `field`
+  of a secret that it reads. `init` needs only the inputs that `with:`
+  reads.
 - A project with [global units or tasks](./structure-a-project) and a
   stack with a plugin backend keeps the global scope in a plugin backend
   too: write `backend:` at the top rather than in the stacks.
@@ -103,6 +105,10 @@ The daemon of a stack whose state is shared holds the lease of the
 stack, `_daemon`, while it runs: only that daemon installs the triggers
 and keeps the services, so a schedule runs once. A daemon of another
 checkout runs what it is asked, as an `up`, and says which machine holds
-the lease. A service runs from the checkout whose daemon started it, and
-`up` or `destroy` of it from another checkout, on that machine or
-another, is refused with its directory and machine.
+the lease. A daemon keeps the backend that it took the lease from: once
+`opstruss.yaml` keeps the state of its stack in another backend, its
+runs stop until it starts again, with `opstruss stop` and then `up`. A
+service runs from the checkout whose daemon started it, and an `up` that
+writes its record, whatever the unit is now, or a `destroy` of it from
+another checkout, on that machine or another, is refused with its
+directory and machine.

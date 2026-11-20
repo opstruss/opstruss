@@ -31,6 +31,30 @@ exists ../store/default/_daemon.lock
 exec opstruss stop
 ! exists ../store/default/_daemon.lock
 
+# the lease goes back to the backend that granted it, whatever the files
+# say by the time the daemon stops
+exec opstruss up -d --yes
+exists ../store/default/_daemon.lock
+cp opstruss.yaml shared.yaml
+cp other.yaml opstruss.yaml
+exec opstruss stop
+! exists ../store/default/_daemon.lock
+cp shared.yaml opstruss.yaml
+
+# a daemon keeps the backend it took its lease from: once the files keep
+# the state of its stack elsewhere, it runs nothing until it starts again
+cd ../three
+exec opstruss up -d --yes
+cp plugin.yaml opstruss.yaml
+exec opstruss init --stack default
+! exec opstruss up -d --yes
+stderr 'the daemon of stack default took the lease of its triggers and services from the local backend, and the files now keep the state of the stack in fake:.*store3 through ../testplugins/fakebackend; start the daemon again, with opstruss stop and then up$'
+! exists ../store3/default/_daemon.lock
+exec opstruss stop
+exec opstruss up -d --yes
+exists ../store3/default/_daemon.lock
+exec opstruss stop
+
 -- one/opstruss.yaml --
 opstruss: "1.1"
 name: shop
@@ -54,6 +78,34 @@ backend:
 units:
   web:
     run: echo web ran
+tasks:
+  tick:
+    on:
+      schedule: "0 0 1 1 *"
+    run: echo tick
+-- two/other.yaml --
+opstruss: "1.1"
+name: shop
+backend:
+  uses: ../testplugins/fakebackend
+  with: {dir: ../store2}
+units:
+  web:
+    run: echo web ran
+-- three/opstruss.yaml --
+opstruss: "1.1"
+name: shop
+tasks:
+  tick:
+    on:
+      schedule: "0 0 1 1 *"
+    run: echo tick
+-- three/plugin.yaml --
+opstruss: "1.1"
+name: shop
+backend:
+  uses: ../testplugins/fakebackend
+  with: {dir: ../store3}
 tasks:
   tick:
     on:

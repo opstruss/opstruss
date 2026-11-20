@@ -13,6 +13,8 @@ import (
 // of a stack that checkouts share. A stack in the local backend needs
 // none, since no other checkout shares its state.
 type Lease struct {
+	// Backend names the backend that granted it, as backendID does.
+	Backend string
 	release func() error
 }
 
@@ -35,27 +37,29 @@ func TakeLease(opts Options) (*Lease, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer e.releaseSources()
+	id := backendID(e.store.Backend)
 	pb, ok := e.store.Backend.(*pluginBackend)
 	if !ok {
-		return &Lease{}, nil
+		e.releaseSources()
+		return &Lease{Backend: id}, nil
 	}
 	key := state.DaemonLockKey(e.p.StackName)
 	token, err := pb.Lock(key, state.NewHolder(state.DaemonRun, e.host))
 	var le *state.LockedError
 	switch {
 	case errors.As(err, &le):
+		e.releaseSources()
 		return nil, &LeaseError{Stack: e.p.StackName, Holder: le.Holder}
 	case err != nil:
+		e.releaseSources()
 		return nil, err
 	}
-	return &Lease{release: func() error {
-		e, err := load(opts)
-		if err != nil {
-			return err
-		}
+	// The backend that granted the lease takes it back, as the files may
+	// name another by then, or not load: the daemon keeps its program and
+	// sources until it stops.
+	return &Lease{Backend: id, release: func() error {
 		defer e.releaseSources()
-		return e.store.Backend.Unlock(key, token)
+		return pb.Unlock(key, token)
 	}}, nil
 }
 

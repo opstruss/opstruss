@@ -2,8 +2,10 @@ package state
 
 import (
 	"bufio"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -24,6 +26,7 @@ type memServer struct {
 	matchNone bool
 	listNone  bool
 	flatList  bool
+	hashToken bool // a lock's token is the hash of its holder
 	protocol  int
 	silent    string // a method it never answers
 	deaf      bool   // reads no request after initialize
@@ -127,6 +130,9 @@ func (m *memServer) answer(method string, p map[string]any) (any, string) {
 		m.n++
 		h, _ := json.Marshal(p["holder"])
 		token := "token-" + string(rune('a'+m.n))
+		if m.hashToken {
+			token = fmt.Sprintf("%x", sha256.Sum256(h))
+		}
 		m.locks[key] = [2]string{string(h), token}
 		return map[string]any{"token": token}, ""
 	case "unlock":
@@ -269,6 +275,7 @@ func TestProbe(t *testing.T) {
 		{"a storage that refuses every put with an etag", &memServer{matchNone: true}, 2, "put with the etag: the key changed since it was read"},
 		{"a storage that lists nothing", &memServer{listNone: true}, 1, "list of the prefix gives the key"},
 		{"a storage that lists one level", &memServer{flatList: true}, 1, "list of the prefix gives the key"},
+		{"a storage whose token is the hash of the lock", &memServer{hashToken: true}, 5, "a lock after unlock has a token of its own"},
 	} {
 		r, err := dial(t, c.m, time.Minute)
 		if err != nil {

@@ -89,13 +89,38 @@ func (c *checker) globalBackend() {
 
 // backendLocal says why with of a backend cannot read local name, or "":
 // it calls kv(), or reads what only a run or a plan knows, itself or
-// through other locals.
+// through the locals and secrets it reads.
 func (c *checker) backendLocal(name string, seen map[string]bool) string {
-	if seen[name] {
+	if seen["locals."+name] {
 		return ""
 	}
-	seen[name] = true
-	use, err := expr.AnalyzeValue(c.p.Locals[name])
+	seen["locals."+name] = true
+	return c.backendValue(c.p.Locals[name], seen)
+}
+
+// backendSecret says why with of a backend cannot read secret name, or "":
+// a program gives it, or its source reads what with cannot, as the source
+// is read before the state opens too.
+func (c *checker) backendSecret(name string, seen map[string]bool) string {
+	s := c.p.Secrets[name]
+	if s == nil || seen["secrets."+name] {
+		return ""
+	}
+	seen["secrets."+name] = true
+	if fromProgram(s) {
+		return "which a program gives in a run"
+	}
+	for _, v := range []string{s.Sops, s.Field} {
+		if why := c.backendValue(v, seen); why != "" {
+			return "whose source " + why
+		}
+	}
+	return ""
+}
+
+// backendValue says why with of a backend cannot read v, or "".
+func (c *checker) backendValue(v any, seen map[string]bool) string {
+	use, err := expr.AnalyzeValue(v)
 	if err != nil {
 		return ""
 	}
@@ -110,8 +135,8 @@ func (c *checker) backendLocal(name string, seen map[string]bool) string {
 		switch r.Path[0] {
 		case "inputs":
 		case "secrets":
-			if s := c.p.Secrets[other]; s != nil && fromProgram(s) {
-				return "reads secret " + other + ", which a program gives in a run"
+			if why := c.backendSecret(other, seen); why != "" {
+				return "reads secret " + other + ", " + why
 			}
 		case "locals":
 			if other == "" {

@@ -706,6 +706,14 @@ func (e *engine) turn(ctx context.Context, inst *instance, leave func()) {
 	}
 	e.debug(addr, "took the lock; digest %s; %s", p.digest, p.summary())
 	destroy := e.destroyContract(inst, r)
+	if p.run || len(p.teardown) > 0 || rec != nil && !same(rec.Destroy, destroy) {
+		// Only the checkout that keeps a service writes its record, whatever
+		// the unit is now.
+		if err := e.serviceElsewhere(addr, rec); err != nil {
+			failed(err)
+			return
+		}
+	}
 	if !p.run && len(p.teardown) == 0 {
 		leave()
 		// A destroy contract that changed alone is written without running.
@@ -794,6 +802,11 @@ func (e *engine) turn(ctx context.Context, inst *instance, leave func()) {
 		}
 	}
 	next.Pending = attempt
+	if r.service != nil {
+		// Before it starts, so a last write that fails still names the
+		// service and the daemon that keeps it.
+		next.Kind, next.Host, next.Hostname, next.Checkout = r.kind(), e.host, hostname(), e.p.Dir
+	}
 	if data, err := e.store.Encode(next); err != nil || len(data)+plugin.MaxOutputs > MaxRecord {
 		if err != nil {
 			failed(err)

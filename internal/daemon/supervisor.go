@@ -59,8 +59,10 @@ type Supervisor struct {
 	watch       func(record.Event) // the terminal of a daemon in the foreground, or nil
 	kill        <-chan struct{}    // closed when what stops the services is to kill them at once
 	// leased, in a daemon, says why it starts no service: another daemon
-	// holds the lease of a stack that checkouts share.
-	leased func() error
+	// holds the lease of a stack that checkouts share. backend says why it
+	// runs nothing whose state is in another backend than its lease.
+	leased  func() error
+	backend func(string) error
 
 	recovered chan struct{} // closed once what a daemon that ended left is stopped
 	done      chan struct{} // closed once the supervisor stops
@@ -164,6 +166,15 @@ func (sup *Supervisor) settle(p *Process, s leftover) {
 		delete(sup.unclear, p.Address)
 	}
 	removeLock(sup.root, p)
+}
+
+// CheckBackend says why a run that keeps the state of the stack in backend
+// does not run in this daemon, or nil.
+func (sup *Supervisor) CheckBackend(backend string) error {
+	if sup.backend == nil {
+		return nil
+	}
+	return sup.backend(backend)
 }
 
 // Start stops the service at s.Address when it runs, starts s, and returns

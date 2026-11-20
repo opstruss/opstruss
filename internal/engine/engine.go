@@ -89,6 +89,10 @@ type Options struct {
 	// report says that the caller reports what is wrong with the backend
 	// of the stack, as doctor does, rather than stopping on it.
 	report bool
+	// stateOnly says that the caller only makes the state, which needs the
+	// inputs that the backend reads: a required input without a value
+	// fails only where it is read.
+	stateOnly bool
 }
 
 // Question is a change that waits for approval, or with Items, several
@@ -315,11 +319,19 @@ func loadContext(ctx context.Context, opts Options) (*engine, error) {
 		}
 		opts.Inputs = given
 	}
-	values, err := p.ResolveInputs(given, opts.LookupEnv, func(name string, v any) {
+	known := func(name string, v any) {
 		if red.Add(v) {
 			short = append(short, "input "+name)
 		}
-	})
+	}
+	var values map[string]model.InputValue
+	var missing []string
+	var err error
+	if opts.stateOnly {
+		values, missing, err = p.ResolveSomeInputs(given, opts.LookupEnv, known)
+	} else {
+		values, err = p.ResolveInputs(given, opts.LookupEnv, known)
+	}
 	if err != nil {
 		return nil, red.Err(err)
 	}
@@ -330,6 +342,9 @@ func loadContext(ctx context.Context, opts Options) (*engine, error) {
 			red.Add(v.Value)
 			inputMarks[k] = true
 		}
+	}
+	for _, k := range missing {
+		inputs[k] = expr.Later(func() (any, error) { return nil, fmt.Errorf("input %s: required", k) })
 	}
 	e := &engine{releaseSources: func() { bs.close(); releaseSources() }, backends: bs, opts: opts, p: p, inputs: inputs, root: filepath.Join(p.Dir, ".opstruss"),
 		redact: red, inputMarks: inputMarks, tooShort: short,
@@ -369,6 +384,11 @@ func loadContext(ctx context.Context, opts Options) (*engine, error) {
 	}
 	if e.store, err = e.openStore(p); err != nil {
 		return nil, err
+	}
+	if opts.Supervisor != nil && !p.Global {
+		if err := opts.Supervisor.CheckBackend(backendID(e.store.Backend)); err != nil {
+			return nil, err
+		}
 	}
 	if !p.Global && !p.Undeclared && p.HasGlobal() {
 		if e.global, err = e.openGlobal(ctx); err != nil {

@@ -26,8 +26,8 @@ func (e *ProbeError) Unwrap() error { return e.Err }
 // Probe tries the contract on keys of its own under _probe/<id>/, which no
 // stack reads, since initialize proves none of it: conditional puts and
 // deletes, a read after each write, a list as deep as inventory needs, and
-// locks with their holder and token. What a failed step leaves it removes
-// as it can.
+// locks with their holder and a token of each lock's own. What a failed
+// step leaves it removes as it can.
 func Probe(b Backend, h Holder) (err error) {
 	dir := "_probe/" + NewID() + "/"
 	// As deep under dir as a record is under its stack, so that a list that
@@ -111,6 +111,7 @@ func Probe(b Backend, h Holder) (err error) {
 	if token, err = b.Lock(lock, h); err != nil {
 		return fail(4, "lock", err)
 	}
+	before := token
 	_, err = b.Lock(lock, h)
 	var le *LockedError
 	if !errors.As(err, &le) || le.Token != token || le.Holder.Run != h.Run {
@@ -126,6 +127,11 @@ func Probe(b Backend, h Holder) (err error) {
 	token = ""
 	if token, err = b.Lock(lock, h); err != nil {
 		return fail(5, "lock after unlock", err)
+	}
+	if token == before {
+		// An unlock that read the token of the first lock would let this
+		// one go.
+		return fail(5, "a lock after unlock has a token of its own, not the one of the lock before, even with the same holder", nil)
 	}
 	if err := b.Unlock(lock, token); err != nil {
 		return fail(5, "unlock with the token", err)

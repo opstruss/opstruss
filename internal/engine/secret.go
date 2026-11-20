@@ -40,15 +40,15 @@ func (e *engine) resolveSecret(name string) (any, error) {
 	if e.run == nil && !e.trigger {
 		return nil, errors.New("secrets are read only in a run")
 	}
-	return e.secretFrom(name)
+	return e.secretFrom(name, e.locals)
 }
 
-// secretFrom reads secret name from its source; one from a program only
-// in a run.
-func (e *engine) secretFrom(name string) (any, error) {
+// secretFrom reads secret name from its source, whose expressions read
+// locals; one from a program only in a run.
+func (e *engine) secretFrom(name string, locals map[string]any) (any, error) {
 	src, dir := e.p.Secrets[name], e.p.DirOf("secrets."+name)
 	s := e.newKV().scope(&expr.Scope{Dir: dir, Vars: map[string]any{"stack": e.p.StackName, "inputs": e.inputs,
-		"locals": e.locals, "opstruss": e.facts(nil)}, Marks: map[string]any{"inputs": e.inputMarks, "locals": e.localMarks}})
+		"locals": locals, "opstruss": e.facts(nil)}, Marks: map[string]any{"inputs": e.inputMarks, "locals": e.localMarks}})
 	e.debug("", "resolving secret %s", name)
 	switch {
 	case src.Sops != "":

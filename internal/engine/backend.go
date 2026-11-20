@@ -32,8 +32,9 @@ import (
 const (
 	backendWait  = 5 * time.Minute
 	backendGrace = 10 * time.Second
-	backendIdle  = time.Minute
 )
+
+var backendIdle = time.Minute // shorter in tests
 
 // backends are what one command, with the global scope of its run, keeps
 // state in: the local backend, and the program of each plugin backend by
@@ -94,8 +95,11 @@ func (e *engine) startBackend(p *model.Project) (state.Backend, *pluginBackend, 
 		maps.Copy(given, d.With)
 	}
 	maps.Copy(given, b.With)
-	s := &expr.Scope{Dir: p.DirOf("backend"), Vars: map[string]any{"inputs": e.inputs, "locals": e.locals, "secrets": e.backendSecrets()},
-		Marks: map[string]any{"inputs": e.inputMarks, "locals": e.localMarks}}
+	vars, err := e.backendVars()
+	if err != nil {
+		return nil, nil, e.redact.Err(fmt.Errorf("backend: with: %w", err))
+	}
+	s := &expr.Scope{Dir: p.DirOf("backend"), Vars: vars, Marks: map[string]any{"inputs": e.inputMarks, "locals": e.localMarks}}
 	v, marks, err := expr.EvalMarked(given, s)
 	if err != nil {
 		return nil, nil, e.redact.Err(fmt.Errorf("backend: with: %w", err))
@@ -166,16 +170,18 @@ func (e *engine) startBackend(p *model.Project) (state.Backend, *pluginBackend, 
 	return pb, pb, nil
 }
 
-// backendSecrets are the secrets that with: of a backend reads, before the
-// state opens and so outside a run: those from sops and env.
-func (e *engine) backendSecrets() map[string]any {
-	out := map[string]any{}
+// backendVars are what with: of a backend reads before the state opens,
+// and so outside a run: the inputs, the secrets from sops and env, and the
+// locals, which read those secrets too.
+func (e *engine) backendVars() (map[string]any, error) {
+	secrets := map[string]any{}
+	var locals map[string]any
 	for name, src := range e.p.Secrets {
 		if src.Sops == "" && src.EnvName == "" {
 			continue
 		}
-		out[name] = expr.Later(func() (any, error) {
-			v, err := e.secretFrom(name)
+		secrets[name] = expr.Later(func() (any, error) {
+			v, err := e.secretFrom(name, locals)
 			if err != nil {
 				return nil, fmt.Errorf("secret %s: %w", name, err)
 			}
@@ -183,7 +189,11 @@ func (e *engine) backendSecrets() map[string]any {
 			return v, nil
 		})
 	}
-	return out
+	locals, err := e.p.EvalLocals(e.inputs, nil, secrets)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"inputs": e.inputs, "locals": locals, "secrets": secrets}, nil
 }
 
 // backendLine reports what the program of a plugin backend wrote to its
@@ -312,19 +322,20 @@ func (b *pluginBackend) done() {
 	if b.busy > 0 || b.cur == nil {
 		return
 	}
+	// A new timer each time, for the program that runs now: one reset
+	// would stop only the program it was made for, which may have stopped.
 	cur := b.cur
-	if b.idle == nil {
-		b.idle = time.AfterFunc(backendIdle, func() {
-			b.mu.Lock()
-			defer b.mu.Unlock()
-			if b.busy == 0 && b.cur == cur {
-				b.cur = nil
-				go cur.end()
-			}
-		})
-		return
+	if b.idle != nil {
+		b.idle.Stop()
 	}
-	b.idle.Reset(backendIdle)
+	b.idle = time.AfterFunc(backendIdle, func() {
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		if b.busy == 0 && b.cur == cur {
+			b.cur = nil
+			go cur.end()
+		}
+	})
 }
 
 // close stops the program, once the command is done with it.
@@ -533,6 +544,16 @@ func (e *engine) openStore(p *model.Project) (*state.Store, error) {
 		e.originErr = err
 	}
 	return s, nil
+}
+
+// backendID names the backend be by what makes two backends the same, as
+// messages name it too: the local one, or the location of a plugin backend
+// and its plugin without the version.
+func backendID(be state.Backend) string {
+	if pb, ok := be.(*pluginBackend); ok {
+		return pb.location + " through " + pb.source
+	}
+	return "the local backend"
 }
 
 // identitySource is the plugin of a backend without its version: with the

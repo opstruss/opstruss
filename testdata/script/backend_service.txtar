@@ -14,6 +14,13 @@ cd ../two
 ! exec opstruss destroy --yes
 stderr '^default/web: the service web runs from .*/one on .*, whose daemon keeps it; up and destroy it there, or, once that checkout is gone for good, forget its record with opstruss state rm web$'
 exists ../store/default/web/state.json
+# nor turn it into another kind of unit
+cp opstruss.yaml service.yaml
+cp run.yaml opstruss.yaml
+! exec opstruss up --yes
+stderr '^default/web: the service web runs from .*/one on '
+grep '"kind": "service"' ../store/default/web/state.json
+cp service.yaml opstruss.yaml
 cd ../one
 exec opstruss stop
 
@@ -49,3 +56,12 @@ backend:
 units:
   web:
     service: sleep 30
+-- two/run.yaml --
+opstruss: "1.1"
+name: shop
+backend:
+  uses: ../testplugins/fakebackend
+  with: {dir: ../store}
+units:
+  web:
+    run: echo web ran

@@ -175,6 +175,10 @@ func (a *app) daemonCommand() *cobra.Command {
 		Hidden: true,
 		Args:   cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error {
+			// No program that the daemon starts holds the descriptor, or the
+			// command line, which reads it to the end, would wait for that
+			// program too.
+			syscall.CloseOnExec(3)
 			ready := os.NewFile(3, "ready")
 			defer func() { _ = ready.Close() }()
 			dir, err := a.projectDir()

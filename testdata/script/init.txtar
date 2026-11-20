@@ -49,8 +49,8 @@ exec sh -c 'printf dist/ > nonl/.gitignore'
 exec opstruss -C nonl init --name nonl
 cmp nonl/.gitignore want/nonl.gitignore
 
-# --stack also makes that stack's _meta, without a data key; --json says
-# what changed
+# --stack also makes that stack's _meta, without a data key or the inputs
+# of a run; --json says what changed
 mkdir stacks
 cp stacks.yaml stacks/opstruss.yaml
 exec opstruss -C stacks init --stack dev --json
@@ -113,6 +113,8 @@ dist/
 .opstruss/
 -- stacks.yaml --
 name: stacks
+inputs:
+  token: {required: true}
 stacks:
   dev: {}
   prod: {}
