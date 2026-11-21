@@ -34,8 +34,8 @@ stderr 'stack default has no run 20200101T000000Z-00000000'
 
 # OPSTRUSS_LOG=debug writes the diagnostics of the engine to stderr
 env OPSTRUSS_LOG=debug
-exec opstruss up --yes
-stderr '^default/web: took the lock; digest sha256:v1:[0-9a-f]+; unchanged$'
+exec opstruss up --yes --force web
+stderr '^default/web: took the lock; digest sha256:v1:[0-9a-f]+; will run: forced$'
 
 # a task that ran inside a run of another, through task:, needs, or a unit
 # that runs it, shows that run in list and in record.json

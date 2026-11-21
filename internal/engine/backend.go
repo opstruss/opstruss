@@ -485,6 +485,11 @@ func (b *pluginBackend) List(prefix string) (keys []string, err error) {
 	return keys, err
 }
 
+func (b *pluginBackend) Scan(prefix string) (items map[string][]byte, err error) {
+	err = b.do(func(r *state.Remote) error { items, err = r.Scan(prefix); return err })
+	return items, err
+}
+
 // Lock takes the lock, and takes over a lock whose holder is proven dead
 // on this host, with the holder's token: a lock of a plugin backend does
 // not go away when its holder dies.

@@ -77,6 +77,22 @@ exec opstruss -C glob plan
 stderr '^default/a: sources: src/\*\.txt matches no file in qa/$'
 ! stderr 'qa.md'
 
+# a unit whose plan changed nothing runs when a unit before it at any depth
+# changed a file of its sources in the same up, also through a unit
+# between them that does not run or that up does not pick
+cd chain
+exec opstruss up --yes
+cp two.txt seed.txt
+exec opstruss up --yes
+stdout '^default/a: up: done$'
+stdout '^default/b: unchanged$'
+stdout '^default/c: up: done$'
+cmp result.txt seed.txt
+cp three.txt seed.txt
+exec opstruss up a c --no-deps --yes
+stdout '^default/c: up: done$'
+cmp result.txt seed.txt
+
 -- opstruss.yaml --
 name: shop
 inputs:
@@ -125,3 +141,24 @@ units:
       x: {type: string}
   user:
     run: [echo, "${{ units.maker.outputs.x }}"]
+-- chain/opstruss.yaml --
+name: chain
+units:
+  a:
+    run: cp seed.txt generated.txt
+    sources: [seed.txt]
+  b:
+    needs: [a]
+    run: echo middle
+  c:
+    needs: [b]
+    run: cp generated.txt result.txt
+    sources: [generated.txt]
+-- chain/seed.txt --
+one
+-- chain/generated.txt --
+one
+-- chain/two.txt --
+two
+-- chain/three.txt --
+three

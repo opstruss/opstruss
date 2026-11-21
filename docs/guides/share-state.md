@@ -85,8 +85,10 @@ records, the locks, and the memory of `kv` are in the bucket.
 ## Locks
 
 A run locks each unit that it changes in the backend, and another run
-waits for it, from any machine. A lock in a bucket stays when its holder
-dies:
+waits for it, from any machine. A plan reads the records and the locks of
+a stack at once and shows a unit that another run holds as `locked by`
+that run, without waiting; `up` takes no lock of a unit that it leaves as
+it is. A lock in a bucket stays when its holder dies:
 
 - A holder that died on this machine is taken over by the next run, which
   says so.

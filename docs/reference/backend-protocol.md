@@ -40,21 +40,24 @@ backend:
 ## Messages
 
 JSON-RPC 2.0, one message a line, as UTF-8. OpsTruss sends one request,
-waits for its answer, and sends the next; the first is `initialize`.
+waits for its answer, and sends the next; the first is `initialize`. A
+message is at most 64 MiB, its newline included: a program that writes a
+larger one is stopped, and the command fails.
 
 | Method | Params | Result | Errors, in `error.data.code` |
 |---|---|---|---|
-| `initialize` | `protocol: 1` | `protocol: 1`, `location`, `capabilities: {}` | |
+| `initialize` | `protocol: 1` | `protocol: 1`, `location`, `capabilities` | |
 | `get` | `key` | `data`, `etag` | `not_found` |
 | `put` | `key`, `data`, and `if_match` or `if_none_match: true` | `etag` | `conflict` |
 | `delete` | `key`, `if_match` | `{}` | `conflict`, `not_found` |
 | `list` | `prefix` | `keys` | |
+| `scan` | `prefix` | `items`, each with `key` and `data` | `unsupported` |
 | `lock` | `key`, `holder` | `token` | `locked`, with `holder` and `token` |
 | `unlock` | `key`, `token` | `{}` | `conflict`, `not_found` |
 
 ```text
 → {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocol":1}}
-← {"jsonrpc":"2.0","id":1,"result":{"protocol":1,"location":"s3://acme-opstruss/platform/","capabilities":{}}}
+← {"jsonrpc":"2.0","id":1,"result":{"protocol":1,"location":"s3://acme-opstruss/platform/","capabilities":{"scan":true}}}
 → {"jsonrpc":"2.0","id":2,"method":"get","params":{"key":"prod/_meta"}}
 ← {"jsonrpc":"2.0","id":2,"error":{"code":-32000,"message":"no such key: prod/_meta","data":{"code":"not_found"}}}
 ```
@@ -63,6 +66,9 @@ waits for its answer, and sends the next; the first is `initialize`.
   messages, and with the source of the plugin it is what makes two
   backends the same one. An answer with another `protocol` stops the
   command.
+- `capabilities` names the methods that a program may leave out and
+  serves: `{"scan": true}`, or `{}`. OpsTruss sends no method that it
+  does not name.
 - A key is a path relative to the location, such as `prod/_meta`,
   `prod/web/state.json`, `prod/web/state.lock`, or `prod/_kv/<name>`, and
   its `data` is JSON text.
@@ -72,7 +78,17 @@ waits for its answer, and sends the next; the first is `initialize`.
   same way. An etag is opaque to OpsTruss, and changes with each write.
 - `get` and `list` see each write that finished, from any client.
 - `list` gives every key that starts with `prefix`, at any depth, in any
-  order.
+  order. A lock that is held is a key there, and one that was let go is
+  not: a plan sees which units another run holds in what it listed,
+  without another operation.
+- `scan` gives the keys that `list` gives, each with its `data`, so a plan
+  reads a stack in one operation rather than a `get` for each record. A
+  key that goes while it scans, such as a lock that was let go, may be
+  left out. It is no snapshot of one moment and has no etags: OpsTruss
+  writes nothing from it, and reads a key with `get` before it writes. A
+  program that cannot give a prefix in one answer, such as one whose
+  answer would be larger than a message can be, answers `unsupported`:
+  OpsTruss then lists the prefix and gets each record that it reads.
 - `lock` does not wait: on a key that is locked, it answers `locked`
   with the `holder` that the lock keeps, the object OpsTruss gave, and its
   `token`. A lock stays when its holder dies, so another process, as
@@ -94,17 +110,18 @@ starts in a backend, on keys under `_probe/<id>/` that no stack reads:
 
 1. `put` with `if_none_match` of a key as deep as a record,
    `_probe/<id>/unit/state.json`, then `get` gives what it wrote, with its
-   etag, and `list` of the prefix gives the key; a second `put` with
-   `if_none_match` is a `conflict`.
+   etag, `list` of the prefix gives the key, and `scan` gives it with what
+   was written; a second `put` with `if_none_match` is a `conflict`.
 2. `put` with the etag writes, and `get` gives what it wrote, with its new
    etag; `put` and `delete` with the old etag are a `conflict`.
 3. `delete` with the etag, then `get` is `not_found`.
 4. A second `lock` is `locked`, with the holder and the token of the
-   first.
+   first, and `list` and `scan` give the key of the lock.
 5. `unlock` with another token is a `conflict`; with the token, the lock
    goes, and the same holder takes it again with another token.
-6. `list` of the prefix is empty.
+6. `list` and `scan` of the prefix are empty.
 
-A storage that fails a step, such as one that deletes an object whose
+The steps of `scan` run only for a program that names it in
+`capabilities`. A storage that fails a step, such as one that deletes an object whose
 etag does not match, is refused with the step, before any state is
 written there.

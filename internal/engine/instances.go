@@ -42,6 +42,11 @@ type instance struct {
 	outMarks map[string]any // the sensitive outputs
 	done     chan struct{}
 	place    int // where it is in the plan, which orders its questions
+
+	// upstreamRan says whether an instance it depends on, at any depth, ran
+	// in this run, which may have changed what it reads, as a file of its
+	// sources, also through an instance between them that did not run.
+	upstreamRan bool
 }
 
 // unplanned says whether inst has no plan without error once the turns
@@ -53,6 +58,13 @@ func (inst *instance) unplanned() bool {
 		return inst.turnPlan.err != nil
 	}
 	return inst.plan.err != nil || len(inst.plan.waitFor) > 0
+}
+
+// ran says whether the turn of inst ran its program or destroyed attempts
+// of other runs.
+func (inst *instance) ran() bool {
+	p := inst.turnPlan
+	return p != nil && (p.run || len(p.teardown) > 0)
 }
 
 // uncertain says whether the outputs of the instance of p may change in
@@ -74,6 +86,7 @@ type plan struct {
 	locked   string            // the holder of the address, for another run
 	digest   string            // the digest trigger, which the record keeps
 	teardown []string          // runs whose attempts up destroys after it succeeds
+	contract bool              // the record has another destroy contract, which up writes
 	err      error
 
 	emptySources []string // patterns of sources that match no file

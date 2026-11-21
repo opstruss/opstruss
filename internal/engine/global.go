@@ -186,13 +186,12 @@ func (e *engine) warnStacksNeed(items []*leftover) {
 		if s == e.p.StackName {
 			continue
 		}
-		st := &state.Store{Backend: e.store.Backend, Stack: s}
-		addrs, err := st.Inventory()
+		snap, err := (&state.Store{Backend: e.store.Backend, Stack: s}).Snapshot()
 		if err != nil {
 			continue
 		}
-		for _, a := range addrs {
-			rec, _, err := st.Get(a)
+		for _, a := range snap.Inventory() {
+			rec, err := snap.Get(a)
 			if err != nil || rec == nil || rec.Tombstone != nil {
 				continue
 			}

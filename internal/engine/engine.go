@@ -170,7 +170,8 @@ type engine struct {
 	inputs   map[string]any
 	locals   map[string]any
 	store    *state.Store
-	backends *backends // where the scopes of the run keep their state, shared with its global scope
+	snap     *state.Snapshot // the records of the scopes as the plan of the pass read them
+	backends *backends       // where the scopes of the run keep their state, shared with its global scope
 	// originErr is why the backend of the scope does not match what this
 	// checkout last kept it in, for doctor, which reports it.
 	originErr error

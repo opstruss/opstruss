@@ -59,6 +59,11 @@ func (e *engine) unitPass(ctx context.Context, op string, p pass) (map[string]an
 	if err := e.selectUnits(false); err != nil {
 		return nil, nil, err
 	}
+	snap, err := e.store.Snapshot()
+	if err != nil {
+		return nil, nil, err
+	}
+	e.snap = snap
 	e.previewMoves()
 	e.setCollect(true)
 	e.previewAll(ctx)
@@ -67,7 +72,7 @@ func (e *engine) unitPass(ctx context.Context, op string, p pass) (map[string]an
 	if len(e.p.Units) == 0 {
 		// Records of units no longer in the files are orphans, which the
 		// plan names.
-		if addrs, err := e.store.Inventory(); err == nil && len(addrs) == 0 {
+		if len(e.snap.Inventory()) == 0 {
 			if hint := e.triggerHint(op); hint != "" && e.opts.Install != nil {
 				// The daemon names who runs the triggers once they are installed.
 				e.unitsHint = e.noUnits() + hint
@@ -223,7 +228,7 @@ func (e *engine) askFirst(ctx context.Context, insts []*instance, leftovers []*l
 			continue
 		}
 		items = append(items, Question{Op: "destroy", Address: l.address, Summary: l.summary()})
-		digests = append(digests, destroyDigest("delete", l.address, l.etag))
+		digests = append(digests, destroyDigest("delete", l.address, l.record.Sum))
 	}
 	if len(items) == 0 {
 		return
