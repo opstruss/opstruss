@@ -42,6 +42,11 @@ type instance struct {
 	outMarks map[string]any // the sensitive outputs
 	done     chan struct{}
 	place    int // where it is in the plan, which orders its questions
+
+	// upstreamRan says whether an instance it depends on, at any depth, ran
+	// in this run, which may have changed what it reads, as a file of its
+	// sources, also through an instance between them that did not run.
+	upstreamRan bool
 }
 
 // unplanned says whether inst has no plan without error once the turns

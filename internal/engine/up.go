@@ -576,6 +576,7 @@ func (e *engine) turns(ctx context.Context) {
 			}
 			delete(left, inst)
 			moved = true
+			inst.upstreamRan = slices.ContainsFunc(inst.deps, func(d *instance) bool { return d.ran() || d.upstreamRan })
 			if skip := e.skips(ctx, inst); skip {
 				end(inst)
 				continue
@@ -632,19 +633,15 @@ func (e *engine) skips(ctx context.Context, inst *instance) bool {
 
 // quiet says whether the plan of inst is all that its turn would do: it
 // changes nothing, exactly, with the destroy contract of the record, and no
-// instance it depends on ran in this run. What changed in its files since
-// the plan waits for the next run, so what runs is what was approved.
+// instance it depends on, at any depth, ran in this run. What changed in
+// its files since the plan otherwise waits for the next run, so what runs
+// is what was approved.
 func (e *engine) quiet(inst *instance) bool {
 	p := inst.plan
 	if !p.exact() || p.inexact || p.run || len(p.teardown) > 0 || p.contract || e.moveFailed[inst.address] != nil {
 		return false
 	}
-	for _, d := range inst.deps {
-		if d.ran() {
-			return false
-		}
-	}
-	return true
+	return !inst.upstreamRan
 }
 
 // turn is the turn of one instance: it takes the address lock, plans again

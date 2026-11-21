@@ -48,10 +48,11 @@ unit fails rather than apply something else.
 
 Each address has a lock, so two runs never change one unit at once; a
 run waits for a lock that another holds, and says who holds it. A unit
-whose plan changes nothing, after no unit it needs ran, is left as the
-plan read it, without its lock, so `up` never waits for a unit that it
-does not change; a change to its files made after the plan waits for
-the next run, so what runs is what was approved. When
+whose plan changes nothing, while no unit it needs, directly or through
+others, ran, is left as the plan read it, without its lock, so `up`
+never waits for a unit that it does not change; a change to its files
+made after the plan waits for the next run, so what runs is what was
+approved. When
 another run makes a unit that needs a unit while `destroy` waits for it,
 `destroy` leaves that unit and names the new one, unless `--no-deps`
 leaves such units as they are; and `up` does not start a unit while

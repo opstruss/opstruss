@@ -22,7 +22,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wit
 
 ### Changed
 
-- `up` neither locks nor reads again a unit whose plan changes nothing, after no unit it needs ran, so it no longer waits for a lock that another run holds there; a change to the files of such a unit after the plan waits for the next run ([#18](https://github.com/opstruss/opstruss/pull/18)).
+- `up` neither locks nor reads again a unit whose plan changes nothing, while no unit it needs, directly or through others, ran, so it no longer waits for a lock that another run holds there; a change to the files of such a unit after the plan waits for the next run ([#18](https://github.com/opstruss/opstruss/pull/18)).
 
 ### Fixed
 
