@@ -32,6 +32,8 @@ type memServer struct {
 	scan         bool
 	scanNone     bool // scan gives nothing
 	scanNoLocks  bool // scan leaves out the locks
+	scanRefused  bool // scan answers unsupported
+	scanResult   any  // what scan answers in place of its items, when set
 	protocol     int
 	silent       string // a method it never answers
 	deaf         bool   // reads no request after initialize
@@ -133,6 +135,12 @@ func (m *memServer) answer(method string, p map[string]any) (any, string) {
 		}
 		return map[string]any{"keys": keys}, ""
 	case "scan":
+		switch {
+		case m.scanRefused:
+			return nil, "unsupported"
+		case m.scanResult != nil:
+			return m.scanResult, ""
+		}
 		items := []map[string]any{}
 		for k, v := range m.keys {
 			if listed(k) && !m.scanNone {
@@ -324,11 +332,19 @@ func TestProbe(t *testing.T) {
 }
 
 // TestSnapshot reads a scope at once: scan, or list with a get of each
-// record that is wanted, and locks seen in what was read, so a lock that
-// is not there costs no operation.
+// record that is wanted, also after a scan that is unsupported, and locks
+// seen in what was read, so a lock that is not there costs no operation.
 func TestSnapshot(t *testing.T) {
-	for _, scan := range []bool{true, false} {
-		m := &memServer{scan: scan}
+	for _, c := range []struct {
+		name string
+		m    *memServer
+		want string // the operations of the snapshot
+	}{
+		{"scan", &memServer{scan: true}, "scan prod/,lock prod/db/state.lock"},
+		{"list", &memServer{}, "list prod/,get prod/web/state.json,lock prod/db/state.lock"},
+		{"unsupported scan", &memServer{scan: true, scanRefused: true}, "scan prod/,list prod/,get prod/web/state.json,lock prod/db/state.lock"},
+	} {
+		m := c.m
 		r, err := dial(t, m, time.Minute)
 		if err != nil {
 			t.Fatal(err)
@@ -351,29 +367,50 @@ func TestSnapshot(t *testing.T) {
 			t.Fatal(err)
 		}
 		if got := sn.Inventory(); strings.Join(got, ",") != "prod/db,prod/web" {
-			t.Errorf("scan %v: inventory %v", scan, got)
+			t.Errorf("%s: inventory %v", c.name, got)
 		}
 		rec, err := sn.Get("prod/web")
 		if err != nil || rec == nil || rec.ID != "prod/web" || rec.Sum == "" {
-			t.Errorf("scan %v: get %+v %v", scan, rec, err)
+			t.Errorf("%s: get %+v %v", c.name, rec, err)
 		}
 		if rec, err := sn.Get("prod/new"); rec != nil || err != nil {
-			t.Errorf("scan %v: get of a unit without a record: %+v %v", scan, rec, err)
+			t.Errorf("%s: get of a unit without a record: %+v %v", c.name, rec, err)
 		}
 		if _, held, err := sn.Held("prod/web", Holder{Run: "r1"}); held || err != nil {
-			t.Errorf("scan %v: held %v %v", scan, held, err)
+			t.Errorf("%s: held %v %v", c.name, held, err)
 		}
 		if h, held, err := sn.Held("prod/db", Holder{Run: "r1"}); !held || h.Run != "r2" || err != nil {
-			t.Errorf("scan %v: held %v by %+v %v", scan, held, h, err)
-		}
-		want := "list prod/,get prod/web/state.json,lock prod/db/state.lock"
-		if scan {
-			want = "scan prod/,lock prod/db/state.lock"
+			t.Errorf("%s: held %v by %+v %v", c.name, held, h, err)
 		}
 		m.mu.Lock()
-		if got := strings.Join(m.calls, ","); got != want {
-			t.Errorf("scan %v: operations %s, not %s", scan, got, want)
+		if got := strings.Join(m.calls, ","); got != c.want {
+			t.Errorf("%s: operations %s, not %s", c.name, got, c.want)
 		}
 		m.mu.Unlock()
+	}
+}
+
+// TestScanItems fails a scan whose answer has no items, which would read as
+// a scope without records, and reads one with none as such a scope.
+func TestScanItems(t *testing.T) {
+	for _, c := range []struct {
+		result any
+		err    string // in the error of the scan; none reads no keys
+	}{
+		{map[string]any{}, "the answer has no items"},
+		{map[string]any{"items": nil}, "the answer has no items"},
+		{map[string]any{"items": []any{}}, ""},
+	} {
+		r, err := dial(t, &memServer{scan: true, scanResult: c.result}, time.Minute)
+		if err != nil {
+			t.Fatal(err)
+		}
+		items, err := r.Scan("prod/")
+		switch {
+		case c.err == "" && (err != nil || len(items) != 0):
+			t.Errorf("scan answering %v: %v %v", c.result, items, err)
+		case c.err != "" && (err == nil || !strings.Contains(err.Error(), c.err)):
+			t.Errorf("scan answering %v: %v, not %s", c.result, err, c.err)
+		}
 	}
 }

@@ -16,9 +16,10 @@ import (
 // speaks, which initialize agrees on.
 const BackendProtocol = 1
 
-// maxAnswer is the largest message that a plugin backend may send; a larger
-// one ends the program, as a record with its data escaped in a string can
-// be a few times the 1 MiB of its outputs.
+// maxAnswer is the largest message that a plugin backend may send, its
+// newline included; a larger one ends the program, as a record with its
+// data escaped in a string can be a few times the 1 MiB of its outputs. A
+// scan that would be larger answers unsupported.
 const maxAnswer = 64 << 20
 
 // Remote is a plugin backend: a program that answers the operations of the
@@ -312,8 +313,10 @@ func (r *Remote) List(prefix string) ([]string, error) {
 	return res.Keys, nil
 }
 
-// Scan gives every key under prefix with its content, which a program
-// without the capability scan does not: then it is errors.ErrUnsupported.
+// Scan gives every key under prefix with its content. It is
+// errors.ErrUnsupported from a program without the capability scan, and
+// from one that answers unsupported, as one does whose answer would be
+// larger than a message can be: then the caller lists the keys instead.
 func (r *Remote) Scan(prefix string) (map[string][]byte, error) {
 	if !r.CanScan {
 		return nil, errors.ErrUnsupported
@@ -325,7 +328,11 @@ func (r *Remote) Scan(prefix string) (map[string][]byte, error) {
 		} `json:"items"`
 	}
 	if err := r.call("scan", map[string]any{"prefix": prefix}, &res); err != nil {
-		return nil, answer("scan", prefix, err, nil)
+		return nil, answer("scan", prefix, err, map[string]error{"unsupported": errors.ErrUnsupported})
+	}
+	// An answer without items would read as a scope without records.
+	if res.Items == nil {
+		return nil, opError("scan", prefix, errors.New("the answer has no items"))
 	}
 	out := make(map[string][]byte, len(res.Items))
 	for _, it := range res.Items {

@@ -40,7 +40,9 @@ backend:
 ## Messages
 
 JSON-RPC 2.0, one message a line, as UTF-8. OpsTruss sends one request,
-waits for its answer, and sends the next; the first is `initialize`.
+waits for its answer, and sends the next; the first is `initialize`. A
+message is at most 64 MiB, its newline included: a program that writes a
+larger one is stopped, and the command fails.
 
 | Method | Params | Result | Errors, in `error.data.code` |
 |---|---|---|---|
@@ -49,7 +51,7 @@ waits for its answer, and sends the next; the first is `initialize`.
 | `put` | `key`, `data`, and `if_match` or `if_none_match: true` | `etag` | `conflict` |
 | `delete` | `key`, `if_match` | `{}` | `conflict`, `not_found` |
 | `list` | `prefix` | `keys` | |
-| `scan` | `prefix` | `items`, each with `key` and `data` | |
+| `scan` | `prefix` | `items`, each with `key` and `data` | `unsupported` |
 | `lock` | `key`, `holder` | `token` | `locked`, with `holder` and `token` |
 | `unlock` | `key`, `token` | `{}` | `conflict`, `not_found` |
 
@@ -83,7 +85,10 @@ waits for its answer, and sends the next; the first is `initialize`.
   reads a stack in one operation rather than a `get` for each record. A
   key that goes while it scans, such as a lock that was let go, may be
   left out. It is no snapshot of one moment and has no etags: OpsTruss
-  writes nothing from it, and reads a key with `get` before it writes.
+  writes nothing from it, and reads a key with `get` before it writes. A
+  program that cannot give a prefix in one answer, such as one whose
+  answer would be larger than a message can be, answers `unsupported`:
+  OpsTruss then lists the prefix and gets each record that it reads.
 - `lock` does not wait: on a key that is locked, it answers `locked`
   with the `holder` that the lock keeps, the object OpsTruss gave, and its
   `token`. A lock stays when its holder dies, so another process, as
