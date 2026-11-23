@@ -27,6 +27,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wit
 ### Fixed
 
 - A run that waits for a lock of the local backend, just taken by another, names that run rather than an empty holder ([#17](https://github.com/opstruss/opstruss/pull/17)).
+- A `kv` write that cannot remove the names whose `ttl` passed now fails before it changes the key, so a `retry` with `expect` tries the same write again, rather than failing after the key was written.
 
 ## [1.0.0] - 2026-11-18
 
