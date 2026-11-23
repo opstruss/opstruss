@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/opstruss/opstruss/internal/plugin"
+	"github.com/opstruss/opstruss/internal/state"
 )
 
 // idleBackend answers initialize, then every other request with a record,
@@ -40,5 +41,38 @@ func TestBackendIdle(t *testing.T) {
 				t.Fatalf("program %d still runs after it sat unused", i)
 			}
 		}
+	}
+}
+
+func TestUnlockCommand(t *testing.T) {
+	for key, want := range map[string]string{
+		"prod/web/state.lock":          "opstruss unlock web --stack prod",
+		"prod/web[eu]/state.lock":      "opstruss unlock 'web[eu]' --stack prod",
+		"prod/web[it's]/state.lock":    `opstruss unlock 'web[it'\''s]' --stack prod`,
+		"prod/dns/zone/state.lock":     "opstruss unlock dns/zone --stack prod",
+		"_global/zone/state.lock":      "opstruss unlock zone --global",
+		"prod/_kv.lock":                "opstruss unlock _kv --stack prod",
+		"prod/_daemon.lock":            "opstruss unlock _daemon --stack prod",
+		"_probe/1a2b3c4d/u/state.lock": "",
+	} {
+		if _, got := unlockCommand(key); got != want {
+			t.Errorf("unlockCommand(%q) = %q, want %q", key, got, want)
+		}
+	}
+}
+
+func TestLeftLockBackendIdentity(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	a := &pluginBackend{location: "test:", source: "plugins/db", lockSource: "/project-a/plugins/db"}
+	b := &pluginBackend{location: "test:", source: "plugins/db", lockSource: "/project-b/plugins/db"}
+	lock := &state.LockedError{Key: "prod/web/state.lock", Token: "token"}
+	if err := state.LeaveLock(a.lockIdentity(), lock.Key, lock.Token); err != nil {
+		t.Fatal(err)
+	}
+	if stale, left := a.stale(lock.Key, lock); !stale || !left {
+		t.Fatal("backend A missed its left lock")
+	}
+	if stale, _ := b.stale(lock.Key, lock); stale {
+		t.Fatal("backend B used backend A's left lock")
 	}
 }

@@ -365,9 +365,9 @@ func (e *engine) unlock() error {
 }
 
 // releaseStale releases the lock key of a plugin backend whose holder is
-// gone, as the holder's token: one that died on this host at once, one of
-// another host once the operator agrees. It says what it did, or "" for a
-// lock that nobody holds; a local lock is never stale.
+// gone, as the holder's token: a stale one at once, one of another host
+// once the operator agrees. It says what it did, or "" for a lock that
+// nobody holds; a local lock is never stale.
 func (e *engine) releaseStale(addr, key string) (string, error) {
 	pb, ok := e.store.Backend.(*pluginBackend)
 	if !ok {
@@ -382,8 +382,9 @@ func (e *engine) releaseStale(addr, key string) (string, error) {
 		return "", err
 	}
 	h := le.Holder
+	stale, _ := pb.stale(key, le)
 	switch {
-	case h.Host == e.host && !e.holderDead(h):
+	case h.Host == e.host && !stale:
 		return "", fmt.Errorf("the lock of %s is held by %s, which still runs on this host; wait for it, or stop it", addr, h)
 	case h.Host != e.host && !e.opts.Yes:
 		q := Question{Op: "unlock", Address: addr, Summary: "locked by " + h.String()}
@@ -398,7 +399,7 @@ func (e *engine) releaseStale(addr, key string) (string, error) {
 			return "", fmt.Errorf("the lock of %s is held by %s on another host, whose programs may still run; once you are sure they stopped, release it with opstruss unlock --yes", addr, h)
 		}
 	}
-	if err := pb.Unlock(key, le.Token); err != nil {
+	if err := pb.release(key, le.Token); err != nil {
 		if errors.Is(err, state.ErrNotHolder) {
 			return "", fmt.Errorf("the lock of %s changed hands meanwhile; run unlock again to see who holds it now", addr)
 		}

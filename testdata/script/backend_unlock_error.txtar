@@ -1,0 +1,76 @@
+# A lock that a plugin backend fails to release is released at the next
+# try; one that stays is reported, and taken over by the next run on this
+# host: once the process that left it ended, or in the daemon that left
+# it, whose pid still runs, as unlock releases it from any process here.
+
+env HOME=$WORK/home
+exec opstruss init --stack default
+
+# one failure: the next try releases the lock
+exec sh -c 'echo 1 > store/.unlock-error'
+exec opstruss up --yes web
+stdout '^default/web \| web ran$'
+! stderr 'could not release'
+! exists store/default/web/state.lock
+
+# a lock that stays: the run says so and succeeds, and the next run takes
+# it over
+exec sh -c 'echo 9 > store/.unlock-error'
+exec opstruss up --force --yes web
+stdout '^default/web \| web ran$'
+stderr 'could not release the lock of default/web: backend unlock default/web/state.lock: the storage is down; a later run on this host takes it over, or release it with opstruss unlock web --stack default$'
+exists store/default/web/state.lock
+rm store/.unlock-error
+exec opstruss up --force --yes web
+stderr 'took over the lock default/web/state.lock of run .*, which could not release it$'
+! exists store/default/web/state.lock
+
+# in the daemon, the next run takes over the lock that an earlier one left
+exec opstruss up -d --yes web
+daemonrun default
+exec sh -c 'echo 9 > store/.unlock-error'
+exec opstruss up -d --force --yes web
+stderr 'could not release the lock of default/web: '
+exists store/default/web/state.lock
+rm store/.unlock-error
+exec opstruss up -d --force --yes web
+stderr 'took over the lock default/web/state.lock of run .*, which could not release it$'
+! exists store/default/web/state.lock
+
+# and unlock, which the daemon runs, releases it without asking
+exec sh -c 'echo 9 > store/.unlock-error'
+exec opstruss up -d --force --yes web
+stderr 'could not release the lock of default/web: '
+rm store/.unlock-error
+exec opstruss unlock web
+stdout 'released the lock that run .* held$'
+! exists store/default/web/state.lock
+
+# a global unit that the daemon of the stack ran: unlock --global, which
+# runs in this process, releases the lock that the daemon left
+exec sh -c 'echo 9 > store/.unlock-error'
+exec opstruss up -d --yes site
+stderr 'could not release the lock of _global/zone: .*; a later run on this host takes it over, or release it with opstruss unlock zone --global$'
+exists store/_global/zone/state.lock
+rm store/.unlock-error
+exec opstruss unlock zone --global
+stdout 'released the lock that run .* held$'
+! exists store/_global/zone/state.lock
+exec opstruss stop
+! exists store/default/_daemon.lock
+
+-- opstruss.yaml --
+opstruss: "1.1"
+name: shop
+backend:
+  uses: ./testplugins/fakebackend
+  with: {dir: store}
+units:
+  web:
+    run: echo web ran
+  zone:
+    global: true
+    run: echo zone ran
+  site:
+    needs: [zone]
+    run: echo site ran

@@ -14,6 +14,7 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 )
@@ -25,9 +26,10 @@ import (
 // holder as one in S3 does. A flock on .flock in the directory makes each
 // operation one step for every process that shares it, as two checkouts
 // do, and .calls in it gets a line for each operation, its method and key
-// or prefix, for tests that count them. It has the capability scan unless
-// $INPUT_SCAN is false. $INPUT_BREAK names a rule of the contract to break,
-// for the probe:
+// or prefix, for tests that count them. .unlock-error in it holds a count:
+// that many of the next unlocks fail, as a storage that is down does. It
+// has the capability scan unless $INPUT_SCAN is false. $INPUT_BREAK names
+// a rule of the contract to break, for the probe:
 //
 //	delete-if-match   delete a key whatever if_match says
 //	lock-unlisted     leave the locks out of list and scan
@@ -212,6 +214,9 @@ func (fb *fakeStore) serve(method string, params map[string]any) (any, int, stri
 		}
 		return map[string]any{"token": token}, 0, "", nil
 	case "unlock":
+		if fb.unlockFails() {
+			return nil, -32000, "the storage is down", nil
+		}
 		if !exists {
 			return contract("not_found", key+" is not locked")
 		}
@@ -233,6 +238,22 @@ func (fb *fakeStore) path(key string) (string, error) {
 		return "", fmt.Errorf("invalid key %q", key)
 	}
 	return filepath.Join(fb.dir, filepath.FromSlash(key)), nil
+}
+
+// unlockFails takes one from the count in .unlock-error, and reports
+// whether there was one; the caller holds the flock.
+func (fb *fakeStore) unlockFails() bool {
+	file := filepath.Join(fb.dir, ".unlock-error")
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return false
+	}
+	n, _ := strconv.Atoi(strings.TrimSpace(string(data)))
+	if n <= 0 {
+		return false
+	}
+	_ = os.WriteFile(file, []byte(strconv.Itoa(n-1)), 0o600)
+	return true
 }
 
 // log adds the operation to .calls.
