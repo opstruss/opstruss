@@ -199,7 +199,9 @@ func (s *Store) KVUnlock(token string) error { return s.Backend.Unlock(KVLockKey
 
 // KVPut writes value under name, still at etag, or removes it when value
 // is nil; ttl, when above zero, makes it expire. The caller holds the lock,
-// and every write also removes the names whose ttl passed.
+// and every write first removes the other names whose ttl passed, so a
+// failure there leaves name as it was rather than failing a write that
+// was kept.
 // A sensitive value is kept encrypted with the data key.
 func (s *Store) KVPut(name string, value any, sensitive bool, ttl time.Duration, etag string, now time.Time) error {
 	if err := CheckKVName(name); err != nil {
@@ -209,6 +211,9 @@ func (s *Store) KVPut(name string, value any, sensitive bool, ttl time.Duration,
 		return err
 	}
 	key := kvKey(s.Stack, name)
+	if err := s.purge(key, now); err != nil {
+		return err
+	}
 	if value == nil {
 		if etag != "" {
 			if err := s.Backend.Delete(key, etag); err != nil && !errors.Is(err, ErrNotExist) {
@@ -241,16 +246,20 @@ func (s *Store) KVPut(name string, value any, sensitive bool, ttl time.Duration,
 			return err
 		}
 	}
-	return s.purge(now)
+	return nil
 }
 
-// purge removes the names whose ttl passed.
-func (s *Store) purge(now time.Time) error {
+// purge removes the names whose ttl passed, but for except, whose etag the
+// caller holds.
+func (s *Store) purge(except string, now time.Time) error {
 	keys, err := s.Backend.List(kvKey(s.Stack, ""))
 	if err != nil {
 		return err
 	}
 	for _, k := range keys {
+		if k == except {
+			continue
+		}
 		data, etag, err := s.Backend.Get(k)
 		if errors.Is(err, ErrNotExist) {
 			continue
