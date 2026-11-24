@@ -3,7 +3,7 @@ module github.com/opstruss/opstruss
 go 1.27.0
 
 require (
-	cel.dev/cel-go v0.33.2
+	cel.dev/cel-go v0.33.4
 	filippo.io/age v1.3.2
 	github.com/bmatcuk/doublestar/v4 v4.10.4
 	github.com/creack/pty v1.1.24
