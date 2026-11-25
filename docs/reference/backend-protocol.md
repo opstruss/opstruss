@@ -82,7 +82,7 @@ larger one is stopped, and the command fails.
   not: a plan sees which units another run holds in what it listed,
   without another operation.
 - `scan` gives the keys that `list` gives, each with its `data`, so a plan
-  reads a stack, and a `kv` write, `kv('*')`, and `state list` the names
+  and `state list` read a stack, and a `kv` write and `kv('*')` the names
   of its stack, in one operation rather than a `get` for each key. A key
   that goes while it scans, such as a lock that was let go, may be left
   out. It is no snapshot of one moment and has no etags: OpsTruss writes

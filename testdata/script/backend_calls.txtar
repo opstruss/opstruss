@@ -1,7 +1,8 @@
-# The operations that plan, up, and kv make in a plugin backend: plan
-# reads each scope at once, the same for 3 units and 30, up takes a turn
-# only for the units it runs and those after them, and a kv write, a read
-# of every name, and state list read the names of the stack at once.
+# The operations that plan, up, state list, and kv make in a plugin
+# backend: plan and state list read each scope at once, the same for 3
+# units and 30, up takes a turn only for the units it runs and those after
+# them, and a kv write and a read of every name read the names of the
+# stack at once.
 
 env HOME=$WORK/home
 
@@ -99,7 +100,23 @@ rm store/.calls
 exec opstruss state list
 stdout '^_kv/job\t'
 exec env LC_ALL=C sort store/.calls
-cmp stdout ../kvstate.calls
+cmp stdout ../plan.calls
+
+# state list reads the records and the kv names of a stack at once, as
+# plan does, the same for 3 units and 30; without scan, it lists them and
+# gets each record
+cd ../thirty
+rm store/.calls
+exec opstruss state list
+stdout '^default/u30\tok$'
+exec env LC_ALL=C sort store/.calls
+cmp stdout ../plan.calls
+cd ../noscan
+rm store/.calls
+exec opstruss state list
+stdout '^default/c\tok$'
+exec env LC_ALL=C sort store/.calls
+cmp stdout ../noscan.calls
 
 -- kv/opstruss.yaml --
 opstruss: "1.1"
@@ -155,10 +172,6 @@ scan default/_kv/
 get default/_kv/a
 get default/_meta
 list default/_kv/
--- kvstate.calls --
-get default/_meta
-list default/
-scan default/_kv/
 -- kvnoscanread.calls --
 get default/_kv/a
 get default/_kv/b

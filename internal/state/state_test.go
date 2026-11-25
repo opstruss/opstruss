@@ -3,12 +3,15 @@ package state
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/opstruss/opstruss/internal/schema"
 	"github.com/santhosh-tekuri/jsonschema/v6"
@@ -220,6 +223,74 @@ func TestInventoryAndForget(t *testing.T) {
 	}
 	if r, _, _ := s.Get("prod/web"); r != nil {
 		t.Fatal("the tombstone is gone")
+	}
+}
+
+// listsGone also lists the record of a unit that is no longer there, as
+// one that destroy removed after the list.
+type listsGone struct{ Backend }
+
+func (b listsGone) List(prefix string) ([]string, error) {
+	keys, err := b.Backend.List(prefix)
+	return append(keys, prefix+"gone/state.json"), err
+}
+
+// List gives each record of the scope once, opened as Get opens it, and
+// the kv names, with scan or without; a sealed value that does not open
+// fails it, as it fails Get.
+func TestList(t *testing.T) {
+	key := bytes.Repeat([]byte{9}, KeySize)
+	for _, scan := range []bool{false, true} {
+		b := &failing{Backend: NewLocal(t.TempDir()), scan: scan}
+		s := &Store{Backend: b, Stack: "prod", Project: "p", Key: func() ([]byte, error) { return key, nil }}
+		for _, a := range []string{"prod/web", "prod/dns/zone"} {
+			r := &Record{ID: "1", Inputs: map[string]any{"token": "t0k3n"}, Hidden: map[string][]string{PartInputs: {"token"}}}
+			if _, err := s.Put(a, r, ""); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := s.KVPut("last", 1, false, 0, "", time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		kv, err := s.List(func(a string, r *Record) error {
+			got = append(got, a+" "+fmt.Sprint(r.Inputs["token"]))
+			return nil
+		})
+		if want := []string{"prod/dns/zone t0k3n", "prod/web t0k3n"}; err != nil || !slices.Equal(got, want) || len(kv) != 1 || kv[0].Key != "_kv/last" {
+			t.Fatalf("scan %v: %v and %v, %v; want %v and _kv/last", scan, got, kv, err, want)
+		}
+
+		data, etag, err := b.Backend.Get(RecordKey("prod/web"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		i := bytes.Index(data, []byte(sealed))
+		if i < 0 {
+			t.Fatalf("no sealed value in %s", data)
+		}
+		i += len(sealed)
+		if data[i] == 'A' {
+			data[i] = 'B'
+		} else {
+			data[i] = 'A'
+		}
+		if _, err := b.Put(RecordKey("prod/web"), data, etag); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.List(func(string, *Record) error { return nil }); err == nil {
+			t.Errorf("scan %v: a sealed value that does not open is listed", scan)
+		}
+	}
+
+	// A record gone since the listing is left out.
+	s := &Store{Backend: listsGone{NewLocal(t.TempDir())}, Stack: "prod", Project: "p"}
+	if _, err := s.Put("prod/web", &Record{ID: "1"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	if _, err := s.List(func(a string, _ *Record) error { got = append(got, a); return nil }); err != nil || !slices.Equal(got, []string{"prod/web"}) {
+		t.Errorf("listed %v, %v; want prod/web alone", got, err)
 	}
 }
 

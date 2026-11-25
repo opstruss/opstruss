@@ -176,6 +176,9 @@ func TestKVReadScan(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		if got, err := s.List(func(string, *Record) error { return nil }); err != nil || !slices.Equal(got, info) {
+			t.Errorf("scan %v: List gives the names %v, %v; want %v", scan, got, err, info)
+		}
 		infos = append(infos, info)
 	}
 	if len(infos[0]) != 4 || !slices.Equal(infos[0], infos[1]) {

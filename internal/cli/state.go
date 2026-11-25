@@ -123,16 +123,8 @@ func (a *app) stateList() *cobra.Command {
 				return err
 			}
 			defer done()
-			addrs, err := s.Inventory()
-			if err != nil {
-				return err
-			}
 			entries := []listEntry{}
-			for _, addr := range addrs {
-				r, _, err := s.Get(addr)
-				if err != nil {
-					return err
-				}
+			kv, err := s.List(func(addr string, r *state.Record) error {
 				e := listEntry{Address: addr, ID: r.ID, Kind: r.Kind, Abandoned: len(r.Abandoned), Tombstone: r.Tombstone}
 				if r.Pending != nil {
 					e.Pending = r.Pending.Op
@@ -143,8 +135,8 @@ func (a *app) stateList() *cobra.Command {
 					e.Orphan, e.MovesTo = false, p.StackName+"/"+to
 				}
 				entries = append(entries, e)
-			}
-			kv, err := s.KVInfos()
+				return nil
+			})
 			if err != nil {
 				return err
 			}

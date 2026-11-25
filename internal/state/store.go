@@ -330,6 +330,38 @@ func inventory(stack string, keys []string) []string {
 	return addrs
 }
 
+// List reads the scope of the store, without its Global store, for what
+// shows each record once, as state list does: each gets the record of
+// each address, tombstones included, opened as Get opens it, and the kv
+// names come back after. A backend that scans gives them in one operation;
+// from one that lists, each record is got in its turn and not kept, so a
+// long list holds one at a time.
+func (s *Store) List(each func(address string, r *Record) error) ([]KVInfo, error) {
+	keys, scanned, err := s.scan(s.Stack + "/")
+	if err != nil {
+		return nil, err
+	}
+	for _, address := range inventory(s.Stack, keys) {
+		var r *Record
+		if data, ok := scanned[RecordKey(address)]; ok {
+			r, err = s.decode(data, address)
+		} else {
+			r, _, err = s.Get(address)
+		}
+		if err != nil {
+			return nil, err
+		}
+		if r == nil {
+			// Gone since the listing, as destroy removes a record.
+			continue
+		}
+		if err := each(address, r); err != nil {
+			return nil, err
+		}
+	}
+	return s.kvInfos(keys, scanned)
+}
+
 // Forget leaves a tombstone at address instead of its record, without
 // destroying anything, and moves the tool's state of a local unit to
 // <stack>/_forgotten/<run>/. On a tombstone it removes the tombstone, so

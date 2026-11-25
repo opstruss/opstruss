@@ -189,10 +189,16 @@ func (s *Store) KVInfos() ([]KVInfo, error) {
 	if err != nil {
 		return nil, err
 	}
+	return s.kvInfos(keys, scanned)
+}
+
+// kvInfos is KVInfos of the kv names among keys, with the data that a scan
+// gave of them.
+func (s *Store) kvInfos(keys []string, scanned map[string][]byte) ([]KVInfo, error) {
 	out := []KVInfo{}
 	for _, k := range keys {
-		name := strings.TrimPrefix(k, kvKey(s.Stack, ""))
-		if CheckKVName(name) != nil {
+		name, ok := strings.CutPrefix(k, kvKey(s.Stack, ""))
+		if !ok || CheckKVName(name) != nil {
 			continue
 		}
 		data, ok, err := s.kvRead(scanned, k)
