@@ -2,6 +2,8 @@ package state
 
 import (
 	"errors"
+	"maps"
+	"slices"
 	"testing"
 	"time"
 )
@@ -147,6 +149,37 @@ func TestKVPutPurgeStaleScan(t *testing.T) {
 	}
 	if v, _, _, err := s.KVGet("old", later); err != nil || v != "fresh" {
 		t.Errorf("old = %v, %v; want fresh", v, err)
+	}
+}
+
+// Reads through a scan give what reads that list and get each name give.
+func TestKVReadScan(t *testing.T) {
+	start := time.Now()
+	later := start.Add(time.Hour)
+	var infos [][]KVInfo
+	for _, scan := range []bool{false, true} {
+		s := &Store{Backend: &failing{Backend: NewLocal(t.TempDir()), scan: scan}, Stack: "default", Project: "p"}
+		for name, ttl := range map[string]time.Duration{"pr-1": 0, "pr-2": 0, "pr-gone": time.Minute, "other": 0} {
+			if err := s.KVPut(name, name, false, ttl, "", start); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for prefix, want := range map[string]map[string]any{
+			"pr-": {"pr-1": "pr-1", "pr-2": "pr-2"},
+			"":    {"pr-1": "pr-1", "pr-2": "pr-2", "other": "other"},
+		} {
+			if m, _, err := s.KVList(prefix, later); err != nil || !maps.Equal(m, want) {
+				t.Errorf("scan %v: kv('%s*') = %v, %v; want %v", scan, prefix, m, err, want)
+			}
+		}
+		info, err := s.KVInfos()
+		if err != nil {
+			t.Fatal(err)
+		}
+		infos = append(infos, info)
+	}
+	if len(infos[0]) != 4 || !slices.Equal(infos[0], infos[1]) {
+		t.Errorf("the names are %v without scan, %v with it", infos[0], infos[1])
 	}
 }
 

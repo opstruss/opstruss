@@ -1,7 +1,7 @@
-# The operations that plan, up, and a kv write make in a plugin backend:
-# plan reads each scope at once, the same for 3 units and 30, up takes a
-# turn only for the units it runs and those after them, and a kv write
-# reads the names of the stack at once.
+# The operations that plan, up, and kv make in a plugin backend: plan
+# reads each scope at once, the same for 3 units and 30, up takes a turn
+# only for the units it runs and those after them, and a kv write, a read
+# of every name, and state list read the names of the stack at once.
 
 env HOME=$WORK/home
 
@@ -72,11 +72,34 @@ rm store/.calls
 exec opstruss write
 exec env LC_ALL=C sort store/.calls
 cmp stdout ../kvnoscan.calls
+rm store/.calls
+exec opstruss read
+stdout '^  names: 4$'
+exec env LC_ALL=C sort store/.calls
+cmp stdout ../kvnoscanread.calls
 cd ../kv
 rm store/.calls
 exec opstruss write
 exec env LC_ALL=C sort store/.calls
 cmp stdout ../kv.calls
+
+# kv('*') and state list read the names at once too; kv('a*') lists them
+# and gets only the one that matches, since a scan would give them all
+rm store/.calls
+exec opstruss read
+stdout '^  names: 4$'
+exec env LC_ALL=C sort store/.calls
+cmp stdout ../kvread.calls
+rm store/.calls
+exec opstruss prefixed
+stdout '^  names: 1$'
+exec env LC_ALL=C sort store/.calls
+cmp stdout ../kvprefixed.calls
+rm store/.calls
+exec opstruss state list
+stdout '^_kv/job\t'
+exec env LC_ALL=C sort store/.calls
+cmp stdout ../kvstate.calls
 
 -- kv/opstruss.yaml --
 opstruss: "1.1"
@@ -94,6 +117,10 @@ tasks:
       - kv: {key: old, value: x, ttl: 1s}
   write:
     kv: {key: job, value: done}
+  read:
+    set: {names: "${{ size(kv('*')) }}"}
+  prefixed:
+    set: {names: "${{ size(kv('a*')) }}"}
 -- kvnoscan/opstruss.yaml --
 opstruss: "1.1"
 name: kvnoscan
@@ -110,6 +137,8 @@ tasks:
       - kv: {key: old, value: x, ttl: 1s}
   write:
     kv: {key: job, value: done}
+  read:
+    set: {names: "${{ size(kv('*')) }}"}
 -- kv.calls --
 delete default/_kv/old
 get default/_kv/job
@@ -119,6 +148,24 @@ lock default/_kv.lock
 put default/_kv/job
 scan default/_kv/
 unlock default/_kv.lock
+-- kvread.calls --
+get default/_meta
+scan default/_kv/
+-- kvprefixed.calls --
+get default/_kv/a
+get default/_meta
+list default/_kv/
+-- kvstate.calls --
+get default/_meta
+list default/
+scan default/_kv/
+-- kvnoscanread.calls --
+get default/_kv/a
+get default/_kv/b
+get default/_kv/c
+get default/_kv/job
+get default/_meta
+list default/_kv/
 -- kvnoscan.calls --
 delete default/_kv/old
 get default/_kv/a

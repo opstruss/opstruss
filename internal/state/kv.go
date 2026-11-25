@@ -104,6 +104,19 @@ func (s *Store) KVGet(name string, now time.Time) (any, bool, string, error) {
 	return e.Value, e.Sensitive, etag, nil
 }
 
+// kvRead gives the data of key as a scan gave it, or gets it when the scan
+// did not; ok is false when the key is gone.
+func (s *Store) kvRead(scanned map[string][]byte, key string) (data []byte, ok bool, err error) {
+	if data, ok := scanned[key]; ok {
+		return data, true, nil
+	}
+	data, _, err = s.Backend.Get(key)
+	if errors.Is(err, ErrNotExist) {
+		return nil, false, nil
+	}
+	return data, err == nil, err
+}
+
 // KVList returns the values of the names that start with prefix, at most
 // MaxKVKeys of them and MaxKV in all.
 // The names of sensitive values come back too.
@@ -113,7 +126,16 @@ func (s *Store) KVList(prefix string, now time.Time) (map[string]any, map[string
 			return nil, nil, err
 		}
 	}
-	keys, err := s.Backend.List(kvKey(s.Stack, ""))
+	var keys []string
+	var scanned map[string][]byte
+	var err error
+	if prefix == "" {
+		keys, scanned, err = s.scan(kvKey(s.Stack, ""))
+	} else {
+		// A scan gives the data of every name, where get reads only those
+		// that start with prefix.
+		keys, err = s.Backend.List(kvKey(s.Stack, ""))
+	}
 	if err != nil {
 		return nil, nil, err
 	}
@@ -124,12 +146,12 @@ func (s *Store) KVList(prefix string, now time.Time) (map[string]any, map[string
 		if !strings.HasPrefix(name, prefix) || CheckKVName(name) != nil {
 			continue
 		}
-		data, _, err := s.Backend.Get(k)
-		if errors.Is(err, ErrNotExist) {
-			continue
-		}
+		data, ok, err := s.kvRead(scanned, k)
 		if err != nil {
 			return nil, nil, err
+		}
+		if !ok {
+			continue
 		}
 		e, err := decodeKV(data, name)
 		if err != nil {
@@ -163,7 +185,7 @@ type KVInfo struct {
 // KVInfos lists the names of the memory of the stack, also those whose ttl
 // passed, which the next write removes.
 func (s *Store) KVInfos() ([]KVInfo, error) {
-	keys, err := s.Backend.List(kvKey(s.Stack, ""))
+	keys, scanned, err := s.scan(kvKey(s.Stack, ""))
 	if err != nil {
 		return nil, err
 	}
@@ -173,12 +195,12 @@ func (s *Store) KVInfos() ([]KVInfo, error) {
 		if CheckKVName(name) != nil {
 			continue
 		}
-		data, _, err := s.Backend.Get(k)
-		if errors.Is(err, ErrNotExist) {
-			continue
-		}
+		data, ok, err := s.kvRead(scanned, k)
 		if err != nil {
 			return nil, err
+		}
+		if !ok {
+			continue
 		}
 		e, err := decodeKV(data, name)
 		if err != nil {
