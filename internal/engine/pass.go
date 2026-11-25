@@ -73,11 +73,11 @@ func (e *engine) unitPass(ctx context.Context, op string, p pass) (map[string]an
 		// Records of units no longer in the files are orphans, which the
 		// plan names.
 		if len(e.snap.Inventory()) == 0 {
-			if hint := e.triggerHint(op); hint != "" && e.opts.Install != nil {
+			if line := e.noUnitsLine(op); line != e.noUnits() && e.opts.Install != nil {
 				// The daemon names who runs the triggers once they are installed.
-				e.unitsHint = e.noUnits() + hint
+				e.unitsHint = line
 			} else {
-				e.say("run", "", "%s%s", e.noUnits(), hint)
+				e.say("run", "", "%s", line)
 			}
 		}
 	}
@@ -316,30 +316,38 @@ func (o *askOrder) before(place int) bool {
 	return false
 }
 
-// setCollect says whether the instances of components that the pass finds
-// preview their moves.
-// triggerHint says, at an up of a project without units, who runs the
-// triggers of its tasks: the daemon of the stack, or up -d.
-func (e *engine) triggerHint(op string) string {
+// noUnitsLine is what op says of a project without units. An up or a
+// status of one with triggers also says who runs them: the daemon of the
+// stack, named first, or up -d.
+func (e *engine) noUnitsLine(op string) string {
 	n := 0
 	for _, t := range e.p.Tasks {
 		if t.On != nil {
 			n++
 		}
 	}
-	if op != "up" || n == 0 {
-		return ""
+	if (op != "up" && op != "status") || n == 0 {
+		return e.noUnits()
 	}
 	tasks := fmt.Sprintf("%d tasks", n)
 	if n == 1 {
 		tasks = "1 task"
 	}
-	if e.opts.Daemon {
-		return fmt.Sprintf("; the daemon of stack %s runs the triggers of %s", e.p.StackName, tasks)
+	if !e.opts.Daemon {
+		return e.noUnits() + "; up -d runs the triggers of " + tasks
 	}
-	return "; up -d runs the triggers of " + tasks
+	// An up says it once its own install succeeded, so only a status says
+	// why the last install failed, as list does.
+	if op == "status" && e.opts.TriggerError != nil {
+		if failed := e.opts.TriggerError(); failed != "" {
+			return e.noUnits() + "; " + failed
+		}
+	}
+	return fmt.Sprintf("the daemon of stack %s runs the triggers of %s; %s", e.p.StackName, tasks, e.noUnits())
 }
 
+// setCollect says whether the instances of components that the pass finds
+// preview their moves.
 func (e *engine) setCollect(v bool) {
 	e.mu.Lock()
 	e.collect = v

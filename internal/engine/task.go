@@ -1071,7 +1071,9 @@ func (tc *taskCtx) callStep(ctx context.Context, s *model.Step, label string, sc
 		var err error
 		switch s.Task {
 		case "status":
-			got, gotMarks, err = e.statusPass(ctx, units)
+			if got, gotMarks, err = e.statusPass(ctx, units); err == nil && len(e.p.Units) == 0 {
+				e.say("run", "", "%s", e.noUnits())
+			}
 		case "logs":
 			got, gotMarks, err = e.logsPass(ctx, units, false)
 		default:

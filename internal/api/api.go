@@ -85,6 +85,9 @@ type API struct {
 	// Install, in the daemon, installs the triggers of the stack again for
 	// an up of r with inputs.
 	Install func(r Request, inputs map[string]string) error
+	// TriggerError, in the daemon, says why the last install of the
+	// triggers failed, or "" once it succeeded.
+	TriggerError func() string
 	// Queue, in the daemon, holds a place in the queue of task for a run
 	// after another, as its triggers do, until end; an error, as of a full
 	// queue, leaves that run out.
@@ -110,7 +113,8 @@ func (a *API) options(r Request) engine.Options {
 	o := engine.Options{Locked: r.Locked, Dir: r.Dir, Cwd: r.Cwd, Stack: r.Stack, Inputs: r.Inputs, Flags: r.Flags, Environ: r.Environ,
 		LookupEnv: func(k string) (string, bool) { v, ok := env[k]; return v, ok },
 		Units:     r.Units, Yes: r.Yes, Color: r.Color, Force: r.Force, NoDeps: r.NoDeps, Follow: r.Follow, Limit: r.Limit, Debug: r.Debug, ShowSensitive: r.ShowSensitive,
-		Emit: a.h.Event, Approve: a.h.Approve, Ask: a.h.Ask, Terminal: a.h.Terminal, Supervisor: a.Supervisor, Daemon: a.Daemon}
+		Emit: a.h.Event, Approve: a.h.Approve, Ask: a.h.Ask, Terminal: a.h.Terminal, Supervisor: a.Supervisor, Daemon: a.Daemon,
+		TriggerError: a.TriggerError}
 	if a.Install != nil {
 		o.Install = func(inputs map[string]string) error { return a.Install(r, inputs) }
 	}

@@ -53,6 +53,14 @@ func (r *registry) update(fn func(*File)) error {
 	return nil
 }
 
+// triggerError is why the last install of the triggers failed, as list
+// reads it from the file.
+func (r *registry) triggerError() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.f.TriggerError
+}
+
 func (r *registry) processes() []*Process {
 	r.mu.Lock()
 	defer r.mu.Unlock()
