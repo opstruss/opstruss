@@ -63,6 +63,40 @@ func TestWebhookBody(t *testing.T) {
 	}
 }
 
+// respond: accepted answers with the run once it starts, without waiting
+// for its end, also when it ended before the answer, and with how Fire
+// ended only when it made no run.
+func TestWaitStart(t *testing.T) {
+	got := make(chan string)
+	go func() {
+		started := make(chan string, 1)
+		started <- "r1"
+		run, _ := waitStart(started, make(chan fired))
+		got <- run
+	}()
+	select {
+	case run := <-got:
+		if run != "r1" {
+			t.Fatalf("a run that runs gave %q, not its id", run)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the answer waited for the run to end")
+	}
+	for range 100 {
+		started, finished := make(chan string, 1), make(chan fired, 1)
+		started <- "r1"
+		finished <- fired{res: &engine.Result{Run: "r1", ExitCode: 1, Outcome: "failed"}}
+		if run, _ := waitStart(started, finished); run != "r1" {
+			t.Fatalf("a run that ended gave %q, not its id", run)
+		}
+	}
+	started, finished := make(chan string, 1), make(chan fired, 1)
+	finished <- fired{}
+	if run, d := waitStart(started, finished); run != "" || d != (fired{}) {
+		t.Fatalf("no run gave %q, %+v", run, d)
+	}
+}
+
 func TestWebhookFieldsNumbers(t *testing.T) {
 	r := httptest.NewRequest(http.MethodPost, "/hook", nil)
 	r.Header.Set("Content-Type", "application/json")

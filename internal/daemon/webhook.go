@@ -153,11 +153,7 @@ func (w *webhooks) handle(rw http.ResponseWriter, r *http.Request, b *bound) {
 	}
 	ev := &engine.TriggerEvent{Trigger: "webhook", Time: time.Now().UTC(), Fields: fields(r, body)}
 	started := make(chan string, 1)
-	type done struct {
-		res *engine.Result
-		err error
-	}
-	finished := make(chan done, 1)
+	finished := make(chan fired, 1)
 	go func() {
 		defer w.t.end(tr.Task)
 		opts := b.snap.opts
@@ -168,7 +164,7 @@ func (w *webhooks) handle(rw http.ResponseWriter, r *http.Request, b *bound) {
 		if res != nil {
 			w.t.ended(res.Followers, 0)
 		}
-		finished <- done{res, err}
+		finished <- fired{res, err}
 	}()
 	answer := func(code int, v any) {
 		rw.Header().Set("Content-Type", "application/json")
@@ -176,17 +172,39 @@ func (w *webhooks) handle(rw http.ResponseWriter, r *http.Request, b *bound) {
 		_ = json.NewEncoder(rw).Encode(v)
 	}
 	if tr.Respond == "accepted" {
-		select {
-		case run := <-started:
+		if run, d := waitStart(started, finished); run != "" {
 			answer(http.StatusAccepted, map[string]any{"run": run})
-			return
-		case d := <-finished:
+		} else {
 			w.answerDone(answer, d.res, d.err)
-			return
 		}
+		return
 	}
 	d := <-finished
 	w.answerDone(answer, d.res, d.err)
+}
+
+// fired is how Fire ended for a request.
+type fired struct {
+	res *engine.Result
+	err error
+}
+
+// waitStart gives the id of the run of a request once it starts, or how
+// Fire ended without one. Fire hears of the start before it returns, so
+// once it ended, started holds the id of any run it made: a select over
+// both, ready together, would pick either.
+func waitStart(started <-chan string, finished <-chan fired) (string, fired) {
+	select {
+	case run := <-started:
+		return run, fired{}
+	case d := <-finished:
+		select {
+		case run := <-started:
+			return run, d
+		default:
+			return "", d
+		}
+	}
 }
 
 // answerDone answers with how a run ended, or why there was none.
