@@ -29,6 +29,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wit
 - A run that waits for a lock of the local backend, just taken by another, names that run rather than an empty holder ([#17](https://github.com/opstruss/opstruss/pull/17)).
 - A `kv` write that cannot remove the names whose `ttl` passed now fails before it changes the key, so a `retry` with `expect` tries the same write again, rather than failing after the key was written ([#19](https://github.com/opstruss/opstruss/pull/19)).
 - A webhook with `respond: accepted` now answers 202 with the run also when the run ended before the answer, rather than at times 200 or 500 with its outcome, which made a sender that retries after a 500 run the task again ([#23](https://github.com/opstruss/opstruss/pull/23)).
+- The daemon starts also when the project is on a filesystem that cannot hold a Unix socket or change its mode, such as virtiofs, with its socket under `$TMPDIR`, rather than failing `up -d` with `chmod …: invalid argument`.
 
 ## [1.0.0] - 2026-11-18
 

@@ -162,20 +162,20 @@ func Start(opts Options) (_ *Daemon, err error) {
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, err
 	}
+	// A path too long for a socket, or a filesystem that cannot hold one or
+	// set its mode, as virtiofs, puts the socket under $TMPDIR.
 	sock := socketPath(root, opts.Stack)
-	if len(sock) > maxSocket {
+	if len(sock) <= maxSocket {
+		d.ln, err = listen(sock)
+	}
+	if d.ln == nil {
 		if d.tmp, err = socketDir(); err != nil {
 			return nil, err
 		}
 		sock = filepath.Join(d.tmp, opts.Stack+".sock")
-	} else if err := os.Remove(sock); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return nil, err
-	}
-	if d.ln, err = net.Listen("unix", sock); err != nil {
-		return nil, err
-	}
-	if err := os.Chmod(sock, 0o600); err != nil {
-		return nil, err
+		if d.ln, err = listen(sock); err != nil {
+			return nil, err
+		}
 	}
 	if d.log, err = record.OpenLog(LogPath(root, opts.Stack)); err != nil {
 		return nil, err
@@ -274,6 +274,24 @@ func runOptions(dir, stack string, inputs map[string]string, environ []string, l
 	color, _ := ansi.Forced(func(k string) string { return env[k] })
 	return engine.Options{Locked: locked, Dir: dir, Stack: stack, Inputs: inputs, Environ: environ, Color: color,
 		LookupEnv: func(k string) (string, bool) { v, ok := env[k]; return v, ok }}
+}
+
+// listen listens on a Unix socket at p, in place of one that an earlier
+// daemon left, that only this user can reach.
+func listen(p string) (net.Listener, error) {
+	if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
+	}
+	ln, err := net.Listen("unix", p)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.Chmod(p, 0o600); err != nil {
+		// Closing removes the socket file too.
+		_ = ln.Close()
+		return nil, err
+	}
+	return ln, nil
 }
 
 // socketDir makes a directory for the socket under $TMPDIR, or under /tmp
