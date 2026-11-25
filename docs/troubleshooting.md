@@ -51,7 +51,9 @@ In a [plugin backend](./guides/share-state#locks), a lock stays when its
 holder dies. The next run takes over one whose holder ran on this machine
 and no longer runs; one of another machine stays until
 `opstruss unlock <unit>` lets it go, once nothing of that run still runs
-there.
+there. A lock that a run could not release, as the storage failed, stays
+too, and the run warns with the `opstruss unlock` that lets it go; the
+next run on this machine takes it over, also in the daemon that left it.
 
 ## A stack has no state in its backend
 

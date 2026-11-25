@@ -24,6 +24,8 @@ func (e *ProbeError) Error() string {
 
 func (e *ProbeError) Unwrap() error { return e.Err }
 
+const probePrefix = "_probe/"
+
 // Probe tries the contract on keys of its own under _probe/<id>/, which no
 // stack reads, since initialize proves none of it: conditional puts and
 // deletes, a read after each write, a list as deep as inventory needs, and
@@ -31,7 +33,7 @@ func (e *ProbeError) Unwrap() error { return e.Err }
 // while they are held; scan as list, when the backend gives it. What a
 // failed step leaves it removes as it can.
 func Probe(b Backend, h Holder) (err error) {
-	dir := "_probe/" + NewID() + "/"
+	dir := probePrefix + NewID() + "/"
 	// As deep under dir as a record is under its stack, so that a list that
 	// stops at the first level fails here rather than hide records.
 	key, lock := dir+"unit/state.json", dir+"unit/state.lock"

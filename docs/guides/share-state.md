@@ -95,6 +95,10 @@ it is. A lock in a bucket stays when its holder dies:
 - One of another machine stays until `opstruss unlock <unit>` lets it go,
   after a question with the age of the lock, or with `--yes` in CI. A
   holder of this machine that still runs keeps its lock.
+- One that a run could not release, as the storage failed, stays as well;
+  the run warns and still succeeds. The next run on this machine takes it
+  over, also in the daemon that left it, and `opstruss unlock <unit>`
+  lets it go.
 
 ```sh
 opstruss unlock web --stack prod        # the lock of a unit

@@ -150,10 +150,12 @@ func (e *engine) startBackend(p *model.Project) (state.Backend, *pluginBackend, 
 	if err != nil {
 		return nil, nil, fmt.Errorf("backend %s: %w", b.Uses, err)
 	}
-	pb := &pluginBackend{name: b.Uses, prog: prog, log: e.backendLine, dead: e.holderDead, took: e.tookLock}
+	pb := &pluginBackend{name: b.Uses, prog: prog, log: e.backendLine, dead: e.holderDead, took: e.tookLock, stays: e.lockStays}
 	pb.file = state.BackendFile{Uses: b.Uses, With: given, Pass: allowed}
+	pb.lockSource = pkg.Dir
 	if id := pkg.Source; id != nil {
 		pb.file.Uses, pb.file.Commit, pb.file.Hash = id.Key(), id.Commit, id.Hash
+		pb.lockSource = id.Address()
 	} else if rel, err := filepath.Rel(p.Dir, pkg.Dir); err == nil {
 		if pb.file.Uses = filepath.ToSlash(rel); !strings.HasPrefix(pb.file.Uses, "../") {
 			pb.file.Uses = "./" + pb.file.Uses
@@ -238,9 +240,54 @@ func (e *engine) holderDead(h state.Holder) bool {
 	return err == nil && len(ps) == 0 && !held
 }
 
-// tookLock says that a lock whose holder died on this host was taken.
-func (e *engine) tookLock(key string, h state.Holder) {
-	e.notice(Event{Type: "diagnostic", Level: "warn", Message: fmt.Sprintf("took over the lock %s of %s, which no longer runs", key, h)})
+// tookLock says that a stale lock was taken: its holder died on this host,
+// or, left, it is a run of this process that could not release it.
+func (e *engine) tookLock(key string, h state.Holder, left bool) {
+	why := "which no longer runs"
+	if left {
+		why = "which could not release it"
+	}
+	e.notice(Event{Type: "diagnostic", Level: "warn", Message: fmt.Sprintf("took over the lock %s of %s, %s", key, h, why)})
+}
+
+// lockStays says that the lock key stays in the backend, as releasing it
+// failed, and how it goes.
+func (e *engine) lockStays(key string, err error) {
+	msg := fmt.Sprintf("could not release the lock %s: %v", key, err)
+	if addr, cmd := unlockCommand(key); cmd != "" {
+		msg = fmt.Sprintf("could not release the lock of %s: %v; a later run on this host takes it over, or release it with %s", addr, err, cmd)
+	}
+	e.notice(Event{Type: "diagnostic", Level: "warn", Message: msg})
+}
+
+// unlockCommand is the address whose lock key is, and the command that
+// releases it; none for a key that no stack or the global scope owns, as
+// those of the probe.
+func unlockCommand(key string) (addr, cmd string) {
+	addr = strings.TrimSuffix(strings.TrimSuffix(key, "/state.lock"), ".lock")
+	scope, name, ok := strings.Cut(addr, "/")
+	switch {
+	case !ok || name == "":
+		return "", ""
+	case scope == model.GlobalScope:
+		return addr, "opstruss unlock " + shellWord(name) + " --global"
+	case strings.HasPrefix(scope, "_"):
+		return "", ""
+	}
+	return addr, "opstruss unlock " + shellWord(name) + " --stack " + shellWord(scope)
+}
+
+// shellWord is s as one word of a shell command: quoted when it holds more
+// than letters, digits, and -_./:@%+=,, such as the brackets of an
+// instance, which a shell would read as a pattern.
+func shellWord(s string) string {
+	plain := func(r rune) bool {
+		return r < 0x80 && (r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("-_./:@%+=,", r))
+	}
+	if s != "" && strings.IndexFunc(s, func(r rune) bool { return !plain(r) }) < 0 {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // pluginBackend is the program of a plugin backend. It starts at the first
@@ -248,15 +295,17 @@ func (e *engine) tookLock(key string, h state.Holder) {
 // without operations, to start again at the next; one that stopped
 // answering stays broken, and its operations fail.
 type pluginBackend struct {
-	name   string // the backend as the project names it
-	source string // the plugin without its version, which with the location is the identity of the backend
-	file   state.BackendFile
+	name       string // the backend as the project names it
+	source     string // the plugin without its version, which with the location is the identity of the backend
+	lockSource string // a local plugin needs an absolute path in the host-wide registry
+	file       state.BackendFile
 	// prog is the program, which gets no lease of the sources: it reads its
 	// files as it starts, and ends with the stdin that OpsTruss holds.
-	prog *plugin.Program
-	log  func(name, line string)
-	dead func(state.Holder) bool
-	took func(key string, h state.Holder)
+	prog  *plugin.Program
+	log   func(name, line string)
+	dead  func(state.Holder) bool
+	took  func(key string, h state.Holder, left bool)
+	stays func(key string, err error)
 
 	mu       sync.Mutex
 	location string
@@ -490,29 +539,94 @@ func (b *pluginBackend) Scan(prefix string) (items map[string][]byte, err error)
 	return items, err
 }
 
-// Lock takes the lock, and takes over a lock whose holder is proven dead
-// on this host, with the holder's token: a lock of a plugin backend does
-// not go away when its holder dies.
+// unlockWaits are the pauses before each try to release a lock.
+var unlockWaits = []time.Duration{0, 250 * time.Millisecond, time.Second}
+
+// Lock takes the lock, and takes over a stale one with its holder's token,
+// as a lock of a plugin backend does not go away when its holder dies: one
+// that a process of this host left, or whose holder is proven dead on this
+// host.
 func (b *pluginBackend) Lock(key string, h state.Holder) (string, error) {
 	token, err := b.tryLock(key, h)
 	var le *state.LockedError
-	if errors.As(err, &le) && b.dead != nil && b.dead(le.Holder) {
-		if uerr := b.Unlock(key, le.Token); uerr == nil {
-			b.took(key, le.Holder)
+	if errors.As(err, &le) {
+		if stale, left := b.stale(key, le); stale && b.release(key, le.Token) == nil {
+			if b.took != nil {
+				b.took(key, le.Holder, left)
+			}
 			token, err = b.tryLock(key, h)
 		}
 	}
 	return token, err
 }
 
-// tryLock takes the lock without taking over a dead holder's.
+// stale reports whether the lock key that le names may be taken over: a
+// process of this host left it, or its holder is proven dead on this host.
+func (b *pluginBackend) stale(key string, le *state.LockedError) (stale, left bool) {
+	if state.LeftLock(b.lockIdentity(), key, le.Token) {
+		return true, true
+	}
+	return b.dead != nil && b.dead(le.Holder), false
+}
+
+// tryLock takes the lock without taking over a stale one.
 func (b *pluginBackend) tryLock(key string, h state.Holder) (token string, err error) {
+	cleanup := state.LeftLockCleanup(b.lockIdentity(), key)
 	err = b.do(func(r *state.Remote) error { token, err = r.Lock(key, h); return err })
+	if err == nil && cleanup != nil {
+		cleanup()
+	}
 	return token, err
 }
 
+// Unlock releases a lock that this process holds, trying again for a
+// moment, since the storage may fail now and then; one that still fails is
+// left to a later run on this host, and reported.
 func (b *pluginBackend) Unlock(key, token string) error {
-	return b.do(func(r *state.Remote) error { return r.Unlock(key, token) })
+	var err error
+	for _, wait := range unlockWaits {
+		time.Sleep(wait)
+		if err = b.release(key, token); err == nil || errors.Is(err, state.ErrNotHolder) || b.broken() {
+			break
+		}
+	}
+	if err != nil && !errors.Is(err, state.ErrNotHolder) {
+		if lerr := state.LeaveLock(b.lockIdentity(), key, token); lerr != nil {
+			err = fmt.Errorf("%w; writing it down: %v", err, lerr)
+		}
+		if b.stays != nil {
+			b.stays(key, err)
+		}
+	}
+	return err
+}
+
+// release releases the lock key held as token, with one operation.
+func (b *pluginBackend) release(key, token string) error {
+	err := b.do(func(r *state.Remote) error { return r.Unlock(key, token) })
+	if err == nil || errors.Is(err, state.ErrNotHolder) {
+		state.ForgetLock(b.lockIdentity(), key, token)
+	}
+	return err
+}
+
+func (b *pluginBackend) lockIdentity() string {
+	return expr.JSON([]string{b.where(), b.lockSource})
+}
+
+// where is the location of the backend, which its program gave.
+func (b *pluginBackend) where() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.location
+}
+
+// broken reports whether the program failed for good, which fails every
+// operation after it.
+func (b *pluginBackend) broken() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.failed != nil
 }
 
 func (b *pluginBackend) do(op func(*state.Remote) error) error {
@@ -556,7 +670,7 @@ func (e *engine) openStore(p *model.Project) (*state.Store, error) {
 // and its plugin without the version.
 func backendID(be state.Backend) string {
 	if pb, ok := be.(*pluginBackend); ok {
-		return pb.location + " through " + pb.source
+		return pb.where() + " through " + pb.source
 	}
 	return "the local backend"
 }
