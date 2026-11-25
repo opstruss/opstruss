@@ -23,7 +23,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wit
 ### Changed
 
 - `up` neither locks nor reads again a unit whose plan changes nothing, while no unit it needs, directly or through others, ran, so it no longer waits for a lock that another run holds there; a change to the files of such a unit after the plan waits for the next run ([#18](https://github.com/opstruss/opstruss/pull/18)).
-- `status` in a project without units says who runs the triggers of its tasks, as `up` does, and in the daemon why their last install failed; while the daemon runs them, both lines name it first, before `the project declares no units`.
+- `status` in a project without units says who runs the triggers of its tasks, as `up` does, and in the daemon why their last install failed; while the daemon runs them, both lines name it first, before `the project declares no units` ([#26](https://github.com/opstruss/opstruss/pull/26)).
 
 ### Fixed
 
