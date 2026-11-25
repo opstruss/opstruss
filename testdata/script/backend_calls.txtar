@@ -1,6 +1,7 @@
-# The operations that plan and up make in a plugin backend: plan reads each
-# scope at once, the same for 3 units and 30, and up takes a turn only for
-# the units it runs and those after them.
+# The operations that plan, up, and a kv write make in a plugin backend:
+# plan reads each scope at once, the same for 3 units and 30, up takes a
+# turn only for the units it runs and those after them, and a kv write
+# reads the names of the stack at once.
 
 env HOME=$WORK/home
 
@@ -57,6 +58,79 @@ cp ../scanerror.yaml opstruss.yaml
 stderr 'backend scan default/: the storage stopped answering'
 ! stdout 'default/a'
 
+# a kv write reads the names at once from a backend with scan, and gets
+# again only the one whose ttl passed, to remove it; without scan, it lists
+# the names and gets each
+cd ../kv
+exec opstruss init --stack default
+exec opstruss fill
+cd ../kvnoscan
+exec opstruss init --stack default
+exec opstruss fill
+exec sleep 1.2
+rm store/.calls
+exec opstruss write
+exec env LC_ALL=C sort store/.calls
+cmp stdout ../kvnoscan.calls
+cd ../kv
+rm store/.calls
+exec opstruss write
+exec env LC_ALL=C sort store/.calls
+cmp stdout ../kv.calls
+
+-- kv/opstruss.yaml --
+opstruss: "1.1"
+name: kv
+backend:
+  uses: ../testplugins/fakebackend
+  with: {dir: store}
+tasks:
+  fill:
+    steps:
+      - kv: {key: a, value: 1}
+      - kv: {key: b, value: 2}
+      - kv: {key: c, value: 3}
+      # last, so no write of fill removes it once its ttl passed
+      - kv: {key: old, value: x, ttl: 1s}
+  write:
+    kv: {key: job, value: done}
+-- kvnoscan/opstruss.yaml --
+opstruss: "1.1"
+name: kvnoscan
+backend:
+  uses: ../testplugins/fakebackend
+  with: {dir: store, scan: false}
+tasks:
+  fill:
+    steps:
+      - kv: {key: a, value: 1}
+      - kv: {key: b, value: 2}
+      - kv: {key: c, value: 3}
+      # last, so no write of fill removes it once its ttl passed
+      - kv: {key: old, value: x, ttl: 1s}
+  write:
+    kv: {key: job, value: done}
+-- kv.calls --
+delete default/_kv/old
+get default/_kv/job
+get default/_kv/old
+get default/_meta
+lock default/_kv.lock
+put default/_kv/job
+scan default/_kv/
+unlock default/_kv.lock
+-- kvnoscan.calls --
+delete default/_kv/old
+get default/_kv/a
+get default/_kv/b
+get default/_kv/c
+get default/_kv/job
+get default/_kv/old
+get default/_meta
+list default/_kv/
+lock default/_kv.lock
+put default/_kv/job
+unlock default/_kv.lock
 -- three/opstruss.yaml --
 opstruss: "1.1"
 name: three

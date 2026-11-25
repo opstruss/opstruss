@@ -250,15 +250,22 @@ func (s *Store) KVPut(name string, value any, sensitive bool, ttl time.Duration,
 }
 
 // purge removes the names whose ttl passed, but for except, whose etag the
-// caller holds.
+// caller holds. From a backend that scans, only the names whose ttl passed
+// in the scan are read again, for the etag that removes them.
 func (s *Store) purge(except string, now time.Time) error {
-	keys, err := s.Backend.List(kvKey(s.Stack, ""))
+	prefix := kvKey(s.Stack, "")
+	keys, scanned, err := s.scan(prefix)
 	if err != nil {
 		return err
 	}
 	for _, k := range keys {
 		if k == except {
 			continue
+		}
+		if data, ok := scanned[k]; ok {
+			if e, err := decodeKV(data, strings.TrimPrefix(k, prefix)); err != nil || !e.expired(now) {
+				continue
+			}
 		}
 		data, etag, err := s.Backend.Get(k)
 		if errors.Is(err, ErrNotExist) {
@@ -267,7 +274,7 @@ func (s *Store) purge(except string, now time.Time) error {
 		if err != nil {
 			return err
 		}
-		e, err := decodeKV(data, strings.TrimPrefix(k, kvKey(s.Stack, "")))
+		e, err := decodeKV(data, strings.TrimPrefix(k, prefix))
 		if err != nil {
 			continue
 		}

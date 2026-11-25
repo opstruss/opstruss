@@ -38,28 +38,33 @@ func (s *Store) Snapshot() (*Snapshot, error) {
 }
 
 func (s *Store) snapshot() (*Snapshot, error) {
-	prefix := s.Stack + "/"
-	sn := &Snapshot{store: s, keys: map[string]bool{}, data: map[string][]byte{}}
-	if sc, ok := s.Backend.(Scanner); ok {
-		items, err := sc.Scan(prefix)
-		if err == nil {
-			for k, v := range items {
-				sn.keys[k], sn.data[k] = true, v
-			}
-			return sn, nil
-		}
-		if !errors.Is(err, errors.ErrUnsupported) {
-			return nil, err
-		}
-	}
-	keys, err := s.Backend.List(prefix)
+	keys, data, err := s.scan(s.Stack + "/")
 	if err != nil {
 		return nil, err
 	}
+	sn := &Snapshot{store: s, keys: map[string]bool{}, data: map[string][]byte{}}
 	for _, k := range keys {
 		sn.keys[k] = true
 	}
+	maps.Copy(sn.data, data)
 	return sn, nil
+}
+
+// scan gives the keys under prefix, and their data too from a backend that
+// scans them in one operation. From one that cannot, data is nil, and the
+// caller gets the keys it needs.
+func (s *Store) scan(prefix string) ([]string, map[string][]byte, error) {
+	if sc, ok := s.Backend.(Scanner); ok {
+		items, err := sc.Scan(prefix)
+		if err == nil {
+			return slices.Sorted(maps.Keys(items)), items, nil
+		}
+		if !errors.Is(err, errors.ErrUnsupported) {
+			return nil, nil, err
+		}
+	}
+	keys, err := s.Backend.List(prefix)
+	return keys, nil, err
 }
 
 // Global is the snapshot of the global scope, or nil.

@@ -82,13 +82,14 @@ larger one is stopped, and the command fails.
   not: a plan sees which units another run holds in what it listed,
   without another operation.
 - `scan` gives the keys that `list` gives, each with its `data`, so a plan
-  reads a stack in one operation rather than a `get` for each record. A
-  key that goes while it scans, such as a lock that was let go, may be
-  left out. It is no snapshot of one moment and has no etags: OpsTruss
-  writes nothing from it, and reads a key with `get` before it writes. A
-  program that cannot give a prefix in one answer, such as one whose
-  answer would be larger than a message can be, answers `unsupported`:
-  OpsTruss then lists the prefix and gets each record that it reads.
+  reads a stack, and a `kv` write the names of its stack, in one operation
+  rather than a `get` for each key. A key that goes while it scans, such
+  as a lock that was let go, may be left out. It is no snapshot of one
+  moment and has no etags: OpsTruss writes nothing from it, and reads a
+  key with `get` before it writes. A program that cannot give a prefix in
+  one answer, such as one whose answer would be larger than a message can
+  be, answers `unsupported`: OpsTruss then lists the prefix and gets each
+  key that it reads.
 - `lock` does not wait: on a key that is locked, it answers `locked`
   with the `holder` that the lock keeps, the object OpsTruss gave, and its
   `token`. A lock stays when its holder dies, so another process, as
