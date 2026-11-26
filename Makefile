@@ -3,8 +3,10 @@
 build:
 	go build -o bin/opstruss .
 
+# The root package takes about six minutes with -race, and a slow CI runner
+# can take twice that, past the ten-minute default of go test.
 test:
-	go test -race ./...
+	go test -race -timeout 20m ./...
 	go test -race -tags failpoints -run 'TestScripts/crash' .
 
 criteria:
