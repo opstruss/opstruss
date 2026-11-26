@@ -29,19 +29,32 @@ func project(t *testing.T, dir string) string {
 }
 
 func TestDaemon(t *testing.T) {
-	for name, dir := range map[string]func() string{
-		"socket in the project": func() string {
-			d, err := os.MkdirTemp("/tmp", "d-")
-			if err != nil {
+	short := func() string {
+		d, err := os.MkdirTemp("/tmp", "d-")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.RemoveAll(d) })
+		return d
+	}
+	for name, c := range map[string]struct {
+		dir       func() string
+		inProject bool
+	}{
+		"socket in the project": {short, true},
+		"socket under TMPDIR":   {func() string { return filepath.Join(t.TempDir(), strings.Repeat("long", 20)) }, false},
+		// What stands at the path of the socket keeps one from being made
+		// there, as a filesystem that cannot hold one or set its mode does.
+		"socket under TMPDIR when the project cannot hold one": {func() string {
+			d := short()
+			if err := os.MkdirAll(filepath.Join(d, ".opstruss", "daemon", "default.sock", "x"), 0o700); err != nil {
 				t.Fatal(err)
 			}
-			t.Cleanup(func() { _ = os.RemoveAll(d) })
 			return d
-		},
-		"socket under TMPDIR": func() string { return filepath.Join(t.TempDir(), strings.Repeat("long", 20)) },
+		}, false},
 	} {
 		t.Run(name, func(t *testing.T) {
-			dir := dir()
+			dir := c.dir()
 			if err := os.MkdirAll(dir, 0o700); err != nil {
 				t.Fatal(err)
 			}
@@ -59,7 +72,7 @@ func TestDaemon(t *testing.T) {
 				t.Fatalf("second daemon: %v", err)
 			}
 			f, err := Read(root, "default")
-			if err != nil || f.PID != os.Getpid() || f.OpsTruss != "v1" {
+			if err != nil || f.PID != os.Getpid() || f.OpsTruss != "v1" || (f.Socket == socketPath(root, "default")) != c.inProject {
 				t.Fatalf("file %+v %v", f, err)
 			}
 			data, _ := os.ReadFile(filePath(root, "default"))
