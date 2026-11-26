@@ -10,6 +10,12 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same pull request or branch makes the older run
+# redundant: it tests a tree the newer one contains.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint:
     runs-on: ubuntu-latest
