@@ -225,9 +225,11 @@ func TestSudoPasswordInterrupted(t *testing.T) {
 				t.Errorf("%s: %q holds %q", ev.Address, ev.Message, bad)
 			}
 		}
+		// The unit that is not at the prompt ends waiting for it, or before
+		// its sudo started when the interrupt came first.
 		if ev.Message == "interrupted: at the password prompt of sudo" {
 			prompt++
-		} else if !strings.HasPrefix(ev.Message, "interrupted: ") {
+		} else if !strings.HasPrefix(ev.Message, "interrupted") {
 			t.Errorf("%s ended with %q; want an interrupt", ev.Address, ev.Message)
 		}
 	}
