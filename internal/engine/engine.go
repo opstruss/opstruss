@@ -76,6 +76,9 @@ type Options struct {
 	// the files, with the inputs of the run; an up calls it once its units
 	// are done, and fails when the triggers could not be installed.
 	Install func(inputs map[string]string) error
+	// TriggerError, in the daemon, says why the last install of the
+	// triggers failed, or "" once it succeeded.
+	TriggerError func() string
 	// Model is the project as a daemon read it when it installed its
 	// triggers, for the runs they make; without it, the files are read.
 	Model *model.Project

@@ -250,6 +250,8 @@ func StatusUnits(ctx context.Context, opts Options) (*Result, error) {
 	got, _, err := e.statusPass(ctx, opts.Units)
 	if err != nil {
 		e.fail("", err)
+	} else if len(e.p.Units) == 0 {
+		e.say("run", "", "%s", e.noUnitsLine("status"))
 	}
 	for _, u := range got {
 		if u.(map[string]any)["outcome"] == failure {
@@ -277,9 +279,6 @@ func (e *engine) statusPass(ctx context.Context, patterns []string) (map[string]
 	e.passMu.Unlock()
 	if err != nil {
 		return nil, nil, err
-	}
-	if len(e.p.Units) == 0 {
-		e.say("run", "", "%s", e.noUnits())
 	}
 	out, marks := map[string]any{}, map[string]any{}
 	for _, inst := range insts {

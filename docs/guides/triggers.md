@@ -97,7 +97,8 @@ opstruss stop      # stop the daemon, its runs, and its services
 - When a trigger cannot be installed, such as a webhook whose secret is
   not set, `up` says why and exits with 1, and the daemon keeps the
   triggers it had: none, for a daemon that just started. `list` says so
-  too, and says when no daemon runs the triggers at all.
+  too, and says when no daemon runs the triggers at all; in a project
+  without units, so does `status`.
 - The triggers run with the environment of the last `up` that installed
   them. An `up` from a shell without the `.env` of the project would make
   the next scheduled run go without those variables, so load it the same

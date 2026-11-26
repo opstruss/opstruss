@@ -344,6 +344,7 @@ func (d *Daemon) Serve(ctx context.Context) error {
 			x.Install = func(r api.Request, inputs map[string]string) error {
 				return d.trig.install(runOptions(r.Dir, r.Stack, inputs, r.Environ, r.Locked))
 			}
+			x.TriggerError = d.reg.triggerError
 			return x.Call(ctx, method, r)
 		}}
 	go d.accept(d.runs, srv)
