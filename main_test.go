@@ -342,6 +342,15 @@ func params(dir string) testscript.Params {
 			slices.Sort(p99s)
 			median := p99s[1]
 			_, _ = fmt.Fprintf(ts.Stdout(), "median p99 %s\n", median)
+			// go test shows the output above only on a failure, so a GitHub
+			// Actions job also writes the time to its summary, to show how
+			// far passing runs are from the limit.
+			if path := os.Getenv("GITHUB_STEP_SUMMARY"); path != "" {
+				if f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); err == nil {
+					_, _ = fmt.Fprintf(f, "- burst %s on %s: median p99 %s\n", args[0], runtime.GOOS, median)
+					_ = f.Close()
+				}
+			}
 			// Go on macOS holds back accept while a fork runs, as macOS has no
 			// SOCK_CLOEXEC, so the time is a criterion on Linux only.
 			if median > limit && runtime.GOOS == "linux" {
